@@ -22,11 +22,10 @@ async function fetchAPI(url, options = {}) {
 }
 
 // Verifica se a OP vai ter encerramento parcial
-// (quantidade produzida na última etapa < quantidade meta da OP)
+// (total produzido na última etapa < quantidade meta da OP)
 function isParcial(op) {
-    if (!op.etapas || op.etapas.length === 0) return false;
-    const ultimaEtapa = op.etapas[op.etapas.length - 1];
-    return (ultimaEtapa?.quantidade_feita || 0) < op.quantidade;
+    if (op.quantidade_feita_ultima_etapa === undefined) return false;
+    return op.quantidade_feita_ultima_etapa < op.quantidade;
 }
 
 export default function OPModalLote({ isOpen, ops, onClose, onConcluido }) {
@@ -153,8 +152,8 @@ export default function OPModalLote({ isOpen, ops, onClose, onConcluido }) {
                                     <div key={op.edit_id || op.id} className={`op-lote-item ${parcial ? 'parcial' : ''}`}>
                                         <div className="card-borda-charme"></div>
                                         <div className="op-lote-item-img">
-                                            {op.imagem_produto
-                                                ? <img src={op.imagem_produto} alt={nomeVariante} />
+                                            {op.produto_imagem
+                                                ? <img src={op.produto_imagem} alt={nomeVariante} />
                                                 : <i className="fas fa-tshirt"></i>
                                             }
                                         </div>

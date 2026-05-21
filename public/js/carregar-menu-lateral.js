@@ -583,3 +583,8 @@ async function handlePhotoUpload(file, token) {
 
 // Inicia todo o processo quando o DOM estiver pronto
 document.addEventListener('DOMContentLoaded', inicializarMenu);
+
+// Injeta os agentes globais (FAB Encerrador + Interceptor) em páginas admin
+if (window.location.pathname.includes('/admin/')) {
+    import('/src/main-agentes-globais.jsx');
+}

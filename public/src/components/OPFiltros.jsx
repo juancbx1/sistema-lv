@@ -5,7 +5,6 @@ import UIBuscaInteligente from './UIBuscaInteligente.jsx';
 
 const statusOptions = [
   { id: 'todas', label: 'Todas Ativas' },
-  { id: 'em-aberto', label: 'Em Aberto' },
   { id: 'produzindo', label: 'Produzindo' },
   { id: 'finalizado', label: 'Finalizadas' },
   { id: 'cancelada', label: 'Canceladas' },

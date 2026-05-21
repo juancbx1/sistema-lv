@@ -109,7 +109,8 @@ router.get('/', async (req, res) => {
         const whereCondition = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '';
         
         const countQuery = `SELECT COUNT(op.id) FROM ordens_de_producao op LEFT JOIN produtos p ON op.produto_id = p.id ${whereCondition}`;
-        const dataQuery = `${queryTextBase} ${whereCondition} ORDER BY op.id DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+        const orderBy = query.status === 'finalizado' ? 'op.data_final DESC NULLS LAST' : 'op.id DESC';
+        const dataQuery = `${queryTextBase} ${whereCondition} ORDER BY ${orderBy} LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
         
         const countParams = params.slice();
         params.push(limit, offset);
@@ -228,6 +229,95 @@ router.get('/', async (req, res) => {
         // ... (catch mantido)
         console.error('[router/ordens-de-producao GET /] Erro:', error);
         res.status(500).json({ error: 'Erro ao buscar ordens de produção.', details: error.message });
+    } finally {
+        if (dbClient) dbClient.release();
+    }
+});
+
+// GET /api/ordens-de-producao/prontas-para-encerrar
+router.get('/prontas-para-encerrar', async (req, res) => {
+    const { usuarioLogado } = req;
+    let dbClient;
+
+    try {
+        dbClient = await pool.connect();
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        if (!permissoes.includes('acesso-ordens-de-producao')) {
+            return res.status(403).json({ error: 'Permissão negada.' });
+        }
+
+        const result = await dbClient.query(`
+            SELECT
+                op.id, op.edit_id, op.numero, op.variante, op.quantidade,
+                op.etapas, op.status, op.data_entrega, op.observacoes,
+                op.produto_id,
+                p.nome AS produto_nome,
+                COALESCE(
+                    CASE WHEN p.grade IS NOT NULL THEN
+                        (SELECT (elem->>'imagem')
+                         FROM jsonb_array_elements(p.grade) AS elem
+                         WHERE (elem->>'variacao') = op.variante
+                           AND (elem->>'imagem') IS NOT NULL
+                           AND (elem->>'imagem') != ''
+                         LIMIT 1)
+                    END,
+                    p.imagem
+                ) AS produto_imagem,
+                (
+                    SELECT MAX(prod.data)
+                    FROM producoes prod
+                    WHERE prod.op_numero = op.numero
+                ) AS ultima_producao_em,
+                (
+                    SELECT COALESCE(SUM(prod.quantidade), 0)
+                    FROM producoes prod
+                    WHERE prod.op_numero = op.numero
+                      AND prod.etapa_index = jsonb_array_length(op.etapas) - 1
+                ) AS quantidade_feita_ultima_etapa
+            FROM ordens_de_producao op
+            LEFT JOIN produtos p ON op.produto_id = p.id
+            WHERE op.status IN ('em-aberto', 'produzindo')
+              AND op.etapas IS NOT NULL
+              AND jsonb_array_length(op.etapas) > 0
+              AND (
+                  SELECT COUNT(DISTINCT prod.etapa_index)
+                  FROM producoes prod
+                  WHERE prod.op_numero = op.numero
+              ) >= jsonb_array_length(op.etapas)
+            ORDER BY ultima_producao_em ASC NULLS LAST
+        `);
+
+        const agora = new Date();
+        const ops = result.rows.map(row => {
+            const etapas = row.etapas || [];
+            const ultima = row.ultima_producao_em ? new Date(row.ultima_producao_em) : null;
+            return {
+                // campos para OPModalLote (PUT /api/ordens-de-producao)
+                id: row.id,
+                edit_id: row.edit_id,
+                numero: row.numero,
+                variante: row.variante,
+                quantidade: row.quantidade,
+                etapas: row.etapas,
+                status: row.status,
+                data_entrega: row.data_entrega,
+                observacoes: row.observacoes,
+                produto_id: row.produto_id,
+                // campos para display
+                produto_nome: row.produto_nome,
+                produto_imagem: row.produto_imagem,
+                etapa_final: etapas.length > 0 ? (etapas[etapas.length - 1]?.processo ?? null) : null,
+                ultima_producao_em: row.ultima_producao_em,
+                horas_aguardando: ultima ? Math.round((agora - ultima) / 360000) / 10 : 0,
+                quantidade_feita_ultima_etapa: parseInt(row.quantidade_feita_ultima_etapa || 0),
+            };
+        });
+
+        res.status(200).json(ops);
+
+    } catch (error) {
+        console.error('[GET /prontas-para-encerrar]', error);
+        res.status(500).json({ error: 'Erro ao buscar OPs prontas.', details: error.message });
     } finally {
         if (dbClient) dbClient.release();
     }

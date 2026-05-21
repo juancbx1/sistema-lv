@@ -20,6 +20,17 @@
 
 export const changelog = [
     {
+        versao: '1.31',
+        data: '21/05/2026',
+        admin: [
+            'Novo agente interceptador de OPS. Agora existe a obrigatoriedade de encerrar as OPs em aberto, principalmente OPs com muitas horas após todas as etapas de producao atribuidas/realizadas.',
+            'Removido filtro "Em aberto" da aba OPs. Filtro nao tinha usabilidade. Agora as ops finalizadas sao exibidas da mais recente para a mais antiga.'
+        ],
+        dashboard: [
+            // Vazio — esta atualização não afeta as funcionárias
+        ],
+    },
+    {
         versao: '1.30.1',
         data: '20/05/2026',
         admin: [

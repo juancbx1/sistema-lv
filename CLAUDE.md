@@ -403,6 +403,65 @@ if (carregando) return <UICarregando variante="pagina" />;
 
 ---
 
+### Agente Encerrador de OPs — FAB Global + Interceptor
+
+**Arquivos:**
+- `public/src/main-agentes-globais.jsx` — Entry point montado em todas as páginas admin via `carregar-menu-lateral.js`. Gerencia polling centralizado (5 min) e passa `opsProntas` para os dois componentes.
+- `public/src/components/OPAgenteEncerrador.jsx` — FAB "Fantasminha" fixo, visível em todas as páginas admin.
+- `public/src/components/OPAgenteInterceptor.jsx` — Modal de bloqueio suave com escalada progressiva.
+- **CSS:** classes `gs-agente-enc-*` e `gs-agente-int-*` em `global-style.css`.
+
+**Injeção global:** `public/js/carregar-menu-lateral.js` faz `import('/src/main-agentes-globais.jsx')` para páginas `/admin/`. Vite rastreia o dynamic import e cria chunk separado no build.
+
+**API:** `GET /api/ordens-de-producao/prontas-para-encerrar` — permissão `acesso-ordens-de-producao`. Retorna OPs onde `COUNT(DISTINCT etapa_index em producoes) >= jsonb_array_length(op.etapas)`. Retorna todos os campos necessários para `OPModalLote` (`edit_id`, `produto_id`, `etapas`, etc.) + `produto_imagem` (busca imagem da variação em `grade` com fallback para `produto.imagem`) + `horas_aguardando` + `quantidade_feita_ultima_etapa` (SUM de `producoes.quantidade` na última `etapa_index` — usado para detectar encerramento parcial real).
+
+**Estados do FAB (`OPAgenteEncerrador`):**
+| Estado | Condição | Visual |
+|---|---|---|
+| `ocioso` | 0 OPs prontas | Cinza, opacity 0.35, não-clicável |
+| `snooze` | Supervisor adiou | Cinza, opacity 0.6, badge de relógio, clicável |
+| `atencao` | 1–2 OPs, <4h | Azul, pulso suave, badge com count |
+| `urgente` | 3+ OPs OU ≥4h | Laranja, anel giratório |
+| `critico` | Qualquer OP ≥24h | Vermelho, FAB treme, badge pisca |
+
+**Mini-modal (FAB clicado):**
+- Lista de OPs com **checkboxes** (todas selecionadas por padrão), imagem da variação, número e nome da variante, tempo aguardando
+- Controles de seleção: "Todas" / "Nenhuma" + contador
+- "Encerrar (N)" → abre `OPModalLote` via `ReactDOM.createPortal` com as OPs selecionadas
+- "Adiar 30 min" (máx 2x/dia; some para OPs críticas)
+- **Snooze reversível:** quando pausado, mini-modal mostra "Retomar e encerrar" + "Cancelar pausa" + "Continuar pausado"
+
+**OPAgenteInterceptor — gatilhos (em ordem de prioridade):**
+1. OP crítica (≥24h) não alertada antes (`agente_enc_critico_visto`) — ignora snooze e anti-spam
+2. **Pendência persistente** (`agente_enc_pendente_desde` setado) na carga inicial da sessão (`prev === null`) — ignora anti-spam, respeita snooze
+3. Primeiro acesso do dia (`agente_enc_ultimo_acesso_dia`)
+4. Nova OP detectada no polling (delta positivo)
+- Anti-spam: máx 1 interceptação a cada 30 min (exceto gatilhos 1 e 2)
+- Scan animado (3 fases, ~2s) → controles de seleção (Todas/Nenhuma + contador) → lista com **checkboxes** (mesmo layout do FAB mini-modal) → botões de ação
+- "Encerrar (N)" → abre `OPModalLote` direto (mesma lógica do FAB, sem overlay separado)
+- Escalada: OPs críticas não têm botão de adiar
+
+**Pendência Persistente — como funciona:**
+- `main-agentes-globais.jsx` seta `agente_enc_pendente_desde = timestamp` quando a API retorna OPs pela primeira vez e o flag ainda não existe
+- O flag é removido apenas quando a API retorna array vazio (OPs foram encerradas)
+- No `OPAgenteInterceptor`, quando `prev === null` (primeira carga da sessão) + flag setado + sem snooze → `disparar(true, false)` (força sem registrar no anti-spam)
+- `registrarAntiSpam = false` garante que F5 continue disparando em cada reload até as OPs serem fechadas
+- O snooze de 30 min ainda é respeitado — o supervisor pode pedir 30 min de trégua mas não pode "escapar" indefinidamente
+
+**LocalStorage keys:**
+- `agente_enc_snooze_ate` — timestamp de expiração do snooze
+- `agente_enc_snoozes_hoje` — `{ data, count }` (reset diário)
+- `agente_enc_ultimo_acesso_dia` — data do último acesso (Interceptor)
+- `agente_enc_critico_visto` — array de números de OP crítica já alertadas
+- `agente_enc_ultimo_interceptor` — timestamp da última interceptação (anti-spam)
+- `agente_enc_pendente_desde` — timestamp de quando OPs prontas foram detectadas; removido quando count chega a 0
+
+**Posicionamento do FAB:**
+- Desktop: `bottom: 95px, right: 25px` (acima do FAB de demandas: 25 + 60 + 10)
+- Tablet (481–1024px): `bottom: 110px, right: 28px` (acima do FAB tablet: 28 + 72 + 10)
+
+---
+
 ## Identidade Visual — Borda-Charme
 
 A **borda-charme** é um dos elementos visuais mais marcantes e consistentes do sistema. É uma barra vertical de **6px de largura** posicionada na lateral esquerda de todos os cards de produto e popups. Ela muda de cor para indicar o status ou contexto do item.
@@ -669,6 +728,19 @@ Verificar antes de deletar se há outros usos além de `OPCortesTela.jsx`.
 - Borda-charme via `::before` no CSS baseado na classe de status do modal
 - Progresso calculado com base na **última etapa** (não soma de todas)
 - Usa `mostrarConfirmacao` do sistema (não `window.confirm`)
+
+### OPFiltros — Remoção do filtro "Em Aberto"
+- O filtro `em-aberto` foi removido do array `statusOptions` em `OPFiltros.jsx` — ele era inutilizável porque o filtro "Todas Ativas" já inclui `em-aberto + produzindo`, e na prática todas as OPs ativas estão em `produzindo` rapidamente
+- Restam 4 filtros: **Todas Ativas**, **Produzindo**, **Finalizadas**, **Canceladas**
+- API (`GET /api/ordens-de-producao`): quando `status=finalizado`, ordena por `data_final DESC NULLS LAST` (mais recente primeiro). Para os demais, mantém `op.id DESC`
+
+### OPModalLote — Bugs corrigidos + CSS global
+- **Bug "parcial" falso positivo:** `isParcial` checava `etapas[last].quantidade_feita`, mas o campo `etapas` no banco só tem `processo/maquina/feitoPor` — sem `quantidade_feita`. Resultado: todas as OPs apareciam como "parciais". Corrigido: API agora retorna `quantidade_feita_ultima_etapa` (subquery `SUM`) e `isParcial` usa esse campo
+- **Bug imagem:** modal checava `op.imagem_produto` mas a API retorna `op.produto_imagem`. Corrigido renomeando o campo no JSX
+- **CSS movido para global-style.css:** todas as classes `op-lote-*` + `op-spinner-btn` + `@keyframes op-overlay-in` / `op-modal-in` foram migradas de `ordens-de-producao.css` para `global-style.css`. O componente `OPModalLote` é usado fora da página de OPs (agentes globais), então o CSS precisa estar disponível em todas as páginas admin
+
+### global-style.css — Dependência obrigatória para todas as páginas admin
+O `global-style.css` define `body { visibility: hidden }` e `body.autenticado { visibility: visible }`. Páginas sem ele ficam com o body visível mas **sem os estilos dos agentes globais** (FAB + modal sem formatação). Todas as páginas `/admin/*.html` devem incluir `global-style.css` antes dos outros CSS. Páginas que estavam sem e foram corrigidas: `gerenciar-producao.html`, `permissoes-usuarios.html`, `ponto-por-processo.html`, `cadastrar-produto.html`.
 
 ---
 

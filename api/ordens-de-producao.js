@@ -288,30 +288,34 @@ router.get('/prontas-para-encerrar', async (req, res) => {
         `);
 
         const agora = new Date();
-        const ops = result.rows.map(row => {
-            const etapas = row.etapas || [];
-            const ultima = row.ultima_producao_em ? new Date(row.ultima_producao_em) : null;
-            return {
-                // campos para OPModalLote (PUT /api/ordens-de-producao)
-                id: row.id,
-                edit_id: row.edit_id,
-                numero: row.numero,
-                variante: row.variante,
-                quantidade: row.quantidade,
-                etapas: row.etapas,
-                status: row.status,
-                data_entrega: row.data_entrega,
-                observacoes: row.observacoes,
-                produto_id: row.produto_id,
-                // campos para display
-                produto_nome: row.produto_nome,
-                produto_imagem: row.produto_imagem,
-                etapa_final: etapas.length > 0 ? (etapas[etapas.length - 1]?.processo ?? null) : null,
-                ultima_producao_em: row.ultima_producao_em,
-                horas_aguardando: ultima ? Math.round((agora - ultima) / 360000) / 10 : 0,
-                quantidade_feita_ultima_etapa: parseInt(row.quantidade_feita_ultima_etapa || 0),
-            };
-        });
+        const HORAS_MINIMAS_PARA_ALERTAR = 3;
+
+        const ops = result.rows
+            .map(row => {
+                const etapas = row.etapas || [];
+                const ultima = row.ultima_producao_em ? new Date(row.ultima_producao_em) : null;
+                return {
+                    // campos para OPModalLote (PUT /api/ordens-de-producao)
+                    id: row.id,
+                    edit_id: row.edit_id,
+                    numero: row.numero,
+                    variante: row.variante,
+                    quantidade: row.quantidade,
+                    etapas: row.etapas,
+                    status: row.status,
+                    data_entrega: row.data_entrega,
+                    observacoes: row.observacoes,
+                    produto_id: row.produto_id,
+                    // campos para display
+                    produto_nome: row.produto_nome,
+                    produto_imagem: row.produto_imagem,
+                    etapa_final: etapas.length > 0 ? (etapas[etapas.length - 1]?.processo ?? null) : null,
+                    ultima_producao_em: row.ultima_producao_em,
+                    horas_aguardando: ultima ? Math.round((agora - ultima) / 360000) / 10 : 0,
+                    quantidade_feita_ultima_etapa: parseInt(row.quantidade_feita_ultima_etapa || 0),
+                };
+            })
+            .filter(op => op.horas_aguardando >= HORAS_MINIMAS_PARA_ALERTAR);
 
         res.status(200).json(ops);
 

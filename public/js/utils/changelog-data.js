@@ -20,7 +20,18 @@
 
 export const changelog = [
     {
-        versao: '1.31',
+        versao: '1.31.1',
+        data: '21/05/2026',
+        admin: [
+            'O agente de Encerramento de OPs agora busca ops com mais de 3h aguardando encerramento e nao a todo momento, assim que a OP fica disponivel para ser encerrada'
+        ],
+        dashboard: [
+            // Vazio — esta atualização não afeta as funcionárias
+        ],
+    },
+    
+    {
+        versao: '1.31.0',
         data: '21/05/2026',
         admin: [
             'Novo agente interceptador de OPS. Agora existe a obrigatoriedade de encerrar as OPs em aberto, principalmente OPs com muitas horas após todas as etapas de producao atribuidas/realizadas.',

@@ -7,6 +7,7 @@ import express from 'express';
 // Importe a função de buscar permissões completas
 import { getPermissoesCompletasUsuarioDB } from './usuarios.js';
 import { verificarGincanasAposProducao } from './gincanas.js';
+import { registrarAuditoria } from './audit.js';
 
 
 
@@ -314,6 +315,12 @@ router.post('/', async (req, res) => {
         );
 
         await dbClient.query('COMMIT');
+        await registrarAuditoria(dbClient, usuarioLogado, 'producao.lancada', 'producao', novaSessaoId, {
+            op_numero: opNumero,
+            funcionario_nome: funcionario,
+            etapa_processo: processo,
+            quantidade,
+        });
         res.status(201).json({ message: 'Sessão iniciada!', sessaoId: novaSessaoId });
 
     } catch (error) {
@@ -565,9 +572,16 @@ router.put('/', async (req, res) => {
                 return res.status(200).json(producaoOriginal); // Nenhuma alteração, retorna o original
             }
 
-            updateValues.push(id); 
+            updateValues.push(id);
             const queryUpdate = `UPDATE producoes SET ${updateFields.join(', ')} WHERE id = $${paramIndex} RETURNING *`;
             const result = await dbClient.query(queryUpdate, updateValues);
+            await registrarAuditoria(dbClient, usuarioLogado, 'producao.editada', 'producao', id, {
+                id,
+                op_numero: producaoOriginal.op_numero,
+                funcionario_nome: producaoOriginal.funcionario,
+                quantidade_antes: producaoOriginal.quantidade,
+                quantidade_depois: result.rows[0].quantidade,
+            });
             return res.status(200).json(result.rows[0]);
         }
         
@@ -625,7 +639,12 @@ router.delete('/', async (req, res) => {
         // --- FIM DA NOVA LÓGICA DE LIMPEZA ---
 
         await dbClient.query('COMMIT'); // <<< 2. CONFIRMA AS ALTERAÇÕES
-
+        await registrarAuditoria(dbClient, usuarioLogado, 'producao.excluida', 'producao', producaoExcluida.id, {
+            id: producaoExcluida.id,
+            op_numero: producaoExcluida.op_numero,
+            funcionario_nome: producaoExcluida.funcionario,
+            quantidade: producaoExcluida.quantidade,
+        });
         res.status(200).json(producaoExcluida);
 
     } catch (error) {
@@ -1167,6 +1186,15 @@ router.post('/externo', async (req, res) => {
         }
 
         await dbClient.query('COMMIT');
+        for (const item of itens) {
+            await registrarAuditoria(dbClient, req.usuarioLogado, 'tarefa_freelance.atribuida', 'tarefa', item.op_numero, {
+                op_numero: item.op_numero,
+                funcionario_nome: freelance.nome,
+                tipo: freelance_tipo,
+                etapa: item.processo,
+                quantidade: item.quantidade,
+            });
+        }
         res.status(201).json({ ok: true });
 
     } catch (error) {

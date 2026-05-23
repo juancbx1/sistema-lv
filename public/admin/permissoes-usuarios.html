@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gerenciar Permissões de Usuários</title>
+    <title>Gerenciar Permissões</title>
     <link rel="stylesheet" href="/css/global-style.css">
     <link rel="stylesheet" href="/css/permissoes-usuarios.css">
     <link rel="stylesheet" href="/css/menu-lateral.css">
@@ -14,43 +14,8 @@
         <i class="fas fa-bars"></i>
         <i class="fas fa-times"></i>
     </div>
-    
-    <main class="pu-container-principal">
-        <header class="pu-cabecalho-pagina">
-            <h1>Gerenciar Permissões de Usuários</h1>
-        </header>
-
-        <section class="pu-card" id="gerenciamentoPermissoesCard">
-            <div class="pu-layout-permissoes">
-                
-                <div class="pu-lista-usuarios-wrapper">
-                    <h3>Selecione um Usuário</h3>
-                    <input type="text" id="filtroUsuarioPermissoes" placeholder="Buscar usuário por nome...">
-                    <ul id="listaUsuariosParaPermissao" class="pu-lista-usuarios">
-                        <li class="pu-spinner">Carregando usuários...</li>
-                    </ul>
-                </div>
-
-                <div class="pu-permissoes-detalhe-wrapper">
-                    <h3 id="nomeUsuarioPermissoes">Selecione um usuário para ver/editar permissões</h3>
-                    <div id="permissoesCheckboxesContainer">
-                        <p style="text-align:center; color: var(--pu-cor-cinza-texto-secundario);">
-                            As permissões para o usuário selecionado aparecerão aqui.
-                        </p>
-                    </div>
-                </div>
-
-            </div>
-
-            <div class="pu-acoes-rodape">
-                <button id="salvarPermissoesBtn" class="pu-btn pu-btn-primario" disabled>
-                    <i class="fas fa-save"></i> Salvar Permissões Alteradas
-                </button>
-            </div>
-        </section>
-    </main>
-
-    <script type="module" src="/js/admin-permissoes-usuarios.js"></script>
+    <main id="root" class="gs-card"></main>
     <script src="/js/carregar-menu-lateral.js" type="module"></script>
+    <script type="module" src="/src/main-permissoes.jsx"></script>
 </body>
 </html>

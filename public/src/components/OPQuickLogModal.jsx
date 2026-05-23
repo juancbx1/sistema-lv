@@ -3,6 +3,7 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { mostrarMensagem } from '/js/utils/popups.js';
+import UIBloqueio from './UIBloqueio.jsx';
 import UIFeedbackNotFound from './UIFeedbackNotFound.jsx';
 
 function normalizarTexto(str) {
@@ -376,6 +377,7 @@ export default function OPQuickLogModal({ produtos, usuario, onClose, onSuccess,
                                                                     >{n} pçs</button>
                                                                 ))}
                                                             </div>
+                                                            <UIBloqueio permissao="registrar-corte">
                                                             {modo === 'normal' ? (
                                                                 <button
                                                                     className="op-quicklog-confirmar"
@@ -396,6 +398,7 @@ export default function OPQuickLogModal({ produtos, usuario, onClose, onSuccess,
                                                                     <i className="fas fa-plus"></i> Adicionar à Fila
                                                                 </button>
                                                             )}
+                                                            </UIBloqueio>
                                                         </div>
                                                     </div>
                                                 </React.Fragment>
@@ -431,16 +434,18 @@ export default function OPQuickLogModal({ produtos, usuario, onClose, onSuccess,
                                         </div>
                                     ))}
                                 </div>
-                                <button
-                                    className="op-quicklog-registrar-btn"
-                                    onClick={handleRegistrarExpress}
-                                    disabled={salvando}
-                                >
-                                    {salvando
-                                        ? <><div className="op-spinner-btn"></div> Registrando...</>
-                                        : <>Registrar {fila.length} corte{fila.length > 1 ? 's' : ''} <i className="fas fa-arrow-right"></i></>
-                                    }
-                                </button>
+                                <UIBloqueio permissao="registrar-corte">
+                                    <button
+                                        className="op-quicklog-registrar-btn"
+                                        onClick={handleRegistrarExpress}
+                                        disabled={salvando}
+                                    >
+                                        {salvando
+                                            ? <><div className="op-spinner-btn"></div> Registrando...</>
+                                            : <>Registrar {fila.length} corte{fila.length > 1 ? 's' : ''} <i className="fas fa-arrow-right"></i></>
+                                        }
+                                    </button>
+                                </UIBloqueio>
                             </div>
                         )}
                     </>

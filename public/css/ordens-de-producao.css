@@ -905,6 +905,28 @@ body.autenticado {
     color: #e74c3c;
 }
 
+/* Ícone duplo: lixeira esmaecida + cadeado sobreposto (usuário sem permissão) */
+.op-btn-cancelar-bloqueado {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.op-btn-cancelar-bloqueado .fa-trash-alt {
+    opacity: 0.30;
+}
+.op-btn-cancelar-bloqueado .fa-lock {
+    position: absolute;
+    right: -6px;
+    font-size: 0.58rem;
+    color: #64748b;
+    background: #fff;
+    border-radius: 50%;
+    padding: 1px 2px;
+    line-height: 1;
+    box-shadow: 0 0 0 1px rgba(100, 116, 139, 0.20);
+}
+
 /* Em tablets (touch), o botão fica sempre visível — touch não tem hover */
 @media (hover: none) {
     .op-card-btn-cancelar {
@@ -2113,6 +2135,17 @@ body.autenticado {
     cursor: not-allowed;
     transform: none;
     box-shadow: none;
+}
+/* FAB em estado bloqueado (sem permissão) */
+.op-selecao-fab--bloqueado {
+    background: linear-gradient(135deg, #94a3b8, #64748b) !important;
+    box-shadow: 0 4px 14px rgba(100, 116, 139, 0.3) !important;
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+.op-selecao-fab--bloqueado:hover {
+    transform: none !important;
+    box-shadow: 0 4px 14px rgba(100, 116, 139, 0.3) !important;
 }
 /* Bolinha de contagem dentro do FAB */
 .op-selecao-fab-badge {
@@ -4987,6 +5020,7 @@ body.autenticado {
     cursor: pointer;
     transition: all 0.15s;
     min-height: 30px;
+    width: 100%;
 }
 .oa-inativo-btn-hora-extra:hover {
     background: #eef2ff;
@@ -8521,6 +8555,8 @@ body.autenticado {
     gap: 7px;
     margin: 0 10px 10px;
     padding: 8px;
+    width: 50%;
+    align-self: center;
     background: linear-gradient(90deg, #e0f2fe, #bae6fd);
     border: 1px solid #7dd3fc;
     border-radius: 8px;
@@ -8537,6 +8573,14 @@ body.autenticado {
 }
 .op-corte-item-acao:active:not(:disabled) { transform: scale(0.98); }
 .op-corte-item-acao:disabled { opacity: 0.5; cursor: not-allowed; }
+.op-corte-item-acao--bloqueado {
+    background: linear-gradient(90deg, #f1f5f9, #e2e8f0) !important;
+    border-color: #cbd5e1 !important;
+    color: #94a3b8 !important;
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+.op-corte-item-acao--bloqueado:hover { background: linear-gradient(90deg, #f1f5f9, #e2e8f0) !important; }
 
 /* Variante com demanda vinculada */
 .op-corte-item-acao.tem-demanda {

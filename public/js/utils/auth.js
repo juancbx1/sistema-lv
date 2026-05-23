@@ -1,8 +1,6 @@
 // public/js/utils/auth.js
 
-import { permissoesDisponiveis, permissoesPorTipo } from '/js/utils/permissoes.js';
-
-export const permissoesValidas = new Set(permissoesDisponiveis.map(p => p.id));
+import { permissoesDisponiveis, permissoesPorTipo, permissoesValidas } from '/js/utils/permissoes.js';
 
 export async function sincronizarPermissoesUsuario(usuario) {
   if (!usuario) return null;

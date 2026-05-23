@@ -4,6 +4,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { obterProdutos as obterProdutosDoStorage } from '/js/utils/storage.js';
 import { mostrarMensagem, mostrarConfirmacao } from '/js/utils/popups.js';
+import UIBloqueio from './UIBloqueio.jsx';
 
 async function fetchAPI(url, options = {}) {
     const token = localStorage.getItem('token');
@@ -287,18 +288,20 @@ export default function OPEtapasModal({ op, isOpen, onClose, onUpdateOP, onUpdat
                                 <i className="fas fa-check-double"></i> OP Encerrada
                             </button>
                         ) : podeAtuar ? (
-                            <button
-                                className={`op-modal-v2-btn ${isParcial ? 'parcial' : 'confirmar'}`}
-                                onClick={handleFinalizar}
-                                disabled={finalizando}
-                            >
-                                {finalizando
-                                    ? <><div className="op-spinner-btn"></div> Finalizando...</>
-                                    : isParcial
-                                        ? <><i className="fas fa-exclamation-circle"></i> Encerrar (Parcial)</>
-                                        : <><i className="fas fa-check-double"></i> Finalizar OP</>
-                                }
-                            </button>
+                            <UIBloqueio permissao="finalizar-op">
+                                <button
+                                    className={`op-modal-v2-btn ${isParcial ? 'parcial' : 'confirmar'}`}
+                                    onClick={handleFinalizar}
+                                    disabled={finalizando}
+                                >
+                                    {finalizando
+                                        ? <><div className="op-spinner-btn"></div> Finalizando...</>
+                                        : isParcial
+                                            ? <><i className="fas fa-exclamation-circle"></i> Encerrar (Parcial)</>
+                                            : <><i className="fas fa-check-double"></i> Finalizar OP</>
+                                    }
+                                </button>
+                            </UIBloqueio>
                         ) : (
                             <button className="op-modal-v2-btn aguardando-btn" disabled>
                                 <i className="fas fa-hourglass-half"></i> Aguardando Produção Final

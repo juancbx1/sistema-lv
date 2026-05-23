@@ -6,6 +6,7 @@ import OPStatusCard from './OPStatusCard.jsx';
 import UICarregando from './UICarregando.jsx';
 import { mostrarMensagem, mostrarConfirmacao, mostrarPromptNumerico, mostrarPromptTexto, mostrarPromptHorario } from '/js/utils/popups.js';
 import OPAtribuicaoModal from './OPAtribuicaoModal.jsx';
+import UIBloqueio from './UIBloqueio.jsx';
 
 export default function OPPainelAtividades() {
     const [funcionarios, setFuncionarios] = useState([]);
@@ -725,13 +726,15 @@ export default function OPPainelAtividades() {
                                                     <i className="fas fa-undo"></i> Desfazer Saída
                                                 </button>
                                             ) : func.status_atual === 'FORA_DO_HORARIO' ? (
-                                                <button
-                                                    className="oa-inativo-btn-hora-extra"
-                                                    onClick={() => handleSolicitarHoraExtra(func)}
-                                                    title="Atribuir tarefa em hora extra"
-                                                >
-                                                    <i className="fas fa-clock"></i> Hora Extra
-                                                </button>
+                                                <UIBloqueio permissao="permite-estender-horario">
+                                                    <button
+                                                        className="oa-inativo-btn-hora-extra"
+                                                        onClick={() => handleSolicitarHoraExtra(func)}
+                                                        title="Atribuir tarefa em hora extra"
+                                                    >
+                                                        <i className="fas fa-clock"></i> Hora Extra
+                                                    </button>
+                                                </UIBloqueio>
                                             ) : (
                                                 <button
                                                     className="oa-inativo-btn-liberar"

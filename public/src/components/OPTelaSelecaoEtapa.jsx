@@ -6,6 +6,7 @@ import UIFeedbackNotFound from './UIFeedbackNotFound.jsx';
 import UICarregando from './UICarregando.jsx';
 import OPPaginacaoWrapper from './OPPaginacaoWrapper.jsx';
 import UIBuscaInteligente, { filtrarListaInteligente } from './UIBuscaInteligente.jsx';
+import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio.js';
 
 function OPEtapaCard({ etapa, onToggle, stepLabel, isFinal, imagemUrl, selecionado, grupoInfo, unificacaoAtiva, onToggleUnificacao }) {
     const bordaClasse = etapa.processo.toLowerCase() === 'corte'
@@ -325,6 +326,7 @@ export default function OPTelaSelecaoEtapa({ onEtapaSelect, funcionario }) {
 
     const qtdSelecionados = selecionados.length;
     const textoBotao = qtdSelecionados === 1 ? 'Atribuir 1 Tarefa' : `Atribuir ${qtdSelecionados} Tarefas`;
+    const podeAtribuir = temPermissao('atribuir-tarefa');
 
     return (
         <div className="coluna-lista-produtos">
@@ -416,10 +418,21 @@ export default function OPTelaSelecaoEtapa({ onEtapaSelect, funcionario }) {
             )}
 
             {qtdSelecionados > 0 && (
-                <button className="op-selecao-fab" onClick={handleAvancarLote}>
-                    <span className="op-selecao-fab-badge">{qtdSelecionados}</span>
+                <button
+                    className={`op-selecao-fab${!podeAtribuir ? ' op-selecao-fab--bloqueado' : ''}`}
+                    onClick={() => {
+                        if (!podeAtribuir) {
+                            mostrarPopupSemPermissao('Você não tem permissão para atribuir tarefas de produção.');
+                            return;
+                        }
+                        handleAvancarLote();
+                    }}
+                >
+                    <span className="op-selecao-fab-badge">
+                        {podeAtribuir ? qtdSelecionados : <i className="fas fa-lock" style={{ fontSize: '0.7rem' }}></i>}
+                    </span>
                     {textoBotao}
-                    <i className="fas fa-arrow-right"></i>
+                    <i className={`fas ${podeAtribuir ? 'fa-arrow-right' : 'fa-lock'}`}></i>
                 </button>
             )}
         </div>

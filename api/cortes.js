@@ -6,7 +6,8 @@ import jwt from 'jsonwebtoken';
 import express from 'express';
 
 // Importar a função de buscar permissões completas
-import { getPermissoesCompletasUsuarioDB } from './usuarios.js'; // Verifique o caminho
+import { getPermissoesCompletasUsuarioDB } from './usuarios.js';
+import { registrarAuditoria } from './audit.js';
 
 const router = express.Router();
 const pool = new Pool({
@@ -296,7 +297,15 @@ router.post('/', async (req, res) => {
         ];
 
         const result = await dbClient.query(queryText, values);
-        res.status(201).json(result.rows[0]);
+        const corteRegistrado = result.rows[0];
+        await registrarAuditoria(dbClient, req.usuarioLogado, 'corte.registrado', 'corte', corteRegistrado.pn, {
+            pn: corteRegistrado.pn,
+            produto_id: corteRegistrado.produto_id,
+            variante: corteRegistrado.variante,
+            quantidade: corteRegistrado.quantidade,
+            origem: pn ? 'wizard' : 'quick_log',
+        });
+        res.status(201).json(corteRegistrado);
 
     } catch (error) {
         console.error('[router/cortes POST] Erro:', error);

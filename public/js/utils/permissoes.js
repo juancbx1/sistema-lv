@@ -7,6 +7,31 @@
 // ==========================================================================
 
 export const permissoesDisponiveis = [
+
+    // --- ACESSO GERAL ---
+    { id: 'acesso-admin-geral', label: 'Acesso Geral à Área Administrativa', categoria: 'Acesso Geral' },
+    { id: 'acesso-home', label: 'Acesso à Home Administrativa', categoria: 'Acesso Geral' },
+
+    // --- PRODUÇÃO (OPs E CORTES) ---
+    { id: 'acesso-ordens-de-producao', label: 'Ver Tela de Ordens de Produção', categoria: 'Produção e Cortes' },
+    { id: 'gerar-op', label: 'Ação: Gerar OP a partir de um corte (aba Cortes)', categoria: 'Produção e Cortes' },
+    { id: 'finalizar-op', label: 'Ação: Finalizar uma OP', categoria: 'Produção e Cortes' },
+    { id: 'cancelar-op', label: 'Ação: Cancelar uma OP', categoria: 'Produção e Cortes' },
+    { id: 'registrar-corte', label: 'Ação: Registrar novo Corte (aba Cortes)', categoria: 'Produção e Cortes' },
+    { id: 'excluir-estoque-corte', label: 'Ação: Excluir corte do estoque (aba Cortes)', categoria: 'Produção e Cortes' },
+    { id: 'atribuir-tarefa', label: 'Ação: Atribuir tarefa de produção (Painel e P. Externo)', categoria: 'Produção e Cortes' },
+    { id: 'confirmar-lancamento', label: 'Ação: Confirmar lançamento de produção (Painel e P. Externo)', categoria: 'Produção e Cortes' },
+    { id: 'usar-agente-encerrador', label: 'Ação: Usar o Agente Encerrador de OPs (FAB)', categoria: 'Produção e Cortes' },
+    { id: 'usar-agente-central-ops', label: 'Ação: Usar o Agente de Encerramento Central (aba OPs)', categoria: 'Produção e Cortes' },
+    { id: 'usar-agente-cortes', label: 'Ação: Usar o Agente de Planejamento de Cortes (aba Cortes)', categoria: 'Produção e Cortes' },
+    { id: 'configurar-tempos-padrao', label: 'Ação: Configurar Tempos Padrão de Produção', categoria: 'Produção e Cortes' },
+    { id: 'permite-estender-horario', label: 'Ação: Autorizar Hora Extra (estender horário do funcionário)', categoria: 'Produção e Cortes' },
+    { id: 'desfazer-lancamento-p-externo', label: 'Ação: Desfazer lançamento de P. Externo (freelance)', categoria: 'Produção e Cortes' },
+
+      // --- PAINEL DE DEMANDAS ---
+    { id: 'deletar-demanda', label: 'Ação: Deletar Demanda', categoria: 'Painel de Demandas' },
+
+
     // --- DASHBOARD COSTUREIRAS/TIKTIK ---
     { id: 'acesso-dashboard', label: 'Acesso ao Dashboard de Produção', categoria: 'Dashboard Costureira e Tiktik' },
     { id: 'acesso-desempenho', label: 'Acesso ao Meu Desempenho', categoria: 'Dashboard Costureira e Tiktik' },
@@ -15,11 +40,8 @@ export const permissoesDisponiveis = [
     { id: 'assinar-arremate-tiktik', label: 'Ação: TikTik assina seus arremates', categoria: 'Dashboard Costureira e Tiktik' },
     { id: 'ver-proprias-producoes', label: 'Permite ver as próprias produções', categoria: 'Dashboard Costureira e Tiktik' },
     { id: 'ver-proprios-arremates', label: 'Permite ver os próprios arremates', categoria: 'Dashboard Costureira e Tiktik' },
-    { id: 'ver-lista-produtos', label: 'Ação: Permite ver a Lista de produtos (VIA API)', categoria: 'Dashboard Costureira e Tiktik' },
 
-    // --- ACESSO GERAL ---
-    { id: 'acesso-admin-geral', label: 'Acesso Geral à Área Administrativa', categoria: 'Acesso Geral' },
-    { id: 'acesso-home', label: 'Acesso à Home Administrativa', categoria: 'Acesso Geral' },
+
     
     // --- USUÁRIOS E PERMISSÕES ---
     { id: 'acesso-usuarios-cadastrados', label: 'Ver Tela de Usuários Cadastrados', categoria: 'Usuários e Permissões' },
@@ -37,19 +59,7 @@ export const permissoesDisponiveis = [
     { id: 'gerenciar-produtos', label: 'Ação: Criar e editar produtos/kits', categoria: 'Produtos e Kits' },
     { id: 'cadastrar-produto', label: 'Ação: Cadastrar Produto (específico)', categoria: 'Produtos e Kits' },
 
-    // --- PRODUÇÃO (OPs E CORTES) ---
-    { id: 'acesso-ordens-de-producao', label: 'Ver Tela de Ordens de Produção', categoria: 'Produção e Cortes' },
-    { id: 'criar-op', label: 'Ação: Criar Ordens de Produção', categoria: 'Produção e Cortes' },
-    { id: 'editar-op', label: 'Ação: Editar Ordens de Produção', categoria: 'Produção e Cortes' },
-    { id: 'finalizar-op', label: 'Ação: Finalizar uma OP', categoria: 'Produção e Cortes' },
-    { id: 'cancelar-op', label: 'Ação: Cancelar uma OP', categoria: 'Produção e Cortes' },
-    { id: 'lancar-producao', label: 'Ação: Lançar etapas de produção em uma OP', categoria: 'Produção e Cortes' },
-    { id: 'registrar-corte', label: 'Ação: Registrar novo corte de tecido', categoria: 'Produção e Cortes' },
-    { id: 'marcar-como-cortado', label: 'Ação: Mover corte para "cortado"', categoria: 'Produção e Cortes' },
-    { id: 'excluir-corte-pendente', label: 'Ação: Excluir pedido de corte pendente', categoria: 'Produção e Cortes' },
-    { id: 'excluir-estoque-corte', label: 'Ação: Excluir corte do estoque', categoria: 'Produção e Cortes' },
-    { id: 'deletar-demanda', label: 'Ação: Deletar Demanda', categoria: 'Produção e Cortes' },
-    { id: 'concluir-demanda-manual', label: 'Ação: Concluir Demanda Manualmente', categoria: 'Produção e Cortes' },
+    
 
     // --- GERENCIAR PRODUÇÃO ---
     { id: 'acesso-gerenciar-producao', label: 'Ver Tela de Gerenciar Produção', categoria: 'Gerenciar Produção' },
@@ -83,29 +93,29 @@ export const permissoesDisponiveis = [
     { id: 'registrar-devolucao', label: 'Ação: Permite Realizar Devolução', categoria: 'Estoque' },
 
     // --- FINANCEIRO (CONTROLE DE CAIXA) ---
-    { id: 'acesso-financeiro', label: 'Acesso ao Módulo Financeiro (Caixa)', categoria: 'Financeiro (Controle de Caixa)' },
-    { id: 'visualizar-financeiro', label: 'Visualizar dashboard e extratos', categoria: 'Financeiro (Controle de Caixa)' },
-    { id: 'lancar-transacao', label: 'Ação: Lançar novas receitas e despesas', categoria: 'Financeiro (Controle de Caixa)' },
-    { id: 'editar-transacao', label: 'Ação: Editar lançamentos financeiros', categoria: 'Financeiro (Controle de Caixa)' },
-    { id: 'estornar-transacao', label: 'Ação: Estornar lançamentos financeiros', categoria: 'Financeiro (Controle de Caixa)' },
-    { id: 'aprovar-pagamento', label: 'Ação: Dar baixa em contas a pagar/receber', categoria: 'Financeiro (Controle de Caixa)' },
-    { id: 'gerenciar-contas', label: 'Ação: Criar e editar contas bancárias', categoria: 'Financeiro (Controle de Caixa)' },
-    { id: 'gerenciar-categorias', label: 'Ação: Criar e editar categorias financeiras', categoria: 'Financeiro (Controle de Caixa)' },
-    { id: 'criar-favorecido', label: 'Ação: Criar novos favorecidos (clientes/fornecedores)', categoria: 'Financeiro (Controle de Caixa)' },
-    { id: 'visualizar-relatorios', label: 'Ação: Gerar relatórios financeiros', categoria: 'Financeiro (Controle de Caixa)' },
-    { id: 'aprovar-alteracao-financeira', label: 'Ação: Aprovar/Rejeitar edições e exclusões', categoria: 'Financeiro (Controle de Caixa)' },
-    { id: 'permite-excluir-agendamentos', label: 'Ação: Pode excluir agendamentos (pelo ID)', categoria: 'Financeiro (Controle de Caixa)' },
-    { id: 'acesso-relatorios-financeiros', label: 'Ação: Pode ver relatórios financeiros', categoria: 'Financeiro (Controle de Caixa)' },
+    { id: 'acesso-financeiro', label: 'Acesso ao Módulo Financeiro (Caixa)', categoria: 'Financeiro — Caixa e Lançamentos' },
+    { id: 'visualizar-financeiro', label: 'Visualizar dashboard e extratos', categoria: 'Financeiro — Caixa e Lançamentos' },
+    { id: 'lancar-transacao', label: 'Ação: Lançar novas receitas e despesas', categoria: 'Financeiro — Caixa e Lançamentos' },
+    { id: 'editar-transacao', label: 'Ação: Editar lançamentos financeiros', categoria: 'Financeiro — Caixa e Lançamentos' },
+    { id: 'estornar-transacao', label: 'Ação: Estornar lançamentos financeiros', categoria: 'Financeiro — Caixa e Lançamentos' },
+    { id: 'aprovar-pagamento', label: 'Ação: Dar baixa em contas a pagar/receber', categoria: 'Financeiro — Caixa e Lançamentos' },
+    { id: 'gerenciar-contas', label: 'Ação: Criar e editar contas bancárias', categoria: 'Financeiro — Caixa e Lançamentos' },
+    { id: 'gerenciar-categorias', label: 'Ação: Criar e editar categorias financeiras', categoria: 'Financeiro — Caixa e Lançamentos' },
+    { id: 'criar-favorecido', label: 'Ação: Criar novos favorecidos (clientes/fornecedores)', categoria: 'Financeiro — Caixa e Lançamentos' },
+    { id: 'visualizar-relatorios', label: 'Ação: Gerar relatórios financeiros', categoria: 'Financeiro — Caixa e Lançamentos' },
+    { id: 'aprovar-alteracao-financeira', label: 'Ação: Aprovar/Rejeitar edições e exclusões', categoria: 'Financeiro — Caixa e Lançamentos' },
+    { id: 'permite-excluir-agendamentos', label: 'Ação: Pode excluir agendamentos (pelo ID)', categoria: 'Financeiro — Caixa e Lançamentos' },
+    { id: 'acesso-relatorios-financeiros', label: 'Ação: Pode ver relatórios financeiros', categoria: 'Financeiro — Caixa e Lançamentos' },
 
 
     // --- FINANCEIRO E RELATÓRIOS ---
-    { id: 'acesso-precificacao', label: 'Ver Tela de Precificação', categoria: 'Financeiro e Relatórios' },
-    { id: 'acesso-relatorio-de-comissao', label: 'Ver Relatório de Comissão', categoria: 'Financeiro e Relatórios' },
-    { id: 'acesso-conferencia-e-auditoria', label: 'Ver Conferencia e Auditoria', categoria: 'Financeiro e Relatórios' },
-    { id: 'acesso-producao-geral-costura', label: 'Ver Produção Geral (Costureiras)', categoria: 'Financeiro e Relatórios' },
-    { id: 'gerenciar-precificacao', label: 'Ação: Editar configurações de precificação', categoria: 'Financeiro e Relatórios' },
-    { id: 'confirmar-pagamento-comissao', label: 'Ação: Marcar comissões como pagas', categoria: 'Financeiro e Relatórios' },
-    { id: 'gerenciar-taxas-vt', label: 'Ação: Gerenciar Concessionárias e Taxas de VT', categoria: 'Financeiro e Relatórios' },
+    { id: 'acesso-precificacao', label: 'Ver Tela de Precificação', categoria: 'Financeiro — Relatórios e Comissões' },
+    { id: 'acesso-relatorio-de-comissao', label: 'Ver Relatório de Comissão', categoria: 'Financeiro — Relatórios e Comissões' },
+    { id: 'acesso-conferencia-e-auditoria', label: 'Ver Conferencia e Auditoria', categoria: 'Financeiro — Relatórios e Comissões' },
+    { id: 'acesso-producao-geral-costura', label: 'Ver Produção Geral (Costureiras)', categoria: 'Financeiro — Relatórios e Comissões' },
+    { id: 'gerenciar-precificacao', label: 'Ação: Editar configurações de precificação', categoria: 'Financeiro — Relatórios e Comissões' },
+    { id: 'confirmar-pagamento-comissao', label: 'Ação: Marcar comissões como pagas', categoria: 'Financeiro — Relatórios e Comissões' },
+    { id: 'gerenciar-taxas-vt', label: 'Ação: Gerenciar Concessionárias e Taxas de VT', categoria: 'Financeiro — Relatórios e Comissões' },
 
      // --- PAGAMENTOS A FUNCIONARIOS ---
     { id: 'acessar-central-pagamentos', label: 'Acessar Central de Pagamentos à Empregados', categoria: 'Pagamentos à Empregados' },
@@ -145,10 +155,17 @@ export const permissoesDisponiveis = [
 export const permissoesPorTipo = {
     // Perfis de produção (acesso focado)
     costureira: [
-        
+        'ver-lista-produtos',
+        'acesso-dashboard',
+        'ver-proprias-producoes',
     ],
     tiktik: [
-        
+        'ver-lista-produtos',
+        'acesso-dashboard',
+        'ver-proprias-producoes',
+        'assinar-producao-tiktik',
+        'assinar-arremate-tiktik',
+        'ver-proprios-arremates',
     ],
     cortador: [],
 

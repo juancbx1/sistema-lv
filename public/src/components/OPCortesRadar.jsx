@@ -2,6 +2,7 @@
 // Pulso do Setor de Cortes — métricas em tempo real
 
 import React, { useState, useEffect, useCallback } from 'react';
+import UIBloqueio from './UIBloqueio.jsx';
 
 function calcTempoDesde(data) {
     if (!data) return null;
@@ -86,13 +87,15 @@ export default function OPCortesRadar({ refreshKey, onRegistrarCorte }) {
 
                 {/* Botão de ação principal */}
                 {onRegistrarCorte && (
-                    <button
-                        className="op-cortes-btn-quicklog"
-                        onClick={onRegistrarCorte}
-                    >
-                        <i className="fas fa-bolt"></i>
-                        Registrar Corte
-                    </button>
+                    <UIBloqueio permissao="registrar-corte">
+                        <button
+                            className="op-cortes-btn-quicklog"
+                            onClick={onRegistrarCorte}
+                        >
+                            <i className="fas fa-bolt"></i>
+                            Registrar Corte
+                        </button>
+                    </UIBloqueio>
                 )}
             </div>
 

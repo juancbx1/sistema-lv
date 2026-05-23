@@ -266,7 +266,7 @@ export default function OPGerenciamentoTela({ opsPendentesGlobal, onRefreshConta
                                     key={op.edit_id || op.id}
                                     op={op}
                                     onClick={handleAbrirModal}
-                                    onCancelar={permissoes.includes('cancelar-op') ? handleCancelarOP : null}
+                                    onCancelar={handleCancelarOP}
                                 />
                             ))
                         ) : (

@@ -1,6 +1,8 @@
 // public/src/components/OPCorteEstoqueCard.jsx
 
 import React from 'react';
+import UIBloqueio from './UIBloqueio.jsx';
+import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio.js';
 
 function formatarData(dataISO) {
     if (!dataISO) return 'N/A';
@@ -20,6 +22,7 @@ export default function OPCorteEstoqueCard({ corte, produto, onGerarOP, onExclui
 
     const variante = corte.variante && corte.variante !== '-' ? corte.variante : 'Padrão';
     const temDemanda = demandasVinculadas.length > 0;
+    const podeGerarOP = temPermissao('gerar-op');
     const urgente = temDemanda && parseInt(demandasVinculadas[0].prioridade) === 1;
 
     const labelDemanda = demandasVinculadas.length === 1
@@ -76,25 +79,35 @@ export default function OPCorteEstoqueCard({ corte, produto, onGerarOP, onExclui
                         <span className="op-corte-item-qty-valor">{corte.quantidade}</span>
                         <span className="op-corte-item-qty-label">pçs</span>
                     </div>
-                    <button
-                        className="op-corte-item-excluir"
-                        onClick={e => { e.stopPropagation(); onExcluir?.(corte); }}
-                        title="Excluir corte do estoque"
-                        aria-label="Excluir corte"
-                    >
-                        <i className="fas fa-trash-alt"></i>
-                    </button>
+                    <UIBloqueio permissao="excluir-estoque-corte">
+                        <button
+                            className="op-corte-item-excluir"
+                            onClick={e => { e.stopPropagation(); onExcluir?.(corte); }}
+                            title="Excluir corte do estoque"
+                            aria-label="Excluir corte"
+                        >
+                            <i className="fas fa-trash-alt"></i>
+                        </button>
+                    </UIBloqueio>
                 </div>
             </div>
 
             {/* Fundo: botão de ação full-width */}
             <button
-                className={`op-corte-item-acao${temDemanda ? ' tem-demanda' : ''}`}
-                onClick={() => onGerarOP(corte)}
+                className={`op-corte-item-acao${temDemanda ? ' tem-demanda' : ''}${!podeGerarOP ? ' op-corte-item-acao--bloqueado' : ''}`}
+                onClick={() => {
+                    if (!podeGerarOP) {
+                        mostrarPopupSemPermissao('Você não tem permissão para gerar Ordens de Produção.');
+                        return;
+                    }
+                    onGerarOP(corte);
+                }}
                 disabled={isGerando}
             >
                 {isGerando ? (
                     <><div className="op-spinner-btn"></div> Gerando OP...</>
+                ) : !podeGerarOP ? (
+                    <><i className="fas fa-lock"></i> Sem permissão</>
                 ) : temDemanda ? (
                     <><i className="fas fa-link"></i> Gerar OP Vinculada</>
                 ) : (

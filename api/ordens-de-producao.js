@@ -7,6 +7,7 @@ import express from 'express';
 
 // Importar a função de buscar permissões completas
 import { getPermissoesCompletasUsuarioDB } from './usuarios.js';
+import { registrarAuditoria } from './audit.js';
 
 const router = express.Router();
 const pool = new Pool({
@@ -422,7 +423,7 @@ router.post('/', async (req, res) => {
         await dbClient.query('BEGIN');
 
         const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
-        if (!permissoes.includes('criar-op')) {
+        if (!permissoes.includes('gerar-op')) {
             throw new Error('Permissão negada.');
         }
         
@@ -552,6 +553,13 @@ router.post('/', async (req, res) => {
         }
 
         await dbClient.query('COMMIT');
+        await registrarAuditoria(dbClient, usuarioLogado, 'op.gerada_do_estoque', 'op', opCriada.numero, {
+            numero: opCriada.numero,
+            produto_id: opCriada.produto_id,
+            variante: opCriada.variante,
+            quantidade: opCriada.quantidade,
+            corte_pn: corte.pn,
+        });
         res.status(201).json(opCriada);
 
     } catch (error) {
@@ -724,8 +732,25 @@ router.put('/', async (req, res) => {
         }
 
         const opAtualizada = { ...result.rows[0], finalizedChildren: finalizedChildrenNumbers };
-        
+
         await dbClient.query('COMMIT'); // <<< 2. CONFIRMA TUDO NO FINAL
+
+        if (status === 'finalizado') {
+            await registrarAuditoria(dbClient, usuarioLogado, 'op.encerrada', 'op', opAtualizada.numero, {
+                numero: opAtualizada.numero,
+                produto_id: opAtualizada.produto_id,
+                variante: opAtualizada.variante,
+                quantidade: opAtualizada.quantidade,
+            });
+        } else if (status === 'cancelada') {
+            await registrarAuditoria(dbClient, usuarioLogado, 'op.cancelada', 'op', opAtualizada.numero, {
+                numero: opAtualizada.numero,
+                produto_id: opAtualizada.produto_id,
+                variante: opAtualizada.variante,
+                motivo: opAtualizada.observacoes || '',
+            });
+        }
+
         res.status(200).json(opAtualizada);
 
     } catch (error) {

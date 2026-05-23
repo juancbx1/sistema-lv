@@ -12,6 +12,7 @@ import OPCriarModal from './components/OPCriarModal.jsx';
 import OPExternoTela from './components/OPExternoTela.jsx';
 import BotaoBuscaFunil from './components/BotaoBuscaFunil.jsx';
 import AlertasFAB from './components/AlertasFAB.jsx';
+import UIBloqueio from './components/UIBloqueio.jsx';
 
 import { verificarAutenticacao } from '/js/utils/auth.js';
 
@@ -154,13 +155,15 @@ function App() {
    return (
     <ErrorBoundary>
       <UIHeaderPagina titulo="Ordens de Produção">
-        <button
-          className="gs-btn gs-btn-secundario"
-          title="Configurações da página"
-          onClick={() => setModalTppAberto(true)}
-        >
-            <i className="fas fa-cog"></i>
-        </button>
+        <UIBloqueio permissao="configurar-tempos-padrao">
+          <button
+            className="gs-btn gs-btn-secundario"
+            title="Configurar Tempos Padrão de Produção"
+            onClick={() => setModalTppAberto(true)}
+          >
+              <i className="fas fa-cog"></i>
+          </button>
+        </UIBloqueio>
       </UIHeaderPagina>
 
       <nav className="gs-tab-nav">

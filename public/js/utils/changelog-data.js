@@ -20,6 +20,31 @@
 
 export const changelog = [
     {
+        versao: '1.32.0',
+        versao_dashboard: '1.23.0',
+        data: '20/05/2026',
+        admin: [
+            'Redesign dos cards de gincana, redesign completo do wizard de criacao de gincanas',
+            'Implementado novo padrao de permissoes do sistema, comecando pela pagina de OPS',
+            
+        ],
+        dashboard: [
+            'Redesign do modal de gincanas com destaque no valor do premio',
+            'Correcao de bugs menores'
+        ],
+    },
+
+    {
+        versao: '1.31.1',
+        data: '21/05/2026',
+        admin: [
+            'O agente de Encerramento de OPs agora busca ops com mais de 3h aguardando encerramento e nao a todo momento, assim que a OP fica disponivel para ser encerrada'
+        ],
+        dashboard: [
+            // Vazio — esta atualização não afeta as funcionárias
+        ],
+    },
+    {
         versao: '1.31.1',
         data: '21/05/2026',
         admin: [

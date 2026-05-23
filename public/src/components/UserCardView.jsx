@@ -1,5 +1,6 @@
 import React from 'react';
 import { formatarDataDisplay, formatarHora, formatarMoeda } from '/js/utils/formataDtHr.js';
+import UIBloqueio from './UIBloqueio.jsx';
 
 // Mapeamento para exibir os nomes bonitinhos
 const LABELS_TIPOS = {
@@ -142,40 +143,44 @@ export default function UserCardView({ usuario, permissoesLogado, onEditar, onEx
 
             {/* BOTÕES */}
             <div className="uc-card-botoes-container">
-                {permissoesLogado.includes('gerenciar-permissoes') && ehEmpregadoProdutivo && !usuario.data_demissao && (
-                    <button
-                        className="gs-btn gs-btn-aviso"
-                        onClick={onImpersonar}
-                        title="Acessar a dashboard como este funcionário (modo admin)"
-                    >
-                        <i className="fas fa-eye"></i>
-                    </button>
+                {ehEmpregadoProdutivo && !usuario.data_demissao && (
+                    <UIBloqueio permissao="gerenciar-permissoes">
+                        <button
+                            className="gs-btn gs-btn-aviso"
+                            onClick={onImpersonar}
+                            title="Acessar a dashboard como este funcionário (modo admin)"
+                        >
+                            <i className="fas fa-eye"></i>
+                        </button>
+                    </UIBloqueio>
                 )}
 
-                {permissoesLogado.includes('editar-usuarios') && (
-                     <button className="gs-btn gs-btn-secundario" onClick={onVinculo} title="Vincular Contato Financeiro">
+                <UIBloqueio permissao="editar-usuarios">
+                    <button className="gs-btn gs-btn-secundario" onClick={onVinculo} title="Vincular Contato Financeiro">
                         <i className="fas fa-link"></i>
                     </button>
-                )}
+                </UIBloqueio>
 
                 {/* Sócios e Empregados podem ter férias */}
-                {(ehEmpregadoProdutivo || ehSocio) && permissoesLogado.includes('adicionar-ferias') && (
-                    <button className="gs-btn gs-btn-secundario" onClick={onFerias}>
-                        <i className="fas fa-plane-departure"></i> Férias
-                    </button>
+                {(ehEmpregadoProdutivo || ehSocio) && (
+                    <UIBloqueio permissao="adicionar-ferias">
+                        <button className="gs-btn gs-btn-secundario" onClick={onFerias}>
+                            <i className="fas fa-plane-departure"></i> Férias
+                        </button>
+                    </UIBloqueio>
                 )}
 
-                {permissoesLogado.includes('editar-usuarios') && (
+                <UIBloqueio permissao="editar-usuarios">
                     <button className="gs-btn gs-btn-primario" onClick={onEditar}>
                         <i className="fas fa-edit"></i> Editar
                     </button>
-                )}
+                </UIBloqueio>
 
-                {permissoesLogado.includes('excluir-usuarios') && (
+                <UIBloqueio permissao="excluir-usuarios">
                     <button className="gs-btn gs-btn-perigo" onClick={onExcluir}>
                         <i className="fas fa-trash"></i>
                     </button>
-                )}
+                </UIBloqueio>
             </div>
         </div>
     );

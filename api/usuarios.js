@@ -8,6 +8,7 @@ import express from 'express';
 import multer from 'multer';
 import { put } from '@vercel/blob';
 import { permissoesDisponiveis as frontendPermissoesDisponiveis, permissoesPorTipo as frontendPermissoesPorTipo } from '../public/js/utils/permissoes.js';
+import { registrarAuditoria } from './audit.js';
 
 types.setTypeParser(1114, str => str);
 // --- FIM DA CORREÇÃO ---
@@ -485,6 +486,13 @@ router.put('/', async (req, res) => {
             return res.status(400).json({ error: "O ID do usuário é obrigatório para atualização." });
         }
 
+        // Captura permissões anteriores para o diff de auditoria (antes do BEGIN)
+        let oldPermissoesIndividuais = [];
+        if (permissoesIndividuais !== undefined) {
+            const oldInfoRes = await dbCliente.query('SELECT permissoes FROM usuarios WHERE id = $1', [id]);
+            oldPermissoesIndividuais = oldInfoRes.rows[0]?.permissoes || [];
+        }
+
         await dbCliente.query('BEGIN'); // Inicia a transação
 
         // --- 1. Lógica para atualizar a tabela 'usuarios' ---
@@ -552,6 +560,17 @@ router.put('/', async (req, res) => {
         const finalUserRes = await dbCliente.query('SELECT * FROM usuarios WHERE id = $1', [id]);
         let usuarioAtualizado = finalUserRes.rows[0];
         usuarioAtualizado.permissoes_totais = await getPermissoesCompletasUsuarioDB(dbCliente, usuarioAtualizado.id);
+
+        if (permissoesIndividuais !== undefined) {
+            const permissoesValidasParaSalvar = permissoesIndividuais.filter(p => backendPermissoesValidas.has(p));
+            await registrarAuditoria(null, usuarioLogado, 'permissoes.alteradas', 'usuario', id, {
+                usuario_alvo_id: id,
+                usuario_alvo_nome: usuarioAtualizado?.nome || String(id),
+                permissoes_adicionadas: permissoesValidasParaSalvar.filter(p => !oldPermissoesIndividuais.includes(p)),
+                permissoes_removidas: oldPermissoesIndividuais.filter(p => !permissoesValidasParaSalvar.includes(p)),
+            });
+        }
+
         res.status(200).json(usuarioAtualizado);
 
     } catch (error) {
@@ -583,6 +602,7 @@ router.put('/batch', async (req, res) => {
 
         await dbCliente.query('BEGIN');
         try {
+            const auditDiffs = [];
             for (const usuario of usuariosParaAtualizar) {
                 const { id, permissoes: permissoesIndividuaisNovas } = usuario;
                 if (id === undefined || !Array.isArray(permissoesIndividuaisNovas)) {
@@ -590,13 +610,32 @@ router.put('/batch', async (req, res) => {
                 }
                 // Filtra para garantir que apenas permissões válidas sejam salvas
                 const permissoesValidasParaSalvar = permissoesIndividuaisNovas.filter(p => backendPermissoesValidas.has(p));
-                
+
+                // Busca nome e permissões anteriores para o diff de auditoria
+                const infoResult = await dbCliente.query('SELECT nome, permissoes FROM usuarios WHERE id = $1', [id]);
+                const infoUsuario = infoResult.rows[0];
+                const oldPermissoes = infoUsuario?.permissoes || [];
+                auditDiffs.push({
+                    id,
+                    nome: infoUsuario?.nome || String(id),
+                    permissoes_adicionadas: permissoesValidasParaSalvar.filter(p => !oldPermissoes.includes(p)),
+                    permissoes_removidas: oldPermissoes.filter(p => !permissoesValidasParaSalvar.includes(p)),
+                });
+
                 await dbCliente.query(
-                    'UPDATE usuarios SET permissoes = $1 WHERE id = $2', // Atualiza a coluna 'permissoes'
+                    'UPDATE usuarios SET permissoes = $1 WHERE id = $2',
                     [permissoesValidasParaSalvar, id]
                 );
             }
             await dbCliente.query('COMMIT');
+            for (const diff of auditDiffs) {
+                await registrarAuditoria(null, usuarioLogado, 'permissoes.alteradas', 'usuario', diff.id, {
+                    usuario_alvo_id: diff.id,
+                    usuario_alvo_nome: diff.nome,
+                    permissoes_adicionadas: diff.permissoes_adicionadas,
+                    permissoes_removidas: diff.permissoes_removidas,
+                });
+            }
             res.status(200).json({ message: 'Permissões individuais dos usuários atualizadas com sucesso' });
         } catch (transactionError) {
             await dbCliente.query('ROLLBACK');

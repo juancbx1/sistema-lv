@@ -3,6 +3,7 @@
 import React from 'react';
 import { mostrarConfirmacao } from '/js/utils/popups.js';
 import { calcularStatusDemanda, STATUS_META } from '/src/utils/demandaStatus.js';
+import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio.js';
 
 export default function PainelDemandaCard({ item, onDelete, permissoes, onRefresh, onIniciarProducao }) {
     const totalPedido  = item.demanda_total              || 0;
@@ -59,8 +60,14 @@ export default function PainelDemandaCard({ item, onDelete, permissoes, onRefres
         ? new Date(item.data_solicitacao).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
         : null;
 
+    const podeDeletar = temPermissao('deletar-demanda');
+
     const handleDeleteClick = async (e) => {
         e.stopPropagation();
+        if (!podeDeletar) {
+            mostrarPopupSemPermissao('Você não tem permissão para deletar demandas.');
+            return;
+        }
         const ok = await mostrarConfirmacao(
             `Apagar demanda de "${tituloLimpo}"?`,
             { tipo: 'perigo', textoConfirmar: 'Apagar', textoCancelar: 'Cancelar' }
@@ -146,11 +153,20 @@ export default function PainelDemandaCard({ item, onDelete, permissoes, onRefres
                 style={!eUrgente ? { backgroundColor: meta.cor } : {}}
             />
 
-            {permissoes.includes('deletar-demanda') && (
-                <button className="pd-card-del" onClick={handleDeleteClick}>
+            <button
+                className="pd-card-del"
+                onClick={handleDeleteClick}
+                title={podeDeletar ? 'Apagar demanda' : 'Sem permissão para apagar demanda'}
+            >
+                {podeDeletar ? (
                     <i className="fas fa-trash"></i>
-                </button>
-            )}
+                ) : (
+                    <span className="gs-bloqueio-icone-duplo">
+                        <i className="fas fa-trash"></i>
+                        <i className="fas fa-lock"></i>
+                    </span>
+                )}
+            </button>
 
             <div className="pd-card-topo">
                 <img

@@ -526,6 +526,13 @@
     align-items: center;
 }
 
+.incen-premiacao-linha-2 {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    margin-top: 8px;
+}
+
 .incen-emoji-input {
     width: 44px;
     padding: 8px 4px;
@@ -2387,3 +2394,299 @@
 }
 
 .ds-gincana-premio-pendente i { color: #f59e0b; }
+
+/* ============================================================
+   v5.0 — IncenGincanaCard novo layout
+   ============================================================ */
+
+/* Encerradas/canceladas ficam esmaecidas */
+.incen-gincana-card.fase-encerrada,
+.incen-gincana-card.fase-cancelada {
+    opacity: 0.55;
+    transition: opacity 0.2s;
+}
+.incen-gincana-card.fase-encerrada:hover,
+.incen-gincana-card.fase-cancelada:hover {
+    opacity: 0.8;
+}
+
+/* Bloco 2 — Tipo e mecânica */
+.incen-gincana-tipo-bloco {
+    padding: 10px 20px 10px 26px;
+    background: #f8fafc;
+    border-top: 1px solid var(--gs-borda);
+}
+
+.incen-gincana-tipo-topo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.incen-gincana-tipo-icone {
+    font-size: 24px;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.incen-gincana-tipo-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+}
+
+.incen-gincana-tipo-titulo {
+    font-size: 0.83rem;
+    font-weight: 500;
+    color: var(--gs-texto-primario);
+    line-height: 1.3;
+}
+
+.incen-gincana-tipo-desc {
+    font-size: 0.75rem;
+    color: var(--gs-texto-secundario);
+}
+
+.incen-gincana-tipo-tempo {
+    font-size: 12px;
+    color: var(--gs-primaria, #3b82f6);
+    font-weight: 500;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* Bloco 3 — Objetivo + Prêmio */
+.incen-gincana-criterios {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 10px 20px 10px 26px;
+    border-top: 1px solid var(--gs-borda);
+}
+
+/* Para chips multi-nível ocupa a linha toda */
+.incen-gincana-chips {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.incen-chip-nivel {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 20px;
+    padding: 2px 10px;
+    font-size: 11px;
+    color: #1e40af;
+    font-weight: 500;
+}
+
+.incen-gincana-criterio-bloco {
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.incen-gincana-criterio-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--gs-texto-secundario);
+}
+
+.incen-gincana-criterio-valor--pontos {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--gs-primaria, #3b82f6);
+    line-height: 1.3;
+}
+
+.incen-gincana-criterio-valor--premio {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: #16a34a;
+    line-height: 1.3;
+}
+
+/* ============================================================
+   v5.2 — Prévia ao vivo no modal
+   ============================================================ */
+.incen-previa-nome {
+    background: #f0f7ff;
+    border-left: 3px solid var(--gs-primaria, #3b82f6);
+    border-radius: 4px;
+    padding: 8px 12px;
+    font-size: 13px;
+    color: #374151;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 4px;
+}
+
+.incen-previa-nome-label {
+    font-size: 11px;
+    color: var(--gs-texto-secundario, #6b7280);
+}
+
+/* ============================================================
+   v5.3 — Bloqueio equipe quando corrida
+   ============================================================ */
+.incen-seg-btn--bloqueado {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.incen-lock-notice {
+    background: #faeeda;
+    color: #633806;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+}
+
+/* ============================================================
+   v5.4 — Passo 3 reorganizado
+   ============================================================ */
+.incen-info-banner {
+    background: #e6f1fb;
+    border-radius: 8px;
+    padding: 12px 14px;
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    font-size: 13px;
+    color: #1e3a5f;
+    margin-bottom: 4px;
+}
+
+.incen-info-banner i {
+    margin-top: 2px;
+    flex-shrink: 0;
+}
+
+.incen-form-label-badge {
+    display: inline-block;
+    background: #dcfce7;
+    color: #166534;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-left: 8px;
+    vertical-align: middle;
+}
+
+/* Container para OBJETIVO + PRÊMIO lado a lado */
+.incen-obj-premio-row {
+    display: flex;
+    gap: 12px;
+    margin-top: 8px;
+}
+.incen-obj-premio-row .incen-objetivo-bloco {
+    flex: 1;
+    margin-top: 0;
+}
+
+.incen-objetivo-bloco {
+    border: 1.5px solid #378add;
+    background: #e6f1fb;
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-top: 8px;
+}
+
+/* Variante verde para o bloco de valor do prêmio */
+.incen-objetivo-bloco--premio {
+    border-color: #1d9e75;
+    background: #e6fbf5;
+}
+.incen-objetivo-bloco--premio .incen-objetivo-subtitulo { color: #085041; }
+.incen-objetivo-bloco--premio .incen-objetivo-input-num {
+    color: #085041;
+    border-color: #1d9e75;
+}
+.incen-objetivo-bloco--premio .incen-objetivo-unidade { color: #085041; }
+
+/* "R$" prefixado antes do input */
+.incen-objetivo-prefix {
+    font-size: 16px;
+    font-weight: 700;
+}
+
+.incen-objetivo-subtitulo {
+    font-size: 12px;
+    color: #185fa5;
+    margin-bottom: 10px;
+    margin-top: 0;
+}
+
+.incen-objetivo-input-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.incen-objetivo-input-num {
+    font-size: 22px;
+    font-weight: 500;
+    color: #185fa5;
+    width: 110px;
+    text-align: center;
+    border: 1.5px solid #378add;
+    border-radius: 8px;
+    padding: 6px 10px;
+    background: white;
+}
+
+.incen-objetivo-unidade {
+    font-size: 14px;
+    color: #185fa5;
+    font-weight: 500;
+}
+
+.incen-aviso-pagamento {
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--gs-texto-secundario, #6b7280);
+    margin-top: 8px;
+}
+
+.incen-nivel-bloco {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    background: white;
+}
+
+.incen-nivel-cabecalho {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #374151;
+}

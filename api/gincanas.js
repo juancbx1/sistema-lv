@@ -408,6 +408,7 @@ router.get('/', async (req, res) => {
                             'emoji_icone', gp.emoji_icone,
                             'meta_valor', gp.meta_valor,
                             'descricao_premio', gp.descricao_premio,
+                            'valor_premio_reais', gp.valor_premio_reais,
                             'ordem', gp.ordem
                         ) ORDER BY gp.ordem, gp.meta_valor
                     ) FILTER (WHERE gp.id IS NOT NULL) AS premiacoes
@@ -482,6 +483,7 @@ router.get('/dashboard', async (req, res) => {
                                 'emoji_icone', gp.emoji_icone,
                                 'meta_valor', gp.meta_valor,
                                 'descricao_premio', gp.descricao_premio,
+                                'valor_premio_reais', gp.valor_premio_reais,
                                 'ordem', gp.ordem
                             ) ORDER BY gp.ordem ASC, gp.meta_valor ASC
                         ) FILTER (WHERE gp.id IS NOT NULL),
@@ -868,9 +870,9 @@ router.post('/', async (req, res) => {
         for (const p of premiacoes) {
             await dbClient.query(
                 `INSERT INTO gincanas_premiacoes
-                     (gincana_id, nivel_label, emoji_icone, meta_valor, descricao_premio, ordem)
-                 VALUES ($1,$2,$3,$4,$5,$6)`,
-                [gincana.id, p.nivel_label, p.emoji_icone || '🏅', p.meta_valor, p.descricao_premio, p.ordem || 0]
+                     (gincana_id, nivel_label, emoji_icone, meta_valor, descricao_premio, valor_premio_reais, ordem)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+                [gincana.id, p.nivel_label, p.emoji_icone || '🏅', p.meta_valor, p.descricao_premio, p.valor_premio_reais || null, p.ordem || 0]
             );
         }
 
@@ -938,9 +940,9 @@ router.put('/:id', async (req, res) => {
         for (const p of premiacoes) {
             await dbClient.query(
                 `INSERT INTO gincanas_premiacoes
-                     (gincana_id, nivel_label, emoji_icone, meta_valor, descricao_premio, ordem)
-                 VALUES ($1,$2,$3,$4,$5,$6)`,
-                [req.params.id, p.nivel_label, p.emoji_icone || '🏅', p.meta_valor, p.descricao_premio, p.ordem || 0]
+                     (gincana_id, nivel_label, emoji_icone, meta_valor, descricao_premio, valor_premio_reais, ordem)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+                [req.params.id, p.nivel_label, p.emoji_icone || '🏅', p.meta_valor, p.descricao_premio, p.valor_premio_reais || null, p.ordem || 0]
             );
         }
 
@@ -1115,7 +1117,8 @@ export async function verificarGincanasAposProducao(dbClient, funcionarioId, tim
                 COALESCE(json_agg(
                     json_build_object(
                         'id', gp.id, 'nivel_label', gp.nivel_label, 'emoji_icone', gp.emoji_icone,
-                        'meta_valor', gp.meta_valor, 'descricao_premio', gp.descricao_premio, 'ordem', gp.ordem
+                        'meta_valor', gp.meta_valor, 'descricao_premio', gp.descricao_premio,
+                        'valor_premio_reais', gp.valor_premio_reais, 'ordem', gp.ordem
                     ) ORDER BY gp.ordem ASC, gp.meta_valor ASC
                 ) FILTER (WHERE gp.id IS NOT NULL), '[]'::json) AS premiacoes
          FROM gincanas g

@@ -5,6 +5,7 @@ const { Pool, types } = pg; // Modificado
 import jwt from 'jsonwebtoken';
 import express from 'express';
 import { getPermissoesCompletasUsuarioDB, atualizarStatusUsuarioDB } from './usuarios.js';
+import { registrarAuditoria } from './audit.js';
 
 // --- INÍCIO DA CORREÇÃO DE FUSO HORÁRIO ---
 types.setTypeParser(1114, str => str);
@@ -141,13 +142,17 @@ router.post('/', async (req, res) => {
     `INSERT INTO arremates (op_numero, op_edit_id, produto_id, variante, quantidade_arrematada, usuario_tiktik, usuario_tiktik_id, lancado_por, valor_ponto_aplicado, pontos_gerados, tipo_lancamento)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
     [
-        op_numero, op_edit_id || null, parseInt(produto_id), variante || null, 
+        op_numero, op_edit_id || null, parseInt(produto_id), variante || null,
         quantidadeNum, usuario_tiktik, usuario_tiktik_id, nomeDoLancador,
         valorPontoAplicado, pontosGerados,
-        'PRODUCAO' // o o valor 'PRODUCAO' que corresponde ao placeholder $11.
+        'PRODUCAO'
     ]
     );
-        
+        await registrarAuditoria(dbClient, usuarioLogado, 'arremate.lancado', 'arremate', result.rows[0].id, {
+            op_numero,
+            funcionario_nome: usuario_tiktik,
+            quantidade: quantidadeNum,
+        });
         res.status(201).json(result.rows[0]);
 
     } catch (error) {
@@ -1441,7 +1446,10 @@ router.post('/estornar', async (req, res) => {
         }
         
         await dbClient.query('COMMIT');
-        
+        await registrarAuditoria(dbClient, usuarioLogado, 'arremate.estornado', 'arremate', id_arremate, {
+            id: id_arremate,
+            op_numero: arremateOriginal.op_numero,
+        });
         res.status(200).json({ message: 'Arremate estornado com sucesso!' });
 
     } catch (error) {

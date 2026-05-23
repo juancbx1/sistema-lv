@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { mostrarMensagem } from '/js/utils/popups.js';
 import { obterProdutos as obterProdutosDoStorage } from '/js/utils/storage.js';
+import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio.js';
 
 /**
  * Calcula se atribuir `qtd` peças deste item vai ultrapassar o horário de saída (S3).
@@ -124,6 +125,8 @@ export default function OPTelaConfirmacaoQtd({ etapa, funcionario, onClose, tpp,
     const definirMaximo = (key, max) => {
         setQuantidades(prev => ({ ...prev, [key]: max }));
     };
+
+    const podeConfirmar = temPermissao('confirmar-lancamento');
 
     const handleConfirmar = async () => {
         setCarregando(true);
@@ -294,13 +297,21 @@ export default function OPTelaConfirmacaoQtd({ etapa, funcionario, onClose, tpp,
             </div>
 
             <button
-                className="op-selecao-fab"
-                onClick={handleConfirmar}
+                className={`op-selecao-fab${!podeConfirmar ? ' op-selecao-fab--bloqueado' : ''}`}
+                onClick={() => {
+                    if (!podeConfirmar) {
+                        mostrarPopupSemPermissao('Você não tem permissão para confirmar lançamentos de produção.');
+                        return;
+                    }
+                    handleConfirmar();
+                }}
                 disabled={carregando}
             >
                 {carregando
                     ? <><div className="spinner-btn-interno"></div> Processando...</>
-                    : <><i className="fas fa-check-double"></i> {textoBotao}</>
+                    : !podeConfirmar
+                        ? <><i className="fas fa-lock"></i> Sem permissão</>
+                        : <><i className="fas fa-check-double"></i> {textoBotao}</>
                 }
             </button>
 

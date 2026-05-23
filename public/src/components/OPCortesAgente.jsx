@@ -6,6 +6,7 @@ import UIAgenteIA from './UIAgenteIA';
 import useTypewriter from '../hooks/useTypewriter';
 import useContador from '../hooks/useContador.js';
 import OPAgenteFaseScan from './OPAgenteFaseScan.jsx';
+import UIBloqueio from './UIBloqueio.jsx';
 
 // ── Frases de repouso ─────────────────────────────────────────────────────────
 
@@ -354,10 +355,12 @@ export default function OPCortesAgente({ produtos, onCortarAgora, rescanKey, cor
                             )}
                         </span>
                     </div>
-                    <button className="op-agente-idle-btn" onClick={iniciarScan}>
-                        <i className={`fas ${voltouParcial ? 'fa-redo' : 'fa-search'}`}></i>
-                        {voltouParcial ? 'Verificar pendências' : 'Analisar agora'}
-                    </button>
+                    <UIBloqueio permissao="usar-agente-cortes">
+                        <button className="op-agente-idle-btn" onClick={iniciarScan}>
+                            <i className={`fas ${voltouParcial ? 'fa-redo' : 'fa-search'}`}></i>
+                            {voltouParcial ? 'Verificar pendências' : 'Analisar agora'}
+                        </button>
+                    </UIBloqueio>
                 </div>
             )}
 
@@ -493,19 +496,21 @@ export default function OPCortesAgente({ produtos, onCortarAgora, rescanKey, cor
                                                 </div>
                                             </div>
 
-                                            <button
-                                                className="op-cortes-agente-card-btn"
-                                                onClick={() => onCortarAgora({
-                                                    produto: item.produtoCompleto,
-                                                    variante: item.variante || null,
-                                                    quantidadeSugerida: item.deficit
-                                                })}
-                                                disabled={!item.produtoCompleto}
-                                                title={!item.produtoCompleto ? 'Produto não encontrado' : 'Registrar corte para este item'}
-                                            >
-                                                <i className="fas fa-bolt"></i>
-                                                Cortar
-                                            </button>
+                                            <UIBloqueio permissao="usar-agente-cortes">
+                                                <button
+                                                    className="op-cortes-agente-card-btn"
+                                                    onClick={() => onCortarAgora({
+                                                        produto: item.produtoCompleto,
+                                                        variante: item.variante || null,
+                                                        quantidadeSugerida: item.deficit
+                                                    })}
+                                                    disabled={!item.produtoCompleto}
+                                                    title={!item.produtoCompleto ? 'Produto não encontrado' : 'Registrar corte para este item'}
+                                                >
+                                                    <i className="fas fa-bolt"></i>
+                                                    Cortar
+                                                </button>
+                                            </UIBloqueio>
                                         </div>
                                     );
                                 })}

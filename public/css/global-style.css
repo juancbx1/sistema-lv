@@ -6640,6 +6640,22 @@ font-weight: 500;
     height: 18px;
 }
 
+/* FAB em estado bloqueado (sem permissão usar-agente-encerrador) */
+.gs-agente-enc-fab.bloqueado {
+    opacity: 0.45;
+    cursor: pointer;
+    background: var(--gs-cinza-medio, #9ca3af);
+}
+.gs-agente-enc-fab.bloqueado .gs-agente-enc-fab-anel {
+    display: none;
+}
+.gs-agente-enc-badge--bloqueado {
+    background: #64748b;
+    font-size: 0.6rem;
+    min-width: 18px;
+    height: 18px;
+}
+
 /* Anel giratório (posicionado pelo wrapper) */
 .gs-agente-enc-fab-anel {
     position: absolute;
@@ -7446,4 +7462,149 @@ font-weight: 500;
     color: #94a3b8;
     margin: 0 16px 6px;
     line-height: 1.5;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   PADRÃO UNIVERSAL DE BLOQUEIO — UIBloqueio
+   Prefixo: gs-bloqueio-*
+   Regra: NUNCA sumir com elemento por falta de permissão.
+          Sempre mostrar com overlay de cadeado + popup ao clicar.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Wrapper — position relative para o overlay se posicionar corretamente.
+   IMPORTANTE: inline-flex (não block nem inline-block) para que o wrapper se ajuste
+   exatamente ao tamanho do filho e não quebre containers flex/grid pai. */
+.gs-bloqueio-wrapper {
+    position: relative;
+    display: inline-flex;
+    cursor: not-allowed;
+    /* Não adicionar pointer-events: none — o wrapper precisa capturar o clique */
+}
+
+/* O filho fica visualmente "apagado" através do overlay — não desabilitamos via CSS
+   no próprio filho para não alterar o layout original dele */
+
+/* Overlay semitransparente que cobre o filho inteiro */
+.gs-bloqueio-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(241, 245, 249, 0.72); /* cinza claro semitransparente */
+    border-radius: inherit;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    pointer-events: all; /* overlay captura o clique — impede que o botão filho dispare seu próprio handler */
+    backdrop-filter: blur(0.5px);
+}
+
+/* Ícone de cadeado */
+.gs-bloqueio-lock-icon {
+    font-size: 1rem;
+    color: #64748b;
+    opacity: 0.85;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.12));
+}
+
+/* ── Popup de "sem permissão" ─────────────────────────────────────────── */
+
+.gs-bloqueio-popup-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.30);
+    z-index: 9998;
+    animation: gs-bloqueio-fadein 0.15s ease;
+}
+
+.gs-bloqueio-popup {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: #fff;
+    border-radius: 16px;
+    padding: 28px 28px 24px;
+    z-index: 9999;
+    text-align: center;
+    max-width: 320px;
+    width: calc(100% - 40px);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.16), 0 2px 8px rgba(0, 0, 0, 0.08);
+    animation: gs-bloqueio-popup-in 0.18s ease;
+}
+
+@keyframes gs-bloqueio-fadein {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+@keyframes gs-bloqueio-popup-in {
+    from { opacity: 0; transform: translate(-50%, -47%) scale(0.95); }
+    to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+.gs-bloqueio-popup-icone {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: #f1f5f9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 14px;
+    font-size: 1.4rem;
+    color: #94a3b8;
+}
+
+.gs-bloqueio-popup-titulo {
+    font-weight: 600;
+    font-size: 1rem;
+    color: #1e293b;
+    margin-bottom: 8px;
+}
+
+.gs-bloqueio-popup-mensagem {
+    font-size: 0.875rem;
+    color: #64748b;
+    line-height: 1.55;
+    margin-bottom: 20px;
+}
+
+.gs-bloqueio-popup-btn {
+    width: 100%;
+}
+
+/* ── Padrão B inline — ícone duplo para botões position:absolute ──────────── */
+/* Uso: <span className="gs-bloqueio-icone-duplo"><i className="fas fa-X"></i><i className="fas fa-lock"></i></span> */
+.gs-bloqueio-icone-duplo {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.gs-bloqueio-icone-duplo > i:first-child { opacity: 0.30; }
+.gs-bloqueio-icone-duplo > i.fa-lock {
+    position: absolute;
+    bottom: -4px;
+    right: -6px;
+    font-size: 0.58rem;
+    color: #64748b;
+    background: #fff;
+    border-radius: 50%;
+    padding: 1px 2px;
+    line-height: 1;
+    box-shadow: 0 0 0 1px rgba(100, 116, 139, 0.20);
+}
+
+/* ── Responsivo tablet ────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+    .gs-bloqueio-popup {
+        padding: 24px 20px 20px;
+        border-radius: 14px;
+    }
+    .gs-bloqueio-popup-icone {
+        width: 46px;
+        height: 46px;
+        font-size: 1.2rem;
+    }
 }

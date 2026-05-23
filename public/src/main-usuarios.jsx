@@ -6,6 +6,7 @@ import UserListCards from './components/UserListCards';
 import UserFeriasModal from './components/UserFeriasModal';
 import UserFinanceiroModal from './components/UserFinanceiroModal';
 import UserCreateModal from './components/UserCreateModal';
+import UIBloqueio from './components/UIBloqueio.jsx';
 
 export default function MainUsuarios() {
     const [usuarios, setUsuarios] = useState([]);
@@ -86,11 +87,11 @@ export default function MainUsuarios() {
             <section className="usuarios-cadastrados">
                 <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
                     <h1>Gerenciar Usuários</h1>
-                    {permissoes.includes('acesso-cadastrar-usuarios') && (
+                    <UIBloqueio permissao="acesso-cadastrar-usuarios">
                         <button className="gs-btn gs-btn-primario" onClick={() => setModalCriarUser(true)}>
                             <i className="fas fa-plus"></i> Novo Usuário
                         </button>
-                    )}
+                    </UIBloqueio>
                 </div>
                 
                 <UserFiltros 

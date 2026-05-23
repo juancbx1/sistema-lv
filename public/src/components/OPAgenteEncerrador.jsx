@@ -6,6 +6,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import ReactDOM from 'react-dom';
 import UIAgenteIA from './UIAgenteIA';
 import OPModalLote from './OPModalLote';
+import { mostrarPopupSemPermissao } from '../utils/bloqueio.js';
 
 // ── Helpers de snooze ─────────────────────────────────────────────────────────
 const SNOOZE_ATE_KEY   = 'agente_enc_snooze_ate';
@@ -63,7 +64,7 @@ function calcularEstado(ops, emSnooze) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function OPAgenteEncerrador({ opsProntas = [], nomeUsuario = '', onRefresh }) {
+export default function OPAgenteEncerrador({ opsProntas = [], nomeUsuario = '', onRefresh, temPermissaoAgente = false }) {
     const [miniModalAberto, setMiniModalAberto] = useState(false);
     const [selectedNums, setSelectedNums]       = useState(() => new Set());
     const [modalLoteAberto, setModalLoteAberto] = useState(false);
@@ -104,6 +105,10 @@ export default function OPAgenteEncerrador({ opsProntas = [], nomeUsuario = '', 
     const estado = useMemo(() => calcularEstado(opsProntas, emSnooze), [opsProntas, emSnooze]);
 
     const handleFabClick = () => {
+        if (!temPermissaoAgente) {
+            mostrarPopupSemPermissao('Você não tem permissão para usar o Agente Encerrador. Fale com o administrador.');
+            return;
+        }
         if (estado === 'ocioso') return;
         setMiniModalAberto(prev => !prev);
     };
@@ -163,19 +168,24 @@ export default function OPAgenteEncerrador({ opsProntas = [], nomeUsuario = '', 
         <>
             {/* ── FAB ── */}
             <button
-                className={`gs-agente-enc-fab ${estado}${miniModalAberto ? ' aberto' : ''}`}
-                title={estado === 'ocioso' ? 'Agente Encerrador' : mensagemCabecalho}
+                className={`gs-agente-enc-fab ${temPermissaoAgente ? estado : 'bloqueado'}${miniModalAberto ? ' aberto' : ''}`}
+                title={!temPermissaoAgente ? 'Sem permissão para usar o Agente Encerrador' : (estado === 'ocioso' ? 'Agente Encerrador' : mensagemCabecalho)}
                 aria-label="Agente Encerrador de OPs"
                 onClick={handleFabClick}
             >
                 <div className="gs-agente-enc-fab-anel"></div>
                 <UIAgenteIA tamanho="sm" scanning={false} />
-                {estado !== 'ocioso' && estado !== 'snooze' && opsProntas.length > 0 && (
+                {temPermissaoAgente && estado !== 'ocioso' && estado !== 'snooze' && opsProntas.length > 0 && (
                     <span className="gs-agente-enc-badge">{opsProntas.length}</span>
                 )}
-                {estado === 'snooze' && (
+                {temPermissaoAgente && estado === 'snooze' && (
                     <span className="gs-agente-enc-badge gs-agente-enc-badge--snooze">
                         <i className="fas fa-clock"></i>
+                    </span>
+                )}
+                {!temPermissaoAgente && (
+                    <span className="gs-agente-enc-badge gs-agente-enc-badge--bloqueado">
+                        <i className="fas fa-lock"></i>
                     </span>
                 )}
             </button>

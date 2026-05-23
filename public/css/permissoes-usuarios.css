@@ -1,505 +1,313 @@
-/* public/css/permissoes-usuarios.css */
+/* public/css/permissoes-usuarios.css — React version */
 
-:root {
-    --pu-cor-fundo-pagina: #f4f6f8;
-    --pu-cor-texto-principal: #333;
-    --pu-cor-azul-escuro: #2c3e50;
-    --pu-cor-azul-primario: #3498db;
-    --pu-cor-azul-hover: #2980b9;
-    --pu-cor-verde-sucesso: #27ae60;
-    --pu-cor-cinza-borda: #dcdfe4;
-    --pu-cor-cinza-fundo-input: #f8f9fa;
-    --pu-cor-cinza-texto-secundario: #7f8c8d;
-    --pu-cor-branco: #ffffff;
-
-    --pu-sombra-padrao: 0 3px 8px rgba(0, 0, 0, 0.07);
-    --pu-raio-borda-card: 8px;
-    --pu-raio-borda-input: 6px;
-    --pu-raio-borda-botao: 6px;
-    --pu-font-principal: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+@media (max-width: 1024px) {
+    body { padding: 40px 40px 10px 40px; }
 }
 
-/* Reset Básico e Body */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html { font-size: 16px; }
-body {
-    font-family: var(--pu-font-principal);
-    background-color: var(--pu-cor-fundo-pagina);
-    color: var(--pu-cor-texto-principal);
-    line-height: 1.6;
-    visibility: hidden; 
-    margin-left: 250px; 
-    transition: margin-left 0.3s ease;
-}
-body.autenticado { visibility: visible; }
-@media (max-width: 1024px) { body { margin-left: 0; } }
-
-/* Layout Principal */
-.pu-container-principal { padding: 20px; max-width: 1200px; margin: 0 auto; }
-.pu-cabecalho-pagina { margin-bottom: 25px; padding-bottom: 15px; border-bottom: 2px solid var(--pu-cor-azul-primario); }
-.pu-cabecalho-pagina h1 { font-size: 2rem; color: var(--pu-cor-azul-escuro); font-weight: 600; }
-
-.pu-card {
-    background-color: var(--pu-cor-branco);
-    border-radius: var(--pu-raio-borda-card);
-    padding: 25px;
-    box-shadow: var(--pu-sombra-padrao);
-    margin-bottom: 30px;
-}
-.pu-titulo-secao { font-size: 1.5rem; color: var(--pu-cor-azul-escuro); margin-bottom: 20px; padding-bottom:10px; border-bottom:1px solid #eee; font-weight: 500;}
-
-/* Layout de duas colunas para lista de usuários e permissões */
-.pu-layout-permissoes {
+/* ── Layout principal ─────────────────────────────────────────────────────── */
+.pu-dois-paineis {
     display: flex;
-    gap: 25px;
+    gap: 20px;
+    min-height: 500px;
 }
 
-.pu-lista-usuarios-wrapper {
-    flex: 1 1 350px; /* Largura para a lista de usuários */
-    max-width: 400px;
-    background-color: #fdfdfd;
-    padding: 20px;
-    border-radius: var(--pu-raio-borda-input);
-    border: 1px solid var(--pu-cor-cinza-borda);
-    max-height: 70vh; /* Altura máxima com scroll */
-    overflow-y: auto;
-}
-.pu-lista-usuarios-wrapper h3 {
-    font-size: 1.2rem;
-    color: var(--pu-cor-azul-escuro);
-    margin-bottom: 10px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid #eaeaea;
-}
-#filtroUsuarioPermissoes {
-    width: 100%;
-    padding: 10px;
-    margin-bottom: 15px;
-    border: 1px solid var(--pu-cor-cinza-borda);
-    border-radius: var(--pu-raio-borda-input);
-    font-size: 0.95rem;
-}
-.pu-lista-usuarios {
-    list-style-type: none;
-    padding: 0;
-}
-.pu-lista-usuarios li {
-    padding: 10px 12px;
-    border-bottom: 1px solid #f0f0f0;
-    cursor: pointer;
-    transition: background-color 0.2s ease;
-    border-radius: 4px;
-    margin-bottom: 5px;
-    font-size: 0.95rem;
-}
-.pu-lista-usuarios li:last-child {
-    border-bottom: none;
-}
-.pu-lista-usuarios li:hover {
-    background-color: #e9f5fd;
-}
-.pu-lista-usuarios li.active {
-    background-color: var(--pu-cor-azul-primario);
-    color: var(--pu-cor-branco);
-    font-weight: 500;
-}
-
-.pu-permissoes-detalhe-wrapper {
-    flex: 2 1 600px; /* Ocupa mais espaço */
-    background-color: var(--pu-cor-branco);
-    padding: 20px;
-    border-radius: var(--pu-raio-borda-input);
-    border: 1px solid var(--pu-cor-cinza-borda);
-}
-.pu-permissoes-detalhe-wrapper h3 {
-    font-size: 1.2rem;
-    color: var(--pu-cor-azul-escuro);
-    margin-bottom: 15px;
-}
-#permissoesCheckboxesContainer {
-    max-height: 60vh; /* Altura máxima com scroll */
-    overflow-y: auto;
-    padding-right: 10px; /* Espaço para a barra de rolagem não cobrir conteúdo */
-}
-
-/* Agrupamento de Permissões */
-.pu-grupo-permissao {
-    margin-bottom: 20px;
-    padding: 15px;
-    border: 1px solid #e8e8e8;
-    border-radius: var(--pu-raio-borda-input);
-    background-color: #fdfdfd;
-}
-.pu-grupo-permissao-titulo {
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--pu-cor-azul-subtitulo);
-    margin-bottom: 12px;
-    padding-bottom: 8px;
-    border-bottom: 1px dashed #ddd;
-}
-.pu-permissoes-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); /* Colunas responsivas */
+/* ── Painel esquerdo: lista de usuários ───────────────────────────────────── */
+.pu-painel-usuarios {
+    flex: 0 0 280px;
+    display: flex;
+    flex-direction: column;
     gap: 10px;
+    border-right: 1px solid #e5e7eb;
+    padding-right: 20px;
 }
-.pu-permissao-item {
+
+.pu-painel-titulo {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #475569;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin: 0;
+}
+
+.pu-busca-input {
+    width: 100%;
+    padding: 9px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    background: #f9fafb;
+}
+.pu-busca-input:focus { outline: none; border-color: var(--gs-primaria, #3b82f6); box-shadow: 0 0 0 3px rgba(59,130,246,.15); }
+
+.pu-lista-usuarios {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    overflow-y: auto;
+    flex: 1;
+    max-height: 60vh;
+}
+
+.pu-usuario-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s;
+    margin-bottom: 2px;
+}
+.pu-usuario-item:hover { background: #f1f5f9; }
+.pu-usuario-item.ativo { background: var(--gs-primaria, #3b82f6); color: #fff; }
+.pu-usuario-item.ativo .pu-usuario-tipo { color: rgba(255,255,255,.75); }
+
+.pu-usuario-nome { font-size: 0.9rem; font-weight: 500; }
+.pu-usuario-tipo { font-size: 0.75rem; color: #94a3b8; }
+
+.pu-lista-vazia { padding: 16px; color: #94a3b8; text-align: center; font-size: 0.875rem; }
+
+/* ── Painel direito: permissões ───────────────────────────────────────────── */
+.pu-painel-permissoes {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    overflow-y: auto;
+    max-height: 75vh;
+}
+
+.pu-sem-selecao {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: #94a3b8;
+}
+.pu-sem-selecao i { font-size: 2.5rem; }
+.pu-sem-selecao p { font-size: 0.95rem; }
+
+.pu-rodape-acoes {
+    padding-top: 14px;
+    border-top: 1px solid #e5e7eb;
+    display: flex;
+    justify-content: flex-end;
+}
+
+/* ── Acordeão de permissões ───────────────────────────────────────────────── */
+.pu-acordeao {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1;
+}
+
+.pu-acordeao-item {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.pu-acordeao-titulo {
+    width: 100%;
     display: flex;
     align-items: center;
-    background-color: var(--pu-cor-branco);
-    padding: 8px 10px;
-    border-radius: 4px;
-    border: 1px solid #f0f0f0;
-    font-size: 0.9rem;
+    gap: 10px;
+    padding: 11px 14px;
+    background: #f8fafc;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #334155;
+    transition: background 0.15s;
+}
+.pu-acordeao-titulo:hover { background: #f1f5f9; }
+
+.pu-acordeao-cat-nome { flex: 1; }
+
+.pu-acordeao-counter {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: #64748b;
+    background: #e2e8f0;
+    padding: 1px 7px;
+    border-radius: 99px;
+}
+
+.pu-acordeao-seta { font-size: 0.75rem; color: #94a3b8; margin-left: 2px; }
+
+.pu-acordeao-conteudo { padding: 14px; background: #fff; }
+
+.pu-permissoes-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 8px;
+}
+
+.pu-permissao-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 7px 10px;
+    border-radius: 6px;
+    background: #f8fafc;
+    border: 1px solid #e5e7eb;
+    font-size: 0.85rem;
 }
 .pu-permissao-item input[type="checkbox"] {
-    margin-right: 8px;
-    width: 16px; /* Tamanho customizado para checkbox */
-    height: 16px;
-    accent-color: var(--pu-cor-azul-primario); /* Cor do check quando marcado */
-}
-.pu-permissao-item label {
-    color: var(--pu-cor-texto-principal);
+    width: 15px;
+    height: 15px;
+    margin-top: 2px;
+    flex-shrink: 0;
+    accent-color: var(--gs-primaria, #3b82f6);
     cursor: pointer;
-    flex-grow: 1;
 }
+.pu-permissao-item label { cursor: pointer; color: #334155; line-height: 1.4; }
+.pu-permissao-item input:disabled { cursor: not-allowed; }
+.pu-permissao-item input:disabled + label { color: #94a3b8; cursor: not-allowed; }
+.pu-permissao-base { opacity: 0.75; }
 
-.pu-permissao-item input[type="checkbox"]:disabled + label {
-    color: var(--pu-cor-cinza-texto-secundario);
-    cursor: not-allowed;
-}
-
-.pu-permissao-item[title] {
-    cursor: help; /* Mostra um cursor de ajuda ao passar o mouse sobre o item */
-}
-
-/* Botão Salvar */
-.pu-acoes-rodape {
-    margin-top: 25px;
-    padding-top: 20px;
-    border-top: 1px solid var(--pu-cor-cinza-borda);
-    text-align: right;
-}
-.pu-btn {
-    padding: 10px 20px;
-    border-radius: var(--pu-raio-borda-botao);
-    border: none;
-    cursor: pointer;
-    font-size: 0.95rem;
-    color: var(--pu-cor-branco);
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
+/* ── Feedback inline ──────────────────────────────────────────────────────── */
+.pu-feedback {
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-size: 0.875rem;
     font-weight: 500;
-}
-.pu-btn i { margin-right: 5px; }
-.pu-btn-primario { background-color: var(--pu-cor-azul-primario); }
-.pu-btn-primario:hover { background-color: var(--pu-cor-azul-hover); }
-.pu-btn:disabled { background-color: #ccc; cursor: not-allowed; }
-
-/* ==========================================================================
-   ESTILOS PARA O ACORDEÃO DE PERMISSÕES
-   ========================================================================== */
-
-/* Remove a borda e o padding do grupo antigo, pois o acordeão terá seu próprio estilo */
-.pu-grupo-permissao {
-    margin-bottom: 0;
-    padding: 0;
-    border: none;
-    background-color: transparent;
-}
-
-/* Container do acordeão */
-.pu-acordeao-container {
-    border: 1px solid var(--pu-cor-cinza-borda);
-    border-radius: var(--pu-raio-borda-card);
-    overflow: hidden; /* Garante que os cantos arredondados sejam aplicados */
-}
-
-/* Cada item do acordeão (título + conteúdo) */
-.pu-acordeao-item {
-    border-bottom: 1px solid var(--pu-cor-cinza-borda);
-}
-.pu-acordeao-item:last-child {
-    border-bottom: none; /* Remove a borda do último item */
-}
-
-/* Título clicável do acordeão (categoria da permissão) */
-.pu-acordeao-titulo {
-    background-color: #f8f9fa;
-    padding: 12px 15px;
-    cursor: pointer;
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    font-weight: 600;
-    color: var(--pu-cor-azul-escuro);
-    transition: background-color 0.2s ease;
+    gap: 8px;
 }
+.pu-feedback--sucesso { background: #dcfce7; color: #166534; }
+.pu-feedback--erro { background: #fee2e2; color: #991b1b; }
 
-.pu-acordeao-titulo:hover {
-    background-color: #e9ecef;
-}
-
-/* Ícone de seta (indicador de expandido/recolhido) */
-.pu-acordeao-titulo::after {
-    content: '\f078'; /* Ícone de seta para baixo (Font Awesome) */
-    font-family: 'Font Awesome 6 Free';
-    font-weight: 900;
-    transition: transform 0.3s ease;
-    font-size: 0.8em;
-}
-
-/* Quando o acordeão está ativo (expandido), a seta aponta para cima */
-.pu-acordeao-item.active .pu-acordeao-titulo::after {
-    transform: rotate(180deg);
-}
-
-/* Container do conteúdo (onde ficam os checkboxes) */
-.pu-acordeao-conteudo {
-    max-height: 0;
-    overflow: hidden;
-    transition: max-height 0.3s ease-out, padding 0.3s ease-out;
-    background-color: var(--pu-cor-branco);
-    padding: 0 15px; /* Padding será aplicado quando expandido */
-}
-
-/* A grid de permissões agora fica dentro do conteúdo do acordeão */
-.pu-permissoes-grid {
-    padding: 15px 0; /* Espaçamento interno para a grid */
-    display: grid;
-    /* Usa colunas CSS para se adaptar ao espaço disponível */
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+/* ── Aba Auditoria ────────────────────────────────────────────────────────── */
+.pu-audit-filtros {
+    display: flex;
+    flex-wrap: wrap;
     gap: 12px;
+    align-items: flex-end;
+    margin-bottom: 20px;
 }
 
-.pu-permissao-item {
-    font-size: 0.9rem;
-    padding: 6px 8px; /* Padding menor para itens mais compactos */
-    background-color: #fdfdfd;
+.pu-audit-filtro-grupo {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.pu-audit-filtro-grupo label { font-size: 0.8rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.03em; }
+.pu-audit-filtro-grupo .pu-select__control {
+    min-width: 200px;
+    border-radius: 8px !important;
+    border-color: #d1d5db !important;
+    font-size: 0.875rem;
 }
 
-/* Melhoria de UX: Estilo para permissões herdadas (desabilitadas) */
-.pu-permissao-item input[type="checkbox"]:disabled + label {
-    color: var(--pu-cor-cinza-texto-secundario);
-    cursor: not-allowed;
+.pu-audit-input-data {
+    padding: 7px 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    background: #f9fafb;
 }
 
-.pu-permissao-item[title] {
-    cursor: help;
-}
+.pu-audit-btn-limpar { align-self: flex-end; }
 
-/*------------------------------------*\
-    #UTILITÁRIOS (Spinner, Popups com prefixo PU-)
-\*------------------------------------*/
-.pu-spinner { /* Classe para o spinner de carregamento */
-    display: flex; 
-    justify-content: center; 
+.pu-audit-total { font-size: 0.8rem; color: #64748b; margin-bottom: 12px; }
+
+.pu-audit-lista { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0; }
+
+.pu-audit-item {
+    display: flex;
+    gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid #f1f5f9;
+}
+.pu-audit-item:last-child { border-bottom: none; }
+
+.pu-audit-avatar {
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--gs-primaria, #3b82f6), #8b5cf6);
+    color: #fff;
+    display: flex;
     align-items: center;
-    padding: 25px; 
-    font-size: 1rem; 
-    color: var(--pu-cor-cinza-texto-secundario, #6c757d);
-    min-height: 60px;
-    width: 100%; /* Para ocupar o espaço do container pai */
-}
-.pu-spinner::before {
-    content: ''; 
-    display: inline-block; 
-    width: 22px; 
-    height: 22px;
-    margin-right: 12px; 
-    border: 3px solid var(--pu-cor-cinza-borda, #ccc); 
-    border-top-color: var(--pu-cor-azul-primario); 
-    border-radius: 50%; 
-    animation: pu-spin 1s linear infinite;
-}
-@keyframes pu-spin { 
-    0% { transform: rotate(0deg); } 
-    100% { transform: rotate(360deg); } 
-}
-
-.pu-spinner-btn-interno { /* Spinner para usar dentro de botões */
-    width: 1em; 
-    height: 1em; 
-    border-width: 2px; 
-    margin-right: 8px;
-    border-style: solid; 
-    border-color: rgba(255,255,255,0.3); /* Cor base clara para contraste */
-    border-top-color: var(--pu-cor-branco); /* Cor da parte que gira */
-    border-radius: 50%; 
-    animation: pu-spin 0.8s linear infinite;
-    display: inline-block;
-}
-
-/* Popup de Mensagem Estilo Padrão */
-.pu-popup-mensagem {
-    position: fixed; 
-    top: 50%; 
-    left: 50%;
-    transform: translate(-50%, -50%);
-    padding: 25px 30px; 
-    border-radius: var(--pu-raio-borda-card);
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
-    z-index: 10002; 
-    max-width: 480px; 
-    width: 90%;
-    text-align: center; 
-    font-family: var(--pu-font-principal);
-    animation: pu-fadeInPopup 0.3s ease-out; 
-    display: flex; 
-    flex-direction: column; 
-    align-items: center; 
     justify-content: center;
-    border-left-width: 5px;
-    border-left-style: solid;
-}
-.pu-popup-overlay {
-    position: fixed; 
-    top: 0; 
-    left: 0; 
-    width: 100%; 
-    height: 100%;
-    background-color: rgba(0, 0, 0, 0.45); 
-    z-index: 10001; 
-    animation: pu-fadeInOverlayPopup 0.3s ease-out;
+    font-size: 0.8rem;
+    font-weight: 700;
 }
 
-/* Animações para o Popup */
-@keyframes pu-fadeInPopup { 
-    from { opacity: 0; transform: translate(-50%, -55%); } 
-    to { opacity: 1; transform: translate(-50%, -50%); } 
-}
-@keyframes pu-fadeOutPopup { 
-    from { opacity: 1; transform: translate(-50%, -50%); } 
-    to { opacity: 0; transform: translate(-50%, -60%); } 
-}
-@keyframes pu-fadeInOverlayPopup { 
-    from { opacity: 0; } 
-    to { opacity: 1; } 
-}
-@keyframes pu-fadeOutOverlayPopup { 
-    from { opacity: 1; } 
-    to { opacity: 0; } 
+.pu-audit-corpo { flex: 1; min-width: 0; }
+
+.pu-audit-linha-principal {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    align-items: baseline;
+    font-size: 0.875rem;
 }
 
-.pu-popup-mensagem p { 
-    font-size: 1.05rem; 
-    line-height: 1.5; 
-    margin-bottom: 20px; 
-    font-weight: 500; 
-}
-/* Cores específicas para os tipos de popup */
-.pu-popup-mensagem.popup-sucesso { 
-    background-color: #e6ffed; 
-    color: var(--pu-cor-verde-sucesso); 
-    border-left-color: var(--pu-cor-verde-sucesso); 
-}
-.pu-popup-mensagem.popup-erro { 
-    background-color: #ffebee; /* Um vermelho mais claro para o fundo */
-    color: var(--pu-cor-vermelho-perigo); 
-    border-left-color: var(--pu-cor-vermelho-perigo); 
-}
-.pu-popup-mensagem.popup-aviso { 
-    background-color: #fff4e0; /* Um laranja/amarelo mais claro para o fundo */
-    color: var(--pu-cor-laranja-aviso, #f39c12); /* Usar a variável laranja se existir */
-    border-left-color: var(--pu-cor-laranja-aviso, #f39c12); 
-}
-/* Botão OK dentro do Popup */
-.pu-popup-mensagem button { 
-    padding: 10px 28px; 
-    margin-top: 10px; 
-    background-color: var(--pu-cor-azul-escuro); 
-    color: var(--pu-cor-branco); 
-    border: none; 
-    border-radius: var(--pu-raio-borda-botao);
-    cursor: pointer; 
-    font-size: 0.95rem; 
-    font-weight: 600; 
-    transition: background-color 0.2s ease;
-}
-.pu-popup-mensagem button:hover { 
-    background-color: #4a617a; 
-}
-.hidden { display: none !important; }
+.pu-audit-nome { font-weight: 600; color: #1e293b; }
+.pu-audit-descricao { color: #475569; flex: 1; }
+.pu-audit-tempo { font-size: 0.75rem; color: #94a3b8; white-space: nowrap; }
 
+.pu-audit-linha-detalhes { margin-top: 4px; }
 
-/* Responsividade */
-@media (max-width: 1024px) {
-    .pu-layout-permissoes {
-        flex-direction: column; /* Empilha em telas menores */
-    }
-    .pu-lista-usuarios-wrapper {
-        max-width: 100%;
-        max-height: 300px; /* Limita altura da lista de usuários */
-    }
-    .pu-permissoes-detalhe-wrapper {
-        margin-top: 20px;
-    }
-    .pu-popup-mensagem {
-        max-width: 550px;
-    }
+.pu-audit-btn-detalhes {
+    background: none;
+    border: none;
+    font-size: 0.78rem;
+    color: var(--gs-primaria, #3b82f6);
+    cursor: pointer;
+    padding: 0;
+}
+.pu-audit-btn-detalhes:hover { text-decoration: underline; }
+
+.pu-audit-detalhes-json {
+    margin-top: 8px;
+    background: #f8fafc;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 10px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
 }
 
-@media (max-width: 768px) {
-    .pu-cabecalho-pagina h1 { font-size: 1.6rem; text-align: center; }
-    .pu-titulo-secao { font-size: 1.3rem; }
-    .pu-card { padding: 15px; }
-    .pu-permissoes-grid {
-        grid-template-columns: 1fr; /* Uma coluna para permissões em telas pequenas */
-    }
-    .pu-spinner::before { /* Spinner um pouco menor */
-        width: 20px; 
-        height: 20px;
-        margin-right: 10px; 
-    }
-    .pu-popup-mensagem {
-        padding: 20px 25px;
-    }
-    .pu-popup-mensagem p {
-        font-size: 1rem;
-    }
-    .pu-popup-mensagem button {
-        padding: 9px 24px;
-        font-size: 0.9rem;
-    }
+.pu-audit-detalhe-linha { display: flex; gap: 8px; font-size: 0.82rem; }
+.pu-audit-detalhe-chave { color: #64748b; font-weight: 500; min-width: 140px; flex-shrink: 0; }
+.pu-audit-detalhe-valor { color: #1e293b; word-break: break-word; }
+
+.pu-audit-vazio {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 48px;
+    color: #94a3b8;
+}
+.pu-audit-vazio i { font-size: 2.5rem; }
+.pu-audit-vazio p { font-size: 0.95rem; }
+
+.pu-audit-carregar-mais { display: flex; justify-content: center; padding: 16px 0 0; }
+
+/* ── Responsividade ───────────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+    .pu-dois-paineis { flex-direction: column; }
+    .pu-painel-usuarios { flex: none; border-right: none; padding-right: 0; border-bottom: 1px solid #e5e7eb; padding-bottom: 16px; }
+    .pu-lista-usuarios { max-height: 240px; }
+    .pu-painel-permissoes { max-height: none; }
 }
 
-@media (max-width: 480px) {
-    .pu-cabecalho-pagina h1 { font-size: 1.4rem; }
-    .pu-titulo-secao { font-size: 1.2rem; }
-    .pu-btn { width: 100%; margin-top: 10px; } /* Botões ocupam largura total */
-    .pu-acoes-rodape { text-align: center; }
-    .pu-acoes-rodape .pu-btn { max-width: 200px; margin-left: auto; margin-right: auto; }
-     .pu-popup-mensagem {
-        padding: 18px 20px;
-        width: 92%;
-    }
-    .pu-popup-mensagem p {
-        font-size: 0.9rem;
-        margin-bottom: 15px;
-    }
-    .pu-popup-mensagem button {
-        padding: 8px 20px;
-        font-size: 0.85rem;
-    }
-}
-
-@media (max-width: 414px) {
-.pu-cabecalho-pagina h1 { font-size: 1.3rem; }
-.pu-spinner::before {
-        width: 18px; 
-        height: 18px;
-    }
-    .pu-popup-mensagem {
-        padding: 15px;
-        max-width: 95%;
-    }
-    .pu-popup-mensagem p {
-        font-size: 0.85rem;
-        margin-bottom: 12px;
-    }
-    .pu-popup-mensagem button {
-        padding: 7px 18px;
-        font-size: 0.8rem;
-    }
+@media (max-width: 600px) {
+    .pu-permissoes-grid { grid-template-columns: 1fr; }
+    .pu-audit-filtros { flex-direction: column; }
+    .pu-audit-filtro-grupo .pu-select__control { min-width: unset; width: 100%; }
 }

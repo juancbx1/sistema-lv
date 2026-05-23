@@ -7,6 +7,7 @@ import UIAgenteIA from './UIAgenteIA';
 import useTypewriter from '../hooks/useTypewriter';
 import useContador from '../hooks/useContador.js';
 import OPAgenteFaseScan from './OPAgenteFaseScan.jsx';
+import UIBloqueio from './UIBloqueio.jsx';
 
 // ── Frases de repouso ─────────────────────────────────────────────────────────
 
@@ -412,10 +413,12 @@ export default function OPCentralEncerramento({ opsPendentesGlobal = 0, onAbrirL
                             )}
                         </span>
                     </div>
-                    <button className="op-agente-idle-btn" onClick={iniciarScan}>
-                        <i className={`fas ${voltouParcial ? 'fa-redo' : 'fa-search'}`}></i>
-                        {voltouParcial ? 'Verificar pendências' : 'Analisar agora'}
-                    </button>
+                    <UIBloqueio permissao="usar-agente-central-ops">
+                        <button className="op-agente-idle-btn" onClick={iniciarScan}>
+                            <i className={`fas ${voltouParcial ? 'fa-redo' : 'fa-search'}`}></i>
+                            {voltouParcial ? 'Verificar pendências' : 'Analisar agora'}
+                        </button>
+                    </UIBloqueio>
                 </div>
             )}
 
@@ -590,14 +593,16 @@ export default function OPCentralEncerramento({ opsPendentesGlobal = 0, onAbrirL
                                 <span className="op-agente-sel-info">
                                     {opsSelecionadas.size} de {opsEscaneadas.length} selecionada{opsSelecionadas.size !== 1 ? 's' : ''}
                                 </span>
-                                <button
-                                    className="op-agente-btn-encerrar"
-                                    onClick={handleEncerrar}
-                                    disabled={opsSelecionadas.size === 0}
-                                >
-                                    <i className="fas fa-check-double"></i>
-                                    Encerrar Selecionadas ({opsSelecionadas.size})
-                                </button>
+                                <UIBloqueio permissao="usar-agente-central-ops">
+                                    <button
+                                        className="op-agente-btn-encerrar"
+                                        onClick={handleEncerrar}
+                                        disabled={opsSelecionadas.size === 0}
+                                    >
+                                        <i className="fas fa-check-double"></i>
+                                        Encerrar Selecionadas ({opsSelecionadas.size})
+                                    </button>
+                                </UIBloqueio>
                             </div>
                         </>
                     )}

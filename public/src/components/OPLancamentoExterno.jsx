@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, Fragment } from 'react';
 import { mostrarMensagem, mostrarConfirmacao } from '/js/utils/popups.js';
 import OPTelaSelecaoEtapa from './OPTelaSelecaoEtapa.jsx';
+import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio.js';
 
 const fmtHora = (iso) => {
     if (!iso) return '--:--';
@@ -116,6 +117,8 @@ export default function OPLancamentoExterno({ isOpen, onClose, onSucesso, onDesf
             [key]: Math.max(0, Math.min(max, (parseInt(prev[key]) || 0) + delta)),
         }));
     };
+
+    const podeConfirmar = temPermissao('confirmar-lancamento');
 
     const handleConfirmar = async () => {
         setCarregando(true);
@@ -332,10 +335,22 @@ export default function OPLancamentoExterno({ isOpen, onClose, onSucesso, onDesf
                                     );
                                 })}
                             </div>
-                            <button className="op-selecao-fab" onClick={handleConfirmar} disabled={carregando}>
+                            <button
+                                className={`op-selecao-fab${!podeConfirmar ? ' op-selecao-fab--bloqueado' : ''}`}
+                                onClick={() => {
+                                    if (!podeConfirmar) {
+                                        mostrarPopupSemPermissao('Você não tem permissão para confirmar lançamentos de produção.');
+                                        return;
+                                    }
+                                    handleConfirmar();
+                                }}
+                                disabled={carregando}
+                            >
                                 {carregando
                                     ? <><div className="spinner-btn-interno"></div> Registrando...</>
-                                    : <><i className="fas fa-check-double"></i> Confirmar Lançamento</>
+                                    : !podeConfirmar
+                                        ? <><i className="fas fa-lock"></i> Sem permissão</>
+                                        : <><i className="fas fa-check-double"></i> Confirmar Lançamento</>
                                 }
                             </button>
                         </div>
@@ -378,17 +393,19 @@ export default function OPLancamentoExterno({ isOpen, onClose, onSucesso, onDesf
                                                         </span>
                                                     </div>
                                                 </div>
-                                                <button
-                                                    className="op-externo-historico-btn-desfazer"
-                                                    onClick={() => handleDesfazer(item)}
-                                                    disabled={desfazendoId === item.id}
-                                                    title="Desfazer este lançamento"
-                                                >
-                                                    {desfazendoId === item.id
-                                                        ? <div className="spinner-btn-interno"></div>
-                                                        : <><i className="fas fa-undo"></i> Desfazer</>
-                                                    }
-                                                </button>
+                                                <UIBloqueio permissao="desfazer-lancamento-p-externo">
+                                                    <button
+                                                        className="op-externo-historico-btn-desfazer"
+                                                        onClick={() => handleDesfazer(item)}
+                                                        disabled={desfazendoId === item.id}
+                                                        title="Desfazer este lançamento"
+                                                    >
+                                                        {desfazendoId === item.id
+                                                            ? <div className="spinner-btn-interno"></div>
+                                                            : <><i className="fas fa-undo"></i> Desfazer</>
+                                                        }
+                                                    </button>
+                                                </UIBloqueio>
                                             </div>
                                         );
                                     })}

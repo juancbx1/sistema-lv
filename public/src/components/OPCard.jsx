@@ -1,6 +1,7 @@
 // public/src/components/OPCard.jsx
 
 import React from 'react';
+import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio.js';
 
 function isParcial(op) {
     if (!op.etapas || op.etapas.length === 0) return false;
@@ -61,12 +62,19 @@ export function OPCard({ op, onClick, onCancelar }) {
         op.status !== 'cancelada' &&
         op.status !== 'finalizado';
 
+    // Inline pattern: position:absolute não pode ter wrapper UIBloqueio (quebraria o contexto CSS)
+    const podeExecutarCancelamento = temPermissao('cancelar-op');
+
     const handleClick = () => {
         if (onClick) onClick(op);
     };
 
     const handleCancelarClick = (e) => {
         e.stopPropagation();
+        if (!podeExecutarCancelamento) {
+            mostrarPopupSemPermissao('Você não tem permissão para cancelar OPs.');
+            return;
+        }
         onCancelar(op);
     };
 
@@ -77,14 +85,22 @@ export function OPCard({ op, onClick, onCancelar }) {
             <div className={`card-borda-charme ${statusClass}`}></div>
 
             {/* Botão cancelar — canto superior direito */}
+            {/* Inline pattern: botão é position:absolute, UIBloqueio wrapper quebraria o contexto de posicionamento */}
             {podeCancelar && (
                 <button
                     className="op-card-btn-cancelar"
                     onClick={handleCancelarClick}
-                    title="Cancelar OP"
+                    title={podeExecutarCancelamento ? 'Cancelar OP' : 'Sem permissão para cancelar'}
                     aria-label="Cancelar OP"
                 >
-                    <i className="fas fa-trash-alt"></i>
+                    {podeExecutarCancelamento ? (
+                        <i className="fas fa-trash-alt"></i>
+                    ) : (
+                        <span className="op-btn-cancelar-bloqueado">
+                            <i className="fas fa-trash-alt"></i>
+                            <i className="fas fa-lock"></i>
+                        </span>
+                    )}
                 </button>
             )}
 

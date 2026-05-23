@@ -49,6 +49,38 @@ function escopoPretty(e, produtoNome) {
     return 'Todos os pontos';
 }
 
+function tipoMecanicaPretty(tipoPremiacao, modalidade) {
+    if (tipoPremiacao === 'corrida') {
+        return {
+            icone: '🏁',
+            titulo: 'Corrida individual — ganha o primeiro a chegar',
+            tag: 'CORRIDA',
+        };
+    }
+    if (modalidade === 'equipe') {
+        return {
+            icone: '👥',
+            titulo: 'Meta de equipe — todas ganham se bater',
+            tag: 'EQUIPE',
+        };
+    }
+    return {
+        icone: '🎯',
+        titulo: 'Meta individual — todos que atingirem ganham',
+        tag: 'META',
+    };
+}
+
+function formatarPremioResumo(premiacoes) {
+    if (!premiacoes || premiacoes.length === 0) return null;
+    if (premiacoes.length === 1) {
+        const p = premiacoes[0];
+        return p.descricao_premio || null;
+    }
+    // Multi-nível: chips
+    return null; // handled separately
+}
+
 export default function IncenGincanaCard({ gincana, onEditar, onPublicar, onCancelar, onDeletar, onVerRanking }) {
     // fase é usada apenas para visual (badge, borda, countdown)
     const fase = gincana.fase || gincana.status;
@@ -68,11 +100,25 @@ export default function IncenGincanaCard({ gincana, onEditar, onPublicar, onCanc
     const { label: badgeLabel, cls: badgeCls, dot } = fasePretty(faseParaBadge);
 
     const premiacoes = gincana.premiacoes || [];
+    const mecanica = tipoMecanicaPretty(gincana.tipo_premiacao, gincana.modalidade);
+    const ehUnidade = gincana.escopo_atividade === 'produto_especifico';
+    const unidadeLabel = ehUnidade ? 'unidades' : 'pontos';
+
+    // Para bloco de objetivo+prêmio
+    const primeiraPremiacao = premiacoes[0];
+    const multiNivel = premiacoes.length > 1;
+
+    const tempoRestanteLabel = fase === 'ao_vivo' && gincana.segundos_para_fim > 0
+        ? formatarContagem(gincana.segundos_para_fim)
+        : fase === 'proxima' && gincana.segundos_para_inicio > 0
+            ? formatarContagem(gincana.segundos_para_inicio)
+            : null;
 
     return (
         <div className={`incen-gincana-card ${status === 'rascunho' ? 'fase-rascunho' : faseCSS}`}>
             <div className="card-borda-charme"></div>
 
+            {/* Bloco 1 — Cabeçalho */}
             <div className="incen-gincana-card-body">
                 <div className="incen-gincana-emoji">{gincana.banner_emoji || '🏆'}</div>
 
@@ -86,17 +132,6 @@ export default function IncenGincanaCard({ gincana, onEditar, onPublicar, onCanc
                         {gincana.tipo_recorrencia === 'semanal' && (
                             <span className="incen-gincana-badge rascunho">SEMANAL</span>
                         )}
-                        {gincana.tipo_premiacao === 'corrida' && (
-                            <span className="incen-gincana-badge incen-badge-corrida">🏁 CORRIDA</span>
-                        )}
-                        {gincana.modalidade === 'equipe' && (
-                            <span className="incen-gincana-badge incen-badge-equipe">👥 EQUIPE</span>
-                        )}
-                    </div>
-
-                    <div className="incen-gincana-meta">
-                        <span>{participantesPretty(gincana.participantes)}</span>
-                        <span>{escopoPretty(gincana.escopo_atividade, gincana.produto_nome)}</span>
                     </div>
 
                     <div className="incen-gincana-periodo">
@@ -116,36 +151,74 @@ export default function IncenGincanaCard({ gincana, onEditar, onPublicar, onCanc
                         )}
                     </div>
 
-                    {status === 'publicada' && fase === 'proxima' && gincana.segundos_para_inicio > 0 && (
-                        <div className="incen-gincana-countdown">
-                            <i className="fas fa-clock"></i>
-                            Começa em {formatarContagem(gincana.segundos_para_inicio)}
-                        </div>
-                    )}
-                    {status === 'publicada' && fase === 'ao_vivo' && gincana.segundos_para_fim > 0 && (
-                        <div className="incen-gincana-countdown">
-                            <i className="fas fa-hourglass-half"></i>
-                            Encerra em {formatarContagem(gincana.segundos_para_fim)}
-                        </div>
-                    )}
                     {gincana.semana_label && (
                         <div className="incen-gincana-countdown">
                             <i className="fas fa-calendar-week"></i>
                             {gincana.semana_label}
                         </div>
                     )}
+                </div>
+            </div>
 
-                    {premiacoes.length > 0 && (
-                        <div className="incen-gincana-premiacoes-resumo">
-                            {premiacoes.map((p, i) => (
-                                <span key={i} className="incen-premi-chip">
-                                    {p.emoji_icone} {p.nivel_label} — {p.meta_valor ?? p.meta_pontos}
-                                </span>
-                            ))}
-                        </div>
+            {/* Bloco 2 — Tipo e mecânica */}
+            <div className="incen-gincana-tipo-bloco">
+                <div className="incen-gincana-tipo-topo">
+                    <span className="incen-gincana-tipo-icone">{mecanica.icone}</span>
+                    <div className="incen-gincana-tipo-info">
+                        <span className="incen-gincana-tipo-titulo">{mecanica.titulo}</span>
+                        <span className="incen-gincana-tipo-desc">
+                            {participantesPretty(gincana.participantes)} · {escopoPretty(gincana.escopo_atividade, gincana.produto_nome)}
+                        </span>
+                    </div>
+                    {tempoRestanteLabel && (
+                        <span className="incen-gincana-tipo-tempo">
+                            {fase === 'ao_vivo'
+                                ? <><i className="fas fa-hourglass-half"></i> {tempoRestanteLabel}</>
+                                : <><i className="fas fa-clock"></i> {tempoRestanteLabel}</>
+                            }
+                        </span>
                     )}
                 </div>
             </div>
+
+            {/* Bloco 3 — Objetivo + Prêmio */}
+            {premiacoes.length > 0 && (
+                <div className="incen-gincana-criterios">
+                    {multiNivel ? (
+                        <div className="incen-gincana-chips">
+                            {premiacoes.map((p, i) => {
+                                const vr = parseFloat(p.valor_premio_reais);
+                                const premioLabel = vr > 0
+                                    ? `R$ ${vr.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                    : p.descricao_premio;
+                                return (
+                                    <span key={i} className="incen-chip-nivel">
+                                        {p.emoji_icone} {p.nivel_label || `Nível ${i + 1}`} — {p.meta_valor ?? p.meta_pontos} {unidadeLabel} · {premioLabel}
+                                    </span>
+                                );
+                            })}
+                        </div>
+                    ) : primeiraPremiacao ? (
+                        <>
+                            <div className="incen-gincana-criterio-bloco">
+                                <span className="incen-gincana-criterio-label">OBJETIVO</span>
+                                <span className="incen-gincana-criterio-valor--pontos">
+                                    {primeiraPremiacao.meta_valor ?? primeiraPremiacao.meta_pontos} {unidadeLabel}
+                                </span>
+                            </div>
+                            <div className="incen-gincana-criterio-bloco">
+                                <span className="incen-gincana-criterio-label">PRÊMIO</span>
+                                <span className="incen-gincana-criterio-valor--premio">
+                                    {parseFloat(primeiraPremiacao.valor_premio_reais) > 0
+                                        ? `R$ ${parseFloat(primeiraPremiacao.valor_premio_reais).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                        : `${primeiraPremiacao.emoji_icone} ${primeiraPremiacao.descricao_premio}`
+                                    }
+                                </span>
+                            </div>
+                        </>
+                    ) : null}
+                </div>
+            )}
 
             <div className="incen-gincana-acoes">
                 {/* Rascunho: editar, publicar, deletar — independente do datetime */}

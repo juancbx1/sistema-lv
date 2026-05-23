@@ -4394,7 +4394,7 @@ body.ds-body.autenticado {
 
 .ds-gincana-badge--proxima   { background: #dbeafe; color: #1d4ed8; }
 .ds-gincana-badge--ao-vivo   { background: #dcfce7; color: #15803d; }
-.ds-gincana-badge--encerrada { background: #ede9fe; color: #6d28d9; }
+.ds-gincana-badge--encerrada { background: #6b7280; color: #fff; }
 
 .ds-gincana-dot {
     width: 6px;
@@ -5597,4 +5597,326 @@ body.ds-body.autenticado {
 .ds-gincana-ganho-em i {
     margin-right: 4px;
     color: #94a3b8;
+}
+
+/* ============================================================
+   Dashboard gincana — classes base que faltavam
+   ============================================================ */
+.ds-gincana-minha-contrib {
+    font-size: 0.75rem;
+    color: #6b7280;
+}
+
+.ds-gincana-corrida-vencedor {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 12px;
+    background: rgba(34, 197, 94, 0.08);
+    border-radius: 8px;
+    margin-top: 4px;
+}
+
+.ds-gincana-corrida-parabens {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #15803d;
+    margin: 0;
+}
+
+.ds-gincana-corrida-premio {
+    font-size: 0.85rem;
+    color: #374151;
+    margin: 0;
+}
+
+.ds-gincana-corrida-sem-ganho {
+    font-size: 0.85rem;
+    color: #6b7280;
+    padding: 8px 0 4px;
+    margin: 0;
+}
+
+.ds-gincana-premio-pago {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78rem;
+    color: #15803d;
+    margin: 4px 0 0;
+}
+
+.ds-gincana-premio-pago i { color: #22c55e; }
+
+.ds-gincana-premio-pendente {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78rem;
+    color: #92400e;
+    margin: 4px 0 0;
+}
+
+.ds-gincana-premio-pendente i { color: #f59e0b; }
+
+/* ============================================================
+   v5.0 — GincanaCardItem — Três zonas (tipo | conteúdo | prêmio)
+   ============================================================ */
+
+/* Gradiente na barra de progresso */
+.ds-gincana-barra {
+    background: linear-gradient(to right, #378add, #1d9e75);
+}
+
+.ds-gincana-barra--ganhou {
+    background: #22c55e;
+}
+
+/* Topo novo com três colunas */
+.ds-gincana-topo-novo {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    margin-bottom: 10px;
+}
+
+/* Zona esquerda — tipo */
+.ds-gincana-tipo-col {
+    width: 52px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.ds-gincana-tipo-emoji {
+    font-size: 22px;
+    line-height: 1;
+}
+
+.ds-gincana-tipo-tag {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    padding: 2px 5px;
+    border-radius: 4px;
+    text-align: center;
+}
+
+.ds-gincana-tipo-tag--corrida    { background: #fef3c7; color: #92400e; }
+.ds-gincana-tipo-tag--equipe     { background: #f3e8ff; color: #6b21a8; }
+.ds-gincana-tipo-tag--individual { background: #dbeafe; color: #1e40af; }
+
+/* Zona central — conteúdo */
+.ds-gincana-conteudo-col {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+}
+
+/* Zona direita — prêmio */
+.ds-gincana-premio-col {
+    background: #eaf3de;
+    border-radius: 8px;
+    padding: 6px 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    width: 80px;
+    min-width: 72px;
+    max-width: 80px;
+    flex-shrink: 0;
+}
+
+.ds-gincana-premio-icone { font-size: 18px; }
+
+.ds-gincana-premio-label {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    color: #0f6e56;
+}
+
+.ds-gincana-premio-valor {
+    font-size: 13px;
+    font-weight: 600;
+    color: #085041;
+    text-align: center;
+    word-break: break-word;
+}
+
+/* ============================================================
+   v5.5 — Filtros no bottom sheet
+   ============================================================ */
+.ds-fab-gincana-filtros {
+    display: flex;
+    gap: 6px;
+    padding: 0 16px 12px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+}
+
+.ds-fab-gincana-filtros::-webkit-scrollbar { display: none; }
+
+.ds-filtro-btn {
+    white-space: nowrap;
+    font-size: 12px;
+    padding: 5px 12px;
+    border-radius: 20px;
+    border: 1px solid #e2e8f0;
+    background: white;
+    color: #374151;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.ds-filtro-btn.ativo {
+    background: var(--gs-primaria, #3b82f6);
+    color: white;
+    border-color: var(--gs-primaria, #3b82f6);
+}
+
+.ds-filtro-vazio-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--gs-primaria, #3b82f6);
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 20px;
+    padding: 7px 16px;
+    cursor: pointer;
+}
+
+.ds-filtro-vazio-link:hover { background: #dbeafe; }
+
+/* Encerradas ficam mais opacas no card */
+.ds-gincana-card.encerrada-opaca { opacity: 0.50; }
+
+/* ============================================================
+   v5.7 — Card de vencedora redesenhado
+   ============================================================ */
+.ds-gincana-card--ganhou {
+    background: #085041 !important;
+    color: #e1f5ee;
+}
+
+.ds-gincana-card--ganhou .ds-gincana-titulo { color: #e1f5ee; }
+.ds-gincana-card--ganhou .ds-gincana-badge { color: #e1f5ee; }
+.ds-gincana-card--ganhou .ds-gincana-barra-wrap { background: rgba(255,255,255,0.15); }
+
+.ds-gincana-card--ganhou .ds-gincana-premio-col {
+    background: rgba(250,199,117,0.2);
+    border: 0.5px solid rgba(250,199,117,0.4);
+}
+
+.ds-gincana-card--ganhou .ds-gincana-premio-label { color: #fac775; }
+.ds-gincana-card--ganhou .ds-gincana-premio-valor { color: #fac775; }
+
+/* Bloco de prêmio comemorativo */
+.ds-gincana-v-premio-bloco {
+    background: rgba(250,199,117,0.2);
+    border: 0.5px solid rgba(250,199,117,0.4);
+    border-radius: 10px;
+    padding: 12px 16px;
+    text-align: center;
+    margin: 8px 0;
+}
+
+.ds-gincana-v-premio-valor {
+    font-size: 15px;
+    font-weight: 500;
+    color: #fac775;
+    margin: 0;
+}
+
+/* Textos e elementos dentro de card ganhou */
+.ds-gincana-card--ganhou .ds-gincana-corrida-vencedor { color: #e1f5ee; }
+.ds-gincana-card--ganhou .ds-gincana-corrida-parabens { color: #fac775; }
+.ds-gincana-card--ganhou .ds-gincana-ganho-em { color: #9fe1cb; }
+.ds-gincana-card--ganhou .ds-gincana-ganho-em i { color: #9fe1cb; }
+.ds-gincana-card--ganhou .ds-gincana-posicao { color: #9fe1cb; }
+.ds-gincana-card--ganhou .ds-gincana-posicao strong { color: #e1f5ee; }
+.ds-gincana-card--ganhou .ds-gincana-periodo { color: #9fe1cb; }
+.ds-gincana-card--ganhou .ds-gincana-tempo-restante { color: #9fe1cb; }
+.ds-gincana-card--ganhou .ds-gincana-pontos-valor { color: #e1f5ee; }
+.ds-gincana-card--ganhou .ds-gincana-meta-label { color: #9fe1cb; }
+.ds-gincana-card--ganhou .ds-gincana-pct { color: #9fe1cb; }
+.ds-gincana-card--ganhou .ds-gincana-status-ganhou { color: #fac775; }
+.ds-gincana-card--ganhou .ds-gincana-descricao {
+    background: rgba(255,255,255,0.08);
+    border-left-color: rgba(250,199,117,0.4);
+    color: #e1f5ee;
+}
+.ds-gincana-card--ganhou .ds-gincana-premio-pago { color: #9fe1cb; }
+.ds-gincana-card--ganhou .ds-gincana-premio-pago i { color: #9fe1cb; }
+.ds-gincana-card--ganhou .ds-gincana-premio-pendente { color: #fac775; }
+.ds-gincana-card--ganhou .ds-gincana-premio-pendente i { color: #fac775; }
+
+/* ============================================================
+   v5.8 — Toast de vitória + confetes
+   ============================================================ */
+.ds-toast-vitoria {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0.8);
+    background: #085041;
+    color: #e1f5ee;
+    border-radius: 16px;
+    padding: 20px 28px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    z-index: 10000;
+    animation: ds-toast-vitoria-in 0.4s ease forwards;
+    pointer-events: none;
+    opacity: 0;
+}
+
+.ds-toast-vitoria--saindo {
+    animation: ds-toast-vitoria-out 0.7s ease forwards;
+}
+
+.ds-toast-vitoria-icone { font-size: 36px; }
+
+.ds-toast-vitoria-titulo {
+    font-size: 18px;
+    font-weight: 700;
+    color: #fac775;
+    margin: 0 0 4px;
+}
+
+.ds-toast-vitoria-subtitulo {
+    font-size: 13px;
+    color: #9fe1cb;
+    margin: 0;
+}
+
+@keyframes ds-toast-vitoria-in {
+    to { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+}
+
+@keyframes ds-toast-vitoria-out {
+    to { transform: translate(-50%, -50%) scale(0.9); opacity: 0; }
+}
+
+/* Pulso comemorativo no card */
+.ds-gincana-card--celebrando {
+    animation: ds-pulso-borda 2s ease-in-out 2;
+}
+
+@keyframes ds-pulso-borda {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(250,199,117,0.4); }
+    50% { box-shadow: 0 0 0 6px rgba(250,199,117,0); }
 }

@@ -76,6 +76,7 @@ O prefixo do nome do componente é sempre a **abreviação da página/área** à
 | `Embalagem*` | Embalagem de produtos |
 | `Botao*` | Botões com lógica própria |
 | `UI*` | ⚠️ Prefixo legado usado para componentes reutilizáveis entre páginas — o nome não é ideal e será revisado progressivamente. Por enquanto, mantê-lo para não quebrar imports existentes. |
+| `Permissoes*` | Tela de Gerenciar Permissões (inaugurado em 2026-05-22) |
 
 **Componentes reutilizados entre páginas:** quando um componente precisar ser usado em mais de uma área, o prefixo deve deixar claro que é compartilhado — a forma exata será definida caso a caso conforme o projeto avança, evoluindo o prefixo `UI*` para algo mais semântico.
 
@@ -295,16 +296,17 @@ Tabela de controle para evitar retrabalho. Atualizar sempre que uma etapa for co
 | Área | Arquivo CSS | React 100% | CSS Limpo | Usa gs-card | Observações |
 |---|---|---|---|---|---|
 | Login / Index | `login.css` | ✅ | ✅ | N/A | React 100% (27/04). `LoginApp.jsx` único. Tablet-first (2 col), glassmorphism. Token 8h/30d via `manterConectado`. Demitidos → tela de despedida + cooldown crescente. |
-| Ordens de Produção | `ordens-de-producao.css` | ✅ | ✅ | ✅ (via alias) | Referência de qualidade para todas as outras áreas. Painel de Atividades: PERFEITO — não tocar. Em 2026-05-13, `OPStatusCard.jsx` teve apenas refactor interno: `calcularTempoEfetivo`, `formatarHora`, `formatarTempo` extraídos para `PontoHelpers.js`; `LinhaDoTempoDia` extraída para `UILinhaDoTempoDia.jsx`. Zero mudança visual ou comportamental. |
+| Ordens de Produção | `ordens-de-producao.css` | ✅ | ✅ | ✅ (via alias) | Referência de qualidade. **UIBloqueio 100% concluído (2026-05-22).** 14 permissões mapeadas e protegidas (ver `_planejamento/permissoes-por-pagina.md`). Padrões A, B e C todos representados. `OPGerenciamentoTela.jsx`: `onCancelar` sempre passa o handler (sem condição no pai). API `criar-op` corrigida para `gerar-op`. |
 | Calendário da Empresa | `calendario.css` | ✅ | ✅ | ✅ | Página nova — estrutura padrão aplicada |
 | Central de Alertas | `config-alertas.css` | ✅ | ❌ | ✅ | Redesenhada em 2026-05-16 com 2 abas: Alertas Gerais + Avisos Popups. `ConfigAlertasGerais.jsx` + `AvisosPopupAdmin.jsx` + `AvisosPopupModal.jsx`. Avisos Popup v1.0 completo (DB + API + UI). Permissão: `gerenciar-avisos-popup` em `permissoes.js`. |
-| Centro de Incentivos | `incentivos.css` | ✅ | ✅ | ✅ | v4.0 (2026-05-20). Detecção eager via hook em `api/producoes.js` (só costureiras; hook tiktik pendente em `api/arremates.js`). Post-mortem para corridas encerradas sem detecção. `ganho_em` registrado/exibido no dashboard e ranking. `DashFabGincana.jsx` substitui cards inline por FAB+bottom sheet. Coluna ⏱ no `IncenGincanaRankingModal`. `verificarGincanasAposProducao` exportado de `api/gincanas.js`. |
+| Centro de Incentivos | `incentivos.css` | ✅ | ✅ | ✅ | v5.1 (2026-05-23). v5.0: redesign completo UX/UI (3-zonas, filtros FAB, celebração, wizard reescrito). v5.1: campo `valor_premio_reais` em `gincanas_premiacoes` (migration executada); passo 3 do wizard com OBJETIVO\|PRÊMIO lado a lado + chamada auto-gerada editável; `maiorPremio()` retorna R$ nas dashboards; ajustes UI: coluna prêmio compacta (80px), badge encerrada cinza (#6b7280), filtro padrão FAB = ao_vivo, estado vazio inteligente com UIFeedbackNotFound + link em cascata ao_vivo→proximas→todas, `ds-gincana-conteudo-col` centralizado. Hook tiktik pendente em `api/arremates.js`. Stubs IncenMetasTab/IncenPontosTab pendentes. |
 | Central de Pagamentos | `central-de-pagamentos.css` | ✅ | ❌ | ❌ | |
 | Dashboard Funcionário | `dashboard.css` | ✅ | ❌ | ❌ | Mobile-first, estrutura diferente. `DashFabGincana.jsx` (2026-05-20) substitui `DashGincanaCard` inline — gincanas agora em FAB + bottom sheet. |
 | Arremates | `arremates.css` | ✅ | ❌ | ✅ | v1.0 (2026-05-04) + v2.0 (2026-05-05) + v3.0 Items 1-4 (2026-05-13/14) concluídos. v3.0: `PontoHelpers.js` e `UILinhaDoTempoDia.jsx` extraídos como compartilhados; `ArremateStatusCard` reescrito com layout `cracha-tiktik` idêntico ao OPStatusCard (cronômetro interval-aware, bottom sheets, tolerância S3, liberar intervalo); `ArreMatePainelAtividades` refatorado com estrutura `oa-*` idêntica ao OPPainelAtividades (ALMOCO/PAUSA no grid principal, inativos completos, todos os handlers de ponto). CSS: 4657 → 5850 linhas. v3.0 implementação 100% concluída (Items 1–5). Aguarda verificação manual em browser. Deletar manualmente: `ArremateToast.jsx` e `ArremateAcoesLote.jsx`. Ver `_planejamento/arremates-redesign.md`. |
 | Embalagem de Produtos | `embalagem-de-produtos.css` | ❓ | ❌ | ❌ | Verificar migração React |
 | Estoque | `estoque.css` | ❓ | ❌ | ❌ | Verificar migração React |
 | Financeiro | `financeiro.css` | ❓ | ❌ | ❌ | Verificar migração React |
+| Gerenciar Permissões | `permissoes-usuarios.css` | ✅ | ✅ | ✅ | Migrada em 2026-05-22. Duas abas: Permissões (editor com acordeão) + Auditoria (logs paginados com filtros). Prefixo `Permissoes*`. Infraestrutura de auditoria completa (`api/audit.js`, `api/audit-log.js`, `audit_log` tabela). Permissão `usar-agente-encerrador` adicionada. |
 | Usuários Cadastrados | `usuarios-cadastrados.css` | ✅ | ❌ | ❌ | |
 | Home / Admin | `home.css` | ✅ | ❌ | ❌ | |
 | Gerenciar Produção | `gerenciar-producao.css` | ❓ | ❌ | ❌ | Verificar migração React |
@@ -332,20 +334,6 @@ Funções puras compartilhadas entre `OPStatusCard` e `ArremateStatusCard` (e qu
 
 ---
 
-### `UILinhaDoTempoDia` — Linha do Tempo do Dia
-
-**Arquivo:** `public/src/components/UILinhaDoTempoDia.jsx`
-
-Componente visual compartilhado: barra horizontal colorida mostrando toda a jornada do dia (sessões de trabalho, almoço, pausa, saída antecipada, marcador "Agora").
-
-**Props:** `{ funcionario, pontoHoje }` — mesma estrutura de dados que `OPStatusCard` já usa.
-
-**Onde já é usado:** `OPStatusCard.jsx` (no bottom sheet de horários). Será usado também em `ArremateStatusCard.jsx` quando o v3.0 for implementado.
-
-**Regra:** não criar outras implementações de linha do tempo — usar este componente.
-
----
-
 ### `UIAgenteIA` — Identidade Visual de IA
 
 **Arquivo:** `public/src/components/UIAgenteIA.jsx`
@@ -366,6 +354,150 @@ Componente visual compartilhado: barra horizontal colorida mostrando toda a jorn
 - Avatar: gradiente `var(--gs-primaria) → #8e44ad`, circular, pulsa quando idle (tamanho lg), gira quando scanning
 - Terminal: fundo `#f4f8fb`, fonte `Courier New`, prompt `›` / `✓`, cursor `▌` piscante
 - Botão: neutro (cinza) no idle → azul no scanning/done
+
+---
+
+### `UIBloqueio` — Padrão Universal de Bloqueio por Permissão
+
+**Arquivos:** `public/src/components/UIBloqueio.jsx` + `public/src/utils/bloqueio.js`
+
+**Regra absoluta:** nunca sumir com elementos por falta de permissão. O elemento permanece visível, em estado bloqueado — com cadeado visual e popup ao clicar. Isso vale para botões, links de ação e qualquer elemento interativo.
+
+**Três padrões de uso — escolha conforme o contexto CSS do elemento:**
+
+#### Padrão A — Wrapper `<UIBloqueio>` (elementos em fluxo normal: flex, grid, block)
+
+```jsx
+import UIBloqueio from './UIBloqueio.jsx';
+
+<UIBloqueio permissao="finalizar-op">
+    <button onClick={handleFinalizar}>Finalizar OP</button>
+</UIBloqueio>
+
+// Com mensagem customizada:
+<UIBloqueio permissao="cancelar-op" mensagem="Apenas supervisores podem cancelar OPs.">
+    <button>Cancelar</button>
+</UIBloqueio>
+```
+
+Quando bloqueado: renderiza um `div` wrapper (`display: inline-flex`) com overlay semitransparente + ícone de cadeado centralizado. O clique no overlay mostra o popup de "Acesso restrito" e não propaga para o filho.
+
+**⚠️ NUNCA use quando o elemento tem layout que seria destruído pelo wrapper:**
+- `position: absolute/fixed` — o wrapper cria `position: relative` que destrói o contexto de posicionamento
+- `position: sticky` — o sticky perde a referência ao scroll container
+- Flex item com `width: X%; align-self: Y` — o wrapper quebra essas constraints
+
+Nesses casos, usar Padrão B ou C.
+
+**⚠️ Bug "column stretch":** se o botão é flex item em `flex-direction: column` e esticava para preencher a largura (`align-self: stretch` padrão), adicionar `width: 100%` no CSS do botão — isso garante que ele preencha o wrapper após ser envolvido. Sem `width: 100%`, o botão fica com largura de conteúdo enquanto o wrapper ocupa a linha toda.
+
+#### Padrão B — Inline com ícone duplo (elementos `position: absolute`, geralmente ícones)
+
+Para botões absolutamente posicionados que mostram apenas ícone. Usa o "ícone duplo" — original esmaecido + cadeadinho badge.
+
+```jsx
+import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio.js';
+
+const podeExecutar = temPermissao('cancelar-op');
+
+const handleClick = (e) => {
+    e.stopPropagation();
+    if (!podeExecutar) {
+        mostrarPopupSemPermissao('Você não tem permissão para cancelar OPs.');
+        return;
+    }
+    // lógica real...
+};
+
+// JSX: ícone duplo quando bloqueado (ação original esmaecida + cadeadinho badge)
+<button className="meu-btn-absoluto" onClick={handleClick}>
+    {podeExecutar ? (
+        <i className="fas fa-trash-alt"></i>
+    ) : (
+        <span className="op-btn-cancelar-bloqueado">
+            <i className="fas fa-trash-alt"></i>
+            <i className="fas fa-lock"></i>
+        </span>
+    )}
+</button>
+```
+
+O ícone duplo deixa claro que é **aquele botão** que está bloqueado, não o card inteiro.
+
+**Referência:** `OPCard.jsx` (botão cancelar OP).
+
+#### Padrão C — Inline com texto "Sem permissão" (botões com texto e layout restrito)
+
+Para botões com texto visível que têm constraints de layout impeditivas para o wrapper (ex: `position: sticky`, `width: 50%` em flex column, FABs especiais). O botão fica visível em estado cinza com `<i className="fas fa-lock"></i> Sem permissão`.
+
+```jsx
+import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio.js';
+
+const podeExecutar = temPermissao('confirmar-lancamento');
+
+<button
+    className={`meu-btn${!podeExecutar ? ' meu-btn--bloqueado' : ''}`}
+    onClick={() => {
+        if (!podeExecutar) {
+            mostrarPopupSemPermissao('Você não tem permissão para confirmar lançamentos.');
+            return;
+        }
+        handleAcao();
+    }}
+    disabled={carregando}
+>
+    {carregando
+        ? <><div className="spinner-btn-interno"></div> Processando...</>
+        : !podeExecutar
+            ? <><i className="fas fa-lock"></i> Sem permissão</>
+            : <><i className="fas fa-check-double"></i> Confirmar</>
+    }
+</button>
+```
+
+**CSS necessário** (na página do botão):
+```css
+.meu-btn--bloqueado {
+    background: linear-gradient(135deg, #94a3b8, #64748b) !important;
+    /* ou cinza neutro, conforme a cor base do botão */
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+.meu-btn--bloqueado:hover { /* mesma cor, sem hover effect */ }
+```
+
+**Referências:** `OPTelaConfirmacaoQtd.jsx`, `OPExternoTela.jsx`, `OPLancamentoExterno.jsx`, `OPCorteEstoqueCard.jsx`.
+
+---
+
+**Árvore de decisão — qual padrão usar:**
+
+```
+O botão tem position: absolute/fixed?
+├── SIM + só ícone → Padrão B (ícone duplo)
+└── NÃO
+    ├── O wrapper UIBloqueio quebraria o layout?
+    │   (sticky, width:%, align-self, FAB especial)
+    │   ├── SIM → Padrão C (inline + "Sem permissão")
+    │   └── NÃO → Padrão A (wrapper UIBloqueio)
+    └── ← segue para Padrão A
+```
+
+**Checklist ao implementar qualquer bloqueio:**
+1. Qual padrão? → Ver árvore de decisão acima.
+2. Algum componente PAI passa o handler condicionalmente (`onHandler={temPermissao ? fn : null}`)? → Remover a condição do pai, o filho cuida do bloqueio.
+3. Padrão A em flex column com botão que esticava? → Adicionar `width: 100%` no CSS do botão (ver Bug 5 no planejamento).
+
+**Utilitários standalone** (`public/src/utils/bloqueio.js`) — funcionam fora do React:
+- `temPermissao(permissao)` → `boolean` — lê `localStorage.permissoes`
+- `mostrarPopupSemPermissao(mensagem?)` → void — cria popup de "Acesso restrito" no DOM diretamente
+
+**CSS:** classes `gs-bloqueio-*` em `global-style.css`. Disponíveis em todas as páginas admin.
+
+**Referências de implementação:**
+- Padrão A: `OPEtapasModal.jsx` (Finalizar OP), `OPCortesRadar.jsx` (Registrar Corte)
+- Padrão B: `OPCard.jsx` (Cancelar OP — lixeira absoluta)
+- Padrão C: `OPTelaConfirmacaoQtd.jsx` (FAB Confirmar), `OPCorteEstoqueCard.jsx` (botão Gerar OP)
 
 ---
 
@@ -400,65 +532,6 @@ if (carregando) return <UICarregando variante="pagina" />;
 **Para trocar o visual:** editar apenas as classes CSS `.ui-cg-*` em `global-style.css`. A lógica do componente não muda — assim toda a UI atualiza de uma vez.
 
 **Visual:** spinner de dois arcos (azul + roxo, mesmos tons do UIAgenteIA) girando sobre trilha cinza. Letras "LV" em gradiente no centro, com pulso suave. Fundo transparente (herda do container).
-
----
-
-### Agente Encerrador de OPs — FAB Global + Interceptor
-
-**Arquivos:**
-- `public/src/main-agentes-globais.jsx` — Entry point montado em todas as páginas admin via `carregar-menu-lateral.js`. Gerencia polling centralizado (5 min) e passa `opsProntas` para os dois componentes.
-- `public/src/components/OPAgenteEncerrador.jsx` — FAB "Fantasminha" fixo, visível em todas as páginas admin.
-- `public/src/components/OPAgenteInterceptor.jsx` — Modal de bloqueio suave com escalada progressiva.
-- **CSS:** classes `gs-agente-enc-*` e `gs-agente-int-*` em `global-style.css`.
-
-**Injeção global:** `public/js/carregar-menu-lateral.js` faz `import('/src/main-agentes-globais.jsx')` para páginas `/admin/`. Vite rastreia o dynamic import e cria chunk separado no build.
-
-**API:** `GET /api/ordens-de-producao/prontas-para-encerrar` — permissão `acesso-ordens-de-producao`. Retorna OPs onde `COUNT(DISTINCT etapa_index em producoes) >= jsonb_array_length(op.etapas)`. Retorna todos os campos necessários para `OPModalLote` (`edit_id`, `produto_id`, `etapas`, etc.) + `produto_imagem` (busca imagem da variação em `grade` com fallback para `produto.imagem`) + `horas_aguardando` + `quantidade_feita_ultima_etapa` (SUM de `producoes.quantidade` na última `etapa_index` — usado para detectar encerramento parcial real).
-
-**Estados do FAB (`OPAgenteEncerrador`):**
-| Estado | Condição | Visual |
-|---|---|---|
-| `ocioso` | 0 OPs prontas | Cinza, opacity 0.35, não-clicável |
-| `snooze` | Supervisor adiou | Cinza, opacity 0.6, badge de relógio, clicável |
-| `atencao` | 1–2 OPs, <4h | Azul, pulso suave, badge com count |
-| `urgente` | 3+ OPs OU ≥4h | Laranja, anel giratório |
-| `critico` | Qualquer OP ≥24h | Vermelho, FAB treme, badge pisca |
-
-**Mini-modal (FAB clicado):**
-- Lista de OPs com **checkboxes** (todas selecionadas por padrão), imagem da variação, número e nome da variante, tempo aguardando
-- Controles de seleção: "Todas" / "Nenhuma" + contador
-- "Encerrar (N)" → abre `OPModalLote` via `ReactDOM.createPortal` com as OPs selecionadas
-- "Adiar 30 min" (máx 2x/dia; some para OPs críticas)
-- **Snooze reversível:** quando pausado, mini-modal mostra "Retomar e encerrar" + "Cancelar pausa" + "Continuar pausado"
-
-**OPAgenteInterceptor — gatilhos (em ordem de prioridade):**
-1. OP crítica (≥24h) não alertada antes (`agente_enc_critico_visto`) — ignora snooze e anti-spam
-2. **Pendência persistente** (`agente_enc_pendente_desde` setado) na carga inicial da sessão (`prev === null`) — ignora anti-spam, respeita snooze
-3. Primeiro acesso do dia (`agente_enc_ultimo_acesso_dia`)
-4. Nova OP detectada no polling (delta positivo)
-- Anti-spam: máx 1 interceptação a cada 30 min (exceto gatilhos 1 e 2)
-- Scan animado (3 fases, ~2s) → controles de seleção (Todas/Nenhuma + contador) → lista com **checkboxes** (mesmo layout do FAB mini-modal) → botões de ação
-- "Encerrar (N)" → abre `OPModalLote` direto (mesma lógica do FAB, sem overlay separado)
-- Escalada: OPs críticas não têm botão de adiar
-
-**Pendência Persistente — como funciona:**
-- `main-agentes-globais.jsx` seta `agente_enc_pendente_desde = timestamp` quando a API retorna OPs pela primeira vez e o flag ainda não existe
-- O flag é removido apenas quando a API retorna array vazio (OPs foram encerradas)
-- No `OPAgenteInterceptor`, quando `prev === null` (primeira carga da sessão) + flag setado + sem snooze → `disparar(true, false)` (força sem registrar no anti-spam)
-- `registrarAntiSpam = false` garante que F5 continue disparando em cada reload até as OPs serem fechadas
-- O snooze de 30 min ainda é respeitado — o supervisor pode pedir 30 min de trégua mas não pode "escapar" indefinidamente
-
-**LocalStorage keys:**
-- `agente_enc_snooze_ate` — timestamp de expiração do snooze
-- `agente_enc_snoozes_hoje` — `{ data, count }` (reset diário)
-- `agente_enc_ultimo_acesso_dia` — data do último acesso (Interceptor)
-- `agente_enc_critico_visto` — array de números de OP crítica já alertadas
-- `agente_enc_ultimo_interceptor` — timestamp da última interceptação (anti-spam)
-- `agente_enc_pendente_desde` — timestamp de quando OPs prontas foram detectadas; removido quando count chega a 0
-
-**Posicionamento do FAB:**
-- Desktop: `bottom: 95px, right: 25px` (acima do FAB de demandas: 25 + 60 + 10)
-- Tablet (481–1024px): `bottom: 110px, right: 28px` (acima do FAB tablet: 28 + 72 + 10)
 
 ---
 
@@ -688,33 +761,6 @@ Qualquer novo código que crie cortes via `POST /api/cortes` **não deve enviar 
 
 ---
 
-## OPQuickLogModal — Registro Rápido de Corte (redesign 2026-05-16)
-
-**Arquivo:** `public/src/components/OPQuickLogModal.jsx`
-
-Substitui o wizard de 3 passos (produto → variante → quantidade) por uma interface de lista plana + expansão inline.
-
-### Funcionalidades
-
-| Feature | Detalhe |
-|---|---|
-| **Lista plana** | Todos os combos produto+variante numa lista de linhas. Clicar numa linha expande os controles de quantidade inline (CSS `max-height` transition). |
-| **Busca multi-token** | "preto gg" bate em "Preto com Preto \| GG" — a busca divide por espaço e exige que todos os tokens apareçam na string composta do produto+variante. |
-| **Recentes** | Quando a busca está vazia, mostra os últimos 8 registros do usuário (`localStorage: op_cortes_recentes`). |
-| **Modo Normal** | Confirmar → registra → sucesso inline → fecha em 1,1s. |
-| **Modo Express** | Adicionar à fila → acumular N itens → "Registrar N cortes" → tela de resultado com pills verdes/vermelhas por item. O modo persiste no `localStorage: op_cortes_modo`. |
-| **Agente de Planejamento** | Quando `preenchido = { produto, variante, quantidadeSugerida }` é passado, o painel abre com a linha já expandida e a quantidade preenchida. |
-
-### Componentes a deletar após validação em produção
-
-- `OPSelecaoProdutoCorte.jsx`
-- `OPSelecaoVarianteCorte.jsx`
-- `OPRegistroCorte.jsx`
-
-Verificar antes de deletar se há outros usos além de `OPCortesTela.jsx`.
-
----
-
 ## Funcionalidades Implementadas — OPs (referência)
 
 
@@ -722,22 +768,6 @@ Verificar antes de deletar se há outros usos além de `OPCortesTela.jsx`.
 - Ao finalizar uma OP, o PUT **sempre recalcula `etapas`** a partir da tabela `producoes`
 - Isso garante que `etapa.quantidade` no JSON salvo reflita o real produzido, não o valor estimado
 - Sem essa correção, OPs finalizadas em lote não chegavam à fila de arremates (quantidade era 0)
-
-### OPEtapasModal — Redesign
-- Removido accordion; etapas agora são blocos abertos (`EtapaBloco`)
-- Borda-charme via `::before` no CSS baseado na classe de status do modal
-- Progresso calculado com base na **última etapa** (não soma de todas)
-- Usa `mostrarConfirmacao` do sistema (não `window.confirm`)
-
-### OPFiltros — Remoção do filtro "Em Aberto"
-- O filtro `em-aberto` foi removido do array `statusOptions` em `OPFiltros.jsx` — ele era inutilizável porque o filtro "Todas Ativas" já inclui `em-aberto + produzindo`, e na prática todas as OPs ativas estão em `produzindo` rapidamente
-- Restam 4 filtros: **Todas Ativas**, **Produzindo**, **Finalizadas**, **Canceladas**
-- API (`GET /api/ordens-de-producao`): quando `status=finalizado`, ordena por `data_final DESC NULLS LAST` (mais recente primeiro). Para os demais, mantém `op.id DESC`
-
-### OPModalLote — Bugs corrigidos + CSS global
-- **Bug "parcial" falso positivo:** `isParcial` checava `etapas[last].quantidade_feita`, mas o campo `etapas` no banco só tem `processo/maquina/feitoPor` — sem `quantidade_feita`. Resultado: todas as OPs apareciam como "parciais". Corrigido: API agora retorna `quantidade_feita_ultima_etapa` (subquery `SUM`) e `isParcial` usa esse campo
-- **Bug imagem:** modal checava `op.imagem_produto` mas a API retorna `op.produto_imagem`. Corrigido renomeando o campo no JSX
-- **CSS movido para global-style.css:** todas as classes `op-lote-*` + `op-spinner-btn` + `@keyframes op-overlay-in` / `op-modal-in` foram migradas de `ordens-de-producao.css` para `global-style.css`. O componente `OPModalLote` é usado fora da página de OPs (agentes globais), então o CSS precisa estar disponível em todas as páginas admin
 
 ### global-style.css — Dependência obrigatória para todas as páginas admin
 O `global-style.css` define `body { visibility: hidden }` e `body.autenticado { visibility: visible }`. Páginas sem ele ficam com o body visível mas **sem os estilos dos agentes globais** (FAB + modal sem formatação). Todas as páginas `/admin/*.html` devem incluir `global-style.css` antes dos outros CSS. Páginas que estavam sem e foram corrigidas: `gerenciar-producao.html`, `permissoes-usuarios.html`, `ponto-por-processo.html`, `cadastrar-produto.html`.
@@ -786,38 +816,6 @@ Repositório: `https://github.com/juancbx1/sistema-lv`
 
 ---
 
-## Usuário de Teste (Dashboard)
-
-Para testar a dashboard dos funcionários sem usar senha real, existem duas formas:
-
-### Opção A — Usuário de teste fixo
-
-Existe um usuário de teste no banco com `is_test = TRUE`.
-
-- **Login:** `teste` | **Senha:** `teste123`
-- **Tipo:** costureira | **Nome:** Funcionário Teste
-- Este usuário é **filtrado automaticamente** em todas as listagens de funcionários da interface (queries já incluem `AND (is_test IS FALSE OR is_test IS NULL)`)
-- Migration SQL em `_planejamento/migration-is-test-usuario.sql`
-
-### Opção B — Impersonação pelo Admin (recomendada para testes com dados reais)
-
-Na tela de **Usuários Cadastrados**, admins com permissão `gerenciar-permissoes` veem um botão laranja (`fa-eye`) em cada card de costureira/tiktik ativo. Ao clicar:
-
-1. Backend gera um JWT de impersonação com validade de **2h** (`POST /api/usuarios/:id/impersonar`)
-2. A dashboard abre em **nova aba** com `?impersonando=TOKEN` na URL
-3. O token é movido para `sessionStorage` da nova aba — o token do admin em outras abas **não é afetado**
-4. Um **banner laranja** fica fixo no topo da dashboard indicando o modo admin
-5. Fechar a aba encerra a sessão automaticamente (sessionStorage é por aba)
-
-**Arquivos envolvidos:**
-- `api/usuarios.js` → `POST /:id/impersonar`
-- `public/src/components/UserCardView.jsx` → botão laranja
-- `public/src/components/UserCard.jsx` → `handleImpersonar`
-- `public/src/main-dashboard.jsx` → detecção do token e banner
-- `public/js/utils/auth.js` e `api-utils.js` → preferem `sessionStorage.impersonation_token`
-
----
-
 ## Sistema de Gincanas — Centro de Incentivos (v3.0 — 2026-05-19)
 
 ### Regras absolutas (nunca violar)
@@ -840,14 +838,16 @@ gincanas (id, nome, descricao, banner_emoji, participantes, modalidade, tipo_pre
            criado_por, criado_em, atualizado_em)
 
 -- Premiações por nível (meta_valor = pontos OU unidades, depende do escopo)
-gincanas_premiacoes (id, gincana_id, nivel_label, emoji_icone, meta_valor, descricao_premio, ordem, criado_em)
+-- valor_premio_reais = valor monetário do prêmio em R$ (adicionado em v5.1 — migration-gincanas-valor-premio.sql)
+-- descricao_premio = texto de chamada ex: "Faça 500 pts e receba R$ 20,00." (auto-gerado pelo wizard)
+gincanas_premiacoes (id, gincana_id, nivel_label, emoji_icone, meta_valor, descricao_premio, valor_premio_reais, ordem, criado_em)
 
 -- Prêmios ganhos — rastreamento de pagamentos (SEPARADO de banco_pontos_log)
 gincanas_premios_ganhos (id, gincana_id, usuario_id, nivel_label, descricao_premio, valor_reais,
                           ganho_em, pago_em, pago_por, semana_ref, criado_em)
 ```
 
-**Migrations:** `_planejamento/migration-gincanas.sql` (v1.0) + `_planejamento/migration-gincanas-v3.sql` (v3.0 — já rodada em produção)
+**Migrations:** `_planejamento/migration-gincanas.sql` (v1.0) + `_planejamento/migration-gincanas-v3.sql` (v3.0) + `_planejamento/migration-gincanas-valor-premio.sql` (v5.1 — todas já rodadas em produção)
 
 **Valores de enum:**
 - `status`: `'rascunho'` | `'publicada'` | `'cancelada'`

@@ -69,7 +69,7 @@ const FASES_SCAN = [
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function OPAgenteInterceptor({ opsProntas = [], nomeUsuario = '', onRefresh }) {
+export default function OPAgenteInterceptor({ opsProntas = [], nomeUsuario = '', onRefresh, temPermissaoAgente = false }) {
     const [visivel, setVisivel]                     = useState(false);
     const [faseAtual, setFaseAtual]                 = useState(0);
     const [mostrarResultado, setMostrarResultado]   = useState(false);
@@ -117,6 +117,12 @@ export default function OPAgenteInterceptor({ opsProntas = [], nomeUsuario = '',
 
     // ── Lógica de gatilhos ────────────────────────────────────────────────────
     useEffect(() => {
+        // Supervisor sem permissão nunca recebe o interceptor
+        if (!temPermissaoAgente) {
+            prevOpsRef.current = opsProntas;
+            return;
+        }
+
         if (opsProntas.length === 0) {
             prevOpsRef.current = opsProntas;
             return;
@@ -164,7 +170,7 @@ export default function OPAgenteInterceptor({ opsProntas = [], nomeUsuario = '',
             if (podeInterceptar()) { disparar(); return; }
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [opsProntas, disparar]);
+    }, [opsProntas, disparar, temPermissaoAgente]);
 
     useEffect(() => () => timersRef.current.forEach(t => clearTimeout(t)), []);
 
@@ -207,143 +213,146 @@ export default function OPAgenteInterceptor({ opsProntas = [], nomeUsuario = '',
     const fasesVisiveis = FASES_SCAN.slice(0, Math.min(faseAtual, FASES_SCAN.length));
     const scanCompleto  = faseAtual > FASES_SCAN.length;
 
-    if (!visivel) return null;
+    return (
+        <>
+            {visivel && ReactDOM.createPortal(
+                <div className="gs-agente-int-overlay">
+                    <div className="gs-agente-int-modal">
 
-    return ReactDOM.createPortal(
-        <div className="gs-agente-int-overlay">
-            <div className="gs-agente-int-modal">
-
-                {/* Cabeçalho */}
-                <div className="gs-agente-int-header">
-                    <UIAgenteIA tamanho="md" scanning={!scanCompleto} />
-                    <div className="gs-agente-int-header-texto">
-                        <h3>
-                            {scanCompleto
-                                ? (temCritico ? 'Ação urgente necessária!' : 'OPs prontas para encerrar')
-                                : 'Verificando produção...'
-                            }
-                        </h3>
-                        <p>
-                            {scanCompleto
-                                ? (nomeUsuario
-                                    ? `${nomeUsuario}, encontrei ${opsProntas.length} OP${opsProntas.length > 1 ? 's' : ''} aguardando encerramento.`
-                                    : `Encontrei ${opsProntas.length} OP${opsProntas.length > 1 ? 's' : ''} aguardando encerramento.`)
-                                : 'Aguarde enquanto analiso o status da linha...'
-                            }
-                        </p>
-                    </div>
-                </div>
-
-                {/* Terminal de scan */}
-                {!scanCompleto && (
-                    <div className="gs-agente-int-scan">
-                        {fasesVisiveis.map((fase, i) => {
-                            const concluida = i < fasesVisiveis.length - 1;
-                            return (
-                                <div key={i} className="gs-agente-int-scan-linha">
-                                    <span className={`gs-agente-int-scan-prompt${concluida ? ' ok' : ''}`}>
-                                        {concluida ? '✓' : '›'}
-                                    </span>
-                                    <span>{fase.texto}</span>
-                                    {!concluida && <span className="gs-agente-int-cursor">▌</span>}
-                                </div>
-                            );
-                        })}
-                    </div>
-                )}
-
-                {/* Controles de seleção */}
-                {mostrarResultado && (
-                    <div className="gs-agente-enc-mini-sel-ctrl">
-                        <button
-                            className={`gs-agente-enc-sel-btn${todosSelecionados ? ' ativo' : ''}`}
-                            onClick={selectAll}
-                        >
-                            Todas
-                        </button>
-                        <button
-                            className={`gs-agente-enc-sel-btn${nenhumSelecionado ? ' ativo' : ''}`}
-                            onClick={clearAll}
-                        >
-                            Nenhuma
-                        </button>
-                        <span className="gs-agente-enc-sel-count">
-                            {selectedNums.size}/{opsProntas.length} selecionada{selectedNums.size !== 1 ? 's' : ''}
-                        </span>
-                    </div>
-                )}
-
-                {/* Lista de OPs com checkboxes */}
-                {mostrarResultado && (
-                    <div className="gs-agente-enc-mini-lista">
-                        {opsProntas.map(op => {
-                            const classeH    = op.horas_aguardando >= 24 ? 'critico'
-                                             : op.horas_aguardando >= 4  ? 'urgente' : '';
-                            const selecionada = selectedNums.has(op.numero);
-                            return (
-                                <label
-                                    key={op.numero}
-                                    className={`gs-agente-enc-mini-op${selecionada ? ' selecionada' : ''}`}
-                                >
-                                    <input
-                                        type="checkbox"
-                                        className="gs-agente-enc-mini-chk"
-                                        checked={selecionada}
-                                        onChange={() => toggleOp(op.numero)}
-                                    />
-                                    {op.produto_imagem ? (
-                                        <img
-                                            src={op.produto_imagem}
-                                            alt={op.variante || op.produto_nome}
-                                            className="gs-agente-enc-mini-op-img"
-                                        />
-                                    ) : (
-                                        <div className="gs-agente-enc-mini-op-img gs-agente-enc-mini-op-img--placeholder">
-                                            <i className="fas fa-tshirt"></i>
-                                        </div>
-                                    )}
-                                    <div className="gs-agente-enc-mini-op-info">
-                                        <div className="gs-agente-enc-mini-op-nome">
-                                            <span className="gs-agente-enc-mini-op-num">#{op.numero}</span>
-                                            {op.variante || op.produto_nome}
-                                        </div>
-                                        <div className={`gs-agente-enc-mini-op-horas ${classeH}`}>
-                                            {horasParaTexto(op.horas_aguardando)} aguardando
-                                        </div>
-                                    </div>
-                                </label>
-                            );
-                        })}
-                    </div>
-                )}
-
-                {/* Ações */}
-                {mostrarResultado && (
-                    <>
-                        {temCritico && (
-                            <p className="gs-agente-int-snooze-info">
-                                OPs críticas não podem ser adiadas.
-                            </p>
-                        )}
-                        <div className="gs-agente-int-acoes">
-                            <button
-                                className={`gs-agente-int-btn-encerrar ${classeEstado}`}
-                                onClick={handleEncerrar}
-                                disabled={nenhumSelecionado}
-                            >
-                                <i className="fas fa-check-double"></i>
-                                Encerrar{selectedNums.size > 0 ? ` (${selectedNums.size})` : ''}
-                            </button>
-                            {podeAdiar && (
-                                <button className="gs-agente-int-btn-adiar" onClick={handleAdiar}>
-                                    <i className="fas fa-clock"></i>
-                                    {ultimoSnooze ? 'Adiar (última vez hoje)' : 'Adiar 30 min'}
-                                </button>
-                            )}
+                        {/* Cabeçalho */}
+                        <div className="gs-agente-int-header">
+                            <UIAgenteIA tamanho="md" scanning={!scanCompleto} />
+                            <div className="gs-agente-int-header-texto">
+                                <h3>
+                                    {scanCompleto
+                                        ? (temCritico ? 'Ação urgente necessária!' : 'OPs prontas para encerrar')
+                                        : 'Verificando produção...'
+                                    }
+                                </h3>
+                                <p>
+                                    {scanCompleto
+                                        ? (nomeUsuario
+                                            ? `${nomeUsuario}, encontrei ${opsProntas.length} OP${opsProntas.length > 1 ? 's' : ''} aguardando encerramento.`
+                                            : `Encontrei ${opsProntas.length} OP${opsProntas.length > 1 ? 's' : ''} aguardando encerramento.`)
+                                        : 'Aguarde enquanto analiso o status da linha...'
+                                    }
+                                </p>
+                            </div>
                         </div>
-                    </>
-                )}
-            </div>
+
+                        {/* Terminal de scan */}
+                        {!scanCompleto && (
+                            <div className="gs-agente-int-scan">
+                                {fasesVisiveis.map((fase, i) => {
+                                    const concluida = i < fasesVisiveis.length - 1;
+                                    return (
+                                        <div key={i} className="gs-agente-int-scan-linha">
+                                            <span className={`gs-agente-int-scan-prompt${concluida ? ' ok' : ''}`}>
+                                                {concluida ? '✓' : '›'}
+                                            </span>
+                                            <span>{fase.texto}</span>
+                                            {!concluida && <span className="gs-agente-int-cursor">▌</span>}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {/* Controles de seleção */}
+                        {mostrarResultado && (
+                            <div className="gs-agente-enc-mini-sel-ctrl">
+                                <button
+                                    className={`gs-agente-enc-sel-btn${todosSelecionados ? ' ativo' : ''}`}
+                                    onClick={selectAll}
+                                >
+                                    Todas
+                                </button>
+                                <button
+                                    className={`gs-agente-enc-sel-btn${nenhumSelecionado ? ' ativo' : ''}`}
+                                    onClick={clearAll}
+                                >
+                                    Nenhuma
+                                </button>
+                                <span className="gs-agente-enc-sel-count">
+                                    {selectedNums.size}/{opsProntas.length} selecionada{selectedNums.size !== 1 ? 's' : ''}
+                                </span>
+                            </div>
+                        )}
+
+                        {/* Lista de OPs com checkboxes */}
+                        {mostrarResultado && (
+                            <div className="gs-agente-enc-mini-lista">
+                                {opsProntas.map(op => {
+                                    const classeH    = op.horas_aguardando >= 24 ? 'critico'
+                                                     : op.horas_aguardando >= 4  ? 'urgente' : '';
+                                    const selecionada = selectedNums.has(op.numero);
+                                    return (
+                                        <label
+                                            key={op.numero}
+                                            className={`gs-agente-enc-mini-op${selecionada ? ' selecionada' : ''}`}
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                className="gs-agente-enc-mini-chk"
+                                                checked={selecionada}
+                                                onChange={() => toggleOp(op.numero)}
+                                            />
+                                            {op.produto_imagem ? (
+                                                <img
+                                                    src={op.produto_imagem}
+                                                    alt={op.variante || op.produto_nome}
+                                                    className="gs-agente-enc-mini-op-img"
+                                                />
+                                            ) : (
+                                                <div className="gs-agente-enc-mini-op-img gs-agente-enc-mini-op-img--placeholder">
+                                                    <i className="fas fa-tshirt"></i>
+                                                </div>
+                                            )}
+                                            <div className="gs-agente-enc-mini-op-info">
+                                                <div className="gs-agente-enc-mini-op-nome">
+                                                    <span className="gs-agente-enc-mini-op-num">#{op.numero}</span>
+                                                    {op.variante || op.produto_nome}
+                                                </div>
+                                                <div className={`gs-agente-enc-mini-op-horas ${classeH}`}>
+                                                    {horasParaTexto(op.horas_aguardando)} aguardando
+                                                </div>
+                                            </div>
+                                        </label>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {/* Ações */}
+                        {mostrarResultado && (
+                            <>
+                                {temCritico && (
+                                    <p className="gs-agente-int-snooze-info">
+                                        OPs críticas não podem ser adiadas.
+                                    </p>
+                                )}
+                                <div className="gs-agente-int-acoes">
+                                    <button
+                                        className={`gs-agente-int-btn-encerrar ${classeEstado}`}
+                                        onClick={handleEncerrar}
+                                        disabled={nenhumSelecionado}
+                                    >
+                                        <i className="fas fa-check-double"></i>
+                                        Encerrar{selectedNums.size > 0 ? ` (${selectedNums.size})` : ''}
+                                    </button>
+                                    {podeAdiar && (
+                                        <button className="gs-agente-int-btn-adiar" onClick={handleAdiar}>
+                                            <i className="fas fa-clock"></i>
+                                            {ultimoSnooze ? 'Adiar (última vez hoje)' : 'Adiar 30 min'}
+                                        </button>
+                                    )}
+                                </div>
+                            </>
+                        )}
+                    </div>
+                </div>,
+                document.body
+            )}
 
             {modalLoteAberto && ReactDOM.createPortal(
                 <OPModalLote
@@ -354,7 +363,6 @@ export default function OPAgenteInterceptor({ opsProntas = [], nomeUsuario = '',
                 />,
                 document.body
             )}
-        </div>,
-        document.body
+        </>
     );
 }

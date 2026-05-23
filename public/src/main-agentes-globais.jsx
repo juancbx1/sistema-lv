@@ -11,17 +11,21 @@ const POLL_INTERVALO_MS = 5 * 60 * 1000; // 5 minutos
 const PENDENTE_KEY      = 'agente_enc_pendente_desde';
 
 function AgentesGlobais() {
-    const [opsProntas, setOpsProntas]     = useState([]);
-    const [temPermissao, setTemPermissao] = useState(false);
-    const [nomeUsuario, setNomeUsuario]   = useState('');
+    const [opsProntas, setOpsProntas]           = useState([]);
+    const [temPermissao, setTemPermissao]       = useState(false);
+    const [temPermissaoAgente, setTemPermissaoAgente] = useState(false);
+    const [nomeUsuario, setNomeUsuario]         = useState('');
 
-    // Extrai primeiro nome do JWT (sem chamada à API)
+    // Extrai primeiro nome do JWT e lê permissões do localStorage
     useEffect(() => {
         try {
             const token = localStorage.getItem('token');
             if (!token) return;
             const payload = JSON.parse(atob(token.split('.')[1]));
             setNomeUsuario((payload.nome || '').split(' ')[0]);
+
+            const permissoes = JSON.parse(localStorage.getItem('permissoes') || '[]');
+            setTemPermissaoAgente(permissoes.includes('usar-agente-encerrador'));
         } catch { /* silencioso */ }
     }, []);
 
@@ -78,11 +82,13 @@ function AgentesGlobais() {
                 opsProntas={opsProntas}
                 nomeUsuario={nomeUsuario}
                 onRefresh={buscarOps}
+                temPermissaoAgente={temPermissaoAgente}
             />
             <OPAgenteInterceptor
                 opsProntas={opsProntas}
                 nomeUsuario={nomeUsuario}
                 onRefresh={buscarOps}
+                temPermissaoAgente={temPermissaoAgente}
             />
         </>
     );

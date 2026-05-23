@@ -34,7 +34,7 @@ function gerarId() {
 }
 
 function premiacaoVazia(ordem) {
-    return { _id: gerarId(), nivel_label: '', emoji_icone: '🏅', meta_valor: '', descricao_premio: '', ordem };
+    return { _id: gerarId(), nivel_label: '', emoji_icone: '🏅', meta_valor: '', descricao_premio: '', valor_premio_reais: '', ordem };
 }
 
 async function fetchApi(url, opts = {}) {
@@ -50,6 +50,11 @@ async function fetchApi(url, opts = {}) {
 
 // Passo 1 — O básico (nome, emoji, participantes, recorrência, datas, visibilidade)
 function Passo1({ state, set }) {
+    const [confirmado, setConfirmado] = useState(false);
+    const handleConfirmar = () => {
+        setConfirmado(true);
+        setTimeout(() => setConfirmado(false), 2000);
+    };
     return (
         <div className="incen-wizard-passo">
             <div className="incen-form-grupo">
@@ -62,6 +67,14 @@ function Passo1({ state, set }) {
                     onChange={e => set('nome', e.target.value)}
                     maxLength={200}
                 />
+                {/* 5.2 — Prévia ao vivo */}
+                {state.nome.trim() && (
+                    <div className="incen-previa-nome">
+                        <span className="incen-previa-nome-label">Na dashboard vai aparecer como:</span>
+                        <span>Nova Gincana: <strong>{state.nome.trim()}</strong></span>
+                    </div>
+                )}
+                <p className="incen-form-hint">O prefixo "Nova Gincana:" é adicionado automaticamente ao aviso popup.</p>
             </div>
 
             <div className="incen-form-linha">
@@ -130,26 +143,39 @@ function Passo1({ state, set }) {
             </div>
 
             {state.tipoRecorrencia === 'unica' && (
-                <div className="incen-form-linha">
-                    <div className="incen-form-grupo" style={{ flex: 1 }}>
-                        <label className="incen-form-label">Início</label>
-                        <input
-                            className="incen-form-input"
-                            type="datetime-local"
-                            value={state.inicioLocal}
-                            onChange={e => set('inicioLocal', e.target.value)}
-                        />
+                <>
+                    <div className="incen-form-linha">
+                        <div className="incen-form-grupo" style={{ flex: 1 }}>
+                            <label className="incen-form-label">Início — Data</label>
+                            <input className="incen-form-input" type="date" value={state.inicioData} onChange={e => set('inicioData', e.target.value)} />
+                        </div>
+                        <div className="incen-form-grupo" style={{ flex: 1 }}>
+                            <label className="incen-form-label">Início — Hora</label>
+                            <input className="incen-form-input" type="time" value={state.inicioHora} onChange={e => set('inicioHora', e.target.value)} />
+                        </div>
                     </div>
-                    <div className="incen-form-grupo" style={{ flex: 1 }}>
-                        <label className="incen-form-label">Fim</label>
-                        <input
-                            className="incen-form-input"
-                            type="datetime-local"
-                            value={state.fimLocal}
-                            onChange={e => set('fimLocal', e.target.value)}
-                        />
+                    <div className="incen-form-linha">
+                        <div className="incen-form-grupo" style={{ flex: 1 }}>
+                            <label className="incen-form-label">Fim — Data</label>
+                            <input className="incen-form-input" type="date" value={state.fimData} onChange={e => set('fimData', e.target.value)} />
+                        </div>
+                        <div className="incen-form-grupo" style={{ flex: 1 }}>
+                            <label className="incen-form-label">Fim — Hora</label>
+                            <input className="incen-form-input" type="time" value={state.fimHora} onChange={e => set('fimHora', e.target.value)} />
+                        </div>
                     </div>
-                </div>
+                    <button
+                        type="button"
+                        className={`gs-btn ${confirmado ? 'gs-btn-primario' : 'gs-btn-secundario'}`}
+                        style={{ width: '100%', marginTop: 4 }}
+                        onClick={handleConfirmar}
+                    >
+                        {confirmado
+                            ? <><i className="fas fa-check-circle"></i> Datas e horários confirmados!</>
+                            : <><i className="fas fa-check"></i> Confirmar datas e horários</>
+                        }
+                    </button>
+                </>
             )}
 
             {state.tipoRecorrencia === 'semanal' && (
@@ -174,6 +200,17 @@ function Passo1({ state, set }) {
                             <input className="incen-form-input" type="time" value={state.horaFim} onChange={e => set('horaFim', e.target.value)} />
                         </div>
                     </div>
+                    <button
+                        type="button"
+                        className={`gs-btn ${confirmado ? 'gs-btn-primario' : 'gs-btn-secundario'}`}
+                        style={{ width: '100%', marginTop: 4 }}
+                        onClick={handleConfirmar}
+                    >
+                        {confirmado
+                            ? <><i className="fas fa-check-circle"></i> Datas e horários confirmados!</>
+                            : <><i className="fas fa-check"></i> Confirmar datas e horários</>
+                        }
+                    </button>
                 </>
             )}
         </div>
@@ -188,6 +225,8 @@ function Passo2({ state, set, produtos, buscandoProdutos }) {
         { id: 'apenas_arremates',  label: 'Só Arremates',     hint: 'Só tiktiks', soTiktik: true },
         { id: 'produto_especifico', label: 'Produto Específico', hint: 'Conta unidades físicas' },
     ].filter(o => !o.soTiktik || state.participantes !== 'costureiras');
+
+    const ehCorrida = state.tipoPremiacao === 'corrida';
 
     return (
         <div className="incen-wizard-passo">
@@ -206,7 +245,11 @@ function Passo2({ state, set, produtos, buscandoProdutos }) {
                     <button
                         type="button"
                         className={`incen-tipo-card ${state.tipoPremiacao === 'corrida' ? 'ativo' : ''}`}
-                        onClick={() => set('tipoPremiacao', 'corrida')}
+                        onClick={() => {
+                            set('tipoPremiacao', 'corrida');
+                            // Corrida sempre individual
+                            set('modalidade', 'individual');
+                        }}
                     >
                         <span className="incen-tipo-icone">🏁</span>
                         <strong>Corrida</strong>
@@ -225,10 +268,12 @@ function Passo2({ state, set, produtos, buscandoProdutos }) {
                     >
                         Individual
                     </button>
+                    {/* 5.3 — Botão Equipe bloqueado quando corrida */}
                     <button
                         type="button"
-                        className={`incen-seg-btn ${state.modalidade === 'equipe' ? 'ativo' : ''}`}
+                        className={`incen-seg-btn ${state.modalidade === 'equipe' ? 'ativo' : ''} ${ehCorrida ? 'incen-seg-btn--bloqueado' : ''}`}
                         onClick={() => {
+                            if (ehCorrida) return;
                             set('modalidade', 'equipe');
                             // Equipe não tem múltiplos níveis
                             set('tipoPremiacao', 'meta');
@@ -237,7 +282,14 @@ function Passo2({ state, set, produtos, buscandoProdutos }) {
                         Equipe
                     </button>
                 </div>
-                {state.modalidade === 'equipe' && (
+                {/* 5.3 — Aviso de bloqueio quando corrida */}
+                {ehCorrida && (
+                    <div className="incen-lock-notice">
+                        <i className="fas fa-lock"></i>
+                        Corrida é sempre individual — não faz sentido uma equipe "chegar primeiro".
+                    </div>
+                )}
+                {state.modalidade === 'equipe' && !ehCorrida && (
                     <p className="incen-form-hint" style={{ marginTop: 6 }}>
                         A equipe inteira precisa bater a meta coletiva. Se bater, cada uma ganha.
                     </p>
@@ -290,16 +342,24 @@ function Passo2({ state, set, produtos, buscandoProdutos }) {
     );
 }
 
-// Passo 3 — O prêmio (descrição + premiações)
+// Passo 3 — O prêmio — Reorganizado (5.4)
 function Passo3({ state, set, setP }) {
     const ehCorrida  = state.tipoPremiacao === 'corrida';
     const ehEquipe   = state.modalidade === 'equipe';
     const ehUnidade  = state.escopoAtividade === 'produto_especifico';
     const unidadeLabel = ehUnidade ? 'unidades' : 'pontos';
 
+    // Single level: corrida, equipe, ou meta individual com 1 premiação
+    const ehSingleLevel = ehCorrida || ehEquipe || state.premiacoes.length <= 1;
+
     // Nome do nível só aparece quando há múltiplos níveis numa meta individual
-    // (precisa diferenciar Bronze de Prata de Ouro)
     const mostrarNome = !ehCorrida && !ehEquipe && state.premiacoes.length > 1;
+
+    const placeholderDescricao = ehCorrida
+        ? 'Ex: "Quem fizer 300 pontos PRIMEIRO hoje ganha R$20 via PIX! 🏁"'
+        : ehEquipe
+            ? 'Ex: "Equipe bate 1500 pontos hoje e cada uma ganha R$15 via PIX!"'
+            : 'Ex: "Faça ~30 peças de Calça Juliet e ganhe R$30 via PIX no mesmo dia!"';
 
     const handleAddPremiacao = () => {
         setP(prev => [...prev, premiacaoVazia(prev.length + 1)]);
@@ -308,135 +368,196 @@ function Passo3({ state, set, setP }) {
     const handleChange = (id, campo, valor) =>
         setP(prev => prev.map(p => p._id === id ? { ...p, [campo]: valor } : p));
 
+    // Para single level, o objetivo e descricao são do premiacoes[0]
+    const primeiraPremiacao = state.premiacoes[0];
+
     return (
         <div className="incen-wizard-passo">
 
-            {/* Chamada — aparece SEMPRE */}
-            <div className="incen-form-grupo">
-                <label className="incen-form-label">Chamada da gincana</label>
-                <p className="incen-form-hint-bloco">
-                    <i className="fas fa-eye"></i>
-                    Aparece <strong>sempre</strong> no card — antes, durante e depois. Escreva o desafio em linguagem simples.
-                </p>
-                <textarea
-                    className="incen-form-input incen-form-textarea"
-                    placeholder={
-                        ehCorrida
-                            ? 'Ex: "Quem fizer 300 pontos PRIMEIRO hoje ganha R$20 via PIX! 🏁"'
-                            : 'Ex: "Faça ~30 peças de Calça Juliet e ganhe R$30 via PIX no mesmo dia!"'
-                    }
-                    value={state.descricao}
-                    onChange={e => set('descricao', e.target.value)}
-                    rows={3}
-                />
+            {/* Banner informativo */}
+            <div className="incen-info-banner">
+                <i className="fas fa-info-circle"></i>
+                <p>Defina <strong>o que elas precisam fazer</strong> (objetivo) e <strong>como você vai anunciar</strong> (chamada + prêmio). Tudo aparece sempre no card — o prêmio é o que motiva!</p>
             </div>
 
-            {/* Premiações */}
+            {/* Seção 2 — Objetivo + Prêmio (R$) lado a lado */}
             <div className="incen-form-grupo">
                 <label className="incen-form-label">
-                    {ehCorrida ? 'Prêmio do vencedor' : ehEquipe ? 'Prêmio da equipe' : 'Premiações'}
+                    Objetivo e Prêmio
+                    <span className="incen-form-label-badge">Aparecem sempre</span>
                 </label>
-                <p className="incen-form-hint-bloco">
-                    <i className="fas fa-lock"></i>
-                    Aparece para a funcionária <strong>só quando ela ganhar</strong>.
-                </p>
-
-                <div className="incen-premiacoes-lista">
-                    {state.premiacoes.map((p, idx) => (
-                        <div key={p._id} className="incen-premiacao-item">
-
-                            {/* Cabeçalho do nível — só quando há múltiplos */}
-                            {mostrarNome && (
-                                <div className="incen-premiacao-linha-cabecalho">
-                                    <span className="incen-premiacao-num">Nível {idx + 1}</span>
-                                    {state.premiacoes.length > 1 && (
-                                        <button
-                                            type="button"
-                                            className="incen-remove-btn"
-                                            onClick={() => handleRemove(p._id)}
-                                            title="Remover"
-                                        >
-                                            <i className="fas fa-times"></i>
-                                        </button>
-                                    )}
-                                </div>
-                            )}
-
-                            <div className="incen-premiacao-linha-1">
-                                {/* Emoji sempre visível */}
-                                <div className="incen-form-campo-mini">
-                                    <span className="incen-campo-mini-label">Emoji</span>
-                                    <input
-                                        className="incen-emoji-input"
-                                        type="text"
-                                        value={p.emoji_icone}
-                                        onChange={e => handleChange(p._id, 'emoji_icone', e.target.value)}
-                                        maxLength={4}
-                                        placeholder="🏅"
-                                    />
-                                </div>
-
-                                {/* Nome só quando há múltiplos níveis */}
-                                {mostrarNome && (
-                                    <div className="incen-form-campo-mini" style={{ flex: 1 }}>
-                                        <span className="incen-campo-mini-label">
-                                            Nome do nível
-                                            <span className="incen-campo-mini-hint"> (ex: Bronze, Prata, Ouro)</span>
-                                        </span>
-                                        <input
-                                            className="incen-form-input"
-                                            type="text"
-                                            placeholder={`Nível ${idx + 1}`}
-                                            value={p.nivel_label}
-                                            onChange={e => handleChange(p._id, 'nivel_label', e.target.value)}
-                                        />
-                                    </div>
-                                )}
-
-                                {/* Objetivo sempre visível */}
-                                <div className="incen-form-campo-mini" style={!mostrarNome ? { flex: 1 } : {}}>
-                                    <span className="incen-campo-mini-label">
-                                        {ehCorrida ? 'Chegar em' : 'Objetivo'}
-                                    </span>
-                                    <div className="incen-meta-input-wrap">
-                                        <input
-                                            className="incen-form-input incen-pontos-input"
-                                            type="number"
-                                            placeholder="0"
-                                            value={p.meta_valor}
-                                            onChange={e => handleChange(p._id, 'meta_valor', e.target.value)}
-                                            min={1}
-                                        />
-                                        <span className="incen-unidade-label">{unidadeLabel}</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* O que ela recebe — sempre visível */}
-                            <div className="incen-form-campo-mini">
-                                <span className="incen-campo-mini-label">O que ela recebe</span>
-                                <input
-                                    className="incen-form-input"
-                                    type="text"
-                                    placeholder="Ex: PIX de R$30 no mesmo dia"
-                                    value={p.descricao_premio}
-                                    onChange={e => handleChange(p._id, 'descricao_premio', e.target.value)}
-                                />
-                            </div>
+                <div className="incen-obj-premio-row">
+                    {/* OBJETIVO */}
+                    <div className="incen-objetivo-bloco">
+                        <p className="incen-objetivo-subtitulo">Quanto ela precisa atingir?</p>
+                        <div className="incen-objetivo-input-row">
+                            <input
+                                className="incen-objetivo-input-num"
+                                type="number"
+                                placeholder="0"
+                                value={primeiraPremiacao?.meta_valor ?? ''}
+                                onChange={e => handleChange(primeiraPremiacao?._id, 'meta_valor', e.target.value)}
+                                min={1}
+                            />
+                            <span className="incen-objetivo-unidade">{unidadeLabel}</span>
                         </div>
-                    ))}
+                    </div>
+                    {/* PRÊMIO em R$ */}
+                    <div className="incen-objetivo-bloco incen-objetivo-bloco--premio">
+                        <p className="incen-objetivo-subtitulo">Valor do prêmio</p>
+                        <div className="incen-objetivo-input-row">
+                            <span className="incen-objetivo-unidade incen-objetivo-prefix">R$</span>
+                            <input
+                                className="incen-objetivo-input-num"
+                                type="number"
+                                placeholder="0,00"
+                                step="0.01"
+                                min="0.01"
+                                value={primeiraPremiacao?.valor_premio_reais ?? ''}
+                                onChange={e => handleChange(primeiraPremiacao?._id, 'valor_premio_reais', e.target.value)}
+                            />
+                        </div>
+                    </div>
                 </div>
+            </div>
 
-                {!ehCorrida && !ehEquipe && (
-                    <button type="button" className="incen-add-premiacao-btn" onClick={handleAddPremiacao}>
-                        <i className="fas fa-plus"></i> Adicionar nível
-                    </button>
-                )}
+            {/* Seção 3 — Chamada (sugerida, editável) */}
+            {ehSingleLevel ? (
+                <div className="incen-form-grupo">
+                    <label className="incen-form-label">
+                        Chamada
+                        <span className="incen-form-label-badge">Sugerida — pode editar</span>
+                    </label>
+                    <p className="incen-form-hint" style={{ marginTop: 0, marginBottom: 6 }}>
+                        Gerada automaticamente a partir do objetivo e valor. Edite à vontade!
+                    </p>
+                    <textarea
+                        className="incen-form-input incen-form-textarea"
+                        placeholder={placeholderDescricao}
+                        value={state.descricao}
+                        onChange={e => set('descricao', e.target.value)}
+                        rows={3}
+                    />
+                </div>
+            ) : (
+                <>
+                    <div className="incen-form-grupo">
+                        <label className="incen-form-label">
+                            Chamada geral
+                            <span className="incen-form-label-badge">Aparece sempre</span>
+                        </label>
+                        <textarea
+                            className="incen-form-input incen-form-textarea"
+                            placeholder={placeholderDescricao}
+                            value={state.descricao}
+                            onChange={e => set('descricao', e.target.value)}
+                            rows={3}
+                        />
+                    </div>
 
-                <p className="incen-form-aviso">
-                    <i className="fas fa-coins"></i>
-                    Pagamento toda sexta-feira pelo supervisor (ou antecipado individualmente).
-                </p>
+                    {/* Blocos por nível */}
+                    <div className="incen-form-grupo">
+                        <label className="incen-form-label">Níveis de premiação</label>
+                        <div className="incen-premiacoes-lista">
+                            {state.premiacoes.map((p, idx) => (
+                                <div key={p._id} className="incen-nivel-bloco">
+                                    <div className="incen-nivel-cabecalho">
+                                        <span>Nível {idx + 1}</span>
+                                        {state.premiacoes.length > 1 && (
+                                            <button
+                                                type="button"
+                                                className="incen-remove-btn"
+                                                onClick={() => handleRemove(p._id)}
+                                                title="Remover"
+                                            >
+                                                <i className="fas fa-times"></i>
+                                            </button>
+                                        )}
+                                    </div>
+                                    <div className="incen-premiacao-linha-1">
+                                        <div className="incen-form-campo-mini">
+                                            <span className="incen-campo-mini-label">Emoji</span>
+                                            <input
+                                                className="incen-emoji-input"
+                                                type="text"
+                                                value={p.emoji_icone}
+                                                onChange={e => handleChange(p._id, 'emoji_icone', e.target.value)}
+                                                maxLength={4}
+                                                placeholder="🏅"
+                                            />
+                                        </div>
+                                        {mostrarNome && (
+                                            <div className="incen-form-campo-mini" style={{ flex: 1 }}>
+                                                <span className="incen-campo-mini-label">
+                                                    Nome do nível
+                                                    <span className="incen-campo-mini-hint"> (ex: Bronze, Prata, Ouro)</span>
+                                                </span>
+                                                <input
+                                                    className="incen-form-input"
+                                                    type="text"
+                                                    placeholder={`Nível ${idx + 1}`}
+                                                    value={p.nivel_label}
+                                                    onChange={e => handleChange(p._id, 'nivel_label', e.target.value)}
+                                                />
+                                            </div>
+                                        )}
+                                        <div className="incen-form-campo-mini" style={{ flex: 1 }}>
+                                            <span className="incen-campo-mini-label">Objetivo deste nível</span>
+                                            <div className="incen-meta-input-wrap">
+                                                <input
+                                                    className="incen-form-input incen-pontos-input"
+                                                    type="number"
+                                                    placeholder="0"
+                                                    value={p.meta_valor}
+                                                    onChange={e => handleChange(p._id, 'meta_valor', e.target.value)}
+                                                    min={1}
+                                                />
+                                                <span className="incen-unidade-label">{unidadeLabel}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="incen-premiacao-linha-2">
+                                        <div className="incen-form-campo-mini" style={{ flex: 1 }}>
+                                            <span className="incen-campo-mini-label">Valor do prêmio (R$)</span>
+                                            <input
+                                                className="incen-form-input"
+                                                type="number"
+                                                placeholder="0,00"
+                                                step="0.01"
+                                                min="0.01"
+                                                value={p.valor_premio_reais || ''}
+                                                onChange={e => handleChange(p._id, 'valor_premio_reais', e.target.value)}
+                                            />
+                                        </div>
+                                        <div className="incen-form-campo-mini" style={{ flex: 2 }}>
+                                            <span className="incen-campo-mini-label">Chamada deste nível</span>
+                                            <input
+                                                className="incen-form-input"
+                                                type="text"
+                                                placeholder="Ex: PIX de R$30 no mesmo dia"
+                                                value={p.descricao_premio}
+                                                onChange={e => handleChange(p._id, 'descricao_premio', e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </>
+            )}
+
+            {/* Botão adicionar nível — apenas para Meta + Individual */}
+            {!ehCorrida && !ehEquipe && (
+                <button type="button" className="incen-add-premiacao-btn" onClick={handleAddPremiacao}>
+                    <i className="fas fa-plus"></i> Adicionar nível
+                </button>
+            )}
+
+            {/* Aviso de pagamento */}
+            <div className="incen-aviso-pagamento">
+                <i className="fas fa-coins"></i>
+                Pagamento toda sexta-feira pelo supervisor, ou antecipado individualmente.
             </div>
         </div>
     );
@@ -475,8 +596,10 @@ export default function IncenGincanaModal({ gincana, onFechar, onSalvo }) {
         escopoAtividade: 'tudo',
         produtoId: null,
         tipoRecorrencia: 'unica',
-        inicioLocal: '',
-        fimLocal: '',
+        inicioData: '',
+        inicioHora: '07:00',
+        fimData: '',
+        fimHora: '18:00',
         campanhaInicioData: '',
         campanhaFimData: '',
         horaInicio: '07:00',
@@ -504,8 +627,10 @@ export default function IncenGincanaModal({ gincana, onFechar, onSalvo }) {
                 escopoAtividade: gincana.escopo_atividade || 'tudo',
                 produtoId: gincana.produto_id || null,
                 tipoRecorrencia: gincana.tipo_recorrencia || 'unica',
-                inicioLocal: gincana.tipo_recorrencia !== 'semanal' ? isoParaLocal(gincana.datetime_inicio) : '',
-                fimLocal: gincana.tipo_recorrencia !== 'semanal' ? isoParaLocal(gincana.datetime_fim) : '',
+                inicioData: gincana.tipo_recorrencia !== 'semanal' ? isoParaLocal(gincana.datetime_inicio).slice(0, 10) : '',
+                inicioHora: gincana.tipo_recorrencia !== 'semanal' ? (isoParaLocal(gincana.datetime_inicio).slice(11, 16) || '07:00') : '07:00',
+                fimData: gincana.tipo_recorrencia !== 'semanal' ? isoParaLocal(gincana.datetime_fim).slice(0, 10) : '',
+                fimHora: gincana.tipo_recorrencia !== 'semanal' ? (isoParaLocal(gincana.datetime_fim).slice(11, 16) || '18:00') : '18:00',
                 campanhaInicioData: gincana.tipo_recorrencia === 'semanal' ? isoParaLocal(gincana.datetime_inicio).slice(0, 10) : '',
                 campanhaFimData: gincana.tipo_recorrencia === 'semanal' ? isoParaLocal(gincana.datetime_fim).slice(0, 10) : '',
                 horaInicio: gincana.hora_inicio_semana?.slice(0, 5) || '07:00',
@@ -513,7 +638,11 @@ export default function IncenGincanaModal({ gincana, onFechar, onSalvo }) {
                 visivelDashboard: gincana.visivel_dashboard !== false,
             });
             if (gincana.premiacoes?.length) {
-                setPremiacoes(gincana.premiacoes.map(p => ({ ...p, _id: gerarId(), meta_valor: p.meta_valor ?? p.meta_pontos ?? '' })));
+                setPremiacoes(gincana.premiacoes.map(p => ({
+                    ...p, _id: gerarId(),
+                    meta_valor: p.meta_valor ?? p.meta_pontos ?? '',
+                    valor_premio_reais: p.valor_premio_reais ?? '',
+                })));
             }
         }
     }, []);
@@ -541,22 +670,46 @@ export default function IncenGincanaModal({ gincana, onFechar, onSalvo }) {
         }
     }, [form.participantes]);
 
-    // Para corrida: garantir apenas 1 premiação
+    // Para corrida: garantir apenas 1 premiação e modalidade individual
     useEffect(() => {
-        if (form.tipoPremiacao === 'corrida' && premiacoes.length > 1) {
-            setPremiacoes([premiacoes[0]]);
+        if (form.tipoPremiacao === 'corrida') {
+            if (premiacoes.length > 1) setPremiacoes([premiacoes[0]]);
+            if (form.modalidade !== 'individual') set('modalidade', 'individual');
         }
         if (form.modalidade === 'equipe' && premiacoes.length > 1) {
             setPremiacoes([premiacoes[0]]);
         }
     }, [form.tipoPremiacao, form.modalidade]);
 
+    const ehCorrida = form.tipoPremiacao === 'corrida';
+    const ehEquipe  = form.modalidade === 'equipe';
+    const ehSingleLevel = ehCorrida || ehEquipe || premiacoes.length <= 1;
+
+    // Auto-gerar chamada quando objetivo ou valor do prêmio muda (single-level)
+    const autoDescricaoRef = useRef('');
+    useEffect(() => {
+        if (!ehSingleLevel) return;
+        const p = premiacoes[0];
+        if (!p) return;
+        const meta = parseFloat(p.meta_valor);
+        const valor = parseFloat(p.valor_premio_reais);
+        if (!meta || meta <= 0 || !valor || valor <= 0) return;
+        const unidade = form.escopoAtividade === 'produto_especifico' ? 'peças' : 'pts';
+        const valorFormatado = valor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const gerado = `Faça ${meta.toFixed(0)} ${unidade} e receba R$ ${valorFormatado}.`;
+        if (!form.descricao.trim() || form.descricao === autoDescricaoRef.current) {
+            autoDescricaoRef.current = gerado;
+            set('descricao', gerado);
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [premiacoes[0]?.meta_valor, premiacoes[0]?.valor_premio_reais, form.escopoAtividade, ehSingleLevel]);
+
     const validarPasso = (n) => {
         if (n === 1) {
             if (!form.nome.trim()) return 'Informe o nome da gincana.';
-            if (form.tipoRecorrencia === 'unica' && (!form.inicioLocal || !form.fimLocal))
-                return 'Informe as datas de início e fim.';
-            if (form.tipoRecorrencia === 'unica' && new Date(form.inicioLocal) >= new Date(form.fimLocal))
+            if (form.tipoRecorrencia === 'unica' && (!form.inicioData || !form.inicioHora || !form.fimData || !form.fimHora))
+                return 'Informe as datas e horários de início e fim.';
+            if (form.tipoRecorrencia === 'unica' && dataHoraParaIso(form.inicioData, form.inicioHora) >= dataHoraParaIso(form.fimData, form.fimHora))
                 return 'O início deve ser antes do fim.';
             if (form.tipoRecorrencia === 'semanal' && (!form.campanhaInicioData || !form.campanhaFimData))
                 return 'Informe as datas da campanha.';
@@ -567,13 +720,24 @@ export default function IncenGincanaModal({ gincana, onFechar, onSalvo }) {
         }
         if (n === 3) {
             if (!premiacoes.length) return 'Adicione pelo menos uma premiação.';
-            const mostrarNome = !form.tipoPremiacao !== 'corrida' && form.modalidade !== 'equipe' && premiacoes.length > 1;
-            for (const p of premiacoes) {
-                // nivel_label só é obrigatório quando o campo está visível (múltiplos níveis)
-                if (mostrarNome && !p.nivel_label.trim()) return 'Preencha o nome de todos os níveis.';
-                if (!p.meta_valor || isNaN(parseFloat(p.meta_valor)) || parseFloat(p.meta_valor) <= 0)
-                    return 'O objetivo deve ser um número maior que zero.';
-                if (!p.descricao_premio.trim()) return 'Preencha o prêmio de todos os níveis.';
+            if (!form.descricao.trim()) return 'Preencha a chamada da gincana.';
+            const primeira = premiacoes[0];
+            if (!primeira.meta_valor || isNaN(parseFloat(primeira.meta_valor)) || parseFloat(primeira.meta_valor) <= 0)
+                return 'O objetivo deve ser um número maior que zero.';
+            if (ehSingleLevel) {
+                if (!primeira.valor_premio_reais || isNaN(parseFloat(primeira.valor_premio_reais)) || parseFloat(primeira.valor_premio_reais) <= 0)
+                    return 'Informe o valor em R$ do prêmio.';
+            }
+            if (!ehSingleLevel) {
+                const mostrarNome = premiacoes.length > 1;
+                for (const p of premiacoes) {
+                    if (mostrarNome && !p.nivel_label.trim()) return 'Preencha o nome de todos os níveis.';
+                    if (!p.meta_valor || isNaN(parseFloat(p.meta_valor)) || parseFloat(p.meta_valor) <= 0)
+                        return 'O objetivo deve ser um número maior que zero em cada nível.';
+                    if (!p.valor_premio_reais || isNaN(parseFloat(p.valor_premio_reais)) || parseFloat(p.valor_premio_reais) <= 0)
+                        return 'Informe o valor em R$ do prêmio em cada nível.';
+                    if (!p.descricao_premio.trim()) return 'Preencha a chamada de todos os níveis.';
+                }
             }
         }
         return null;
@@ -588,8 +752,8 @@ export default function IncenGincanaModal({ gincana, onFechar, onSalvo }) {
     const montar = () => {
         let datetimeInicio, datetimeFim, horaInicioSemana = null, horaFimSemana = null;
         if (form.tipoRecorrencia === 'unica') {
-            datetimeInicio = localParaIso(form.inicioLocal);
-            datetimeFim    = localParaIso(form.fimLocal);
+            datetimeInicio = dataHoraParaIso(form.inicioData, form.inicioHora);
+            datetimeFim    = dataHoraParaIso(form.fimData, form.fimHora);
         } else {
             datetimeInicio = dataHoraParaIso(form.campanhaInicioData, form.horaInicio);
             datetimeFim    = dataHoraParaIso(form.campanhaFimData, form.horaFim);
@@ -620,11 +784,16 @@ export default function IncenGincanaModal({ gincana, onFechar, onSalvo }) {
                     else if (form.modalidade === 'equipe') nivelLabel = 'Equipe';
                     else nivelLabel = premiacoes.length === 1 ? 'Meta' : `Nível ${i + 1}`;
                 }
+                // Para single level: descricao_premio = form.descricao (a chamada)
+                const descricaoPremio = ehSingleLevel
+                    ? (form.descricao.trim() || p.descricao_premio.trim())
+                    : p.descricao_premio.trim();
                 return {
                     nivel_label: nivelLabel,
                     emoji_icone: p.emoji_icone || '🏅',
                     meta_valor: parseFloat(p.meta_valor),
-                    descricao_premio: p.descricao_premio.trim(),
+                    descricao_premio: descricaoPremio,
+                    valor_premio_reais: parseFloat(p.valor_premio_reais) || null,
                     ordem: i + 1,
                 };
             }),

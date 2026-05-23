@@ -3,6 +3,7 @@
 
 import React, { useState } from 'react';
 import { mostrarMensagem } from '/js/utils/popups.js';
+import UIBloqueio from './UIBloqueio.jsx';
 
 async function fetchAPI(url, options = {}) {
     const token = localStorage.getItem('token');
@@ -189,16 +190,18 @@ export default function OPModalLote({ isOpen, ops, onClose, onConcluido }) {
                             >
                                 Cancelar
                             </button>
-                            <button
-                                className="op-lote-btn confirmar"
-                                onClick={handleConfirmar}
-                                disabled={executando}
-                            >
-                                {executando
-                                    ? <><div className="op-spinner-btn"></div> Finalizando...</>
-                                    : <><i className="fas fa-check-double"></i> Confirmar finalização</>
-                                }
-                            </button>
+                            <UIBloqueio permissao="finalizar-op">
+                                <button
+                                    className="op-lote-btn confirmar"
+                                    onClick={handleConfirmar}
+                                    disabled={executando}
+                                >
+                                    {executando
+                                        ? <><div className="op-spinner-btn"></div> Finalizando...</>
+                                        : <><i className="fas fa-check-double"></i> Confirmar finalização</>
+                                    }
+                                </button>
+                            </UIBloqueio>
                         </div>
                     </>
                 )}

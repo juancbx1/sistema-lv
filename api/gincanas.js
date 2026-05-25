@@ -238,6 +238,7 @@ async function calcularRankingBulk(dbClient, participantes, escopo, janelaInicio
             FROM usuarios u
             WHERE ${tipoFiltro}
               AND (u.is_test IS FALSE OR u.is_test IS NULL)
+              AND NOT ('prestador_externo' = ANY(u.tipos))
               AND u.data_demissao IS NULL
         `;
         params = [janelaInicio, janelaFim, produtoId];
@@ -269,6 +270,7 @@ async function calcularRankingBulk(dbClient, participantes, escopo, janelaInicio
             FROM usuarios u
             WHERE ${tipoFiltro}
               AND (u.is_test IS FALSE OR u.is_test IS NULL)
+              AND NOT ('prestador_externo' = ANY(u.tipos))
               AND u.data_demissao IS NULL
         `;
         params = [janelaInicio, janelaFim];

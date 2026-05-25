@@ -1,38 +1,52 @@
 import React, { useState, useEffect } from 'react';
+import ReactDOM from 'react-dom/client';
 import { fetchAPI } from '/js/utils/api-utils.js';
-import { verificarAutenticacao } from '/js/utils/auth.js'; // Mantendo auth legado
-import UserFiltros from './components/UserFiltros';
-import UserListCards from './components/UserListCards';
-import UserFeriasModal from './components/UserFeriasModal';
-import UserFinanceiroModal from './components/UserFinanceiroModal';
-import UserCreateModal from './components/UserCreateModal';
+import { verificarAutenticacao } from '/js/utils/auth.js';
+import UIHeaderPagina from './components/UIHeaderPagina.jsx';
+import UICarregando from './components/UICarregando.jsx';
 import UIBloqueio from './components/UIBloqueio.jsx';
+import UCCard from './components/UCCard.jsx';
+import UCDrawerEdicao from './components/UCDrawerEdicao.jsx';
+import UCCriarModal from './components/UCCriarModal.jsx';
+
+const PRODUTIVOS = ['costureira', 'tiktik', 'cortador', 'supervisor', 'lider_setor'];
+
+export function getCategoriaUsuario(usuario) {
+    const tipos = usuario.tipos || [];
+    if (tipos.includes('prestador_externo')) return 'prestador_externo';
+    if (tipos.includes('ex_socio')) return 'ex_socio';
+    // Compat: sócio com data_demissao preenchida → ex_socio
+    if (usuario.data_demissao && tipos.includes('socio')) return 'ex_socio';
+    if (usuario.data_demissao) return 'ex_empregado';
+    if (tipos.includes('socio')) return 'socio';
+    if (tipos.some(t => PRODUTIVOS.includes(t))) return 'empregado';
+    return 'administrador';
+}
+
+const FILTROS = [
+    { id: '', label: 'Todos' },
+    { id: 'costureira', label: 'Costureiras' },
+    { id: 'tiktik', label: 'TikTik' },
+    { id: 'cortador', label: 'Cortadores' },
+    { id: 'supervisor', label: 'Supervisores' },
+    { id: 'socio', label: 'Sócios' },
+    { id: 'prestador_externo', label: 'Externos' },
+    { id: 'administrador', label: 'Administradores' },
+];
 
 export default function MainUsuarios() {
     const [usuarios, setUsuarios] = useState([]);
-    const [usuariosFiltrados, setUsuariosFiltrados] = useState([]);
     const [loading, setLoading] = useState(true);
     const [filtroTipo, setFiltroTipo] = useState('');
-    const [permissoes, setPermissoes] = useState([]);
     const [concessionarias, setConcessionarias] = useState([]);
-    
-    // Paginação
-    const [paginaAtual, setPaginaAtual] = useState(1);
-    const ITENS_POR_PAGINA = 8;
-
-    // Estados dos Modais
-    const [modalFeriasUser, setModalFeriasUser] = useState(null); // Se não null, modal aberto
-    const [modalVinculoUser, setModalVinculoUser] = useState(null); // Se não null, modal aberto
-    const [modalCriarUser, setModalCriarUser] = useState(false);
-
+    const [drawerUsuario, setDrawerUsuario] = useState(null);
+    const [modalCriar, setModalCriar] = useState(false);
+    const [exAberto, setExAberto] = useState(false);
 
     useEffect(() => {
-        // Autenticação e Carregamento Inicial
         const init = async () => {
             const auth = await verificarAutenticacao('usuarios-cadastrados.html', ['acesso-usuarios-cadastrados']);
-            if (!auth) return; // Redirecionado pelo auth
-            
-            setPermissoes(auth.permissoes || []);
+            if (!auth) return;
             await carregarUsuarios();
         };
         init();
@@ -41,15 +55,12 @@ export default function MainUsuarios() {
     const carregarUsuarios = async () => {
         setLoading(true);
         try {
-            // Busca usuários e concessionárias em paralelo
             const [dadosUsuarios, dadosConcess] = await Promise.all([
                 fetchAPI('/api/usuarios'),
-                fetchAPI('/api/financeiro/concessionarias-vt')
+                fetchAPI('/api/financeiro/concessionarias-vt'),
             ]);
-            
-            setConcessionarias(dadosConcess); // Salva para passar aos modais
-            const ordenados = dadosUsuarios.sort((a, b) => a.nome.localeCompare(b.nome));
-            setUsuarios(ordenados);
+            setConcessionarias(dadosConcess);
+            setUsuarios(dadosUsuarios.sort((a, b) => a.nome.localeCompare(b.nome)));
         } catch (error) {
             console.error('Erro ao carregar usuários:', error);
         } finally {
@@ -57,113 +68,124 @@ export default function MainUsuarios() {
         }
     };
 
-    // Efeito de Filtro e Paginação
-    useEffect(() => {
-        let filtrados = usuarios;
-        if (filtroTipo) {
-            filtrados = usuarios.filter(u => u.tipos && u.tipos.includes(filtroTipo));
-        }
-        setUsuariosFiltrados(filtrados);
-        setPaginaAtual(1); // Reseta para pág 1 quando filtra
-    }, [usuarios, filtroTipo]);
+    const filtrados = filtroTipo
+        ? usuarios.filter(u => u.tipos && u.tipos.includes(filtroTipo))
+        : usuarios;
 
-    // Cálculo da Paginação
-    const totalPaginas = Math.ceil(usuariosFiltrados.length / ITENS_POR_PAGINA);
-    const indiceInicial = (paginaAtual - 1) * ITENS_POR_PAGINA;
-    const usuariosDaPagina = usuariosFiltrados.slice(indiceInicial, indiceInicial + ITENS_POR_PAGINA);
-
-    // Callbacks para os Modais
-    const handleFecharFerias = () => setModalFeriasUser(null);
-    const handleFecharVinculo = () => setModalVinculoUser(null);
-    const handleSalvarModal = () => {
-        // Fecha os modais e recarrega a lista para atualizar os dados
-        setModalFeriasUser(null);
-        setModalVinculoUser(null);
-        carregarUsuarios();
-    };
+    const EX_CATEGORIAS = ['ex_empregado', 'ex_socio'];
+    const ativos = filtrados.filter(u => !EX_CATEGORIAS.includes(getCategoriaUsuario(u)));
+    const exMembros = filtrados.filter(u => EX_CATEGORIAS.includes(getCategoriaUsuario(u)));
 
     return (
-        <div className="container uc-container">
-            <section className="usuarios-cadastrados">
-                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                    <h1>Gerenciar Usuários</h1>
-                    <UIBloqueio permissao="acesso-cadastrar-usuarios">
-                        <button className="gs-btn gs-btn-primario" onClick={() => setModalCriarUser(true)}>
-                            <i className="fas fa-plus"></i> Novo Usuário
+        <>
+            <UIHeaderPagina titulo="Usuários cadastrados">
+                <UIBloqueio permissao="acesso-cadastrar-usuarios">
+                    <button className="gs-btn gs-btn-primario" onClick={() => setModalCriar(true)}>
+                        <i className="fas fa-plus"></i> Novo usuário
+                    </button>
+                </UIBloqueio>
+            </UIHeaderPagina>
+
+            <div className="gs-conteudo-pagina">
+                <div className="uc-filtros-chips">
+                    {FILTROS.map(f => (
+                        <button
+                            key={f.id}
+                            className={`uc-filtro-chip${filtroTipo === f.id ? ' uc-filtro-chip--ativo' : ''}`}
+                            onClick={() => setFiltroTipo(f.id)}
+                        >
+                            {f.label}
                         </button>
-                    </UIBloqueio>
+                    ))}
                 </div>
-                
-                <UserFiltros 
-                    filtroAtual={filtroTipo} 
-                    setFiltroAtual={setFiltroTipo} 
-                />
 
                 {loading ? (
-                    <div className="uc-loading-spinner" style={{ display: 'block' }}>
-                        <i className="fas fa-spinner fa-spin"></i> Carregando...
-                    </div>
+                    <UICarregando variante="bloco" />
                 ) : (
                     <>
-                        <UserListCards 
-                            usuarios={usuariosDaPagina} 
-                            permissoesLogado={permissoes}
-                            aoAtualizarLista={carregarUsuarios}
-                            aoAbrirFerias={setModalFeriasUser}
-                            aoAbrirVinculo={setModalVinculoUser}
-                            concessionarias={concessionarias} 
-                        />
+                        {/* Seção Ativos */}
+                        <div className="uc-secao">
+                            <h2 className="uc-secao-titulo">
+                                Ativos <span className="uc-secao-count">{ativos.length}</span>
+                            </h2>
+                            {ativos.length === 0 ? (
+                                <p className="uc-sem-resultados">Nenhum usuário ativo encontrado.</p>
+                            ) : (
+                                <div className="uc-grid">
+                                    {ativos.map(u => (
+                                        <UCCard
+                                            key={u.id}
+                                            usuario={u}
+                                            categoria={getCategoriaUsuario(u)}
+                                            onEditar={setDrawerUsuario}
+                                            aoAtualizarLista={carregarUsuarios}
+                                        />
+                                    ))}
+                                </div>
+                            )}
+                        </div>
 
-                        {/* Controles de Paginação */}
-                        {usuariosFiltrados.length > 0 && (
-                            <div className="gs-paginacao-container" style={{ marginTop: '20px', display: 'flex', justifyContent: 'center', gap: '15px', alignItems: 'center' }}>
-                                <button 
-                                    className="gs-paginacao-btn" 
-                                    disabled={paginaAtual === 1}
-                                    onClick={() => setPaginaAtual(p => p - 1)}
-                                >
-                                    Anterior
-                                </button>
-                                <span className="gs-paginacao-info">
-                                    Página {paginaAtual} de {totalPaginas}
-                                </span>
-                                <button 
-                                    className="gs-paginacao-btn" 
-                                    disabled={paginaAtual === totalPaginas}
-                                    onClick={() => setPaginaAtual(p => p + 1)}
-                                >
-                                    Próximo
-                                </button>
-                            </div>
+                        {/* Seção Ex-membros — acordeão (fechado por padrão) */}
+                        {exMembros.length > 0 && (
+                            <>
+                                <div className="uc-divisor"></div>
+                                <div className="uc-secao">
+                                    <button
+                                        className="uc-acordeao-trigger"
+                                        onClick={() => setExAberto(p => !p)}
+                                        aria-expanded={exAberto}
+                                    >
+                                        <h2 className="uc-secao-titulo" style={{ marginBottom: 0 }}>
+                                            Ex-membros <span className="uc-secao-count">{exMembros.length}</span>
+                                        </h2>
+                                        <i className={`fas fa-chevron-${exAberto ? 'up' : 'down'} uc-acordeao-icone`}></i>
+                                    </button>
+
+                                    {exAberto && (
+                                        <div className="uc-grid uc-grid--ex" style={{ marginTop: 16 }}>
+                                            {exMembros.map(u => (
+                                                <UCCard
+                                                    key={u.id}
+                                                    usuario={u}
+                                                    categoria={getCategoriaUsuario(u)}
+                                                    onEditar={setDrawerUsuario}
+                                                    aoAtualizarLista={carregarUsuarios}
+                                                />
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </>
                         )}
                     </>
                 )}
-            </section>
+            </div>
 
-            {/* Renderização Condicional dos Modais */}
-            {modalFeriasUser && (
-                <UserFeriasModal 
-                    usuario={modalFeriasUser} 
-                    onClose={handleFecharFerias} 
-                    aoSalvar={handleSalvarModal} 
-                />
-            )}
-            
-            {modalVinculoUser && (
-                <UserFinanceiroModal 
-                    usuario={modalVinculoUser} 
-                    onClose={handleFecharVinculo} 
-                    aoSalvar={handleSalvarModal} 
-                />
-            )}
-
-            {modalCriarUser && (
-                <UserCreateModal 
-                    onClose={() => setModalCriarUser(false)} 
-                    aoSalvar={() => { setModalCriarUser(false); carregarUsuarios(); }}
+            {drawerUsuario && (
+                <UCDrawerEdicao
+                    usuario={drawerUsuario}
+                    onClose={() => setDrawerUsuario(null)}
+                    aoSalvar={() => { setDrawerUsuario(null); carregarUsuarios(); }}
+                    aoAtualizarLista={carregarUsuarios}
                     concessionarias={concessionarias}
                 />
             )}
-        </div>
+            {modalCriar && (
+                <UCCriarModal
+                    onClose={() => setModalCriar(false)}
+                    aoSalvar={() => { setModalCriar(false); carregarUsuarios(); }}
+                    concessionarias={concessionarias}
+                />
+            )}
+        </>
+    );
+}
+
+const rootEl = document.getElementById('root');
+if (rootEl) {
+    ReactDOM.createRoot(rootEl).render(
+        <React.StrictMode>
+            <MainUsuarios />
+        </React.StrictMode>
     );
 }

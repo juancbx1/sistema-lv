@@ -565,7 +565,7 @@ function FiltroVazio({ filtroAtivo, countProxima, setFiltroAtivo }) {
     if (filtroAtivo === 'ao_vivo') {
         icon = 'fa-trophy';
         titulo = 'Nenhuma gincana ao vivo';
-        mensagem = 'Nenhuma competição acontecendo agora.';
+        mensagem = 'Nenhuma gincana acontecendo agora.';
         if (countProxima > 0) {
             linkLabel = `Ver Próximas (${countProxima})`;
             linkFiltro = 'proximas';
@@ -576,23 +576,23 @@ function FiltroVazio({ filtroAtivo, countProxima, setFiltroAtivo }) {
     } else if (filtroAtivo === 'proximas') {
         icon = 'fa-clock';
         titulo = 'Nenhuma gincana agendada';
-        mensagem = 'Não há competições programadas no momento.';
+        mensagem = 'Não há gincanas programadas no momento.';
         linkLabel = 'Ver Todas';
         linkFiltro = 'todas';
     } else if (filtroAtivo === 'conquistadas') {
         icon = 'fa-star';
-        titulo = 'Nenhuma conquista ainda';
+        titulo = 'Nenhuma conquista nas últimas 24h';
         mensagem = 'Participe de uma gincana e bata a meta para ganhar! 💪';
         linkLabel = null;
     } else if (filtroAtivo === 'encerradas') {
         icon = 'fa-flag-checkered';
-        titulo = 'Nenhuma gincana encerrada';
-        mensagem = 'Gincanas encerradas aparecem por até 24h.';
+        titulo = 'Nenhuma gincana encontrada';
+        mensagem = 'Gincanas encerradas aparecem aqui por até 24h.';
         linkLabel = null;
     } else {
         icon = 'fa-trophy';
         titulo = 'Sem gincanas disponíveis';
-        mensagem = 'Nenhuma competição ativa no momento.';
+        mensagem = 'Nenhuma gincana ativa no momento.';
         linkLabel = null;
     }
 

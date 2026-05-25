@@ -37,9 +37,13 @@ export default function PermissoesEditor() {
 
     useEffect(() => { carregarUsuarios(); }, [carregarUsuarios]);
 
-    const usuariosFiltrados = usuarios.filter(u =>
-        u.nome.toLowerCase().includes(termoBusca.toLowerCase())
-    );
+    const usuariosFiltrados = usuarios.filter(u => {
+        const tipos = u.tipos || [];
+        if (tipos.includes('ex_socio')) return false;
+        if (tipos.includes('prestador_externo')) return false;
+        if (u.data_demissao) return false;
+        return u.nome.toLowerCase().includes(termoBusca.toLowerCase());
+    });
 
     const permissoesBase = (usuario) => {
         const base = new Set();

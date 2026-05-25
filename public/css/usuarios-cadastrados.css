@@ -1,612 +1,773 @@
-/* --- Layout Geral da Página --- */
-body {
-    font-family: var(--gs-fonte-principal);
-    background-color: var(--gs-fundo-pagina);
-    margin: 0;
-    line-height: 1.6;
-    margin-left: 250px;
-    transition: margin-left 0.3s ease;
-}
+/* ===================================================
+   USUÁRIOS CADASTRADOS — CSS
+   Padrão gs-card, tablet-first
+   =================================================== */
 
-body.menu-aberto {
-    margin-left: 250px;
-}
-
-.uc-container {
-    width: 100%;
-    padding: 25px;
-    margin-left: 0;
-    transition: margin-left 0.3s ease;
-}
-
-body.menu-aberto .uc-container {
-    margin-left: 250px;
-    width: calc(100% - 250px);
-}
-
-.usuarios-cadastrados h1 {
-    font-size: 1.8rem;
-    color: var(--gs-secundaria);
-    font-weight: 600;
-    margin-bottom: 25px;
-    padding-bottom: 15px;
-    border-bottom: 1px solid var(--gs-borda);
-}
-
-.uc-controles-topo {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 25px;
-    flex-wrap: wrap;
-    gap: 15px;
-}
-
-.uc-filtro-tipo {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.uc-filtro-tipo label {
-    font-weight: 500;
-    color: var(--gs-texto-secundario);
-}
-
-.uc-filtro-tipo select {
-    padding: 8px 12px;
-    border: 1px solid var(--gs-borda);
-    border-radius: var(--gs-raio-borda-input);
-    background-color: var(--gs-branco);
-    cursor: pointer;
-    min-width: 200px;
-}
-
-.uc-filtro-tipo select:focus {
-    outline: none;
-    border-color: var(--gs-primaria);
-    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.25);
-}
-
-.uc-loading-spinner {
-    display: none;
-    font-size: 1.5rem;
-    text-align: center;
-    margin: 40px 0;
-    color: var(--gs-texto-secundario);
-}
-
-/* --- Lista de Cards --- */
-.uc-usuarios-lista {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-    gap: 25px;
-}
-
-
-/* --- Estrutura e Estilos do Card (NOVO E ORGANIZADO) --- */
-.usuario-card-custom { /* Usamos uma classe custom para não interferir com .gs-card global */
-    display: flex;
-    flex-direction: column;
-    gap: 15px; /* Espaçamento entre as seções */
-    transition: opacity 0.3s ease, background-color 0.3s ease;
-}
-
-/* Estilo para ex-empregado */
-.usuario-card-custom.status-ex-empregado {
-    background-color: #f8f9fa; /* Fundo cinza claro */
-    opacity: 0.85;
-}
-.usuario-card-custom.status-ex-empregado:hover {
-    opacity: 1;
-}
-
-.card-cabecalho {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding-bottom: 10px;
-    border-bottom: 1px solid var(--gs-borda);
-}
-
-.card-titulo-nome {
-    font-size: 1.25rem;
-    color: var(--gs-secundaria);
-    margin: 0;
-}
-
-.status-selo {
-    padding: 4px 10px;
-    font-size: 0.75rem;
-    font-weight: 700;
-    border-radius: 50px; /* Formato de pílula */
-    text-transform: uppercase;
-    color: var(--gs-branco);
-}
-
-.status-selo.empregado {
-    background-color: var(--gs-sucesso);
-}
-
-.status-selo.ex-empregado {
-    background-color: var(--gs-texto-secundario);
-}
-
-.card-secao {
-    padding-top: 10px;
-    border-top: 1px dashed #e9ecef;
-}
-.card-secao:first-of-type {
-    padding-top: 0;
-    border-top: none;
-}
-
-.card-secao-titulo {
-    font-size: 0.8rem;
-    font-weight: 600;
-    color: var(--gs-primaria);
-    text-transform: uppercase;
-    margin-bottom: 12px;
-}
-
-.card-secao p {
-    margin: 8px 0;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 0.9rem;
-}
-
-.card-secao p > span:first-child { /* Label "Nome:", "Email:", etc. */
-    font-weight: 600;
-    color: var(--gs-texto-principal);
-    min-width: 110px;
-}
-.card-secao .uc-dado-texto {
-    color: var(--gs-texto-secundario);
-}
-.card-secao .uc-input-edit {
-    flex-grow: 1; /* Faz o input ocupar o espaço restante */
-}
-
-
-/* Grid para a Jornada de Trabalho */
-.jornada-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 15px;
-}
-.jornada-grid > div {
-    display: flex;
-    flex-direction: column;
-}
-.jornada-grid label {
-    font-size: 0.8rem;
-    font-weight: 500;
-    margin-bottom: 4px;
-    color: var(--gs-texto-secundario);
-}
-
-/* Display da jornada no modo visualização */
-.jornada-display {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 5px 15px;
-    font-size: 0.9rem;
-    color: var(--gs-texto-secundario);
-}
-
-/* Botões dentro do Card */
-.uc-card-botoes-container {
-    margin-top: auto; /* Empurra os botões para o final do card */
-    padding-top: 15px;
-    border-top: 1px solid var(--gs-borda);
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
-}
-
-/* --- Sobrescritas e Ajustes Finais --- */
-/* Garante que o input de salário não fique gigante */
-.uc-salario-input, .uc-passagem-input {
-    max-width: 150px;
-}
-
-.uc-tipos-container {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-    margin-top: 10px;
-}
-
-/* ==========================================================================
-   # ESTILOS PARA FÉRIAS E MODAL (ADICIONADO)
-   ========================================================================== */
-
-/* --- Nova Pílula de Status "DE FÉRIAS" --- */
-.status-selo.ferias {
-    background-color: var(--gs-aviso); /* Cor de aviso (amarelo/laranja) */
-}
-
-/* --- Estilos para o Modal de Férias --- */
-.uc-modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0, 0, 0, 0.6);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 1000;
-    animation: gs-fadeIn 0.3s ease;
-}
-
-.uc-modal-content {
-    background-color: var(--gs-fundo-pagina);
-    padding: 30px;
-    border-radius: var(--gs-raio-borda-card);
-    box-shadow: var(--gs-sombra-hover);
-    width: 90%;
-    max-width: 600px;
-    position: relative;
-}
-
-.uc-modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding-bottom: 15px;
-    margin-bottom: 20px;
-    border-bottom: 1px solid var(--gs-borda);
-}
-
-.uc-modal-header h2 {
-    font-size: 1.5rem;
-    color: var(--gs-secundaria);
-    margin: 0;
-}
-
-.uc-modal-close-btn {
-    background: none;
-    border: none;
-    font-size: 2rem;
-    color: var(--gs-texto-secundario);
-    cursor: pointer;
-    line-height: 1;
-}
-.uc-modal-close-btn:hover {
-    color: var(--gs-perigo);
-}
-
-.uc-modal-body h3 {
-    font-size: 1.1rem;
-    color: var(--gs-primaria);
-    margin-top: 25px;
-    margin-bottom: 15px;
-}
-
-.uc-form-ferias {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 15px;
-    align-items: flex-end; /* Alinha o botão com a base dos inputs */
-}
-
-.uc-form-group {
-    display: flex;
-    flex-direction: column;
-}
-
-.uc-form-group label {
-    margin-bottom: 5px;
-    font-size: 0.9rem;
-    font-weight: 500;
-}
-
-/* --- Lista do Histórico de Férias --- */
-.uc-historico-ferias-lista {
-    list-style: none;
-    padding: 0;
-    margin-top: 15px;
-    max-height: 200px;
-    overflow-y: auto;
-    border: 1px solid var(--gs-borda);
-    border-radius: var(--gs-raio-borda-input);
-    padding: 10px;
-}
-
-.uc-historico-ferias-lista li {
-    padding: 10px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.uc-historico-ferias-lista li:not(:last-child) {
-    border-bottom: 1px solid #e9ecef;
-}
-
-.uc-historico-ferias-lista .nenhum-registro {
-    color: var(--gs-texto-secundario);
-    text-align: center;
-}
-
-/* UserStyles.css */
-
-/* --- Container e Layout --- */
-.uc-container {
-    width: 100%;
-    padding: 20px;
-}
-
-.uc-usuarios-lista {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-    gap: 25px;
-    margin-top: 20px;
-}
-
-/* --- Cards --- */
-.usuario-card-custom {
-    display: flex;
-    flex-direction: column;
-    gap: 15px;
-    transition: all 0.3s ease;
-    background-color: var(--gs-branco, #fff);
-    border-radius: var(--gs-raio-borda-card, 8px);
-    box-shadow: var(--gs-sombra-card, 0 2px 5px rgba(0,0,0,0.1));
-    padding: 20px;
-}
-
-/* Status: Ex-Empregado e Ex-Sócio (Opacidade e Fundo) */
-.usuario-card-custom.status-ex-empregado {
-    background-color: #f2f2f2;
-    opacity: 0.9;
-    border: 1px dashed #ccc;
-}
-
-.card-cabecalho {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding-bottom: 10px;
-    border-bottom: 1px solid #eee;
-}
-
-.card-titulo-nome {
-    font-size: 1.2rem;
-    color: var(--gs-secundaria, #2c3e50);
-    margin: 0;
-}
-
-/* --- Badges de Status (Pílulas) --- */
-.status-selo {
-    padding: 4px 10px;
-    font-size: 0.75rem;
-    font-weight: 700;
-    border-radius: 50px;
-    text-transform: uppercase;
-    color: #fff;
-    margin-left: 5px;
-}
-
-.status-selo.empregado { background-color: var(--gs-sucesso, #27ae60); }
-.status-selo.ex-empregado { background-color: #95a5a6; } /* Cinza */
-.status-selo.ferias { background-color: var(--gs-aviso, #f39c12); }
-
-/* NOVO: Estilo para Sócio */
-.status-selo.socio { 
-    background-color: #f1c40f; /* Dourado/Amarelo forte */
-    color: #2c3e50; /* Texto escuro para contraste */
-    border: 1px solid #d4ac0d;
-}
-
-/* --- Conteúdo do Card --- */
-.card-secao {
-    padding-top: 10px;
-    border-top: 1px dashed #eee;
-}
-.card-secao:first-of-type { border-top: none; }
-
-.card-secao-titulo {
-    font-size: 0.8rem;
-    font-weight: 600;
-    color: var(--gs-primaria, #3498db);
-    text-transform: uppercase;
-    margin-bottom: 8px;
-}
-
-.card-secao p {
-    margin: 5px 0;
-    font-size: 0.9rem;
-    display: flex;
-    align-items: center;
-}
-
-.card-secao p > span:first-child {
-    font-weight: 600;
-    min-width: 100px;
-    color: #555;
-}
-
-.uc-dado-texto { color: #333; }
-
-/* Jornada Display */
-.jornada-display {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 5px 10px;
-    font-size: 0.85rem;
-    background: #f9f9f9;
-    padding: 8px;
-    border-radius: 5px;
-}
-
-/* Grid de Edição da Jornada */
-.jornada-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-}
-.jornada-grid label { font-size: 0.75rem; display: block; margin-bottom: 2px;}
-
-/* Inputs */
-.uc-form-group { margin-bottom: 15px; }
-.uc-form-group label { display: block; margin-bottom: 5px; font-weight: 500; }
-.uc-tipos-container { background: #f9f9f9; padding: 10px; border-radius: 5px; }
-
-/* Botões */
-.uc-card-botoes-container {
-    margin-top: auto;
-    padding-top: 15px;
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-    border-top: 1px solid #eee;
-}
-
-/* --- MODAIS (Estilo React) --- */
-.uc-modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0, 0, 0, 0.6);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 2000;
-    animation: fadeIn 0.2s;
-}
-
-.uc-modal-content {
-    background-color: #fff;
-    padding: 25px;
-    border-radius: 10px;
-    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-    width: 90%;
-    max-width: 500px;
-    position: relative;
-    max-height: 90vh;
-    overflow-y: auto;
-}
-
-.uc-modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    border-bottom: 1px solid #eee;
-    padding-bottom: 10px;
-    margin-bottom: 20px;
-}
-
-.uc-modal-header h2 { margin: 0; font-size: 1.4rem; color: #2c3e50; }
-
-.uc-modal-close-btn {
-    background: none;
-    border: none;
-    font-size: 2rem;
-    line-height: 1;
-    cursor: pointer;
-    color: #999;
-}
-.uc-modal-close-btn:hover { color: #e74c3c; }
-
-.uc-form-ferias {
-    display: flex;
-    gap: 10px;
-    align-items: flex-end;
-}
-
-.uc-historico-ferias-lista {
-    list-style: none;
-    padding: 0;
-    margin-top: 10px;
-    border: 1px solid #eee;
-    max-height: 150px;
-    overflow-y: auto;
-}
-.uc-historico-ferias-lista li {
-    padding: 8px 12px;
-    border-bottom: 1px solid #eee;
-    font-size: 0.9rem;
-}
-
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-
-
-/* --- Responsividade --- */
 @media (max-width: 1024px) {
-    body.menu-aberto .uc-container {
-        margin-left: 0;
-        width: 100%;
+    body {
+        padding: 40px 40px 10px 40px;
     }
 }
 
-@media (max-width: 768px) {
-    .uc-container { padding: 15px; }
-    .uc-usuarios-lista { grid-template-columns: 1fr; }
-    .uc-controles-topo { flex-direction: column; align-items: stretch; }
+/* --- Filtros por tipo (chips horizontais) --- */
+
+.uc-filtros-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 24px;
 }
 
-/* --- Foto Oficial (admissão) --- */
-.uc-cabecalho-com-foto {
+.uc-filtro-chip {
+    padding: 6px 16px;
+    border-radius: 20px;
+    border: 1.5px solid var(--gs-borda);
+    background: var(--gs-branco);
+    color: var(--gs-texto-secundario);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+    min-height: 36px;
+}
+
+.uc-filtro-chip:hover {
+    border-color: var(--gs-primaria);
+    color: var(--gs-primaria);
+}
+
+.uc-filtro-chip--ativo {
+    background: var(--gs-primaria);
+    border-color: var(--gs-primaria);
+    color: #fff;
+}
+
+/* --- Seções (Ativos / Ex-empregados) --- */
+
+.uc-secao {
+    margin-bottom: 8px;
+}
+
+.uc-secao-titulo {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--gs-texto-secundario);
+    margin-bottom: 16px;
     display: flex;
     align-items: center;
-    gap: 12px;
-    width: 100%;
+    gap: 8px;
 }
 
-.uc-foto-card-view {
-    width: 48px;
-    height: 48px;
+.uc-secao-count {
+    background: var(--gs-fundo-input, #f1f5f9);
+    color: var(--gs-texto-secundario);
+    font-size: 0.78rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 12px;
+}
+
+.uc-divisor {
+    border: none;
+    border-top: 1px dashed var(--gs-borda);
+    margin: 28px 0;
+}
+
+.uc-secao--ex .uc-grid {
+    opacity: 0.55;
+}
+
+.uc-sem-resultados {
+    color: var(--gs-texto-secundario);
+    font-size: 0.9rem;
+    padding: 20px 0;
+}
+
+/* --- Grid de cards --- */
+
+.uc-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+}
+
+/* --- UCCard --- */
+
+.uc-card {
+    position: relative;
+    overflow: hidden;
+    border-radius: 10px;
+    background: var(--gs-branco);
+    border: 1px solid var(--gs-borda);
+    padding: 16px 16px 16px 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    transition: box-shadow 0.15s;
+}
+
+.uc-card:hover {
+    box-shadow: 0 4px 16px rgba(0,0,0,0.09);
+}
+
+/* Borda-charme — posicionamento declarado aqui conforme padrão do projeto */
+.uc-card .card-borda-charme {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 6px;
+    height: 100%;
+    border-radius: 10px 0 0 10px;
+}
+
+.uc-card--empregado .card-borda-charme        { background-color: #3b82f6; }
+.uc-card--socio .card-borda-charme             { background-color: #8b5cf6; }
+.uc-card--administrador .card-borda-charme     { background-color: #64748b; }
+.uc-card--prestador_externo .card-borda-charme { background-color: #f59e0b; }
+.uc-card--ex_empregado .card-borda-charme      { background-color: #9ca3af; }
+.uc-card--ex_socio .card-borda-charme          { background-color: #9ca3af; }
+
+/* Topo do card (avatar + identidade) */
+
+.uc-card-topo {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.uc-avatar {
+    width: 44px;
+    height: 44px;
     border-radius: 50%;
-    background-color: var(--gs-borda-suave, #ddd);
-    background-size: cover;
-    background-position: center;
     flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #aaa;
-    font-size: 1.2rem;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 0.5px;
+    background-size: cover;
+    background-position: center;
 }
 
-/* Seção de edição da foto */
-.uc-foto-oficial-container {
+.uc-card-identidade {
+    flex: 1;
+    min-width: 0;
+}
+
+.uc-card-nome {
+    font-size: 0.97rem;
+    font-weight: 600;
+    color: var(--gs-texto-principal);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 6px;
+}
+
+.uc-card-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+}
+
+.uc-tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #fff;
+    white-space: nowrap;
+}
+
+.uc-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.uc-badge--ativo  { background: #dcfce7; color: #15803d; }
+.uc-badge--ferias { background: #dbeafe; color: #1d4ed8; }
+.uc-badge--ex     { background: #f1f5f9; color: #64748b; }
+
+/* Dados compactos */
+
+.uc-card-dados {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    border-top: 1px solid var(--gs-borda);
+    padding-top: 10px;
+}
+
+.uc-card-dado-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+}
+
+.uc-card-dado-label {
+    font-size: 0.78rem;
+    color: var(--gs-texto-secundario);
+    white-space: nowrap;
+}
+
+.uc-card-dado-valor {
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--gs-texto-principal);
+    text-align: right;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 180px;
+}
+
+/* Ações do card */
+
+.uc-card-acoes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    border-top: 1px solid var(--gs-borda);
+    padding-top: 12px;
+}
+
+.uc-btn-icone {
+    width: 36px !important;
+    height: 36px !important;
+    padding: 0 !important;
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.uc-btn-editar {
+    flex: 1;
+}
+
+/* Acordeão ex-empregados */
+
+.uc-acordeao-trigger {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    text-align: left;
+}
+
+.uc-acordeao-trigger:hover .uc-secao-titulo {
+    color: var(--gs-primaria);
+}
+
+.uc-acordeao-icone {
+    color: var(--gs-texto-secundario);
+    font-size: 0.85rem;
+    flex-shrink: 0;
+}
+
+.uc-grid--ex {
+    opacity: 0.55;
+}
+
+/* ===================================================
+   DRAWER DE EDIÇÃO
+   =================================================== */
+
+.uc-drawer-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.35);
+    z-index: 1000;
+    opacity: 0;
+    transition: opacity 0.28s ease;
+}
+
+.uc-drawer-overlay--visivel {
+    opacity: 1;
+}
+
+.uc-drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 420px;
+    height: 100%;
+    background: var(--gs-branco);
+    box-shadow: -4px 0 24px rgba(0,0,0,0.14);
+    display: flex;
+    flex-direction: column;
+    z-index: 1001;
+    transform: translateX(100%);
+    transition: transform 0.28s ease;
+}
+
+.uc-drawer--visivel {
+    transform: translateX(0);
+}
+
+@media (max-width: 480px) {
+    .uc-drawer {
+        width: 100%;
+    }
+}
+
+.uc-drawer-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 20px 20px 16px;
+    border-bottom: 1px solid var(--gs-borda);
+    flex-shrink: 0;
+}
+
+.uc-drawer-titulo {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--gs-texto-principal);
+    margin: 0 0 2px;
+}
+
+.uc-drawer-subtitulo {
+    font-size: 0.85rem;
+    color: var(--gs-texto-secundario);
+    margin: 0;
+}
+
+.uc-drawer-fechar {
+    background: none;
+    border: none;
+    color: var(--gs-texto-secundario);
+    font-size: 1.1rem;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: color 0.15s;
+    flex-shrink: 0;
+}
+
+.uc-drawer-fechar:hover {
+    color: var(--gs-texto-principal);
+}
+
+.uc-drawer-corpo {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0;
+}
+
+.uc-drawer-secao {
+    padding: 18px 20px;
+    border-bottom: 1px solid var(--gs-borda);
+}
+
+.uc-drawer-secao:last-child {
+    border-bottom: none;
+}
+
+.uc-drawer-secao-titulo {
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--gs-texto-secundario);
+    margin: 0 0 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.uc-drawer-secao--acao {
+    background: #f8fafc;
+}
+
+.uc-drawer-mini-msg {
+    font-size: 0.82rem;
+    color: var(--gs-texto-secundario);
+    margin: 8px 0 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.uc-drawer-footer {
+    display: flex;
+    gap: 10px;
+    padding: 14px 20px;
+    border-top: 1px solid var(--gs-borda);
+    flex-shrink: 0;
+    background: var(--gs-branco);
+}
+
+.uc-drawer-footer .gs-btn {
+    flex: 1;
+}
+
+/* Foto no drawer */
+
+.uc-foto-container {
     display: flex;
     align-items: center;
     gap: 16px;
 }
 
-.uc-foto-oficial-preview {
-    width: 72px;
-    height: 72px;
+.uc-foto-preview {
+    width: 64px;
+    height: 64px;
     border-radius: 50%;
-    background-color: var(--gs-borda-suave, #ddd);
-    background-size: cover;
-    background-position: center;
-    flex-shrink: 0;
+    background: var(--gs-fundo-pagina);
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #aaa;
-    font-size: 1.8rem;
-    border: 2px solid var(--gs-borda-suave, #ccc);
+    color: var(--gs-texto-secundario);
+    font-size: 1.5rem;
+    background-size: cover;
+    background-position: center;
+    flex-shrink: 0;
+    border: 2px solid var(--gs-borda);
 }
 
-.uc-foto-oficial-acoes {
+.uc-foto-acoes {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+/* Dias da semana */
+
+.uc-dias-semana {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+}
+
+.uc-dia-btn {
+    padding: 5px 10px;
+    border-radius: 20px;
+    border: 1.5px solid var(--gs-borda);
+    background: var(--gs-fundo-pagina);
+    color: #9ca3af;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    min-height: 32px;
+}
+
+.uc-dia-btn--ativo {
+    background: #22c55e;
+    border-color: #22c55e;
+    color: #fff;
+}
+
+/* ===================================================
+   FORMULÁRIOS (shared entre drawer e modais)
+   =================================================== */
+
+.uc-form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.uc-form-campo {
     display: flex;
     flex-direction: column;
+    gap: 4px;
+}
+
+.uc-form-campo label {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--gs-texto-secundario);
+}
+
+.uc-form-campo--full {
+    grid-column: 1 / -1;
+}
+
+.uc-checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: var(--gs-texto-principal);
+}
+
+/* Chips de tipo (selector) */
+
+.uc-tipos-chips {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
     gap: 6px;
 }
 
-.uc-foto-oficial-descricao {
-    font-size: 0.78rem;
-    color: #888;
-    margin: 0 0 4px 0;
-    line-height: 1.4;
+.uc-tipo-chip {
+    padding: 7px 10px;
+    border-radius: 8px;
+    border: 1.5px solid var(--gs-borda);
+    background: var(--gs-branco);
+    color: var(--gs-texto-secundario);
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.15s;
+    min-height: 36px;
+}
+
+.uc-tipo-chip:hover {
+    border-color: var(--gs-primaria);
+    color: var(--gs-primaria);
+}
+
+.uc-tipo-chip--ativo {
+    background: var(--gs-primaria);
+    border-color: var(--gs-primaria);
+    color: #fff;
+}
+
+/* ===================================================
+   MODAIS
+   =================================================== */
+
+.uc-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+
+.uc-modal-content {
+    background: var(--gs-branco);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 560px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+}
+
+.uc-modal-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid var(--gs-borda);
+    flex-shrink: 0;
+}
+
+.uc-modal-header h2 {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--gs-texto-principal);
+    margin: 0 0 2px;
+}
+
+.uc-modal-subtitulo {
+    font-size: 0.85rem;
+    color: var(--gs-texto-secundario);
+    margin: 0;
+}
+
+.uc-modal-fechar {
+    background: none;
+    border: none;
+    color: var(--gs-texto-secundario);
+    font-size: 1.1rem;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: color 0.15s;
+    flex-shrink: 0;
+}
+
+.uc-modal-fechar:hover {
+    color: var(--gs-texto-principal);
+}
+
+.uc-modal-corpo {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0;
+}
+
+.uc-modal-secao {
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--gs-borda);
+}
+
+.uc-modal-secao:last-child {
+    border-bottom: none;
+}
+
+.uc-modal-secao--financeiro {
+    background: #f8fafc;
+}
+
+.uc-modal-secao-titulo {
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--gs-texto-secundario);
+    margin: 0 0 12px;
+}
+
+.uc-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 16px 24px;
+    border-top: 1px solid var(--gs-borda);
+    flex-shrink: 0;
+}
+
+/* Senha */
+
+.uc-senha-wrapper {
+    position: relative;
+}
+
+.uc-senha-wrapper .gs-input {
+    width: 100%;
+    padding-right: 40px;
+}
+
+.uc-senha-toggle {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: var(--gs-texto-secundario);
+    cursor: pointer;
+    padding: 4px;
+}
+
+/* Hint financeiro */
+
+.uc-hint-financeiro {
+    padding: 10px 24px;
+    color: var(--gs-texto-secundario);
+    font-size: 0.85rem;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* Vínculo atual */
+
+.uc-vinculo-atual {
+    margin: 16px 24px 0;
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: #dcfce7;
+    color: #15803d;
+    font-size: 0.88rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Busca de contatos */
+
+.uc-busca-wrapper {
+    position: relative;
+    margin-bottom: 12px;
+}
+
+.uc-busca-icone {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--gs-texto-secundario);
+    font-size: 0.9rem;
+}
+
+.uc-busca-input {
+    padding-left: 36px !important;
+    width: 100%;
+}
+
+.uc-resultados-lista {
+    border: 1px solid var(--gs-borda);
+    border-radius: 8px;
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+.uc-resultado-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--gs-borda);
+    font-size: 0.9rem;
+    gap: 10px;
+}
+
+.uc-resultado-item:last-child {
+    border-bottom: none;
+}
+
+/* Férias */
+
+.uc-ferias-lista {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.uc-ferias-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    background: #f8fafc;
+    border-radius: 8px;
+    font-size: 0.88rem;
+    color: var(--gs-texto-principal);
+}
+
+.uc-ferias-item i {
+    color: #3b82f6;
+    flex-shrink: 0;
+}
+
+.uc-ferias-item span:first-of-type {
+    flex: 1;
+}
+
+.uc-ferias-dias {
+    font-weight: 600;
+    color: var(--gs-texto-secundario);
+    white-space: nowrap;
+    flex-shrink: 0;
 }

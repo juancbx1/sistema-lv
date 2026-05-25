@@ -25,6 +25,7 @@ export default function MainDashboard() {
     const [modalPagamentosAberto, setModalPagamentosAberto] = useState(false);
     const [impersonandoNome, setImpersonandoNome] = useState(null);
     const [avisosPopup, setAvisosPopup] = useState([]);
+    const [streakData, setStreakData] = useState(null);
 
     const carregar = async () => {
         // Detecta token de impersonação na URL e o armazena em sessionStorage (isolado por aba)
@@ -48,11 +49,13 @@ export default function MainDashboard() {
                 } catch (_) { /* ignora erro de decode */ }
             }
 
-            // Buscar avisos popup pendentes (em paralelo com os dados do dashboard)
-            const [resultado, avisosPendentes] = await Promise.all([
+            // Buscar avisos popup, streak e dados do dashboard em paralelo
+            const [resultado, avisosPendentes, streak] = await Promise.all([
                 fetchAPI('/api/dashboard/desempenho'),
                 fetchAPI('/api/avisos-popup/pendentes').catch(() => []),
+                fetchAPI('/api/dashboard/streak').catch(() => null),
             ]);
+            setStreakData(streak);
             setAvisosPopup(avisosPendentes);
             setDados(resultado);
             
@@ -122,9 +125,10 @@ export default function MainDashboard() {
             )}
             <DashHeader
                 usuario={dados.usuario}
-                saldoCofre={dados.cofre?.saldo} // Passa o saldo para o header
-                aoAbrirCofre={() => setModalCofreAberto(true)} // Abre o modal
-                // Botão do gráfico abre o mesmo modal de detalhes
+                saldoCofre={dados.cofre?.saldo}
+                pontosHoje={dados.hoje?.pontos}
+                streak={streakData}
+                aoAbrirCofre={() => setModalCofreAberto(true)}
                 aoAbrirDesempenho={() => setModalDesempenhoAberto(true)}
                 aoAbrirPerfil={() => setModalPerfilAberto(true)}
                 aoAbrirPagamentos={() => setModalPagamentosAberto(true)}
@@ -180,6 +184,7 @@ export default function MainDashboard() {
                 <DashDesempenhoModal
                     dadosAcumulados={dados.acumulado}
                     diasTrabalho={dados.usuario?.dias_trabalho}
+                    periodo={dados.periodo}
                     onClose={() => setModalDesempenhoAberto(false)}
                 />
             )}
@@ -194,18 +199,19 @@ export default function MainDashboard() {
                 />
             )}
 
-            {/* NOVO MODAL DE PERFIL */}
             {modalPerfilAberto && (
-                <DashPerfilModal 
+                <DashPerfilModal
                     usuarioAtual={dados.usuario}
+                    dadosAcumulados={dados.acumulado}
                     onClose={() => setModalPerfilAberto(false)}
-                    aoAtualizarAvatar={carregar} // Recarrega os dados do usuário para atualizar o header
+                    aoAtualizarAvatar={carregar}
                 />
             )}
 
             {modalPagamentosAberto && (
                 <DashPagamentosModal
-                    pagamentoPendente={dados.pagamentoPendente} // NOVA PROP
+                    pagamentoPendente={dados.pagamentoPendente}
+                    usuario={dados.usuario}
                     onClose={() => setModalPagamentosAberto(false)}
                 />
             )}

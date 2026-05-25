@@ -76,7 +76,7 @@ O prefixo do nome do componente é sempre a **abreviação da página/área** à
 | `Embalagem*` | Embalagem de produtos |
 | `Botao*` | Botões com lógica própria |
 | `UI*` | ⚠️ Prefixo legado usado para componentes reutilizáveis entre páginas — o nome não é ideal e será revisado progressivamente. Por enquanto, mantê-lo para não quebrar imports existentes. |
-| `Permissoes*` | Tela de Gerenciar Permissões (inaugurado em 2026-05-22) |
+| `Permissoes*` | Tela de Gerenciar Permissões |
 
 **Componentes reutilizados entre páginas:** quando um componente precisar ser usado em mais de uma área, o prefixo deve deixar claro que é compartilhado — a forma exata será definida caso a caso conforme o projeto avança, evoluindo o prefixo `UI*` para algo mais semântico.
 
@@ -172,8 +172,9 @@ O `global-style.css` remove o `margin-left` do body no tablet (`@media max-width
 O desenvolvimento é organizado por **áreas** (cada área = uma página do sistema). Ao iniciar trabalho em uma área, o checklist obrigatório é:
 
 1. **Migração React:** a página está 100% em React? Se não, migrar primeiro.
-2. **Limpeza de CSS:** fazer uma passagem no arquivo `.css` da área, removendo classes mortas, regras duplicadas e estilos de código legado que não são mais referenciados — **sem quebrar nada**. Consultar a tabela de status abaixo antes de fazer qualquer limpeza — se já estiver marcada como "limpo", não tocar.
-3. **Feature:** só então implementar a nova funcionalidade.
+2. **⚠️ Checar double gs-card (bug recorrente de migração):** ao migrar uma página, o HTML antigo frequentemente tinha um `<div class="gs-card">` como root do componente React. Com a nova estrutura, o `<main id="root" class="gs-card">` já está no HTML — o componente raiz React **nunca** deve ter `<div className="gs-card">` como wrapper externo, apenas `<>` (Fragment). Verificar logo após criar o entry point. Ver seção "Anti-padrão crítico" abaixo.
+3. **Limpeza de CSS:** fazer uma passagem no arquivo `.css` da área, removendo classes mortas, regras duplicadas e estilos de código legado que não são mais referenciados — **sem quebrar nada**. Consultar a tabela de status abaixo antes de fazer qualquer limpeza — se já estiver marcada como "limpo", não tocar.
+4. **Feature:** só então implementar a nova funcionalidade.
 
 ---
 
@@ -285,6 +286,13 @@ export default function MinhaPage() {
 
 **Por que acontece o double-nesting?** Quando a página já tem `class="gs-card"` no `<main>` E o componente raiz adiciona outro `<div class="gs-card">`, o resultado é um card dentro de um card — padding duplicado, sombra dentro de sombra, visual quebrado.
 
+**Por que acontece durante migrações?** O HTML legado tinha um `<div class="gs-card">` como container principal do JS. Ao portar para React, esse div é copiado junto como wrapper do componente raiz — mas na nova estrutura ele já existe no `<main>`. O componente raiz React deve usar `<>` (Fragment) e nunca um div externo.
+
+**Checklist de migração de página (evitar este bug):**
+1. No `.html`: trocar a tag raiz para `<main id="root" class="gs-card"></main>`
+2. No componente React raiz: garantir que retorna `<>...</>`, nunca `<div className="gs-card">...</div>`
+3. Confirmar visualmente que não há card duplo (padding excessivo nas bordas é o sintoma mais fácil de detectar)
+
 **Subcomponentes de aba (ex: renderizados dentro de `gs-conteudo-pagina`) podem e devem usar `gs-card`** para suas seções de conteúdo — isso é correto e segue o padrão. O anti-padrão se aplica apenas ao componente que é montado diretamente no `<main id="root">`.
 
 ---
@@ -296,20 +304,35 @@ Tabela de controle para evitar retrabalho. Atualizar sempre que uma etapa for co
 | Área | Arquivo CSS | React 100% | CSS Limpo | Usa gs-card | Observações |
 |---|---|---|---|---|---|
 | Login / Index | `login.css` | ✅ | ✅ | N/A | React 100% (27/04). `LoginApp.jsx` único. Tablet-first (2 col), glassmorphism. Token 8h/30d via `manterConectado`. Demitidos → tela de despedida + cooldown crescente. |
-| Ordens de Produção | `ordens-de-producao.css` | ✅ | ✅ | ✅ (via alias) | Referência de qualidade. **UIBloqueio 100% concluído (2026-05-22).** 14 permissões mapeadas e protegidas (ver `_planejamento/permissoes-por-pagina.md`). Padrões A, B e C todos representados. `OPGerenciamentoTela.jsx`: `onCancelar` sempre passa o handler (sem condição no pai). API `criar-op` corrigida para `gerar-op`. |
+
+| Ordens de Produção | `ordens-de-producao.css` | ✅ | ✅ | ✅ (via alias) | Referência de qualidade. 
+
 | Calendário da Empresa | `calendario.css` | ✅ | ✅ | ✅ | Página nova — estrutura padrão aplicada |
+
 | Central de Alertas | `config-alertas.css` | ✅ | ❌ | ✅ | Redesenhada em 2026-05-16 com 2 abas: Alertas Gerais + Avisos Popups. `ConfigAlertasGerais.jsx` + `AvisosPopupAdmin.jsx` + `AvisosPopupModal.jsx`. Avisos Popup v1.0 completo (DB + API + UI). Permissão: `gerenciar-avisos-popup` em `permissoes.js`. |
-| Centro de Incentivos | `incentivos.css` | ✅ | ✅ | ✅ | v5.1 (2026-05-23). v5.0: redesign completo UX/UI (3-zonas, filtros FAB, celebração, wizard reescrito). v5.1: campo `valor_premio_reais` em `gincanas_premiacoes` (migration executada); passo 3 do wizard com OBJETIVO\|PRÊMIO lado a lado + chamada auto-gerada editável; `maiorPremio()` retorna R$ nas dashboards; ajustes UI: coluna prêmio compacta (80px), badge encerrada cinza (#6b7280), filtro padrão FAB = ao_vivo, estado vazio inteligente com UIFeedbackNotFound + link em cascata ao_vivo→proximas→todas, `ds-gincana-conteudo-col` centralizado. Hook tiktik pendente em `api/arremates.js`. Stubs IncenMetasTab/IncenPontosTab pendentes. |
+
+| Centro de Incentivos | `incentivos.css` | ✅ | ✅ | ✅ | v5.1 concluído (2026-05-23). Todas as abas 100% React: Gincanas, Metas e Comissões, Pontos por Atividade, Pagamentos. Arquivos legados deletados (`ponto-por-processo.html/js/css`). Hook tiktik (`api/arremates.js`) deferido para v4.x — sem data. Testes de gincana corrida/equipe/produto_especifico/semanal pendentes de validação manual. |
+
 | Central de Pagamentos | `central-de-pagamentos.css` | ✅ | ❌ | ❌ | |
-| Dashboard Funcionário | `dashboard.css` | ✅ | ❌ | ❌ | Mobile-first, estrutura diferente. `DashFabGincana.jsx` (2026-05-20) substitui `DashGincanaCard` inline — gincanas agora em FAB + bottom sheet. |
+
+| Dashboard Funcionário | `dashboard.css` | ✅ | ❌ | ❌ | Mobile-first, estrutura diferente. `DashFabGincana.jsx` (2026-05-20) substitui `DashGincanaCard` inline — gincanas agora em FAB + bottom sheet. Redesign completo 2026-05-24: `DashHeader` com dock (4 botões + divider), tipo+ciclo e avatar clicável; `DSUploader.jsx` (novo componente de upload compartilhado — variantes dropzone/avatar/inline); `DashPerfilModal` redesenhado com hero gradiente escuro, galeria DSUploader, streak de produção, conquistas do ciclo, melhor dia, gincanas vencidas; `DashPagamentosModal` com wallet topo dark + saldos lado a lado (Comissões / Premiações); `DashRankingCard` com mini pódio e estado campeã dourado. APIs novas: `GET /api/dashboard/streak`, `GET /api/dashboard/conquistas-ciclo`. |
+
 | Arremates | `arremates.css` | ✅ | ❌ | ✅ | v1.0 (2026-05-04) + v2.0 (2026-05-05) + v3.0 Items 1-4 (2026-05-13/14) concluídos. v3.0: `PontoHelpers.js` e `UILinhaDoTempoDia.jsx` extraídos como compartilhados; `ArremateStatusCard` reescrito com layout `cracha-tiktik` idêntico ao OPStatusCard (cronômetro interval-aware, bottom sheets, tolerância S3, liberar intervalo); `ArreMatePainelAtividades` refatorado com estrutura `oa-*` idêntica ao OPPainelAtividades (ALMOCO/PAUSA no grid principal, inativos completos, todos os handlers de ponto). CSS: 4657 → 5850 linhas. v3.0 implementação 100% concluída (Items 1–5). Aguarda verificação manual em browser. Deletar manualmente: `ArremateToast.jsx` e `ArremateAcoesLote.jsx`. Ver `_planejamento/arremates-redesign.md`. |
+
 | Embalagem de Produtos | `embalagem-de-produtos.css` | ❓ | ❌ | ❌ | Verificar migração React |
+
 | Estoque | `estoque.css` | ❓ | ❌ | ❌ | Verificar migração React |
+
 | Financeiro | `financeiro.css` | ❓ | ❌ | ❌ | Verificar migração React |
-| Gerenciar Permissões | `permissoes-usuarios.css` | ✅ | ✅ | ✅ | Migrada em 2026-05-22. Duas abas: Permissões (editor com acordeão) + Auditoria (logs paginados com filtros). Prefixo `Permissoes*`. Infraestrutura de auditoria completa (`api/audit.js`, `api/audit-log.js`, `audit_log` tabela). Permissão `usar-agente-encerrador` adicionada. |
-| Usuários Cadastrados | `usuarios-cadastrados.css` | ✅ | ❌ | ❌ | |
+
+| Gerenciar Permissões | `permissoes-usuarios.css` | ✅ | ✅ | ✅ | Concluída 2026-05-23. Duas abas: Permissões + Auditoria. Prefixo `Permissoes*`. Editor: lista plana com search bar (substituiu acordeão) — filtra permissões em tempo real; exclui ex-membros e prestadores da lista de usuários. Auditoria: paginação clássica 12/pág com `gs-paginacao-*`; dropdown de usuários busca tabela `usuarios` (não só audit_log). Infraestrutura: `api/audit.js` + `api/audit-log.js` + tabela `audit_log`. JS legado `admin-permissoes-usuarios.js` deletado. |
+
+| Usuários Cadastrados | `usuarios-cadastrados.css` | ✅ | ✅ | ✅ | Redesenhado 2026-05-23. Prefixo `UC*`. Cards com borda-charme por categoria, drawer de edição com férias+vínculo internos, acordeão "Ex-membros". Tipo `ex_socio` como campo em `tipos[]` (sem datas). Tipo `prestador_externo` implementado. Migration `_planejamento/migration-prestador-externo.sql` executada em produção e staging (2026-05-23). |
+
 | Home / Admin | `home.css` | ✅ | ❌ | ❌ | |
+
 | Gerenciar Produção | `gerenciar-producao.css` | ❓ | ❌ | ❌ | Verificar migração React |
+
 | Produção Geral | `producao-geral.css` | ✅ | ✅ | ✅ | v1.0 + v2.0 + v3.0 implementados (2026-04-26). Prefixo `PG*`, recharts, filtros client-side, PGMetaTimeline, banner histórico, Pontos Extras |
 
 > ✅ Concluído | ❌ Pendente | ❓ Não verificado — checar antes de trabalhar na área

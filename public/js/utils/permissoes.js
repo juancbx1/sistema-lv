@@ -25,7 +25,7 @@ export const permissoesDisponiveis = [
     { id: 'usar-agente-central-ops', label: 'Ação: Usar o Agente de Encerramento Central (aba OPs)', categoria: 'Produção e Cortes' },
     { id: 'usar-agente-cortes', label: 'Ação: Usar o Agente de Planejamento de Cortes (aba Cortes)', categoria: 'Produção e Cortes' },
     { id: 'configurar-tempos-padrao', label: 'Ação: Configurar Tempos Padrão de Produção', categoria: 'Produção e Cortes' },
-    { id: 'permite-estender-horario', label: 'Ação: Autorizar Hora Extra (estender horário do funcionário)', categoria: 'Produção e Cortes' },
+    { id: 'permite-estender-horario', label: 'Ação: Autorizar Hora Extra (estender horário do empregado)', categoria: 'Produção e Cortes' },
     { id: 'desfazer-lancamento-p-externo', label: 'Ação: Desfazer lançamento de P. Externo (freelance)', categoria: 'Produção e Cortes' },
 
       // --- PAINEL DE DEMANDAS ---

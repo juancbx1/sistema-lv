@@ -6,7 +6,7 @@ const CORES_META = {
     bronze:   '#A1887F',
     nao_bateu:'#EF9A9A',
 };
-const COR_FOLGA     = '#B0BEC5';
+const COR_FOLGA     = '#a78bfa'; // roxo — distinto do cinza da prata
 const COR_SEM_PROD  = '#E0E0E0';
 const COR_FUTURO    = '#F5F5F5';
 const TIPOS_FOLGA   = new Set(['feriado_nacional', 'feriado_regional', 'folga_empresa']);

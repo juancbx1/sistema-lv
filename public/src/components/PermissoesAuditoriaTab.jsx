@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Select from 'react-select';
 import UICarregando from './UICarregando.jsx';
 
+const LIMIT = 12;
+
 function fetchAuth(url, opts = {}) {
     const token = localStorage.getItem('token');
     return fetch(url, {
@@ -63,13 +65,13 @@ function iniciais(nome) {
 }
 
 export default function PermissoesAuditoriaTab() {
-    const [logs, setLogs]             = useState([]);
-    const [total, setTotal]           = useState(0);
-    const [pagina, setPagina]         = useState(1);
-    const [carregando, setCarregando] = useState(false);
-    const [carregandoMais, setCarregandoMais] = useState(false);
+    const [logs, setLogs]                     = useState([]);
+    const [total, setTotal]                   = useState(0);
+    const [totalPaginas, setTotalPaginas]     = useState(0);
+    const [pagina, setPagina]                 = useState(1);
+    const [carregando, setCarregando]         = useState(false);
     const [usuariosOpcoes, setUsuariosOpcoes] = useState([]);
-    const [logExpandido, setLogExpandido] = useState(null);
+    const [logExpandido, setLogExpandido]     = useState(null);
 
     const [filtros, setFiltros] = useState({
         usuario_id: '',
@@ -90,17 +92,14 @@ export default function PermissoesAuditoriaTab() {
         } catch { /* silencioso */ }
     }, []);
 
-    const buscarLogs = useCallback(async (paginaParam = 1, acumulando = false) => {
-        if (acumulando) setCarregandoMais(true);
-        else setCarregando(true);
-
+    const buscarLogs = useCallback(async (paginaParam = 1) => {
+        setCarregando(true);
         try {
-            const params = new URLSearchParams({ page: paginaParam, limit: 50 });
+            const params = new URLSearchParams({ page: paginaParam, limit: LIMIT });
             if (filtros.usuario_id) params.append('usuario_id', filtros.usuario_id);
             if (filtros.acao) params.append('acao', filtros.acao);
             if (filtros.data_inicio) params.append('data_inicio', filtros.data_inicio);
             if (filtros.data_fim) {
-                // data_fim é exclusivo — adiciona 1 dia para incluir o dia selecionado
                 const fim = new Date(filtros.data_fim);
                 fim.setDate(fim.getDate() + 1);
                 params.append('data_fim', fim.toISOString().split('T')[0]);
@@ -110,14 +109,14 @@ export default function PermissoesAuditoriaTab() {
             if (!r.ok) throw new Error('Erro ao buscar logs');
             const data = await r.json();
 
-            setLogs(prev => acumulando ? [...prev, ...data.logs] : data.logs);
+            setLogs(data.logs);
             setTotal(data.total);
+            setTotalPaginas(data.totalPaginas);
             setPagina(paginaParam);
         } catch {
-            if (!acumulando) setLogs([]);
+            setLogs([]);
         } finally {
             setCarregando(false);
-            setCarregandoMais(false);
         }
     }, [filtros]);
 
@@ -126,7 +125,7 @@ export default function PermissoesAuditoriaTab() {
     }, [buscarUsuarios]);
 
     useEffect(() => {
-        buscarLogs(1, false);
+        buscarLogs(1);
     }, [buscarLogs]);
 
     const handleFiltroChange = (campo, valor) => {
@@ -136,10 +135,6 @@ export default function PermissoesAuditoriaTab() {
     const limparFiltros = () => {
         setFiltros({ usuario_id: '', acao: '', data_inicio: '', data_fim: '' });
     };
-
-    const carregarMais = () => buscarLogs(pagina + 1, true);
-
-    const temMais = logs.length < total;
 
     return (
         <>
@@ -236,17 +231,22 @@ export default function PermissoesAuditoriaTab() {
                         ))}
                     </ul>
 
-                    {temMais && (
-                        <div className="pu-audit-carregar-mais">
+                    {totalPaginas > 1 && (
+                        <div className="gs-paginacao-container">
                             <button
-                                className="gs-btn gs-btn-secundario"
-                                onClick={carregarMais}
-                                disabled={carregandoMais}
+                                className="gs-paginacao-btn"
+                                onClick={() => buscarLogs(pagina - 1)}
+                                disabled={pagina <= 1}
                             >
-                                {carregandoMais
-                                    ? <><i className="fas fa-spinner fa-spin"></i> Carregando...</>
-                                    : `Carregar mais (${total - logs.length} restantes)`
-                                }
+                                Anterior
+                            </button>
+                            <span className="gs-paginacao-info">Pág. {pagina} de {totalPaginas}</span>
+                            <button
+                                className="gs-paginacao-btn"
+                                onClick={() => buscarLogs(pagina + 1)}
+                                disabled={pagina >= totalPaginas}
+                            >
+                                Próximo
                             </button>
                         </div>
                     )}

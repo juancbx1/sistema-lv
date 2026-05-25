@@ -1,63 +1,93 @@
-import React from 'react';
-import imgDefaultAvatar from '../assets/default-avatar.png'; 
+import React, { useMemo } from 'react';
+import imgDefaultAvatar from '../assets/default-avatar.png';
 
-export default function DashHeader({ usuario, saldoCofre, aoAbrirDesempenho, aoAbrirCofre, aoAbrirPagamentos, aoAbrirPerfil, aoSair }) {
-    // Tratamento de segurança para dados opcionais
-    // Agora usamos a imagem importada como fallback
+function saudacaoPorHora() {
+    const hora = new Date().getHours();
+    if (hora < 12) return { texto: 'Bom dia', icone: 'fa-sun' };
+    if (hora < 18) return { texto: 'Boa tarde', icone: 'fa-cloud-sun' };
+    return { texto: 'Boa noite', icone: 'fa-moon' };
+}
+
+
+export default function DashHeader({
+    usuario,
+    saldoCofre,
+    pontosHoje,
+    streak,
+    aoAbrirDesempenho,
+    aoAbrirCofre,
+    aoAbrirPagamentos,
+    aoAbrirPerfil,
+    aoSair,
+}) {
     const avatarUrl = usuario?.avatar_url || imgDefaultAvatar;
-    const nomeUsuario = usuario?.nome || "Colaborador";
-    const tipoUsuario = usuario?.tipo 
-        ? usuario.tipo.charAt(0).toUpperCase() + usuario.tipo.slice(1) 
-        : "N/A";
-    const nivelUsuario = usuario?.nivel || "?";
+    const nomeUsuario = usuario?.nome || 'Colaboradora';
+    const nivelUsuario = usuario?.nivel || '?';
+    const { texto: saudacao, icone: saudacaoIcone } = useMemo(saudacaoPorHora, []);
 
     return (
         <header className="ds-header-principal">
+            {/* ── Identidade ─────────────────────────────── */}
             <div className="ds-identidade-bloco">
-                <div className="ds-identidade-avatar">
-                    <img src={avatarUrl} alt="Avatar do colaborador" id="header-avatar-img" />
+                <div className="ds-identidade-avatar" onClick={aoAbrirPerfil} aria-label="Abrir perfil">
+                    <img src={avatarUrl} alt="Avatar" id="header-avatar-img" />
                     <span className="ds-identidade-level-badge">{nivelUsuario}</span>
                 </div>
+
                 <div className="ds-identidade-info">
-                    <h1>{nomeUsuario}</h1>
-                    <p>{tipoUsuario} - Nível {nivelUsuario}</p>
+                    <p className="ds-header-saudacao">
+                        <i className={`fas ${saudacaoIcone}`} aria-hidden="true" />
+                        {saudacao}!
+                    </p>
+                    <h1 className="ds-header-nome">{nomeUsuario}</h1>
                 </div>
             </div>
 
-            <div className="ds-actions-bloco">
-                {/* Botão Pagamentos (NOVO) */}
-                <button className="ds-action-btn" title="Meus Pagamentos" onClick={aoAbrirPagamentos}>
-                    <i className="fas fa-wallet"></i>
-                </button>
-                
-                {/* Botão Cofre (Porquinho) */}
-                <button 
-                    className="ds-action-btn" 
-                    title="Banco de Resgate" 
+            {/* ── Dock ───────────────────────────────────── */}
+            <div className="ds-actions-dock">
+                <button
+                    className="ds-dock-btn ds-dock-btn--cofre"
+                    title="Banco de Resgate"
                     onClick={aoAbrirCofre}
-                    style={{color: saldoCofre > 0 ? 'var(--ds-cor-primaria)' : 'inherit', borderColor: saldoCofre > 0 ? 'var(--ds-cor-primaria)' : 'var(--ds-cor-cinza-borda)'}}
+                    aria-label="Abrir cofre"
                 >
-                    <i className="fas fa-vault"></i>
+                    <i className="fas fa-vault" aria-hidden="true" />
+                    <span className="ds-dock-label">Cofre</span>
                     {saldoCofre > 0 && (
-                        <span className="ds-badge" style={{backgroundColor: 'var(--ds-cor-sucesso)', border: 'none', top: '-5px', right: '-5px'}}>
-                            {Math.round(saldoCofre)}
-                        </span>
+                        <div className="ds-dock-badge">{Math.round(saldoCofre)}</div>
                     )}
                 </button>
 
-                {/* Botão Desempenho (Modal do Extrato) */}
-                <button className="ds-action-btn" title="Meu Desempenho" onClick={aoAbrirDesempenho}>
-                    <i className="fas fa-chart-line"></i>
+                <button
+                    className="ds-dock-btn"
+                    title="Minha Carteira"
+                    onClick={aoAbrirPagamentos}
+                    aria-label="Abrir carteira"
+                >
+                    <i className="fas fa-wallet" aria-hidden="true" />
+                    <span className="ds-dock-label">Carteira</span>
                 </button>
 
-                {/* Botão Perfil */}
-                <button id="btnAcaoPerfil" className="ds-action-btn" title="Meu Perfil" onClick={aoAbrirPerfil}>
-                    <i className="fas fa-user-cog"></i>
+                <button
+                    className="ds-dock-btn"
+                    title="Meu Desempenho"
+                    onClick={aoAbrirDesempenho}
+                    aria-label="Abrir extrato"
+                >
+                    <i className="fas fa-chart-line" aria-hidden="true" />
+                    <span className="ds-dock-label">Extrato</span>
                 </button>
 
-                {/* Botão Sair */}
-                <button id="logoutBtn" className="ds-action-btn ds-btn-sair" title="Sair" onClick={aoSair}>
-                    <i className="fas fa-sign-out-alt"></i>
+                <div className="ds-dock-divider" aria-hidden="true" />
+
+                <button
+                    className="ds-dock-btn ds-dock-btn--sair"
+                    title="Sair"
+                    onClick={aoSair}
+                    aria-label="Sair do sistema"
+                >
+                    <i className="fas fa-sign-out-alt" aria-hidden="true" />
+                    <span className="ds-dock-label">Sair</span>
                 </button>
             </div>
         </header>

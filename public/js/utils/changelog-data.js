@@ -20,9 +20,27 @@
 
 export const changelog = [
     {
+        versao: '1.33.0',
+        versao_dashboard: '1.24.0',
+        data: '24/05/2026',
+        admin: [
+            'Redesign da pagina de permissoes de usuarios. Agora tb filtra e nao exibe ex-empregados.',
+            'Bugs ajustados na aba "auditoria", como o bug que nao registrava os logs de todos os usuarios',
+            'Redesign na pagina de usuarios cadastrados. Nova badge para "prestador_externo".',
+        ],
+        dashboard: [
+            'Novo visual do perfil: foto, sequencia de producao, conquistas e gincanas ganhas no ciclo',
+            'Carteira redesenhada: ver saldo de comissoes e premiacoes separados em destaque',
+            'Card de ranking com podio dos top 3 e mensagem motivacional',
+            'Botoes do topo reorganizados com visual mais moderno',
+        ],
+    },
+
+
+    {
         versao: '1.32.0',
         versao_dashboard: '1.23.0',
-        data: '20/05/2026',
+        data: '22/05/2026',
         admin: [
             'Redesign dos cards de gincana, redesign completo do wizard de criacao de gincanas',
             'Implementado novo padrao de permissoes do sistema, comecando pela pagina de OPS',

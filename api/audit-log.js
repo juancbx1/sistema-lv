@@ -75,7 +75,7 @@ router.get('/', async (req, res) => {
     }
 });
 
-// GET /api/audit-log/usuarios — lista usuários que têm logs (para o filtro de select)
+// GET /api/audit-log/usuarios — lista todos os usuários ativos (para o filtro de select)
 router.get('/usuarios', async (req, res) => {
     const { usuarioLogado } = req;
     let dbClient;
@@ -86,7 +86,12 @@ router.get('/usuarios', async (req, res) => {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
         const result = await dbClient.query(
-            `SELECT DISTINCT usuario_id, usuario_nome FROM audit_log WHERE usuario_id IS NOT NULL ORDER BY usuario_nome`
+            `SELECT id AS usuario_id, nome AS usuario_nome
+             FROM usuarios
+             WHERE data_demissao IS NULL
+               AND NOT ('is_test' = ANY(COALESCE(tipos, '{}')))
+               AND NOT ('prestador_externo' = ANY(COALESCE(tipos, '{}')))
+             ORDER BY nome`
         );
         res.status(200).json(result.rows);
     } catch (error) {

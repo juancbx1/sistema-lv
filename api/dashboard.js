@@ -195,6 +195,11 @@ router.get('/desempenho', async (req, res) => {
         const atividadesRes = await dbClient.query(queryText, [usuario.id, periodo.inicio, periodo.fim]);
         const atividades = atividadesRes.rows;
 
+        // Total de peças produzidas no ciclo (exclui Pontos Extras que têm quantidade = 0)
+        const totalPecasCiclo = atividades
+            .filter(a => a.tipo_origem !== 'PontosExtra')
+            .reduce((sum, a) => sum + (parseInt(a.quantidade) || 0), 0);
+
         // 5. Cálculo Diário
         const diasCalculados = {};
         atividades.forEach(atv => {
@@ -470,7 +475,6 @@ router.get('/desempenho', async (req, res) => {
                 WHERE data BETWEEN $1 AND $2
                   AND tipo IN ('feriado_nacional', 'feriado_regional', 'folga_empresa')
                   AND funcionario_id IS NULL
-                  AND visivel_dashboard = true
             `, [primeiroDiaPgto.toISOString().slice(0, 10), ultimoDiaPgto.toISOString().slice(0, 10)]);
 
             const datasExcluidasPgto = new Set(feriadosPgtoRes.rows.map(r => r.data.slice(0, 10)));
@@ -503,6 +507,7 @@ router.get('/desempenho', async (req, res) => {
             },
             acumulado: {
                 totalGanho: totalGanhoPeriodo,
+                totalPecasCiclo,
                 blocos: blocosComDados,
                 diasUteisNoCiclo,
                 diasTrabalhadosNoCiclo,
@@ -796,19 +801,18 @@ router.get('/meus-pagamentos', async (req, res) => {
     try {
         dbClient = await pool.connect();
         
-        // CORREÇÃO: Filtra apenas COMISSÃO e DATA >= 14/12/2025
         const historicoRes = await dbClient.query(`
-            SELECT 
-                data_pagamento, 
-                ciclo_nome, 
-                valor_liquido_pago, 
+            SELECT
+                data_pagamento,
+                ciclo_nome,
+                valor_liquido_pago,
                 descricao
             FROM historico_pagamentos_funcionarios
             WHERE usuario_id = $1
-              AND descricao ILIKE '%Comissão%' -- Filtra apenas Comissões
-              AND data_pagamento >= '2025-12-14 00:00:00' -- Filtra data de corte
+              AND descricao ILIKE '%Comissão%'
+              AND data_pagamento >= '2025-12-14 00:00:00'
             ORDER BY data_pagamento DESC
-            LIMIT 2
+            LIMIT 12
         `, [usuarioId]);
 
         res.status(200).json(historicoRes.rows);
@@ -905,11 +909,17 @@ router.get('/ranking-semana', async (req, res) => {
         const tipoUsuario = tipoRes.rows[0]?.tipos?.[0] || 'costureira';
 
         // 2. Início da semana (domingo 00:00 SP → semana Dom–Sab)
+        const semanaAnterior = req.query.semana === 'anterior';
         const agoraSP = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
         const diaSemana = agoraSP.getDay(); // 0=Dom, 1=Seg, ..., 6=Sab
-        const inicioSemana = new Date(agoraSP);
-        inicioSemana.setDate(agoraSP.getDate() - diaSemana);
-        inicioSemana.setHours(0, 0, 0, 0);
+        const inicioSemanaAtual = new Date(agoraSP);
+        inicioSemanaAtual.setDate(agoraSP.getDate() - diaSemana);
+        inicioSemanaAtual.setHours(0, 0, 0, 0);
+
+        // Se ?semana=anterior, recua a janela 7 dias
+        const inicioSemana = new Date(inicioSemanaAtual);
+        if (semanaAnterior) inicioSemana.setDate(inicioSemana.getDate() - 7);
+        const fimJanela = semanaAnterior ? new Date(inicioSemanaAtual) : null; // null = sem limite superior
 
         // Label da semana para o header do card
         const fimSemana = new Date(inicioSemana);
@@ -937,6 +947,9 @@ router.get('/ranking-semana', async (req, res) => {
         // NOTA: pontos_extras propositalmente excluídos do ranking — seria injusto
         // com quem não recebeu bônus. O card exibe um 'i' explicando isso ao usuário.
         let queryPontos;
+        const paramsPontos = fimJanela ? [todosIds, inicioSemana, fimJanela] : [todosIds, inicioSemana];
+        const clausulaFim  = fimJanela ? 'AND data_lancamento < $3' : '';
+        const clausulaFimP = fimJanela ? 'AND data < $3' : '';
         if (tipoUsuario === 'tiktik') {
             queryPontos = `
                 SELECT usuario_tiktik_id AS uid, COALESCE(SUM(pontos_gerados), 0)::int AS pontos
@@ -944,6 +957,7 @@ router.get('/ranking-semana', async (req, res) => {
                 WHERE usuario_tiktik_id = ANY($1::int[])
                 AND tipo_lancamento = 'PRODUCAO'
                 AND data_lancamento >= $2
+                ${clausulaFim}
                 GROUP BY uid
             `;
         } else {
@@ -952,10 +966,11 @@ router.get('/ranking-semana', async (req, res) => {
                 FROM producoes
                 WHERE funcionario_id = ANY($1::int[])
                 AND data >= $2
+                ${clausulaFimP}
                 GROUP BY uid
             `;
         }
-        const pontosRes = await dbClient.query(queryPontos, [todosIds, inicioSemana]);
+        const pontosRes = await dbClient.query(queryPontos, paramsPontos);
 
         // 5. Incluir usuários com 0 pontos e ordenar
         const mapaRanking = new Map(pontosRes.rows.map(r => [r.uid, r.pontos]));
@@ -970,23 +985,27 @@ router.get('/ranking-semana', async (req, res) => {
         const meusPontos = minhaEntrada?.pontos || 0;
 
         // 6. Slice visível
-        // Times pequenos (≤ 8): mostrar todos — nenhum membro fica de fora.
-        // Times grandes: janela de #1 fixo + 2 acima + eu + 2 abaixo.
+        // Times pequenos (≤ 8): mostrar todos.
+        // Times grandes: top 3 sempre presentes + contexto do usuário (1 acima, eu, 1 abaixo).
         const indiceEu = rankingOrdenado.findIndex(r => r.isEu);
         let slice;
         if (rankingOrdenado.length <= 8) {
             slice = rankingOrdenado;
         } else {
-            const inicioSlice = Math.max(0, indiceEu - 2);
-            const fimSlice = Math.min(rankingOrdenado.length, indiceEu + 3);
-            slice = rankingOrdenado.slice(inicioSlice, fimSlice);
+            const top3 = rankingOrdenado.slice(0, Math.min(3, rankingOrdenado.length));
 
-            // Garantir que o #1 está sempre presente
-            if (slice[0]?.posicao !== 1) {
+            if (indiceEu < 3) {
+                // Usuário está no top 3 — mostrar top 5 para dar contexto
+                slice = rankingOrdenado.slice(0, Math.min(6, rankingOrdenado.length));
+            } else {
+                // Usuário fora do top 3 — top 3 + separador + contexto do usuário
+                const contextStart = Math.max(3, indiceEu - 1);
+                const contextEnd = Math.min(rankingOrdenado.length, indiceEu + 2);
+                const context = rankingOrdenado.slice(contextStart, contextEnd);
                 slice = [
-                    rankingOrdenado[0],
+                    ...top3,
                     { posicao: null, pontos: null, uid: null, isEu: false, separador: true },
-                    ...slice
+                    ...context,
                 ];
             }
         }
@@ -1006,6 +1025,70 @@ router.get('/ranking-semana', async (req, res) => {
         const gapParaPrimeiro = rankingOrdenado[0].pontos - meusPontos;
         const todosZerados = rankingOrdenado[0].pontos === 0;
 
+        // 9. semanasNoTopo — quantas semanas passadas completas o usuário ficou em 1°
+        let semanasNoTopo = null;
+        if (minhaPosicao === 1 && !todosZerados) {
+            semanasNoTopo = 0;
+            try {
+                // Buscar 8 semanas para trás (antes do início da semana atual)
+                const oitoSemanasAtras = new Date(inicioSemana.getTime() - 8 * 7 * 86400000);
+
+                let queryHist;
+                if (tipoUsuario === 'tiktik') {
+                    queryHist = `
+                        SELECT usuario_tiktik_id AS uid,
+                               (data_lancamento AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date AS dia,
+                               SUM(pontos_gerados)::int AS pontos
+                        FROM arremates
+                        WHERE usuario_tiktik_id = ANY($1::int[])
+                          AND tipo_lancamento = 'PRODUCAO'
+                          AND data_lancamento >= $2 AND data_lancamento < $3
+                        GROUP BY uid, dia
+                    `;
+                } else {
+                    queryHist = `
+                        SELECT funcionario_id AS uid,
+                               (data AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date AS dia,
+                               SUM(pontos_gerados)::int AS pontos
+                        FROM producoes
+                        WHERE funcionario_id = ANY($1::int[])
+                          AND data >= $2 AND data < $3
+                        GROUP BY uid, dia
+                    `;
+                }
+                const histRes = await dbClient.query(queryHist, [todosIds, oitoSemanasAtras, inicioSemana]);
+
+                // Agrupar por semana (Domingo–Sábado)
+                // r.dia é uma DATE SP retornada como Date UTC midnight — getUTCDay() dá o dia correto
+                const mapaSemanas = {};
+                histRes.rows.forEach(r => {
+                    const diaDate = new Date(r.dia);
+                    const dow = diaDate.getUTCDay(); // 0=Dom
+                    const domingoMs = diaDate.getTime() - dow * 86400000;
+                    const weekKey = new Date(domingoMs).toISOString().slice(0, 10);
+                    if (!mapaSemanas[weekKey]) mapaSemanas[weekKey] = {};
+                    mapaSemanas[weekKey][r.uid] = (mapaSemanas[weekKey][r.uid] || 0) + r.pontos;
+                });
+
+                // Contar semanas consecutivas em 1° lugar, da mais recente para a mais antiga
+                for (let i = 1; i <= 8; i++) {
+                    const domingoSemana = new Date(inicioSemana.getTime() - i * 7 * 86400000);
+                    const weekKey = domingoSemana.toISOString().slice(0, 10);
+                    const semana = mapaSemanas[weekKey];
+                    if (!semana) break;
+                    const entries = Object.entries(semana);
+                    if (entries.length === 0) break;
+                    const todosZeradosHist = entries.every(([, pts]) => pts === 0);
+                    if (todosZeradosHist) break;
+                    const [vencedorId] = entries.sort((a, b) => b[1] - a[1])[0];
+                    if (parseInt(vencedorId) !== usuarioId) break;
+                    semanasNoTopo++;
+                }
+            } catch (_) {
+                semanasNoTopo = null;
+            }
+        }
+
         res.status(200).json({
             minhaPosicao,
             totalParticipantes: rankingOrdenado.length,
@@ -1017,12 +1100,212 @@ router.get('/ranking-semana', async (req, res) => {
             labelSemana,
             diaSemana,
             todosZerados,
-            ranking: rankingFinal
+            ranking: rankingFinal,
+            semanasNoTopo,
         });
 
     } catch (error) {
         console.error('[API Ranking] Erro:', error);
         res.status(500).json({ error: 'Erro ao buscar ranking.' });
+    } finally {
+        if (dbClient) dbClient.release();
+    }
+});
+
+// GET /api/dashboard/streak
+// Retorna quantos dias seguidos com produção o usuário tem
+router.get('/streak', async (req, res) => {
+    const { id: usuarioId } = req.usuarioLogado;
+    let dbClient;
+    try {
+        dbClient = await pool.connect();
+
+        const tipoRes = await dbClient.query('SELECT tipos FROM usuarios WHERE id = $1', [usuarioId]);
+        const tipoUsuario = tipoRes.rows[0]?.tipos?.[0] || 'costureira';
+
+        const agoraSP = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+        const hojeStr = agoraSP.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+
+        let queryDias;
+        if (tipoUsuario === 'tiktik') {
+            queryDias = `
+                SELECT data_lancamento::date AS dia, SUM(pontos_gerados) AS pontos
+                FROM arremates
+                WHERE usuario_tiktik_id = $1
+                  AND tipo_lancamento = 'PRODUCAO'
+                  AND data_lancamento >= NOW() - INTERVAL '50 days'
+                GROUP BY dia
+            `;
+        } else {
+            queryDias = `
+                SELECT data::date AS dia, SUM(pontos_gerados) AS pontos
+                FROM producoes
+                WHERE funcionario_id = $1
+                  AND data >= NOW() - INTERVAL '50 days'
+                GROUP BY dia
+            `;
+        }
+        const diasRes = await dbClient.query(queryDias, [usuarioId]);
+        const diasComProducao = new Set(
+            diasRes.rows
+                .filter(r => parseFloat(r.pontos) > 0)
+                .map(r => new Date(r.dia).toLocaleDateString('en-CA', { timeZone: 'UTC' }))
+        );
+
+        // Dias não úteis: domingos são tratados no loop; feriados/folgas vêm do calendário da empresa
+        const ini50 = new Date(agoraSP);
+        ini50.setDate(ini50.getDate() - 52); // margem extra para cobrir fins de semana
+        const feriadosRes = await dbClient.query(`
+            SELECT data::date AS dia FROM calendario_empresa
+            WHERE data BETWEEN $1 AND $2
+              AND tipo IN ('feriado_nacional', 'feriado_regional', 'folga_empresa', 'falta')
+              AND (funcionario_id IS NULL OR funcionario_id = $3)
+        `, [ini50.toISOString().slice(0, 10), hojeStr, usuarioId]);
+        const diasNaoUteis = new Set(
+            feriadosRes.rows.map(r => new Date(r.dia).toLocaleDateString('en-CA', { timeZone: 'UTC' }))
+        );
+
+        // Conta dias úteis seguidos para trás a partir de hoje
+        // Domingos e dias do calendário (feriados/folgas) não quebram nem contam a sequência
+        let diasSeguidos = 0;
+        const cursor = new Date(agoraSP);
+
+        for (let guard = 0; guard < 100; guard++) {
+            const str = cursor.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+            const dow = cursor.getDay(); // 0 = domingo no fuso SP
+
+            // Domingo ou dia não útil do calendário → pula sem quebrar streak
+            if (dow === 0 || diasNaoUteis.has(str)) {
+                cursor.setDate(cursor.getDate() - 1);
+                continue;
+            }
+
+            // Dia útil sem produção → streak encerrada
+            if (!diasComProducao.has(str)) break;
+
+            diasSeguidos++;
+            cursor.setDate(cursor.getDate() - 1);
+        }
+
+        const THRESHOLDS = [
+            { dias: 21, badge: 'Lendária' },
+            { dias: 15, badge: 'Imparável' },
+            { dias: 10, badge: 'Constante' },
+            { dias: 5,  badge: 'Determinada' },
+        ];
+        const badgeAtual = THRESHOLDS.find(t => diasSeguidos >= t.dias)?.badge || null;
+        const proximo = THRESHOLDS.slice().reverse().find(t => t.dias > diasSeguidos);
+        const proximoBadge = proximo?.badge || null;
+        const diasParaBadge = proximo ? proximo.dias - diasSeguidos : null;
+
+        res.json({ diasSeguidos, badgeAtual, proximoBadge, diasParaBadge });
+    } catch (error) {
+        console.error('[API Streak] Erro:', error);
+        res.status(500).json({ error: 'Erro ao calcular streak.' });
+    } finally {
+        if (dbClient) dbClient.release();
+    }
+});
+
+// GET /api/dashboard/conquistas-ciclo
+// Retorna conquistas gamificadas para o ciclo atual
+router.get('/conquistas-ciclo', async (req, res) => {
+    const { id: usuarioId } = req.usuarioLogado;
+    let dbClient;
+    try {
+        dbClient = await pool.connect();
+
+        const tipoRes = await dbClient.query('SELECT tipos FROM usuarios WHERE id = $1', [usuarioId]);
+        const tipoUsuario = tipoRes.rows[0]?.tipos?.[0] || 'costureira';
+
+        const periodo = getPeriodoFiscalAtual(new Date());
+
+        let queryDias;
+        if (tipoUsuario === 'tiktik') {
+            queryDias = `
+                SELECT data_lancamento::date AS dia,
+                       SUM(pontos_gerados)::float AS pontos,
+                       COUNT(*)::int AS registros
+                FROM arremates
+                WHERE usuario_tiktik_id = $1
+                  AND tipo_lancamento = 'PRODUCAO'
+                  AND data_lancamento BETWEEN $2 AND $3
+                GROUP BY dia
+            `;
+        } else {
+            queryDias = `
+                SELECT data::date AS dia,
+                       SUM(pontos_gerados)::float AS pontos,
+                       COUNT(*)::int AS registros
+                FROM producoes
+                WHERE funcionario_id = $1
+                  AND data BETWEEN $2 AND $3
+                GROUP BY dia
+            `;
+        }
+        const diasRes = await dbClient.query(queryDias, [usuarioId, periodo.inicio, periodo.fim]);
+        const dias = diasRes.rows;
+
+        // Meta mínima do ciclo
+        const hojeSP = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+        const versaoRes = await dbClient.query(
+            `SELECT id FROM metas_versoes WHERE data_inicio_vigencia <= $1 ORDER BY data_inicio_vigencia DESC LIMIT 1`,
+            [hojeSP]
+        );
+        let metaMinima = 1000;
+        if (versaoRes.rows.length > 0) {
+            const regraRes = await dbClient.query(
+                `SELECT pontos_meta FROM metas_regras WHERE id_versao = $1 AND tipo_usuario = $2 ORDER BY pontos_meta ASC LIMIT 1`,
+                [versaoRes.rows[0].id, tipoUsuario]
+            );
+            if (regraRes.rows.length > 0) metaMinima = parseFloat(regraRes.rows[0].pontos_meta);
+        }
+
+        const maxPontosDia = Math.max(...dias.map(d => parseFloat(d.pontos)), 0);
+        const diasAcimaMeta = dias.filter(d => parseFloat(d.pontos) >= metaMinima).length;
+        const diasAtivos = dias.filter(d => parseFloat(d.pontos) > 0).length;
+
+        const limiarTurbinado = tipoUsuario === 'tiktik' ? 1500 : 1200;
+
+        const lista = [
+            {
+                id: 'producao_turbinada',
+                nome: tipoUsuario === 'tiktik' ? 'Arremate Turbinado' : 'Produção Turbinada',
+                descricao: `${limiarTurbinado.toLocaleString('pt-BR')} pts em um dia`,
+                icone: '⚡',
+                desbloqueada: maxPontosDia >= limiarTurbinado,
+            },
+            {
+                id: 'acima_da_meta',
+                nome: 'Acima da Meta',
+                descricao: 'Meta batida em 5 dias ou mais',
+                icone: '🎯',
+                desbloqueada: diasAcimaMeta >= 5,
+            },
+            {
+                id: 'sequencia_de_ouro',
+                nome: 'Sequência de Ouro',
+                descricao: '10 dias ativos no ciclo',
+                icone: '🏅',
+                desbloqueada: diasAtivos >= 10,
+            },
+            {
+                id: 'recorde_pessoal',
+                nome: 'Primeiro Recorde',
+                descricao: 'Primeiro dia com produção',
+                icone: '🌟',
+                desbloqueada: diasAtivos >= 1,
+            },
+        ];
+
+        res.json({
+            total: lista.length,
+            desbloqueadas: lista.filter(c => c.desbloqueada).length,
+            lista,
+        });
+    } catch (error) {
+        console.error('[API Conquistas] Erro:', error);
+        res.status(500).json({ error: 'Erro ao calcular conquistas.' });
     } finally {
         if (dbClient) dbClient.release();
     }

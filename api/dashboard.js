@@ -450,18 +450,14 @@ router.get('/desempenho', async (req, res) => {
         const listaRes = await dbClient.query(queryLista, [usuario.id]);
         const atividadesParaLista = listaRes.rows;
 
-        // 10. DATA EXATA DE PAGAMENTO (12-F)
-        // Usa o mesmo ciclo que será exibido em pagamentoPendente
-        const fimCicloExibido = totalGanhoPeriodo > 0 ? periodo.fim
-                              : valorCicloAnterior > 0 ? fimCicloAnterior
-                              : null;
-
+        // 10. DATA EXATA DE PAGAMENTO DO CICLO FECHADO
+        // Sempre calculada com base em fimCicloAnterior (ciclo que já encerrou).
+        // Dois mundos distintos: ciclo aberto (acumulando) vs ciclo fechado (a pagar).
         let dataPagamentoExata = null;
         let dataPagamentoFormatada = null;
 
-        if (fimCicloExibido) {
-            // Mês seguinte ao fim do ciclo
-            const fimStr = fimCicloExibido.toISOString().slice(0, 10);
+        {
+            const fimStr = fimCicloAnterior.toISOString().slice(0, 10);
             let [anoRef, mesRef] = fimStr.split('-').map(Number);
             mesRef += 1;
             if (mesRef > 12) { mesRef = 1; anoRef++; }
@@ -517,8 +513,22 @@ router.get('/desempenho', async (req, res) => {
                 diaHojeJaEncerrado,
                 diasRestantesNoCiclo,
             },
+            // Ciclo aberto: o que a funcionária está acumulando AGORA (ainda não é pagamento)
+            acumuladoCicloAtual: {
+                valor: totalGanhoPeriodo,
+                periodoInicio: periodo.inicio.toISOString().split('T')[0],
+                periodoFim: periodo.fim.toISOString().split('T')[0],
+            },
+            // Ciclo fechado: o que vai ser PAGO no próximo 5º dia útil
+            pagamentoCicloFechado: {
+                valor: valorCicloAnterior,
+                periodoInicio: inicioCicloAnterior.toISOString().split('T')[0],
+                periodoFim: fimCicloAnterior.toISOString().split('T')[0],
+                dataPagamentoExata,
+                dataPagamentoFormatada,
+            },
+            // Mantido para retrocompatibilidade (não usado na wallet redesenhada)
             pagamentoPendente: (() => {
-                // Ciclo atual tem produção → mostrar como pagamento pendente
                 if (totalGanhoPeriodo > 0) {
                     const d = new Date(periodo.fim);
                     d.setMonth(d.getMonth() + 1);
@@ -530,7 +540,6 @@ router.get('/desempenho', async (req, res) => {
                         dataPagamentoFormatada
                     };
                 }
-                // Ciclo atual vazio (ex: primeiro dia do novo ciclo) → mostrar ciclo anterior se tiver valor
                 if (valorCicloAnterior > 0) {
                     const d = new Date(fimCicloAnterior);
                     d.setMonth(d.getMonth() + 1);

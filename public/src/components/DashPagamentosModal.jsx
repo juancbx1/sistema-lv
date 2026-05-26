@@ -1,61 +1,99 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { fetchAPI } from '/js/utils/api-utils';
-import { getPeriodoFiscalAtual } from '/js/utils/periodos-fiscais.js';
-
-// Fluxo de pagamento:
-//   Ciclo anterior termina dia 20 → pagamento ocorre no 5º dia útil do MÊS SEGUINTE
-//   Exemplo: ciclo 21/04–20/05 → pagamento em junho (5º dia útil de junho = 06/06)
-//
-// getPeriodoFiscalAtual() retorna o ciclo EM ANDAMENTO (ex: 21/05–20/06).
-// O ciclo que gerou o próximo pagamento é o ANTERIOR, que terminou em p.inicio - 1 dia.
-function getMesRefPagamento() {
-    try {
-        const p = getPeriodoFiscalAtual();
-        // Fim do ciclo anterior = dia anterior ao início do ciclo atual
-        const fimCicloAnterior = new Date(p.inicio);
-        fimCicloAnterior.setDate(fimCicloAnterior.getDate() - 1);
-        // Passa o mês do fim do ciclo anterior para o endpoint.
-        // O endpoint já soma 1 mês internamente (usa mesNum como índice 0-based no Date.UTC),
-        // portanto basta converter getMonth() (0-based) para string 1-based.
-        const ano = fimCicloAnterior.getFullYear();
-        const mes = fimCicloAnterior.getMonth() + 1; // converte 0-based → 1-based
-        return `${ano}-${String(mes).padStart(2, '0')}`;
-    } catch {
-        // fallback: mês atual (o endpoint vai calcular o seguinte)
-        const agora = new Date();
-        return `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}`;
-    }
-}
 
 function formatarData(iso) {
     if (!iso) return '—';
     return new Date(iso).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 }
 
+function formatarPeriodo(isoInicio, isoFim) {
+    if (!isoInicio || !isoFim) return '';
+    const fmt = d => new Date(d + 'T12:00:00Z').toLocaleDateString('pt-BR', {
+        day: '2-digit', month: '2-digit', timeZone: 'UTC'
+    });
+    return `${fmt(isoInicio)} – ${fmt(isoFim)}`;
+}
+
 // ─── TOPO ESTILO CARTÃO ────────────────────────────────────────────────────
-function WalletTopo({ onClose, nomeUsuario, saldoComissoes, saldoPremiacoes, loadingPremiacoes }) {
+function WalletTopo({ onClose, abaAtiva, acumuladoCicloAtual, saldoPremiacoes, loadingPremiacoes }) {
+    const valorCom = parseFloat(acumuladoCicloAtual?.valor) || 0;
+    const valorPre = saldoPremiacoes || 0;
+    const periodoAtual = acumuladoCicloAtual
+        ? formatarPeriodo(acumuladoCicloAtual.periodoInicio, acumuladoCicloAtual.periodoFim)
+        : '';
+
+    // Valores exibidos — animados por requestAnimationFrame
+    const [displayCom, setDisplayCom] = useState(0);
+    const [displayPre, setDisplayPre] = useState(valorPre);
+    const rafRef      = useRef(null);
+    const abaAnterior = useRef(null); // null = primeira execução
+
+    const animarContador = useCallback((setDisplay, alvo, duracao = 550) => {
+        if (rafRef.current) cancelAnimationFrame(rafRef.current);
+        const inicio = performance.now();
+        function step(agora) {
+            const p      = Math.min((agora - inicio) / duracao, 1);
+            const eased  = 1 - Math.pow(1 - p, 3); // ease-out cúbico
+            setDisplay(alvo * eased);
+            if (p < 1) rafRef.current = requestAnimationFrame(step);
+            else        setDisplay(alvo);
+        }
+        rafRef.current = requestAnimationFrame(step);
+    }, []);
+
+    // Na montagem: anima comissões (aba inicial)
+    useEffect(() => {
+        animarContador(setDisplayCom, valorCom);
+        return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // Ao trocar de aba: anima o card que acabou de entrar em foco
+    useEffect(() => {
+        if (abaAnterior.current === null) {
+            abaAnterior.current = abaAtiva;
+            return; // mount já animou acima
+        }
+        if (abaAnterior.current === abaAtiva) return;
+        abaAnterior.current = abaAtiva;
+
+        if (abaAtiva === 'comissoes') {
+            setDisplayCom(0);
+            animarContador(setDisplayCom, valorCom);
+        } else {
+            setDisplayPre(0);
+            animarContador(setDisplayPre, valorPre);
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [abaAtiva]);
+
+    const comFeatured = abaAtiva === 'comissoes';
+    const fmtBRL = v => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
     return (
         <div className="wallet-topo">
             <button className="ds-modal-close-simple" onClick={onClose}>
                 <i className="fas fa-times" />
             </button>
             <div className="wallet-topo-titulo">💳 Minha Carteira</div>
-            <div className="wallet-topo-nome">{nomeUsuario || 'Funcionária'}</div>
             <div className="wallet-saldos">
-                <div className="wsaldo com">
+                <div className={`wsaldo com${comFeatured ? ' wsaldo--featured' : ' wsaldo--dimmed'}`}>
                     <div className="wsaldo-label">
-                        <i className="fas fa-briefcase" /> Comissões
+                        <i className="fas fa-chart-line" /> Ciclo em curso
                     </div>
                     <div className="wsaldo-valor">
-                        R$ {(saldoComissoes || 0).toFixed(2)}
+                        {fmtBRL(displayCom)}
                     </div>
+                    {periodoAtual && (
+                        <div className="wsaldo-sub">{periodoAtual}</div>
+                    )}
                 </div>
-                <div className="wsaldo pre">
+                <div className={`wsaldo pre${!comFeatured ? ' wsaldo--featured' : ' wsaldo--dimmed'}`}>
                     <div className="wsaldo-label">
                         <i className="fas fa-trophy" /> Premiações
                     </div>
                     <div className={`wsaldo-valor${loadingPremiacoes ? ' loading' : ''}`}>
-                        {loadingPremiacoes ? '...' : `R$ ${(saldoPremiacoes || 0).toFixed(2)}`}
+                        {loadingPremiacoes ? '...' : fmtBRL(displayPre)}
                     </div>
                 </div>
             </div>
@@ -90,6 +128,70 @@ function WalletPaginacao({ pagina, total, porPagina, onChange }) {
     );
 }
 
+// ─── CARD PRÓXIMO PAGAMENTO ────────────────────────────────────────────────
+function ProxPagamentoCard({ pagamentoCicloFechado }) {
+    const valor = parseFloat(pagamentoCicloFechado?.valor) || 0;
+    const periodo = pagamentoCicloFechado
+        ? formatarPeriodo(pagamentoCicloFechado.periodoInicio, pagamentoCicloFechado.periodoFim)
+        : '';
+    const dataFormatada = pagamentoCicloFechado?.dataPagamentoFormatada || null;
+
+    return (
+        <div className="prox-pag">
+            <div className="prox-pag-topo">
+                <i className="fas fa-money-bill-wave" />
+                <span>Próximo pagamento</span>
+            </div>
+
+            {/* corpo com inline styles para garantir visibilidade independente de CSS externo */}
+            <div style={{
+                padding: '12px 14px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '8px',
+                background: '#f0fdf4',
+            }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    <strong style={{ fontSize: '1.2rem', fontWeight: 800, color: '#15803d' }}>
+                        {valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    </strong>
+                    <span style={{ fontSize: '0.72rem', color: '#4b7c5a' }}>
+                        {periodo ? `Ciclo fechado · ${periodo}` : 'Ciclo anterior'}
+                    </span>
+                </div>
+                <div className="chip-ciclo">
+                    <i className="fas fa-lock" /> ciclo encerrado
+                </div>
+            </div>
+
+            {dataFormatada && (
+                <div className="prox-pag-data">
+                    <i className="fas fa-calendar-check" />
+                    Recebe em <strong>{dataFormatada}</strong>
+                </div>
+            )}
+            {!dataFormatada && (
+                <div style={{
+                    padding: '8px 14px',
+                    fontSize: '0.73rem',
+                    color: '#6b7280',
+                    borderTop: '1px solid #bbf7d0',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    background: '#f0fdf4',
+                }}>
+                    <i className="fas fa-info-circle" style={{ color: '#9ca3af' }} />
+                    {pagamentoCicloFechado
+                        ? 'Nenhuma produção no ciclo anterior'
+                        : 'Recarregue a página para ver os valores'}
+                </div>
+            )}
+        </div>
+    );
+}
+
 // ─── ABA COMISSÕES ─────────────────────────────────────────────────────────
 function fmtMesAno(iso) {
     if (!iso) return '';
@@ -98,20 +200,8 @@ function fmtMesAno(iso) {
     });
 }
 
-function AbaComissoes({ pagamentoPendente, historico, loading }) {
-    const [grupo, setGrupo] = useState(0); // 0 = mais recente
-    const [dataExata, setDataExata] = useState(null);
-    const [loadingData, setLoadingData] = useState(true);
-
-    const temPendente = pagamentoPendente && pagamentoPendente.valor > 0;
-
-    useEffect(() => {
-        const mesRef = getMesRefPagamento();
-        fetchAPI(`/api/calendario/proximo-dia-util-pagamento?mes=${mesRef}`)
-            .then(d => setDataExata(d.dataFormatada || null))
-            .catch(() => setDataExata(null))
-            .finally(() => setLoadingData(false));
-    }, []);
+function AbaComissoes({ pagamentoCicloFechado, historico, loading }) {
+    const [grupo, setGrupo] = useState(0);
 
     // Agrupa o histórico em janelas de 3 meses (mais recente primeiro)
     const grupos = useMemo(() => {
@@ -127,7 +217,6 @@ function AbaComissoes({ pagamentoPendente, historico, loading }) {
     const totalGrupos = grupos.length;
     const grupoAtual  = grupos[grupo] || [];
 
-    // Label do período: "Jun 2025 – Ago 2025"
     const labelPeriodo = useMemo(() => {
         if (!grupoAtual.length) return '';
         const datas = grupoAtual.map(p => new Date(p.data_pagamento));
@@ -139,24 +228,7 @@ function AbaComissoes({ pagamentoPendente, historico, loading }) {
 
     return (
         <>
-            <p className="ds-pag-bolso-label">
-                <i className="fas fa-briefcase" /> Comissões de produção
-                {loadingData ? (
-                    <span className="ds-pag-bolso-hint">Calculando data...</span>
-                ) : dataExata ? (
-                    <span className="ds-pag-bolso-hint ds-pag-bolso-hint--data">
-                        <i className="fas fa-calendar-check" /> Recebe em {dataExata}
-                    </span>
-                ) : (
-                    <span className="ds-pag-bolso-hint">Pagas todo 5º dia útil do mês</span>
-                )}
-            </p>
-
-            {!temPendente && (
-                <p className="ds-pag-vazio-inline" style={{ marginTop: 4 }}>
-                    Nenhum valor pendente ainda — continue produzindo!
-                </p>
-            )}
+            <ProxPagamentoCard pagamentoCicloFechado={pagamentoCicloFechado} />
 
             <div className="ds-pag-hist-header">
                 <h3 className="ds-pag-secao-titulo" style={{ margin: 0 }}>Comissões Pagas</h3>
@@ -299,7 +371,7 @@ function AbaPremiacoes({ pendentes, pagos, loading }) {
 }
 
 // ─── MODAL PRINCIPAL ──────────────────────────────────────────────────────
-export default function DashPagamentosModal({ pagamentoPendente, usuario, onClose }) {
+export default function DashPagamentosModal({ acumuladoCicloAtual, pagamentoCicloFechado, usuario, onClose }) {
     const [aba, setAba] = useState('comissoes');
     const [historicoCom, setHistoricoCom] = useState([]);
     const [loadingCom, setLoadingCom] = useState(true);
@@ -318,7 +390,6 @@ export default function DashPagamentosModal({ pagamentoPendente, usuario, onClos
             .finally(() => setLoadingPre(false));
     }, []);
 
-    const saldoComissoes = pagamentoPendente?.valor || 0;
     const saldoPremiacoes = (dadosPre.pendentes || [])
         .reduce((sum, p) => sum + (parseFloat(p.valor_reais) || 0), 0);
 
@@ -328,8 +399,8 @@ export default function DashPagamentosModal({ pagamentoPendente, usuario, onClos
 
                 <WalletTopo
                     onClose={onClose}
-                    nomeUsuario={usuario?.nome}
-                    saldoComissoes={saldoComissoes}
+                    abaAtiva={aba}
+                    acumuladoCicloAtual={acumuladoCicloAtual}
                     saldoPremiacoes={saldoPremiacoes}
                     loadingPremiacoes={loadingPre}
                 />
@@ -353,7 +424,7 @@ export default function DashPagamentosModal({ pagamentoPendente, usuario, onClos
                 <div className="ds-pag-corpo">
                     {aba === 'comissoes' ? (
                         <AbaComissoes
-                            pagamentoPendente={pagamentoPendente}
+                            pagamentoCicloFechado={pagamentoCicloFechado}
                             historico={historicoCom}
                             loading={loadingCom}
                         />

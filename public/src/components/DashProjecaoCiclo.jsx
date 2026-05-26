@@ -1,35 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { getDataPagamentoEstimada } from '/js/utils/periodos-fiscais.js';
 
 const fmtReal = (v) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-
-function useNudgeOuro(inicioCiclo) {
-    const chave = `nudge_ouro_${inicioCiclo}`;
-
-    const deveMostrar = (nivelAtual, diasRestantes, diasTrabalhados) => {
-        if (nivelAtual === 'ouro') return false;
-        if (diasTrabalhados < 3) return false;
-        if (diasRestantes <= 2) return false;
-
-        const historico = JSON.parse(localStorage.getItem(chave) || '[]');
-        if (historico.length >= 3) return false;
-
-        if (historico.length > 0) {
-            const ultimoNudge = new Date(historico[historico.length - 1]);
-            const diasDesde = (Date.now() - ultimoNudge) / (1000 * 60 * 60 * 24);
-            if (diasDesde < 5) return false;
-        }
-        return true;
-    };
-
-    const registrar = () => {
-        const historico = JSON.parse(localStorage.getItem(chave) || '[]');
-        historico.push(new Date().toISOString());
-        localStorage.setItem(chave, JSON.stringify(historico));
-    };
-
-    return { deveMostrar, registrar, dispensar: registrar };
-}
 
 export default function DashProjecaoCiclo({
     valorAcumulado,
@@ -37,21 +9,14 @@ export default function DashProjecaoCiclo({
     diasTrabalhadosNoCiclo,
     diasDetalhes,
     metasPossiveis,
-    aoMudarMeta,
-    inicioCiclo,
     fimCiclo,
     diasRestantesNoCiclo,   // da API — considera dias_trabalho + feriados + expediente encerrado
     diaHojeJaEncerrado,     // da API — true se horario_saida_3 + 15min já passou
     aoAbrirWallet,          // abre DashPagamentosModal ao clicar em "comissão total do ciclo"
 }) {
-    const [nudgeDismissido, setNudgeDismissido] = useState(false);
-    const nudge = useNudgeOuro(inicioCiclo);
-
     const bronzePontos = parseFloat(metasPossiveis[0]?.pontos_meta || 0);
     const prataPontos  = parseFloat(metasPossiveis[1]?.pontos_meta || 0);
     const ouroPontos   = parseFloat(metasPossiveis[metasPossiveis.length - 1]?.pontos_meta || 0);
-    const valorBronze  = parseFloat(metasPossiveis[0]?.valor_comissao || 0);
-    const valorPrata   = parseFloat(metasPossiveis[1]?.valor_comissao || 0);
     const valorOuro    = parseFloat(metasPossiveis[metasPossiveis.length - 1]?.valor_comissao || 0);
 
     // Dias restantes — usa o valor computado pela API (mais preciso) com fallback
@@ -87,40 +52,6 @@ export default function DashProjecaoCiclo({
         diasTrabalhadosNoCiclo === 0 ? 'ciclo-novo' :
         diasRestantes <= 3           ? 'fim-ciclo'  :
         nivelAtual;
-
-    const nudgeConfig = {
-        bronze: {
-            titulo: 'Subindo para Prata, você ganha mais:',
-            delta: (valorPrata - valorBronze) * diasRestantes,
-            ctaTexto: 'Tentar Prata!',
-            metaAlvo: metasPossiveis[1],
-        },
-        prata: {
-            titulo: 'Falta pouco para o Ouro!',
-            delta: (valorOuro - valorPrata) * diasRestantes,
-            ctaTexto: 'Tentar Ouro hoje!',
-            metaAlvo: metasPossiveis[metasPossiveis.length - 1],
-        },
-        inconsistente: {
-            titulo: 'Consistência é o segredo!',
-            delta: Math.max(0, (valorPrata * diasTrabalhadosNoCiclo) - valorAcumuladoSafe),
-            ctaTexto: 'Bater Prata amanhã!',
-            metaAlvo: metasPossiveis[1],
-        },
-    };
-    const nc = nudgeConfig[nivelAtual];
-    const mostrandoNudge = !nudgeDismissido && !!nc && nudge.deveMostrar(nivelAtual, diasRestantes, diasTrabalhadosNoCiclo);
-
-    const handleNudgeCTA = () => {
-        nudge.registrar();
-        if (nc?.metaAlvo) aoMudarMeta(nc.metaAlvo);
-        setNudgeDismissido(true);
-    };
-
-    const handleNudgeOk = () => {
-        nudge.dispensar();
-        setNudgeDismissido(true);
-    };
 
     const labelDias = (n) => n === 1 ? '1 dia' : `${n} dias`;
 
@@ -220,26 +151,6 @@ export default function DashProjecaoCiclo({
     return (
         <section className="ds-card ds-projecao-card">
             {renderCorpo()}
-
-            {mostrandoNudge && (
-                <div className="ds-nudge-card">
-                    <p className="ds-nudge-titulo">
-                        <i className="fas fa-lightbulb"></i>
-                        {nc.titulo}
-                    </p>
-                    <div className="ds-nudge-delta">
-                        + {fmtReal(nc.delta)} a mais!
-                    </div>
-                    <div className="ds-nudge-acoes">
-                        <button className="ds-nudge-btn-cta" onClick={handleNudgeCTA}>
-                            🥇 {nc.ctaTexto}
-                        </button>
-                        <button className="ds-nudge-btn-ok" onClick={handleNudgeOk}>
-                            Ok
-                        </button>
-                    </div>
-                </div>
-            )}
         </section>
     );
 }

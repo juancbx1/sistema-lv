@@ -3039,72 +3039,6 @@ body.ds-body.autenticado {
     margin-top: 8px;
 }
 
-/* Nudge inteligente */
-.ds-nudge-card {
-    background: #fff8e1;
-    border: 1px solid #ffe082;
-    border-radius: 12px;
-    padding: 14px 16px;
-    margin-top: 16px;
-}
-
-.ds-nudge-titulo {
-    font-size: 0.88rem;
-    font-weight: 600;
-    color: #555;
-    margin: 0 0 8px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.ds-nudge-titulo .fa-lightbulb {
-    color: #f9a825;
-}
-
-.ds-nudge-delta {
-    font-size: 1.4rem;
-    font-weight: 800;
-    color: var(--ds-cor-sucesso);
-    margin-bottom: 14px;
-}
-
-.ds-nudge-acoes {
-    display: flex;
-    gap: 10px;
-}
-
-.ds-nudge-btn-cta {
-    flex: 1;
-    background: var(--ds-cor-primaria);
-    color: #fff;
-    border: none;
-    border-radius: 10px;
-    padding: 12px 14px;
-    font-size: 0.9rem;
-    font-weight: 700;
-    cursor: pointer;
-    min-height: 48px;
-}
-
-.ds-nudge-btn-cta:active {
-    opacity: 0.85;
-}
-
-.ds-nudge-btn-ok {
-    background: #fff;
-    color: #999;
-    border: 1px solid #ddd;
-    border-radius: 10px;
-    padding: 12px 18px;
-    font-size: 0.9rem;
-    cursor: pointer;
-    min-height: 48px;
-}
-
-.ds-nudge-btn-ok:active {
-    background: #f5f5f5;
-}
 
 /* ============================================================
    COFRE / BANCO DE RESGATE (Fase 3 — mobile-first)
@@ -4646,6 +4580,8 @@ body.ds-body.autenticado {
 .ds-pag-corpo {
     overflow-y: auto;
     flex: 1;
+    min-height: 0;              /* iOS Safari: sem isso flex: 1 não limita a altura corretamente */
+    -webkit-overflow-scrolling: touch; /* iOS momentum scrolling */
     padding: 20px;
     display: flex;
     flex-direction: column;
@@ -6089,17 +6025,38 @@ body.ds-body.autenticado {
 .wallet-topo-titulo {
     font-size: 0.72rem; font-weight: 700;
     color: rgba(255,255,255,.5); letter-spacing: 1px;
-    text-transform: uppercase; margin-bottom: 4px;
+    text-transform: uppercase; margin-bottom: 14px; /* era 4px — ajustado após remoção do nome */
 }
-.wallet-topo-nome { font-size: 1rem; font-weight: 700; color: #fff; margin-bottom: 10px; }
+/* .wallet-topo-nome removido do layout */
 .wallet-saldos { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
 .wallet-estimado-nota {
     font-size: 0.65rem; color: rgba(255,255,255,.4);
     margin: 8px 0 0; text-align: right;
 }
-.wsaldo { padding: 11px; border-radius: 10px; }
-.wsaldo.com { background: rgba(0,123,255,.22); border: 1px solid rgba(0,123,255,.4); }
-.wsaldo.pre { background: rgba(249,168,37,.16); border: 1px solid rgba(249,168,37,.35); }
+.wsaldo {
+    padding: 11px; border-radius: 10px;
+    transition:
+        transform 0.38s cubic-bezier(0.34, 1.56, 0.64, 1),
+        opacity 0.28s ease,
+        border-top-color 0.28s ease,
+        background 0.28s ease;
+    will-change: transform, opacity;
+}
+.wsaldo.com {
+    background: rgba(0,123,255,.22);
+    border: 1px solid rgba(0,123,255,.4);
+    border-top: 3px solid transparent; /* sobrescreve shorthand — reserva espaço para o accent */
+}
+.wsaldo.pre {
+    background: rgba(249,168,37,.16);
+    border: 1px solid rgba(249,168,37,.35);
+    border-top: 3px solid transparent;
+}
+/* ── Spotlight states ─────────────────────────────────────────────────────── */
+.wsaldo--featured            { transform: scale(1.05) translateY(-2px); opacity: 1; }
+.wsaldo.com.wsaldo--featured { background: rgba(0,123,255,.38); border-top-color: #60a5fa; }
+.wsaldo.pre.wsaldo--featured { background: rgba(124,58,237,.22); border-top-color: #a78bfa; }
+.wsaldo--dimmed              { transform: scale(0.91) translateY(2px); opacity: 0.30; }
 .wsaldo-label {
     font-size: 0.72rem; color: rgba(255,255,255,.65); font-weight: 600;
     display: flex; align-items: center; gap: 5px; margin-bottom: 4px;
@@ -6107,6 +6064,59 @@ body.ds-body.autenticado {
 .wsaldo.com .wsaldo-label i { color: #93c5fd; }
 .wsaldo.pre .wsaldo-label i { color: var(--ds-cor-ouro); }
 .wsaldo-valor { font-size: 1.15rem; font-weight: 800; color: #fff; }
+.wsaldo-sub {
+    font-size: 0.63rem; color: rgba(255,255,255,.45);
+    margin-top: 4px; display: flex; align-items: center; gap: 3px;
+}
+
+/* ── Card "Próximo Pagamento" na aba Comissões ─────────────────────────── */
+.prox-pag {
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid #bbf7d0;
+    background: #f0fdf4;
+    position: relative;             /* iOS Safari: ancora o overflow:hidden corretamente */
+    -webkit-transform: translateZ(0); /* força layer separada — evita colapso de altura no iOS */
+    flex-shrink: 0;                 /* garante que o card não seja comprimido pelo flex pai */
+}
+.prox-pag-topo {
+    background: #16a34a;
+    padding: 7px 14px;
+    display: flex; align-items: center; gap: 7px;
+}
+.prox-pag-topo i { color: rgba(255,255,255,.85); font-size: 0.82rem; }
+.prox-pag-topo span {
+    font-size: 0.70rem; font-weight: 700; color: #fff;
+    text-transform: uppercase; letter-spacing: .8px;
+}
+.prox-pag-corpo {
+    padding: 12px 14px;
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.prox-pag-ciclo { display: flex; flex-direction: column; gap: 3px; }
+.prox-pag-ciclo strong {
+    font-size: 1.2rem; font-weight: 800; color: #15803d; display: block;
+}
+.prox-pag-ciclo span { font-size: 0.72rem; color: #4b7c5a; }
+.prox-pag-data {
+    border-top: 1px solid #bbf7d0;
+    padding: 8px 14px;
+    display: flex; align-items: center; gap: 6px;
+    font-size: 0.73rem; color: #4b7c5a;
+}
+.prox-pag-data i { color: #16a34a; font-size: 0.80rem; }
+.prox-pag-data strong { color: #15803d; }
+.prox-pag-data--vazio { color: #6b7280; }
+.prox-pag-data--vazio i { color: #9ca3af; }
+.chip-ciclo {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: #dcfce7; border: 1px solid #86efac;
+    border-radius: 20px; padding: 3px 8px;
+    font-size: 0.63rem; font-weight: 700;
+    color: #15803d; white-space: nowrap; flex-shrink: 0;
+}
+.chip-ciclo i { font-size: 0.58rem; }
+
 .wallet-abas { display: flex; border-bottom: 1px solid var(--ds-cor-cinza-borda); flex-shrink: 0; }
 .wallet-aba {
     flex: 1; min-height: 44px;

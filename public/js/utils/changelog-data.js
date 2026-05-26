@@ -22,6 +22,18 @@ export const changelog = [
     {
         versao: '1.33.0',
         versao_dashboard: '1.24.0',
+        data: '25/05/2026',
+        admin: [
+            // Vazio — esta atualização não afeta a area admin
+        ],
+        dashboard: [
+            'Ajuste na wallet, que agora aparece o próximo pagamento do ciclo atual (se fechado)'
+        ],
+    },
+
+    {
+        versao: '1.33.0',
+        versao_dashboard: '1.24.0',
         data: '24/05/2026',
         admin: [
             'Redesign da pagina de permissoes de usuarios. Agora tb filtra e nao exibe ex-empregados.',
@@ -35,8 +47,7 @@ export const changelog = [
             'Botoes do topo reorganizados com visual mais moderno',
         ],
     },
-
-
+    
     {
         versao: '1.32.0',
         versao_dashboard: '1.23.0',

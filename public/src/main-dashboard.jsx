@@ -210,7 +210,8 @@ export default function MainDashboard() {
 
             {modalPagamentosAberto && (
                 <DashPagamentosModal
-                    pagamentoPendente={dados.pagamentoPendente}
+                    acumuladoCicloAtual={dados.acumuladoCicloAtual}
+                    pagamentoCicloFechado={dados.pagamentoCicloFechado}
                     usuario={dados.usuario}
                     onClose={() => setModalPagamentosAberto(false)}
                 />

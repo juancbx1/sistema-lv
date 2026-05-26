@@ -21,7 +21,7 @@
 export const changelog = [
     {
         versao: '1.33.0',
-        versao_dashboard: '1.24.0',
+        versao_dashboard: '1.25.0',
         data: '25/05/2026',
         admin: [
             // Vazio — esta atualização não afeta a area admin

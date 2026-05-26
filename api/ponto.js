@@ -8,6 +8,7 @@ import pkg from 'pg';
 const { Pool } = pkg;
 import jwt from 'jsonwebtoken';
 import express from 'express';
+import { registrarAuditoria } from './audit.js';
 
 const router = express.Router();
 const pool = new Pool({ connectionString: process.env.POSTGRES_URL });
@@ -212,6 +213,31 @@ router.post('/liberar-intervalo', async (req, res) => {
         }
 
         await dbClient.query('COMMIT');
+
+        // Auditoria: calcula desvio em relação ao horário programado
+        const horarioProgramado = tipo === 'ALMOCO' ? n(horarios.horario_saida_1) : n(horarios.horario_saida_2);
+        let desvioMin = null;
+        if (horarioProgramado) {
+            const [ph, pm] = horarioProgramado.split(':').map(Number);
+            const [ah2, am2] = horaAtualSP.split(':').map(Number);
+            desvioMin = (ah2 * 60 + am2) - (ph * 60 + pm); // negativo = antecipado
+        }
+
+        // Busca o nome do funcionário para o log
+        const funcNomeRes = await dbClient.query('SELECT nome FROM usuarios WHERE id = $1', [funcionario_id]).catch(() => ({ rows: [] }));
+        const funcNome = funcNomeRes.rows[0]?.nome || `ID ${funcionario_id}`;
+
+        registrarAuditoria(null, req.usuarioLogado, 'ponto.intervalo_liberado', 'funcionario', funcionario_id, {
+            funcionario_nome: funcNome,
+            tipo_intervalo: tipo,
+            horario_programado: horarioProgramado,
+            horario_real: horaAtualSP,
+            retorno_previsto: horarioRetorno,
+            desvio_min: desvioMin,
+            status: desvioMin === null ? 'sem_horario' : desvioMin < 0 ? 'antecipado' : desvioMin === 0 ? 'no_horario' : 'apos_horario',
+            era_produzindo: isProduzindo,
+        });
+
         res.status(200).json({
             message: `Funcionário liberado para ${tipo}.`,
             retorno_previsto: horarioRetorno,
@@ -356,6 +382,19 @@ router.post('/retomar-trabalho', async (req, res) => {
         });
         const dataHojeSP = agora.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
         const campoRetorno = tipo === 'ALMOCO' ? 'horario_real_e2' : 'horario_real_e3';
+        const campoRetornoPrevisto = tipo === 'ALMOCO' ? 'horario_real_e2' : 'horario_real_e3';
+
+        // Busca retorno previsto (e2/e3 já gravado) e horário agendado para calcular desvio
+        const dadosRes = await dbClient.query(
+            `SELECT u.nome, u.horario_entrada_2, u.horario_entrada_3,
+                    p.${campoRetornoPrevisto} AS retorno_previsto_db
+             FROM usuarios u
+             LEFT JOIN ponto_diario p ON p.funcionario_id = u.id AND p.data = $2
+             WHERE u.id = $1`,
+            [funcionario_id, dataHojeSP]
+        );
+        const dados = dadosRes.rows[0] || {};
+        const funcNome = dados.nome || `ID ${funcionario_id}`;
 
         // Atualiza o campo de retorno para "agora" → frontend descongela o contador
         await dbClient.query(
@@ -364,6 +403,26 @@ router.post('/retomar-trabalho', async (req, res) => {
              WHERE funcionario_id = $2 AND data = $3`,
             [horaAtualSP, funcionario_id, dataHojeSP]
         );
+
+        // Auditoria: calcula desvio em relação ao retorno previsto (e2/e3 programado no cadastro)
+        const horarioPrevisto = dados.retorno_previsto_db
+            || (tipo === 'ALMOCO' ? (dados.horario_entrada_2 ? String(dados.horario_entrada_2).substring(0, 5) : null)
+                                  : (dados.horario_entrada_3 ? String(dados.horario_entrada_3).substring(0, 5) : null));
+        let desvioMin = null;
+        if (horarioPrevisto) {
+            const [ph, pm] = String(horarioPrevisto).substring(0, 5).split(':').map(Number);
+            const [ah, am] = horaAtualSP.split(':').map(Number);
+            desvioMin = (ah * 60 + am) - (ph * 60 + pm); // positivo = atrasado
+        }
+
+        registrarAuditoria(null, req.usuarioLogado, 'ponto.trabalho_retomado', 'funcionario', funcionario_id, {
+            funcionario_nome: funcNome,
+            tipo_intervalo: tipo,
+            retorno_previsto: horarioPrevisto,
+            retorno_real: horaAtualSP,
+            desvio_min: desvioMin,
+            status: desvioMin === null ? 'sem_horario' : desvioMin > 1 ? 'atrasado' : desvioMin < -1 ? 'adiantado' : 'no_horario',
+        });
 
         res.status(200).json({ message: `Retomada registrada para ${tipo}.`, horario_retorno: horaAtualSP });
 

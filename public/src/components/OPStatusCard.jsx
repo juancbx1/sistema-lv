@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { calcularTempoEfetivo, formatarHora, formatarTempo } from '../utils/PontoHelpers.js';
 import UILinhaDoTempoDia from './UILinhaDoTempoDia.jsx';
+import UIBloqueio from './UIBloqueio.jsx';
 
 const getRoleInfo = (tipos = []) => {
     if (tipos.includes('tiktik'))   return { label: 'TikTik',    icon: 'fa-cut',         classe: 'cracha-tiktik' };
@@ -460,12 +461,16 @@ export default function OPStatusCard({ funcionario, tpp, onAtribuirTarefa, onAca
                             })()
                         ) : (
                             <>
-                                <button className="cracha-btn cancelar" onClick={() => onCancelarTarefa(funcionario)}>
-                                    <i className="fas fa-times"></i> Cancelar
-                                </button>
-                                <button className="cracha-btn finalizar" onClick={() => onFinalizarTarefa(funcionario, pausaManualAcumuladoMsRef.current)}>
-                                    <i className="fas fa-check-double"></i> Finalizar
-                                </button>
+                                <UIBloqueio permissao="cancelar-tarefa-producao" style={{ flex: 1 }}>
+                                    <button className="cracha-btn cancelar" style={{ width: '100%' }} onClick={() => onCancelarTarefa(funcionario)}>
+                                        <i className="fas fa-times"></i> Cancelar
+                                    </button>
+                                </UIBloqueio>
+                                <UIBloqueio permissao="finalizar-tarefa-producao" style={{ flex: 1 }}>
+                                    <button className="cracha-btn finalizar" style={{ width: '100%' }} onClick={() => onFinalizarTarefa(funcionario, pausaManualAcumuladoMsRef.current)}>
+                                        <i className="fas fa-check-double"></i> Finalizar
+                                    </button>
+                                </UIBloqueio>
                             </>
                         )}
                     </div>

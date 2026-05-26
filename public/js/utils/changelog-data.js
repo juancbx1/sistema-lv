@@ -20,6 +20,22 @@
 
 export const changelog = [
     {
+        versao: '1.34.0',
+        versao_dashboard: '1.25.0',
+        data: '25/05/2026',
+        admin: [
+            'Repadronizacao dos popups do fluxo de jornada de trabalho dos empregados',
+            'Ajuste do bug que nao permitia cancelar tarefa atribuida',
+            'Novas permissoes inseridas para cancelar tarefa e finalizar tarefa',
+            'Ajuste do bug que impedia lancar producao para P.Externo',
+            'Acoes sao registradas na aba auditoria, da pagina de permissao de usuarios'
+
+        ],
+        dashboard: [
+            // Vazio — esta atualização não afeta a dahsboard
+        ],
+    },
+    {
         versao: '1.33.0',
         versao_dashboard: '1.25.0',
         data: '25/05/2026',

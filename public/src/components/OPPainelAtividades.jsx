@@ -7,6 +7,7 @@ import UICarregando from './UICarregando.jsx';
 import { mostrarMensagem, mostrarConfirmacao, mostrarPromptNumerico, mostrarPromptTexto, mostrarPromptHorario } from '/js/utils/popups.js';
 import OPAtribuicaoModal from './OPAtribuicaoModal.jsx';
 import UIBloqueio from './UIBloqueio.jsx';
+import OPPontoPopup from './OPPontoPopup.jsx';
 
 export default function OPPainelAtividades() {
     const [funcionarios, setFuncionarios] = useState([]);
@@ -26,6 +27,10 @@ export default function OPPainelAtividades() {
     // v1.8 — Popup de "Desfazer liberação" com countdown
     const [desfazerPopup, setDesfazerPopup] = useState(null);
     // { funcionarioId, nome, tipo: 'ALMOCO'|'PAUSA', countdown: 10 }
+
+    // Popup de confirmação de ponto (saídas e retornos)
+    const [pontoPopup, setPontoPopup] = useState(null);
+    // { tipo: 'ALMOCO'|'PAUSA'|'RETORNO_ALMOCO'|'RETORNO_PAUSA', funcionario, onConfirmar }
 
     // v1.8 — Controle de áudio (Web Audio API)
     const audioCtxRef      = useRef(null);
@@ -259,41 +264,50 @@ export default function OPPainelAtividades() {
         const isProduzindo = funcionario.status_atual === 'PRODUZINDO';
         // motivoOverride vem do OPStatusCard quando PRODUZINDO ('ALMOCO' ou 'PAUSA')
         const tipoIntervalo = motivoOverride || funcionario.status_atual; // 'ALMOCO' | 'PAUSA'
+        const tipoPopup = tipoIntervalo === 'ALMOCO' ? 'RETORNO_ALMOCO' : 'RETORNO_PAUSA';
 
-        try {
-            const token = localStorage.getItem('token');
+        // Mostra popup de confirmação de retorno antes de disparar a API
+        setPontoPopup({
+            tipo: tipoPopup,
+            funcionario,
+            onConfirmar: async () => {
+                setPontoPopup(null);
+                try {
+                    const token = localStorage.getItem('token');
 
-            if (isProduzindo) {
-                // Caso PRODUZINDO: descongela contador via ponto_diario (não toca status/sessão)
-                const res = await fetch('/api/ponto/retomar-trabalho', {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ funcionario_id: funcionario.id, tipo: tipoIntervalo }),
-                });
-                if (!res.ok) throw new Error((await res.json()).error || 'Erro ao retomar trabalho');
-                // Sem atualização otimista de status — o buscarDadosPainel atualizará o ponto_hoje
-                // e calcularTempoEfetivo descongelará o contador automaticamente
-            } else {
-                // Caso ALMOCO/PAUSA idle: muda status para LIVRE_MANUAL
-                const res = await fetch(`/api/usuarios/${funcionario.id}/status`, {
-                    method: 'PUT',
-                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ status: 'LIVRE_MANUAL' }),
-                });
-                if (!res.ok) throw new Error((await res.json()).error || 'Erro ao liberar');
-                // Atualização otimista — card muda imediatamente para LIVRE
-                setFuncionarios(prev => prev.map(f =>
-                    f.id === funcionario.id ? { ...f, status_atual: 'LIVRE' } : f
-                ));
-            }
+                    if (isProduzindo) {
+                        // Caso PRODUZINDO: descongela contador via ponto_diario (não toca status/sessão)
+                        const res = await fetch('/api/ponto/retomar-trabalho', {
+                            method: 'POST',
+                            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ funcionario_id: funcionario.id, tipo: tipoIntervalo }),
+                        });
+                        if (!res.ok) throw new Error((await res.json()).error || 'Erro ao retomar trabalho');
+                        // Sem atualização otimista de status — o buscarDadosPainel atualizará o ponto_hoje
+                        // e calcularTempoEfetivo descongelará o contador automaticamente
+                    } else {
+                        // Caso ALMOCO/PAUSA idle: muda status para LIVRE_MANUAL
+                        const res = await fetch(`/api/usuarios/${funcionario.id}/status`, {
+                            method: 'PUT',
+                            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ status: 'LIVRE_MANUAL' }),
+                        });
+                        if (!res.ok) throw new Error((await res.json()).error || 'Erro ao liberar');
+                        // Atualização otimista — card muda imediatamente para LIVRE
+                        setFuncionarios(prev => prev.map(f =>
+                            f.id === funcionario.id ? { ...f, status_atual: 'LIVRE' } : f
+                        ));
+                    }
 
-            // Exibe popup de desfazer com countdown de 10s
-            // 'origem' diferencia o caminho do desfazer: PRODUZINDO reseta e2/e3; INTERVALO reseta status
-            setDesfazerPopup({ funcionarioId: funcionario.id, nome: primeiroNome, tipo: tipoIntervalo, countdown: 10, origem: isProduzindo ? 'PRODUZINDO' : 'INTERVALO' });
-            buscarDadosPainel();
-        } catch (err) {
-            mostrarMensagem(`Erro: ${err.message}`, 'erro');
-        }
+                    // Exibe popup de desfazer com countdown de 10s
+                    // 'origem' diferencia o caminho do desfazer: PRODUZINDO reseta e2/e3; INTERVALO reseta status
+                    setDesfazerPopup({ funcionarioId: funcionario.id, nome: primeiroNome, tipo: tipoIntervalo, countdown: 10, origem: isProduzindo ? 'PRODUZINDO' : 'INTERVALO' });
+                    buscarDadosPainel();
+                } catch (err) {
+                    mostrarMensagem(`Erro: ${err.message}`, 'erro');
+                }
+            },
+        });
     }, [buscarDadosPainel]);
 
     // --- v1.8: DESFAZER LIBERAÇÃO (popup com countdown) ---
@@ -465,21 +479,32 @@ export default function OPPainelAtividades() {
 
     // --- LIBERAÇÃO ANTECIPADA PARA INTERVALO ---
     const handleLiberarIntervalo = useCallback(async (funcionarioId, tipo) => {
-        try {
-            const token = localStorage.getItem('token');
-            const res = await fetch('/api/ponto/liberar-intervalo', {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ funcionario_id: funcionarioId, tipo })
-            });
-            if (!res.ok) throw new Error((await res.json()).error || 'Erro');
-            const data = await res.json();
-            mostrarMensagem(`Retorno previsto: ${data.retorno_previsto}`, 'sucesso');
-            buscarDadosPainel();
-        } catch (err) {
-            mostrarMensagem(`Erro: ${err.message}`, 'erro');
-        }
-    }, [buscarDadosPainel]);
+        const funcionario = funcionarios.find(f => f.id === funcionarioId);
+        if (!funcionario) return;
+
+        // Mostra popup de confirmação antes de disparar a API
+        setPontoPopup({
+            tipo, // 'ALMOCO' | 'PAUSA'
+            funcionario,
+            onConfirmar: async () => {
+                setPontoPopup(null);
+                try {
+                    const token = localStorage.getItem('token');
+                    const res = await fetch('/api/ponto/liberar-intervalo', {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ funcionario_id: funcionarioId, tipo })
+                    });
+                    if (!res.ok) throw new Error((await res.json()).error || 'Erro');
+                    const data = await res.json();
+                    mostrarMensagem(`Retorno previsto: ${data.retorno_previsto}`, 'sucesso');
+                    buscarDadosPainel();
+                } catch (err) {
+                    mostrarMensagem(`Erro: ${err.message}`, 'erro');
+                }
+            },
+        });
+    }, [funcionarios, buscarDadosPainel]);
 
     // BUG-10: Desfazer saída antecipada lançada por engano
     const handleDesfazerSaida = useCallback(async (funcionarioId) => {
@@ -900,6 +925,16 @@ export default function OPPainelAtividades() {
                     </div>
                 </>,
                 document.body
+            )}
+
+            {/* Popup de confirmação de saída/retorno de ponto */}
+            {pontoPopup && (
+                <OPPontoPopup
+                    tipo={pontoPopup.tipo}
+                    funcionario={pontoPopup.funcionario}
+                    onConfirmar={pontoPopup.onConfirmar}
+                    onCancelar={() => setPontoPopup(null)}
+                />
             )}
 
             {/* v1.8 — POPUP DE "DESFAZER LIBERAÇÃO" com countdown */}

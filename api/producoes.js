@@ -1057,12 +1057,19 @@ router.post('/externo', async (req, res) => {
             return res.status(400).json({ error: 'Dados insuficientes.' });
         }
 
+        // Busca o perfil placeholder de prestador externo.
+        // Prioriza usuário que ainda tenha o tipo legado (ex: 'costureira' ou 'tiktik') no array de tipos,
+        // mas aceita qualquer is_freelance=true com 'prestador_externo' como fallback.
         const freelanceRes = await dbClient.query(
-            `SELECT id, nome FROM usuarios WHERE is_freelance = true AND $1 = ANY(tipos) LIMIT 1`,
+            `SELECT id, nome FROM usuarios
+             WHERE is_freelance = true
+               AND 'prestador_externo' = ANY(tipos)
+             ORDER BY (CASE WHEN $1 = ANY(tipos) THEN 0 ELSE 1 END), id
+             LIMIT 1`,
             [freelance_tipo]
         );
         if (freelanceRes.rows.length === 0) {
-            throw new Error(`Nenhum usuário freelance do tipo "${freelance_tipo}" cadastrado. Verifique o cadastro de usuários.`);
+            throw new Error(`Nenhum usuário prestador externo cadastrado. Verifique o cadastro de usuários (is_freelance=true e tipo 'prestador_externo').`);
         }
         const freelance = freelanceRes.rows[0];
 

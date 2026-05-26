@@ -45,9 +45,10 @@ import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio.js';
 /**
  * @param {string}      permissao  - ID da permissão necessária
  * @param {string}      [mensagem] - Mensagem customizada no popup (opcional)
+ * @param {object}      [style]    - Estilos inline para o wrapper (ex: {{ flex: 1 }} quando o botão é flex item com flex:1)
  * @param {ReactNode}   children   - Elemento(s) filho(s) a envolver
  */
-export default function UIBloqueio({ permissao, mensagem, children }) {
+export default function UIBloqueio({ permissao, mensagem, style, children }) {
     const bloqueado = useMemo(() => !temPermissao(permissao), [permissao]);
 
     // Com permissão: renderiza os filhos sem nenhuma alteração
@@ -62,6 +63,7 @@ export default function UIBloqueio({ permissao, mensagem, children }) {
     return (
         <div
             className="gs-bloqueio-wrapper"
+            style={style}
             onClick={handleClick}
             title="Você não tem permissão para esta ação"
         >

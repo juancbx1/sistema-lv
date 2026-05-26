@@ -17,6 +17,8 @@ export const permissoesDisponiveis = [
     { id: 'gerar-op', label: 'Ação: Gerar OP a partir de um corte (aba Cortes)', categoria: 'Produção e Cortes' },
     { id: 'finalizar-op', label: 'Ação: Finalizar uma OP', categoria: 'Produção e Cortes' },
     { id: 'cancelar-op', label: 'Ação: Cancelar uma OP', categoria: 'Produção e Cortes' },
+    { id: 'finalizar-tarefa-producao', label: 'Ação: Finalizar tarefa atribuída (Painel)', categoria: 'Produção e Cortes' },
+    { id: 'cancelar-tarefa-producao', label: 'Ação: Cancelar tarefa atribuída (Painel)', categoria: 'Produção e Cortes' },
     { id: 'registrar-corte', label: 'Ação: Registrar novo Corte (aba Cortes)', categoria: 'Produção e Cortes' },
     { id: 'excluir-estoque-corte', label: 'Ação: Excluir corte do estoque (aba Cortes)', categoria: 'Produção e Cortes' },
     { id: 'atribuir-tarefa', label: 'Ação: Atribuir tarefa de produção (Painel e P. Externo)', categoria: 'Produção e Cortes' },

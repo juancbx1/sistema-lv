@@ -803,12 +803,6 @@ router.put('/sessoes/cancelar', async (req, res) => {
         dbClient = await pool.connect();
         await dbClient.query('BEGIN');
 
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
-        // Usando uma permissão de supervisor/líder
-        if (!permissoes.includes('editar-op')) {
-            throw new Error('Permissão negada para cancelar tarefas.');
-        }
-
         const sessaoResult = await dbClient.query('SELECT * FROM sessoes_trabalho_producao WHERE id = $1 FOR UPDATE', [id_sessao]);
         if (sessaoResult.rows.length === 0) throw new Error('Sessão de trabalho não encontrada.');
         const sessao = sessaoResult.rows[0];

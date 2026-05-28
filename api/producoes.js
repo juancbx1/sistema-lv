@@ -409,38 +409,124 @@ router.get('/', async (req, res) => {
             return res.status(403).json({ error: 'Permissão negada para visualizar produções.' });
         }
 
-        // <<< MUDANÇA: Adicionada a coluna "funcionario_id" na query SELECT >>>
         const baseSelect = `
-        SELECT 
-            pr.id, 
-            pr.op_numero, 
-            pr.etapa_index, 
-            pr.processo, 
+        SELECT
+            pr.id,
+            pr.op_numero,
+            pr.etapa_index,
+            pr.processo,
             pr.variacao,
-            pr.maquina, 
-            pr.quantidade, 
-            pr.funcionario, 
-            pr.funcionario_id, -- <<< ADICIONADO
-            pr.data, 
+            pr.maquina,
+            pr.quantidade,
+            pr.funcionario,
+            pr.funcionario_id,
+            pr.data,
             pr.lancado_por,
             pr.valor_ponto_aplicado,
             pr.pontos_gerados,
-            p.nome AS produto
+            pr.assinada,
+            pr.edicoes,
+            p.nome AS produto,
+            COALESCE(
+                (SELECT g.value->>'imagem'
+                 FROM jsonb_array_elements(
+                     CASE WHEN jsonb_typeof(p.grade) = 'array' THEN p.grade ELSE '[]'::jsonb END
+                 ) g
+                 WHERE g.value->>'variacao' = pr.variacao LIMIT 1),
+                p.imagem
+            ) AS variacao_imagem,
+            u.avatar_url,
+            u.foto_oficial
         FROM producoes pr
         LEFT JOIN produtos p ON pr.produto_id = p.id
+        LEFT JOIN usuarios u ON pr.funcionario_id = u.id
     `;
 
+        const { op_numero: opNumero, funcionario_id: filtroFuncId, page, limit } = req.query;
+
+        // Caso 1: filtro por OP — sem paginação, mantém comportamento atual
+        if (opNumero) {
+            const result = await dbClient.query(`${baseSelect} WHERE pr.op_numero = $1 ORDER BY pr.data DESC`, [opNumero]);
+            return res.status(200).json(result.rows);
+        }
+
+        // Caso 2: gerenciar produção — paginação server-side (com ou sem filtro de funcionário)
+        if (podeGerenciarTudo && page) {
+            const pageNum  = Math.max(1, parseInt(page) || 1);
+            const limitNum = Math.min(50, Math.max(1, parseInt(limit) || 20));
+            const offset   = (pageNum - 1) * limitNum;
+
+            const { funcionario_ids, data_inicio, data_fim, op_numero_busca, order } = req.query;
+
+            const conditions  = [];
+            const queryParams = [];
+
+            // Filtro por funcionários (lista separada por vírgula) ou por id único (compat)
+            const idsRaw = funcionario_ids || (filtroFuncId ? filtroFuncId : null);
+            if (idsRaw) {
+                const ids = String(idsRaw).split(',').map(id => parseInt(id)).filter(id => !isNaN(id));
+                if (ids.length > 0) {
+                    queryParams.push(ids);
+                    conditions.push(`pr.funcionario_id = ANY($${queryParams.length})`);
+                }
+            }
+
+            // Filtro de data (comparação no fuso de SP para evitar divergência UTC x local)
+            if (data_inicio) {
+                queryParams.push(data_inicio);
+                conditions.push(`(pr.data AT TIME ZONE 'America/Sao_Paulo')::date >= $${queryParams.length}::date`);
+            }
+            if (data_fim) {
+                queryParams.push(data_fim);
+                conditions.push(`(pr.data AT TIME ZONE 'America/Sao_Paulo')::date <= $${queryParams.length}::date`);
+            }
+
+            // Padrão quando nenhum filtro de data ou funcionário
+            if (!idsRaw && !data_inicio && !data_fim && !op_numero_busca) {
+                conditions.push(`pr.data >= NOW() - INTERVAL '3 days'`);
+            }
+
+            // Busca por número de OP
+            if (op_numero_busca) {
+                queryParams.push(`%${op_numero_busca}%`);
+                conditions.push(`pr.op_numero ILIKE $${queryParams.length}`);
+            }
+
+            const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+            let orderClause = 'ORDER BY pr.data DESC';
+            if (order === 'data_asc')    orderClause = 'ORDER BY pr.data ASC';
+            else if (order === 'funcionario') orderClause = 'ORDER BY pr.funcionario ASC, pr.data DESC';
+            else if (order === 'op')     orderClause = 'ORDER BY pr.op_numero ASC, pr.data DESC';
+
+            const countParams = [...queryParams];
+            const dataParams  = [...queryParams, limitNum, offset];
+
+            const [countRes, dataRes] = await Promise.all([
+                dbClient.query(`SELECT COUNT(*) FROM producoes pr ${whereClause}`, countParams),
+                dbClient.query(
+                    `${baseSelect} ${whereClause} ${orderClause} LIMIT $${dataParams.length - 1} OFFSET $${dataParams.length}`,
+                    dataParams
+                ),
+            ]);
+
+            const total = parseInt(countRes.rows[0].count);
+            return res.status(200).json({
+                rows: dataRes.rows,
+                total,
+                pagina: pageNum,
+                totalPaginas: Math.ceil(total / limitNum),
+                modo: idsRaw ? 'por_funcionario' : 'ultimos3dias',
+            });
+        }
+
+        // Caso 3: sem filtro de funcionário — retorno completo (compatibilidade)
         let queryText;
         let queryParams = [];
-        const { op_numero: opNumero } = req.query;
 
-        if (opNumero) {
-            queryText = `${baseSelect} WHERE pr.op_numero = $1 ORDER BY pr.data DESC`;
-            queryParams = [opNumero];
-        } else if (podeGerenciarTudo) {
+        if (podeGerenciarTudo) {
             queryText = `${baseSelect} ORDER BY pr.data DESC`;
         } else if (podeVerProprias) {
-            // <<< MUDANÇA: Filtra pelo ID do usuário logado, não pelo nome >>>
             const idFuncionario = usuarioLogado.id;
             if (!idFuncionario) {
                 return res.status(400).json({ error: "Falha ao identificar ID do usuário para filtro." });
@@ -450,7 +536,7 @@ router.get('/', async (req, res) => {
         } else {
             return res.status(403).json({ error: 'Configuração de acesso inválida.' });
         }
-        
+
         const result = await dbClient.query(queryText, queryParams);
         res.status(200).json(result.rows);
 
@@ -609,7 +695,7 @@ router.delete('/', async (req, res) => {
         await dbClient.query('BEGIN'); // <<< 1. INICIA A TRANSAÇÃO
 
         const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
-        if (!permissoesCompletas.includes('excluir-registro-producao')) {
+        if (!permissoesCompletas.includes('excluir-registro-producao-direto')) {
             await dbClient.query('ROLLBACK');
             return res.status(403).json({ error: 'Permissão negada para excluir registro de produção.' });
         }
@@ -621,7 +707,7 @@ router.delete('/', async (req, res) => {
         }
 
         const deleteResult = await dbClient.query('DELETE FROM producoes WHERE id = $1 RETURNING *', [id]);
-        
+
         if (deleteResult.rowCount === 0) {
             await dbClient.query('ROLLBACK');
             return res.status(404).json({ error: 'Produção não encontrada para exclusão.' });
@@ -629,14 +715,17 @@ router.delete('/', async (req, res) => {
 
         const producaoExcluida = deleteResult.rows[0];
 
-        // --- INÍCIO DA NOVA LÓGICA DE LIMPEZA ---
+        // Cancela solicitações pendentes para este registro
         await dbClient.query(
-            `UPDATE usuarios 
-             SET status_atual = 'LIVRE', id_sessao_trabalho_atual = NULL 
-             WHERE id = $1 AND id_sessao_trabalho_atual = $2`,
-            [producaoExcluida.funcionario_id, producaoExcluida.id]
+            `UPDATE producoes_solicitacoes_exclusao
+             SET status = 'cancelada',
+                 decidido_por_id = $1,
+                 decidido_por_nome = $2,
+                 decidido_em = NOW(),
+                 motivo_decisao = 'Registro deletado diretamente'
+             WHERE producao_id = $3 AND status = 'pendente'`,
+            [usuarioLogado.id, usuarioLogado.nome || usuarioLogado.nome_usuario, id]
         );
-        // --- FIM DA NOVA LÓGICA DE LIMPEZA ---
 
         await dbClient.query('COMMIT'); // <<< 2. CONFIRMA AS ALTERAÇÕES
         await registrarAuditoria(dbClient, usuarioLogado, 'producao.excluida', 'producao', producaoExcluida.id, {
@@ -978,7 +1067,7 @@ router.get('/externos-recentes', async (req, res) => {
                 prod.nome AS produto_nome,
                 u.nome AS freelance_nome, u.tipos AS freelance_tipos
             FROM producoes p
-            JOIN usuarios u ON u.id = p.funcionario_id AND u.is_freelance = true
+            JOIN usuarios u ON u.id = p.funcionario_id AND 'prestador_externo' = ANY(u.tipos)
             LEFT JOIN produtos prod ON prod.id = p.produto_id
             WHERE p.data >= NOW() - INTERVAL '24 hours'
             ORDER BY p.data DESC
@@ -1009,7 +1098,7 @@ router.delete('/externo/:id', async (req, res) => {
         const producaoRes = await dbClient.query(`
             SELECT p.id, p.funcionario_id, p.op_numero, p.produto_id, p.processo
             FROM producoes p
-            JOIN usuarios u ON u.id = p.funcionario_id AND u.is_freelance = true
+            JOIN usuarios u ON u.id = p.funcionario_id AND 'prestador_externo' = ANY(u.tipos)
             WHERE p.id = $1
         `, [req.params.id]);
 
@@ -1058,18 +1147,16 @@ router.post('/externo', async (req, res) => {
         }
 
         // Busca o perfil placeholder de prestador externo.
-        // Prioriza usuário que ainda tenha o tipo legado (ex: 'costureira' ou 'tiktik') no array de tipos,
-        // mas aceita qualquer is_freelance=true com 'prestador_externo' como fallback.
+        // Prioriza usuário que ainda tenha o tipo legado (ex: 'costureira' ou 'tiktik') no array de tipos.
         const freelanceRes = await dbClient.query(
             `SELECT id, nome FROM usuarios
-             WHERE is_freelance = true
-               AND 'prestador_externo' = ANY(tipos)
+             WHERE 'prestador_externo' = ANY(tipos)
              ORDER BY (CASE WHEN $1 = ANY(tipos) THEN 0 ELSE 1 END), id
              LIMIT 1`,
             [freelance_tipo]
         );
         if (freelanceRes.rows.length === 0) {
-            throw new Error(`Nenhum usuário prestador externo cadastrado. Verifique o cadastro de usuários (is_freelance=true e tipo 'prestador_externo').`);
+            throw new Error(`Nenhum usuário do tipo 'prestador_externo' cadastrado. Verifique o cadastro de usuários.`);
         }
         const freelance = freelanceRes.rows[0];
 

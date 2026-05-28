@@ -20,9 +20,19 @@
 
 export const changelog = [
     {
+        versao: '1.35.0',
+        data: '27/05/2026',
+        admin: [
+            'Página "Gerenciar Produção" totalmente reconstruída em React',
+            'Abas sempre visíveis — aba de Aprovações usa cadeado de permissão (UIBloqueio) em vez de sumir',
+            'Correção: bug antigo no DELETE de produção que retornava 500 por comparação de tipo incorreta',
+        ],
+        dashboard: [],
+    },
+    {
         versao: '1.34.0',
         versao_dashboard: '1.25.0',
-        data: '25/05/2026',
+        data: '26/05/2026',
         admin: [
             'Repadronizacao dos popups do fluxo de jornada de trabalho dos empregados',
             'Ajuste do bug que nao permitia cancelar tarefa atribuida',

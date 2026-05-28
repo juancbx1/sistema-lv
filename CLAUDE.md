@@ -293,7 +293,9 @@ export default function MinhaPage() {
 2. No componente React raiz: garantir que retorna `<>...</>`, nunca `<div className="gs-card">...</div>`
 3. Confirmar visualmente que não há card duplo (padding excessivo nas bordas é o sintoma mais fácil de detectar)
 
-**Subcomponentes de aba (ex: renderizados dentro de `gs-conteudo-pagina`) podem e devem usar `gs-card`** para suas seções de conteúdo — isso é correto e segue o padrão. O anti-padrão se aplica apenas ao componente que é montado diretamente no `<main id="root">`.
+**Componentes de aba também devem usar `<>` (Fragment) como raiz** — nunca `<div className="gs-card">`. O conteúdo da aba vive diretamente dentro de `gs-conteudo-pagina`, que já está dentro do `main.gs-card`. Adicionar um `gs-card` na raiz de um componente de aba cria card-dentro-de-card (padding duplo, sombra dupla — visual quebrado).
+
+A **única exceção** é quando a aba tem sub-seções visualmente independentes: nesses casos, cada sub-seção pode ser um `gs-card` separado. Exemplo correto: `GPAprovacoesTab` tem duas sub-seções ("Pendentes" e "Histórico") que são `gs-card`s individuais dentro de um Fragment raiz. Exemplo errado: `GPRegistrosTab` (antes da correção) envolvia filtros + lista em um único `gs-card`, gerando card-dentro-de-card desnecessário.
 
 ---
 
@@ -331,7 +333,7 @@ Tabela de controle para evitar retrabalho. Atualizar sempre que uma etapa for co
 
 | Home / Admin | `home.css` | ✅ | ❌ | ❌ | |
 
-| Gerenciar Produção | `gerenciar-producao.css` | ❓ | ❌ | ❌ | Verificar migração React |
+| Gerenciar Produção | `gerenciar-producao.css` | ✅ | ✅ | ✅ | Concluída 2026-05-27. Prefixo `GP*`. Carregamento automático últimos 3 dias ao abrir. Fluxo duplo de exclusão: direta (`excluir-registro-producao-direto`) ou solicitação com aprovação (`excluir-registro-producao`). Painel de Aprovações com fila pendentes + histórico paginado + filtros. Permissões: `excluir-registro-producao`, `excluir-registro-producao-direto`, `ver-painel-aprovacoes-producao`, `aprovar-exclusao-producao`. Tabela `producoes_solicitacoes_exclusao` com snapshot JSONB e lock FOR UPDATE. Migration: `_planejamento/migration-gerenciar-producao-solicitacoes.sql`. API: `api/gerenciar-producao.js`. |
 
 | Produção Geral | `producao-geral.css` | ✅ | ✅ | ✅ | v1.0 + v2.0 + v3.0 implementados (2026-04-26). Prefixo `PG*`, recharts, filtros client-side, PGMetaTimeline, banner histórico, Pontos Extras |
 

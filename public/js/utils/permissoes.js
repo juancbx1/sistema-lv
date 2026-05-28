@@ -66,7 +66,10 @@ export const permissoesDisponiveis = [
     // --- GERENCIAR PRODUÇÃO ---
     { id: 'acesso-gerenciar-producao', label: 'Ver Tela de Gerenciar Produção', categoria: 'Gerenciar Produção' },
     { id: 'editar-registro-producao', label: 'Permite Editar Produção', categoria: 'Gerenciar Produção' },
-    { id: 'excluir-registro-producao', label: 'Permite Excluir Produção', categoria: 'Gerenciar Produção' },
+    { id: 'excluir-registro-producao', label: 'Ação: Solicitar exclusão de produção (requer aprovação)', categoria: 'Gerenciar Produção' },
+    { id: 'excluir-registro-producao-direto', label: 'Ação: Excluir produção diretamente (sem aprovação)', categoria: 'Gerenciar Produção' },
+    { id: 'ver-painel-aprovacoes-producao', label: 'Ver Painel de Aprovações de Exclusão de Produção', categoria: 'Gerenciar Produção' },
+    { id: 'aprovar-exclusao-producao', label: 'Ação: Aprovar ou Rejeitar exclusões de produção', categoria: 'Gerenciar Produção' },
 
 
     // --- ARREMATE E EMBALAGEM ---

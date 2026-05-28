@@ -1837,7 +1837,7 @@ router.get('/externos-recentes', async (req, res) => {
                 p.nome AS produto_nome,
                 u.nome AS freelance_nome, u.tipos AS freelance_tipos
             FROM arremates a
-            JOIN usuarios u ON u.id = a.usuario_tiktik_id AND u.is_freelance = true
+            JOIN usuarios u ON u.id = a.usuario_tiktik_id AND 'prestador_externo' = ANY(u.tipos)
             LEFT JOIN produtos p ON p.id = a.produto_id
             WHERE a.data_lancamento >= NOW() - INTERVAL '24 hours'
               AND a.tipo_lancamento = 'PRODUCAO'
@@ -1871,10 +1871,13 @@ router.post('/externo', async (req, res) => {
         }
 
         const freelanceRes = await dbClient.query(
-            `SELECT id, nome FROM usuarios WHERE is_freelance = true AND 'tiktik' = ANY(tipos) LIMIT 1`
+            `SELECT id, nome FROM usuarios
+             WHERE 'prestador_externo' = ANY(tipos)
+             ORDER BY (CASE WHEN 'tiktik' = ANY(tipos) THEN 0 ELSE 1 END), id
+             LIMIT 1`
         );
         if (freelanceRes.rows.length === 0) {
-            throw new Error('Nenhum usuário freelance TikTik cadastrado. Verifique o cadastro de usuários.');
+            throw new Error("Nenhum usuário do tipo 'prestador_externo' cadastrado. Verifique o cadastro de usuários.");
         }
         const freelance = freelanceRes.rows[0];
 

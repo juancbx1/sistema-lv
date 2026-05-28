@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="/css/global-style.css">
     <link rel="stylesheet" href="/css/menu-lateral.css">
     <link rel="stylesheet" href="/css/gerenciar-producao.css">
+    <link rel="stylesheet" href="/css/popups.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 </head>
 <body>
@@ -14,95 +15,8 @@
         <i class="fas fa-bars"></i>
         <i class="fas fa-times"></i>
     </div>
-    <div class="container">
-        <section class="gerenciar-producao">
-            <div class="filters-card">
-                <h2>Filtros</h2>
-                <div class="filter-container">
-                    <div class="filter-group">
-                        <label for="filtroCostureira">Equipe</label>
-                        <select id="filtroCostureira">
-                            <option value="">Todas</option>
-                        </select>
-                    </div>
-                    <div class="filter-group">
-                        <label for="filtroData">Data</label>
-                        <input type="date" id="filtroData">
-                    </div>
-                    <div class="filter-group">
-                        <label for="filtroMaquina">Máquina</label>
-                        <select id="filtroMaquina">
-                            <option value="">Todas</option>
-                            <option value="Reta">Reta</option>
-                            <option value="Overloque/Interloque">Overloque/Interloque</option>
-                            <option value="Galoneira">Galoneira</option>
-                            <option value="Pespontadeira">Pespontadeira</option>
-                        </select>
-                    </div>
-                    <div class="filter-group">
-                        <label for="filtroProcesso">Processo</label>
-                        <select id="filtroProcesso">
-                            <option value="">Todos</option>
-                            <option value="Fechamento">Fechamento</option>
-                            <option value="Finalização">Finalização</option>
-                            <option value="Acabamento 1">Acabamento 1</option>
-                            <option value="Acabamento 2">Acabamento 2</option>
-                            <option value="Bainha">Bainha</option>
-                            <option value="Baguilha">Baguilha</option>
-                            <option value="Cós/Elástico">Cós/Elástico</option>
-                            <option value="Cós/Acabamento">Cós/Acabamento</option>
-                            <option value="Elastizar">Elastizar</option>
-                            <option value="Viés/Elástico">Viés/Elástico</option>
-                        </select>
-                    </div>
-                    <div class="filter-group">
-                        <label for="filtroProduto">Produto</label>
-                        <select id="filtroProduto">
-                            <option value="">Todos</option>
-                        </select>
-                    </div>
-                    <div class="filter-group">
-                        <label for="filtroAssinatura">Assinatura</label>
-                        <select id="filtroAssinatura">
-                            <option value="">Todos</option>
-                            <option value="sim">Sim</option>
-                            <option value="nao">Não</option>
-                        </select>
-                    </div>
-                    <button id="limparFiltros">Limpar Filtros</button>
-                </div>
-            </div>
-
-            <div class="registros-card">
-                <h2>Registros de Produção</h2>
-                <div class="no-records-message" id="noRecordsMessage" style="display: none;">
-                    <p>Ainda não há registros de produção para a data <span id="currentFilterDate"></span>.</p>
-                </div>
-                <table id="tabelaProducoes">
-                    <thead>
-                        <tr>
-                            <th>Feito Por:</th>
-                            <th>Produto</th>
-                            <th>Variação</th>
-                            <th>Proc./Máq.</th>
-                            <th>OP</th>
-                            <th>Qtde</th>
-                            <th>Pts</th>
-                            <th>Data/Hora</th>
-                            <th>Assinado:</th>
-                            <th>Retirado Por:</th>
-                            <th>Ação</th>
-                        </tr>
-                    </thead>
-                    <tbody id="corpoTabelaProducoes"></tbody>
-                </table>
-                <div class="pagination" id="paginacao"></div>
-            </div>
-        </section>
-    </div>
-
-    <script src="/js/admin-gerenciar-producao.js" type="module"></script>
+    <main id="root" class="gs-card"></main>
     <script src="/js/carregar-menu-lateral.js" type="module"></script>
-
+    <script src="/src/main-gerenciar-producao.jsx" type="module"></script>
 </body>
 </html>

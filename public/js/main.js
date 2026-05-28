@@ -12,7 +12,6 @@ document.addEventListener('DOMContentLoaded', () => {
         // '/admin/cadastrar-usuario.html': '/js/pages/admin-cadastrar-usuario.js',
         '/admin/usuarios-cadastrados.html': '/js/pages/admin-usuarios-cadastrados.js',
         '/admin/cadastrar-produto.html': '/js/pages/admin-cadastrar-produto.js',
-        '/admin/gerenciar-producao.html': '/js/pages/admin-gerenciar-producao.js',
         '/admin/producao-diaria.html': '/js/pages/admin-producao-diaria.js',
         '/costureira/dashboard.html': '/js/pages/costureira-dashboard.js',
         '/admin/embalagem-de-produtos.html': '/js/pages/admin-embalagem-de-produtos.js', // Ajustado para o caminho correto

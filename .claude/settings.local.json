@@ -11,7 +11,8 @@
       "Bash(npm run *)",
       "Bash(grep -v \"//\")",
       "Bash(Test-Path *)",
-      "Bash(findstr -i \"sql\\\\|schema\\\\|migration\\\\|readme\")"
+      "Bash(findstr -i \"sql\\\\|schema\\\\|migration\\\\|readme\")",
+      "Bash(Remove-Item *)"
     ]
   }
 }

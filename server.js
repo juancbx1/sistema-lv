@@ -42,6 +42,7 @@ import avisosPopupRouter from './api/avisos-popup.js';
 import gincanasRouter from './api/gincanas.js';
 import gincanasPagamentosRouter from './api/gincanas-pagamentos.js';
 import auditLogRouter from './api/audit-log.js';
+import gerenciarProducaoRouter from './api/gerenciar-producao.js';
 
 
 const app = express();
@@ -84,8 +85,8 @@ const routers = {
     configuracoesRouter,
     alertasRouter,
     demandasRouter,
-    producaoRouter 
-
+    producaoRouter,
+    gerenciarProducaoRouter,
 };
 for (const routerName in routers) {
     if (!routers[routerName] || typeof routers[routerName] !== 'function') {
@@ -130,6 +131,7 @@ app.use('/api/avisos-popup', avisosPopupRouter);
 app.use('/api/gincanas', gincanasRouter);
 app.use('/api/gincanas-pagamentos', gincanasPagamentosRouter);
 app.use('/api/audit-log', auditLogRouter);
+app.use('/api/gerenciar-producao', gerenciarProducaoRouter);
 
 
 app.get('/api/ping', (req, res) => res.status(200).json({ message: 'pong do server.js' }));

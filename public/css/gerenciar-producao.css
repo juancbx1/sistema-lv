@@ -1,836 +1,1250 @@
-/* Reset básico */
-* {
-    margin: 0;
-    padding: 0;
+/* gerenciar-producao.css — Gerenciar Produção */
+
+/* Tablet obrigatório — body padding para gs-card não ficar colado */
+@media (max-width: 1024px) {
+    body {
+        padding: 40px 40px 10px 40px;
+    }
+}
+
+/* ──────────────────────────────────────────────
+   PAINEL DE FILTROS v2.0
+────────────────────────────────────────────── */
+.gp-filtros-painel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+/* Linha 1 — atalhos */
+.gp-filtros-linha1 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+/* Linha 2 — busca por OP + datas */
+.gp-filtros-linha2 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: nowrap;
+}
+
+.gp-atalhos {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+}
+
+.gp-atalho-btn {
+    padding: 6px 12px;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 20px;
+    background: #fff;
+    color: #64748b;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+    min-height: 34px;
+}
+
+.gp-atalho-btn:hover { border-color: #94a3b8; }
+
+.gp-atalho-btn.ativo {
+    background: var(--gs-primaria, #3b82f6);
+    border-color: var(--gs-primaria, #3b82f6);
+    color: #fff;
+}
+
+.gp-filtros-separador {
+    width: 1px;
+    height: 24px;
+    background: #e2e8f0;
+    flex-shrink: 0;
+    align-self: center;
+}
+
+.gp-filtro-datas {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    flex-wrap: nowrap;
+}
+
+.gp-filtro-datas > i {
+    color: #94a3b8;
+    font-size: 0.85rem;
+    flex-shrink: 0;
+}
+
+.gp-datas-ate {
+    font-size: 0.78rem;
+    color: #94a3b8;
+}
+
+.gp-input-data {
+    padding: 6px 6px;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 8px;
+    font-size: 0.82rem;
+    background: #fff;
+    color: #1e293b;
+    cursor: pointer;
+    min-height: 34px;
+    width: 112px;
+    min-width: 90px;
+    flex-shrink: 1;
+    transition: border-color 0.2s;
+}
+
+.gp-input-data:focus {
+    outline: none;
+    border-color: var(--gs-primaria, #3b82f6);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.08);
+}
+
+.gp-filtro-op {
+    position: relative;
+    width: 130px;
+    flex-shrink: 0;
+}
+
+.gp-filtro-op > i {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #94a3b8;
+    font-size: 0.8rem;
+    pointer-events: none;
+}
+
+.gp-input-op {
+    width: 100%;
+    padding: 6px 10px 6px 30px;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 8px;
+    font-size: 0.82rem;
+    background: #fff;
+    color: #1e293b;
+    min-height: 40px;
+    transition: border-color 0.2s;
     box-sizing: border-box;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
-body {
-    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-    min-height: 100vh;
-    overflow-x: hidden;
-    line-height: 1.6;
-    visibility: hidden; /* Esconde o corpo por padrão */
+.gp-input-op:focus {
+    outline: none;
+    border-color: var(--gs-primaria, #3b82f6);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.08);
 }
 
-body.autenticado {
-    visibility: visible; /* Mostra o corpo após autenticação */
-  }
-
-/* Container principal */
-.container {
-    margin-left: 250px;
-    padding: 30px;
-    max-width: 1200px;
-    margin-right: 30px;
+/* Linha 3 — chips de funcionário */
+.gp-filtros-linha3 {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
 }
 
-/* Estilo dos Cards (genérico para filtros, registros, formulários, etc.) */
-.filters-card,
-.registros-card,
-.formulario-op,
-.editar-op,
-.embalagem-section,
-.products-section {
-    background: #ffffff;
-    border-radius: 12px;
-    padding: 25px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-    transition: transform 0.2s ease;
-    margin-top: 10px;
+.gp-chips-label {
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: #94a3b8;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
 }
 
-.filters-card:hover,
-.registros-card:hover,
-.formulario-op:hover,
-.editar-op:hover,
-.embalagem-section:hover,
-.products-section:hover {
-    transform: translateY(-5px);
+.gp-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
 }
 
-.filters-card h1,
-.filters-card h2,
-.registros-card h1,
-.registros-card h2,
-.formulario-op h1,
-.formulario-op h2,
-.editar-op h1,
-.editar-op h2,
-.embalagem-section h1,
-.embalagem-section h2,
-.products-section h1,
-.products-section h2 {
-    font-size: 1.8em;
-    color: #2c3e50;
-    margin-bottom: 20px;
-    border-bottom: 2px solid #3498db;
-    padding-bottom: 10px;
+.gp-chip {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    cursor: pointer;
+    padding: 5px 7px;
+    border-radius: 8px;
+    border: 1.5px solid transparent;
+    background: transparent;
+    transition: all 0.15s;
+    min-width: 50px;
 }
 
-/* Estilo dos Formulários e Filtros */
-.filter-container,
-.form-container {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 20px;
+.gp-chip:hover {
+    background: #f8fafc;
+    border-color: #e2e8f0;
 }
 
-.filter-group,
-.form-group {
+.gp-chip.ativo {
+    border-color: #E24B4A;
+    background: #fff5f5;
+}
+
+.gp-chip-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: #E24B4A;
+    color: #fff;
+    font-size: 0.65rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    letter-spacing: 0.02em;
+    transition: box-shadow 0.15s;
+}
+
+.gp-chip-avatar--todos {
+    background: #94a3b8;
+    font-size: 0.75rem;
+}
+
+.gp-chip-avatar--freelance {
+    background: #e2e8f0;
+    color: #64748b;
+}
+
+.gp-chip.ativo .gp-chip-avatar {
+    box-shadow: 0 0 0 2px #fff, 0 0 0 4px #E24B4A;
+}
+
+.gp-chip-nome {
+    font-size: 0.6875rem;
+    color: #64748b;
+    text-align: center;
+    max-width: 58px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Cabeçalho dos resultados */
+.gp-resultado-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+}
+
+.gp-resultado-info {
+    font-size: 0.8rem;
+    color: #64748b;
+}
+
+.gp-resultado-info strong {
+    color: #1e293b;
+}
+
+.gp-select-ordem {
+    padding: 5px 10px;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    background: #fff;
+    color: #1e293b;
+    cursor: pointer;
+    min-height: 34px;
+    transition: border-color 0.2s;
+}
+
+.gp-select-ordem:focus {
+    outline: none;
+    border-color: var(--gs-primaria, #3b82f6);
+}
+
+/* ──────────────────────────────────────────────
+   ESTADO VAZIO
+────────────────────────────────────────────── */
+.gp-estado-vazio {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 56px 20px;
+    color: #94a3b8;
+    text-align: center;
+}
+
+.gp-estado-vazio i {
+    font-size: 2.8rem;
+    opacity: 0.45;
+}
+
+.gp-estado-vazio p {
+    font-size: 0.95rem;
+    margin: 0;
+}
+
+/* ──────────────────────────────────────────────
+   LISTA DE CARDS DE PRODUÇÃO
+────────────────────────────────────────────── */
+.gp-cards-lista {
     display: flex;
     flex-direction: column;
     gap: 8px;
 }
 
-.filter-group label,
-.form-group label {
-    font-size: 1em;
-    font-weight: 600;
-    color: #34495e;
-}
-
-.filter-group input,
-.filter-group select,
-.filter-group textarea,
-.form-group input,
-.form-group select,
-.form-group textarea {
-    padding: 10px;
-    border: 1px solid #dfe6e9;
-    border-radius: 8px;
-    font-size: 1em;
-    background: #f9f9f9;
-    transition: border-color 0.3s ease, box-shadow 0.3s ease;
-}
-
-.filter-group input:focus,
-.filter-group select:focus,
-.filter-group textarea:focus,
-.form-group input:focus,
-.form-group select:focus,
-.form-group textarea:focus {
-    border-color: #3498db;
-    box-shadow: 0 0 8px rgba(52, 152, 219, 0.2);
-    outline: none;
-}
-
-
-.filter-group textarea,
-.form-group textarea {
-    resize: vertical;
-}
-
-/* Estilo de Inputs Desabilitados */
-.filter-group input[readonly],
-.filter-group input:disabled,
-.filter-group select:disabled,
-.form-group input[readonly],
-.form-group input:disabled,
-.form-group select:disabled {
-    background-color: #ecf0f1;
-    color: #7f8c8d;
-    cursor: not-allowed;
-    opacity: 0.65;
-}
-
-/* Estilo dos Botões Genéricos */
-.btn,
-#limparFiltros,
-.botao-incluir-op,
-.botao-voltar-op,
-.botao-salvar-op,
-.botao-cancelar-op,
-.botao-finalizar-op,
-.btn-voltar,
-.btn-estoque {
-    padding: 10px 20px;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 1em;
-    font-weight: 600;
-    transition: background 0.3s ease, transform 0.2s ease;
-}
-
-.btn:hover:not(:disabled),
-#limparFiltros:hover:not(:disabled),
-.botao-incluir-op:hover:not(:disabled),
-.botao-voltar-op:hover:not(:disabled),
-.botao-salvar-op:hover:not(:disabled),
-.botao-cancelar-op:hover:not(:disabled),
-.botao-finalizar-op:hover:not(:disabled),
-.btn-voltar:hover:not(:disabled),
-.btn-estoque:hover:not(:disabled) {
-    transform: translateY(-2px);
-}
-
-.btn:disabled,
-#limparFiltros:disabled,
-.botao-incluir-op:disabled,
-.botao-voltar-op:disabled,
-.botao-salvar-op:disabled,
-.botao-cancelar-op:disabled,
-.botao-finalizar-op:disabled,
-.btn-voltar:disabled,
-.btn-estoque:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-
-/* Botão Primário (ex.: Salvar, Incluir) */
-.btn-primary,
-.botao-incluir-op,
-.botao-salvar-op,
-.botao-finalizar-op {
-    background: #3498db;
-    color: white;
-}
-
-.btn-primary:hover:not(:disabled),
-.botao-incluir-op:hover:not(:disabled),
-.botao-salvar-op:hover:not(:disabled),
-.botao-finalizar-op:hover:not(:disabled) {
-    background: #2980b9;
-}
-
-/* Botão Secundário (ex.: Voltar) */
-.btn-secondary,
-.botao-voltar-op,
-.btn-voltar {
-    background: #7f8c8d;
-    color: white;
-    margin-bottom: 10px;
-}
-
-.btn-secondary:hover:not(:disabled),
-.botao-voltar-op:hover:not(:disabled),
-.btn-voltar:hover:not(:disabled) {
-    background: #6c7778;
-}
-
-/* Botão de Cancelar/Excluir */
-.btn-danger,
-#limparFiltros,
-.botao-cancelar-op {
-    background: #3498db;
-    color: white;
-}
-
-.btn-danger:hover:not(:disabled),
-#limparFiltros:hover:not(:disabled),
-.botao-cancelar-op:hover:not(:disabled) {
-    background: #c0392b;
-}
-
-/* Estilo da Tabela Genérica */
-#tabelaProducoes,
-.tabela-op,
-#produtosTable {
-    width: 100%;
-    border-collapse: separate;
-    border-spacing: 0;
-    background: #ffffff;
+.gp-card {
+    display: flex;
+    align-items: stretch;
+    background: #fff;
+    border: 1px solid #e2e8f0;
     border-radius: 10px;
     overflow: hidden;
+    transition: box-shadow 0.15s;
 }
 
-#tabelaProducoes thead,
-.tabela-op thead,
-#produtosTable thead {
-    background: #3498db;
-    color: white;
+.gp-card:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07);
 }
 
-#tabelaProducoes th,
-.tabela-op th,
-#produtosTable th {
-    padding: 10px;
-    font-size: 0.9em;
-    font-weight: 600;
-    text-align: left;
+/* Coluna A — funcionário */
+.gp-card-col-a {
+    width: 72px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 10px 6px;
+    border-right: 1px solid #f1f5f9;
+    background: #fafbfc;
+    gap: 4px;
+}
+
+.gp-avatar {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: #E24B4A;
+    color: #fff;
+    font-size: 0.875rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    letter-spacing: 0.03em;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+.gp-avatar--foto {
+    border: 2.5px solid #E24B4A;
+    background-color: #f1f5f9; /* fallback while loading */
+}
+
+.gp-avatar--freelance {
+    background: #e2e8f0;
+    color: #64748b;
+}
+
+.gp-avatar--freelance.gp-avatar--foto {
+    border-color: #94a3b8;
+}
+
+.gp-avatar-nome {
+    font-size: 9px;
+    color: #64748b;
+    text-align: center;
+    line-height: 1.25;
+    word-break: break-word;
+    max-width: 60px;
+}
+
+.gp-avatar-separador {
+    width: 36px;
+    height: 0.5px;
+    background: #f1f5f9;
+    margin: 2px 0;
+    flex-shrink: 0;
+}
+
+/* Coluna Variante — foto + nome da variação */
+.gp-card-col-variante {
+    width: 82px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 6px;
+    border-right: 1px solid #f1f5f9;
+    background: #fafbfc;
+    gap: 4px;
+}
+
+.gp-variante-label {
+    font-size: 0.6rem;
+    font-weight: 700;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.gp-variante-foto {
+    width: 60px;
+    height: 60px;
+    border-radius: 8px;
+    border: 0.5px solid #e2e8f0;
+    background: #f1f5f9;
+    overflow: hidden;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.gp-variante-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.gp-variante-placeholder {
+    color: #cbd5e1;
+    font-size: 1.25rem;
+}
+
+.gp-variante-nome {
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: #334155;
+    text-align: center;
+    word-break: break-word;
+    max-width: 72px;
+    line-height: 1.25;
+}
+
+/* Coluna B — conteúdo */
+.gp-card-col-b {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 10px 14px;
+    gap: 5px;
+}
+
+.gp-card-linha1 {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.gp-op-numero {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #1e293b;
     white-space: nowrap;
 }
 
-#tabelaProducoes tbody tr,
-.tabela-op tbody tr,
-#produtosTable tbody tr {
-    transition: background 0.3s ease;
+.gp-data-hora {
+    font-size: 0.75rem;
+    color: #94a3b8;
+    white-space: nowrap;
 }
 
-#tabelaProducoes tbody tr:nth-child(even),
-.tabela-op tbody tr:nth-child(even),
-#produtosTable tbody tr:nth-child(even) {
-    background: #f8f9fa;
+.gp-edicao-badge {
+    font-size: 0.7em;
+    color: #94a3b8;
+    font-style: italic;
 }
 
-#tabelaProducoes tbody tr:hover,
-.tabela-op tbody tr:hover,
-#produtosTable tbody tr:hover {
-    background: #ecf0f1;
+.gp-card-linha2 {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #64748b;
+    flex-wrap: wrap;
 }
 
-#tabelaProducoes td,
-.tabela-op td,
-#produtosTable td {
-    padding: 10px;
-    font-size: 0.85em;
-    color: #2c3e50;
-    border-bottom: 1px solid #dfe6e9;
+.gp-card-linha2 .fas.fa-wrench { font-size: 0.7rem; flex-shrink: 0; }
+.gp-seta-proc { font-size: 0.6rem; flex-shrink: 0; color: #cbd5e1; }
+
+.gp-card-linha3 {
+    /* wrapper — only provides margin-top */
+    margin-top: 2px;
 }
 
-#tabelaProducoes tr.edit-mode {
-    background-color: #eaf2f8 !important; /* Um azul bem claro para destacar a linha */
-    box-shadow: inset 0 0 10px rgba(52, 152, 219, 0.2);
+.gp-metrica-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px 14px;
 }
 
-/* Estilo para o SELECT de funcionário no modo de edição */
-#tabelaProducoes td[data-field="funcionario"] select {
-    width: 50%; /* Ocupa todo o espaço da célula */
-    padding: 8px;
-    border: 1px solid #3498db; /* Borda azul para indicar edição */
-    border-radius: 6px;
-    font-size: 0.9em;
-    background: #fff;
+.gp-metrica {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
 }
 
-/* Estilo para o INPUT de quantidade no modo de edição */
-#tabelaProducoes td[data-field="quantidade"] input {
-    width: 100%; /* Ocupa todo o espaço da célula */
-    max-width: 80px; /* Mas limita a largura para não ficar gigante */
-    padding: 8px;
-    border: 1px solid #3498db;
-    border-radius: 6px;
-    font-size: 0.9em;
-    text-align: center;
-    background: #fff;
-}
-/* Remove setas do input de número */
-#tabelaProducoes td[data-field="quantidade"] input::-webkit-outer-spin-button,
-#tabelaProducoes td[data-field="quantidade"] input::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-/* #tabelaProducoes td[data-field="quantidade"] input[type=number] {
-  -moz-appearance: textfield;
-} */
-
-#tabelaProducoes .loading-cell {
-    /* Reseta os estilos de "card" do modo mobile */
-    display: table-cell !important; /* FORÇA a se comportar como uma célula de tabela */
-    flex-basis: auto !important;
-    max-width: none !important;
-    background: #ffffff !important; /* Fundo branco limpo */
-    box-shadow: none !important;
-    text-align: center;
-    padding: 40px 20px !important;
+.gp-metrica-label {
+    font-size: 0.625rem;
+    font-weight: 700;
+    color: #94a3b8;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
 }
 
-/* Garante que o :before do modo mobile não apareça na célula de carregamento */
-#tabelaProducoes .loading-cell:before {
-    display: none !important;
+.gp-metrica-valor {
+    font-size: 1.0625rem;
+    font-weight: 700;
+    color: #1e293b;
+    line-height: 1;
 }
 
-/* Estilo para os botões SALVAR e CANCELAR */
-.btn-salvar-edicao, .btn-cancelar-edicao {
-    display: block;
+.gp-metrica-unit {
+    font-size: 0.68rem;
+    font-weight: 400;
+    color: #94a3b8;
+}
+
+.gp-metrica-zero {
+    color: #cbd5e1;
+    font-size: 0.95rem;
+}
+
+.gp-retirado-por {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    padding-top: 5px;
+    margin-top: 3px;
+    border-top: 1px solid #f1f5f9;
+    min-width: 0;
+}
+
+.gp-retirado-label {
+    font-size: 0.625rem;
+    font-weight: 700;
+    color: #94a3b8;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.gp-retirado-nome {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: #334155;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Coluna C — ações */
+.gp-card-col-c {
+    width: 178px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 12px;
+    border-left: 1px solid #f1f5f9;
+    background: #fafbfc;
+}
+
+.gp-btn-card {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
     width: 100%;
-    padding: 6px 10px;
+    padding: 8px 10px;
     border: none;
-    border-radius: 6px;
+    border-radius: 7px;
     cursor: pointer;
-    font-size: 0.85em;
+    font-size: 0.8rem;
     font-weight: 600;
-    transition: background 0.3s ease, transform 0.2s ease;
-    margin: 4px 0;
+    min-height: 34px;
+    transition: background 0.15s;
+    white-space: nowrap;
 }
 
-.btn-salvar-edicao {
-    background: #27ae60; /* Verde para salvar */
-    color: white;
-}
-.btn-salvar-edicao:hover {
-    background: #229954;
-}
+.gp-btn-card-editar   { background: #dbeafe; color: #1d4ed8; }
+.gp-btn-card-editar:hover { background: #bfdbfe; }
 
-.btn-cancelar-edicao {
-    background: #95a5a6; /* Cinza para cancelar */
-    color: white;
-}
-.btn-cancelar-edicao:hover {
-    background: #7f8c8d;
-}
+.gp-btn-card-excluir  { background: #fee2e2; color: #b91c1c; }
+.gp-btn-card-excluir:hover { background: #fecaca; }
 
+.gp-btn-card-solicitar { background: #fff7ed; color: #c2410c; }
+.gp-btn-card-solicitar:hover { background: #fed7aa; }
 
-/* Estilo da Mensagem de "Sem Registros" */
-.no-records-message {
+.gp-pendente-card {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    font-size: 0.75rem;
+    color: #d97706;
+    font-weight: 600;
+    font-style: italic;
+    padding: 4px;
     text-align: center;
-    padding: 30px;
-    background: #f8f9fa;
-    border-radius: 10px;
-    border: 1px dashed #dfe6e9;
-    color: #7f8c8d;
-    font-size: 1.2em;
-    display: none; /* Inicialmente escondido */
 }
 
-.no-records-message p {
+.gp-sem-acoes {
+    color: #cbd5e1;
+    font-size: 0.85rem;
+    text-align: center;
+}
+
+/* ──────────────────────────────────────────────
+   PAGINAÇÃO E TOTAL
+────────────────────────────────────────────── */
+.gp-total-info {
+    text-align: center;
+    font-size: 0.8rem;
+    color: #94a3b8;
+    margin-top: 14px;
+}
+
+/* ──────────────────────────────────────────────
+   MODAIS
+────────────────────────────────────────────── */
+.gp-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    animation: gp-fade-in 0.15s ease;
+}
+
+@keyframes gp-fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+.gp-modal {
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+    width: 100%;
+    max-width: 480px;
+    display: flex;
+    flex-direction: column;
+    max-height: 90vh;
+    animation: gp-slide-up 0.2s ease;
+}
+
+@keyframes gp-slide-up {
+    from { transform: translateY(12px); opacity: 0; }
+    to   { transform: translateY(0);   opacity: 1; }
+}
+
+.gp-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 20px;
+    border-bottom: 1px solid #f1f5f9;
+    gap: 12px;
+}
+
+.gp-modal-header h3 {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #1e293b;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.gp-modal-fechar {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #94a3b8;
+    font-size: 1.1rem;
+    padding: 4px 6px;
+    border-radius: 6px;
+    line-height: 1;
+    flex-shrink: 0;
+    transition: color 0.15s, background 0.15s;
+}
+
+.gp-modal-fechar:hover {
+    color: #475569;
+    background: #f1f5f9;
+}
+
+.gp-modal-corpo {
+    padding: 20px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.gp-modal-rodape {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 14px 20px;
+    border-top: 1px solid #f1f5f9;
+}
+
+/* Info resumo do registro no modal de edição */
+.gp-modal-info {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 0.83rem;
+    color: #64748b;
+    border: 1px solid #e2e8f0;
+}
+
+.gp-modal-info strong {
+    color: #334155;
+}
+
+/* Campo de formulário */
+.gp-campo-grupo {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.gp-campo-grupo label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #475569;
+}
+
+.gp-input {
+    padding: 9px 12px;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    background: #fff;
+    color: #1e293b;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    min-height: 44px;
+}
+
+.gp-input:focus {
+    outline: none;
+    border-color: var(--gs-primaria, #3b82f6);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* Mensagem de erro */
+.gp-erro {
+    color: #b91c1c;
+    font-size: 0.85rem;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* Modal de exclusão */
+.gp-aviso-excluir {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    color: #92400e;
+    background: #fef3c7;
+    border: 1px solid #fde68a;
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    margin: 0;
+    line-height: 1.4;
+}
+
+.gp-aviso-excluir i {
+    font-size: 1rem;
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+
+.gp-snapshot {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 14px;
+}
+
+.gp-snapshot-linha {
+    display: flex;
+    gap: 8px;
+    font-size: 0.85rem;
+    align-items: baseline;
+}
+
+.gp-snapshot-label {
+    font-weight: 600;
+    color: #64748b;
+    min-width: 90px;
+    flex-shrink: 0;
+}
+
+.gp-btn-confirmar-excluir {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 20px;
+    background: #ef4444;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 600;
+    min-height: 44px;
+    transition: background 0.15s;
+}
+
+.gp-btn-confirmar-excluir:hover:not(:disabled) {
+    background: #dc2626;
+}
+
+.gp-btn-confirmar-excluir:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* ──────────────────────────────────────────────
+   TABLET (≤1024px)
+────────────────────────────────────────────── */
+@media (max-width: 1024px) {
+    .gp-filtros-linha1 {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .gp-filtros-separador {
+        display: none;
+    }
+
+    .gp-card-col-c {
+        width: 140px;
+    }
+
+    .gp-card-col-variante {
+        width: 72px;
+    }
+
+    .gp-variante-foto {
+        width: 52px;
+        height: 52px;
+    }
+}
+
+
+/* ──────────────────────────────────────────────
+   AVISO INFO (azul) — GPSolicitarExclusaoModal
+────────────────────────────────────────────── */
+.gp-aviso-info {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    color: #1e40af;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    margin: 0;
+    line-height: 1.4;
+}
+
+.gp-aviso-info i {
+    font-size: 1rem;
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+
+/* Campo de motivo */
+.gp-campo-motivo {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.gp-campo-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #475569;
+}
+
+.gp-obrigatorio {
+    color: #ef4444;
+    margin-left: 2px;
+}
+
+.gp-textarea-motivo {
+    padding: 10px 12px;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-family: inherit;
+    color: #1e293b;
+    background: #fff;
+    resize: vertical;
+    min-height: 80px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.gp-textarea-motivo:focus {
+    outline: none;
+    border-color: var(--gs-primaria, #3b82f6);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.gp-contador-chars {
+    font-size: 0.78rem;
+    color: #94a3b8;
+    text-align: right;
+}
+
+.gp-btn-solicitar {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 20px;
+    background: var(--gs-primaria, #3b82f6);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 600;
+    min-height: 44px;
+    transition: background 0.15s;
+}
+
+.gp-btn-solicitar:hover:not(:disabled) { background: #2563eb; }
+.gp-btn-solicitar:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ──────────────────────────────────────────────
+   ABA DE APROVAÇÕES
+────────────────────────────────────────────── */
+.gp-secao-titulo {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #1e293b;
+    margin: 0 0 16px 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.gp-badge-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #f59e0b;
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 700;
+    border-radius: 99px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+}
+
+.gp-secao-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.gp-secao-header .gp-secao-titulo { margin: 0; }
+
+.gp-filtro-status {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.gp-filtro-btn {
+    padding: 5px 12px;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 20px;
+    background: #fff;
+    color: #64748b;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    min-height: 34px;
+}
+
+.gp-filtro-btn:hover { border-color: #94a3b8; }
+
+.gp-filtro-btn.ativo {
+    background: var(--gs-primaria, #3b82f6);
+    border-color: var(--gs-primaria, #3b82f6);
+    color: #fff;
+}
+
+.gp-aprovacoes-lista {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* ──────────────────────────────────────────────
+   CARD DE SOLICITAÇÃO (GPAprovacaoCard)
+────────────────────────────────────────────── */
+.gp-aprovacao-card {
+    position: relative;
+    overflow: hidden;
+    border-radius: 10px;
+    border: 1px solid #e2e8f0;
+    background: #fff;
+}
+
+.gp-aprovacao-card .card-borda-charme {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 6px;
+    height: 100%;
+    border-radius: 10px 0 0 10px;
+}
+
+.gp-aprovacao-card-corpo {
+    padding: 14px 16px 14px 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.gp-aprovacao-grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 12px;
+    align-items: baseline;
+    font-size: 0.85rem;
+    color: #334155;
+}
+
+.gp-aprovacao-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 10px;
+    border-top: 1px solid #f1f5f9;
+}
+
+.gp-aprovacao-solicitante,
+.gp-aprovacao-motivo {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 0.85rem;
+    color: #475569;
+}
+
+.gp-aprovacao-solicitante i,
+.gp-aprovacao-motivo i {
+    color: #94a3b8;
+    flex-shrink: 0;
+    margin-top: 2px;
+    font-size: 0.8rem;
+}
+
+.gp-aprovacao-motivo { font-style: italic; color: #64748b; }
+
+.gp-aprovacao-decisao {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.82rem;
+    color: #64748b;
+}
+
+.gp-status-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.gp-status-aprovada  { background: #dcfce7; color: #15803d; }
+.gp-status-rejeitada { background: #fee2e2; color: #b91c1c; }
+.gp-status-cancelada { background: #f1f5f9; color: #64748b; }
+
+.gp-decidido-por  { color: #64748b; }
+.gp-motivo-decisao { color: #94a3b8; font-style: italic; }
+
+.gp-aprovacao-acoes {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.gp-btn-aprovar {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 16px;
+    background: #dcfce7;
+    color: #15803d;
+    border: 1.5px solid #86efac;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+    min-height: 36px;
+    transition: all 0.15s;
+}
+
+.gp-btn-aprovar:hover { background: #bbf7d0; border-color: #4ade80; }
+
+.gp-btn-rejeitar {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 16px;
+    background: #fee2e2;
+    color: #b91c1c;
+    border: 1.5px solid #fca5a5;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+    min-height: 36px;
+    transition: all 0.15s;
+}
+
+.gp-btn-rejeitar:hover { background: #fecaca; border-color: #f87171; }
+
+.gp-aguardando {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.82rem;
+    color: #d97706;
+    font-style: italic;
     margin: 0;
 }
 
-.no-records-message span {
-    font-weight: 600;
-    color: #3498db;
-}
-
-.gerenciar-producao {
-    display: flex;
-    flex-direction: column;
-    gap: 30px;
-}
-
-/* Estilo da Tabela */
-#tabelaProducoes {
-    width: 100%;
-    min-width: 0;
-    border-collapse: separate;
-    border-spacing: 0;
-    background: #ffffff;
-    border-radius: 10px;
-    overflow: hidden;
-}
-
-/* Definir larguras relativas para as colunas */
-#tabelaProducoes th:nth-child(1),
-#tabelaProducoes td:nth-child(1) {
-    width: 12%; /* Feito por */
-    white-space: normal; word-break: break-word;
-}
-#tabelaProducoes th:nth-child(2),
-#tabelaProducoes td:nth-child(2) {
-    width: 12%; /* Produto */
-    white-space: normal; word-break: break-word;
-}
-#tabelaProducoes th:nth-child(3),
-#tabelaProducoes td:nth-child(3) {
-    width: 10%; /* Variação */
-}
-#tabelaProducoes th:nth-child(4),
-#tabelaProducoes td:nth-child(4) {
-    width: 13%; /* Proc./Máq. */
-    white-space: normal; word-break: break-word;
-}
-#tabelaProducoes th:nth-child(5),
-#tabelaProducoes td:nth-child(5) {
-    width: 6%; /* OP */
-}
-#tabelaProducoes th:nth-child(6),
-#tabelaProducoes td:nth-child(6) {
-    width: 5%; /* Qtde */
-}
-#tabelaProducoes th:nth-child(7), /* << Pts */
-#tabelaProducoes td:nth-child(7) {
-    width: 7%;
-}
-#tabelaProducoes th:nth-child(8), /* << Data/Hora */
-#tabelaProducoes td:nth-child(8) {
-    width: 11%;
-    white-space: normal; word-break: break-word;
-}
-#tabelaProducoes th:nth-child(9), /* << Assinou? */
-#tabelaProducoes td:nth-child(9) {
-    width: 5%;
-}
-#tabelaProducoes th:nth-child(10), /* << Por */
-#tabelaProducoes td:nth-child(10) {
-    width: 9%;
-}
-#tabelaProducoes th:nth-child(11), /* << Ação */
-#tabelaProducoes td:nth-child(11) {
-    width: 10%;
-}
-
-/* Estilo dos Botões Editar e Excluir */
-.btn-editar-registro, .btn-excluir-registro {
-    display: block;
-    width: 100%;
-    padding: 6px 10px;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 0.85em;
-    font-weight: 600;
-    transition: background 0.3s ease, transform 0.2s ease;
-    margin: 4px 0;
-}
-
-.btn-editar-registro {
-    background: #3498db;
-    color: white;
-}
-
-.btn-editar-registro:hover {
-    background: #2980b9;
-}
-
-.btn-excluir-registro {
-    background: #e74c3c;
-    color: white;
-}
-
-.btn-excluir-registro:hover {
-    background: #c0392b;
-}
-
-/* Estilo da Paginação */
-.pagination {
-    display: flex;
-    justify-content: center;
-    gap: 10px;
-    margin-top: 20px;
-}
-
-.pagination button {
-    padding: 10px 15px;
-    border: none;
-    border-radius: 6px;
-    background: #3498db;
-    color: white;
-    font-size: 0.95em;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background 0.3s ease, transform 0.2s ease;
-}
-
-.pagination button:hover {
-    background: #2980b9;
-    transform: translateY(-2px);
-}
-
-.pagination button.active {
-    background: #2c3e50;
-}
-
-.pagination button:disabled {
-    background: #b0bec5;
-    cursor: not-allowed;
-    transform: none;
-}
-
-.pagination span {
-    padding: 10px;
-    color: #7f8c8d;
-    font-size: 1em;
-}
-
-/* Estilo para Usuários Deletados */
-.deletado {
-    color: #e74c3c;
-    font-style: italic;
-    display: block;
-}
-
-/* CSS do Spinner (adicionado ao gerenciar-producao.css) */
-.spinner { 
-    display: flex; 
-    justify-content: center; 
+/* Botão rejeitar no GPDecidirModal */
+.gp-btn-rejeitar-confirm {
+    display: inline-flex;
     align-items: center;
-    padding: 25px; 
-    font-size: 1rem; 
-    color: #555; 
-    min-height: 60px;
-}
-.spinner::before {
-    content: ''; 
-    display: inline-block; 
-    width: 22px; 
-    height: 22px;
-    margin-right: 12px; 
-    border: 3px solid #ccc;
-    border-top-color: #3498db; /* Usando uma cor do seu tema */
-    border-radius: 50%; 
-    animation: gp-spin 1s linear infinite; /* Nome da animação com prefixo */
-}
-@keyframes gp-spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
-/* ==========================================================================
-   # ESTILOS PARA POPUPS DE MENSAGEM
-   ========================================================================== */
-.popup-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0, 0, 0, 0.45);
-    z-index: 10001;
-    animation: gp-fadeInOverlay 0.3s ease-out;
-}
-
-.popup-mensagem {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    padding: 25px 30px;
-    border-radius: 12px; /* Usando o raio de borda dos seus cards */
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
-    z-index: 10002;
-    max-width: 480px;
-    width: 90%;
-    text-align: center;
-    animation: gp-fadeInPopup 0.3s ease-out;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-}
-
-@keyframes gp-fadeInOverlay { from { opacity: 0; } to { opacity: 1; } }
-@keyframes gp-fadeInPopup { from { opacity: 0; transform: translate(-50%, -55%); } to { opacity: 1; transform: translate(-50%, -50%); } }
-
-.popup-mensagem p {
-    font-size: 1.05rem;
-    line-height: 1.5;
-    margin-bottom: 20px;
-    font-weight: 500;
-    color: #2c3e50; /* Cor de texto principal */
-}
-
-.popup-mensagem.popup-sucesso {
-    background-color: #e0f2e9;
-    border-left: 5px solid #27ae60; /* Verde sucesso */
-}
-.popup-mensagem.popup-erro {
-    background-color: #fdecea;
-    border-left: 5px solid #e74c3c; /* Vermelho perigo */
-}
-.popup-mensagem.popup-aviso {
-    background-color: #fff8e1;
-    border-left: 5px solid #f39c12; /* Laranja/Amarelo para aviso */
-}
-
-.popup-mensagem button {
-    padding: 10px 28px;
-    margin-top: 10px;
-    background-color: #2c3e50; /* Azul escuro */
-    color: white;
-    border: none;
-    border-radius: 8px; /* Raio de borda dos seus botões */
+    gap: 6px;
+    padding: 9px 20px;
+    background: #fef2f2;
+    color: #b91c1c;
+    border: 1.5px solid #fecaca;
+    border-radius: 8px;
     cursor: pointer;
-    font-size: 0.95rem;
+    font-size: 0.9rem;
     font-weight: 600;
-    transition: background-color 0.2s ease;
-}
-.popup-mensagem button:hover {
-    background-color: #34495e; /* Azul escuro mais claro no hover */
+    min-height: 44px;
+    transition: all 0.15s;
 }
 
-
-/* Estilo para mostrar o valor antigo dos pontos após edição */
-.pontos-antigos {
-    color: #7f8c8d; /* Cinza */
-    text-decoration: line-through;
-    font-size: 0.9em;
-    margin-left: 8px; /* Espaço entre o valor novo e o antigo */
+.gp-btn-rejeitar-confirm:hover:not(:disabled) {
+    background: #fee2e2;
+    border-color: #f87171;
 }
 
-/* Ajustes gerais para telas menores TIPO IPAD (aplicado a todos os breakpoints mobile) */
-@media (max-width: 1024px) {
-    .container {
-        margin-left: 30px; /* Remove a margem fixa do menu lateral */
-        margin-right: 30px;
-        padding: 15px; /* Reduz o padding */
-        max-width: 100%; /* Garante que o container use toda a largura disponível */
-    }
+.gp-btn-rejeitar-confirm:disabled { opacity: 0.6; cursor: not-allowed; }
 
-    .filters-card,
-    .registros-card {
-        padding: 15px; /* Reduz o padding interno dos cards */
-    }
-
-    .filter-container {
-        display: flex;
-        flex-direction: column; /* Empilha os filtros verticalmente */
-        gap: 15px;
-    }
-
-    .filter-group {
-        width: 100%; /* Garante que os campos ocupem toda a largura */
-    }
-
-    #limparFiltros {
-        width: 100%; /* Faz o botão ocupar toda a largura */
-        margin-top: 10px;
-    }
-}
-
-/* Breakpoint para Mobile (max-width: 576px) */
+/* ──────────────────────────────────────────────
+   MOBILE (≤576px)
+────────────────────────────────────────────── */
 @media (max-width: 576px) {
-    .container {
-        margin-left: 15px; /* Remove a margem fixa do menu lateral */
-        margin-right: 15px;
-        padding: 10px; /* Reduz o padding */
-        max-width: 100%; /* Garante que o container use toda a largura disponível */
-    }
-
-    .filters-card h2,
-    .registros-card h2 {
-        font-size: 1.5em; /* Reduz o tamanho dos títulos */
-    }
-
-    .filter-group {
-        width: 40%;
-     
-    }
-    .filter-group select,
-    .filter-group input {
-        font-size: 0.9em;
-    }
-
-    .filter-group, .form-group {
-        display: flex;
+    .gp-card {
         flex-direction: column;
-        gap: 8px;
     }
 
-    .filter-container {
-        display: flex;
-        flex-direction: row;
-        justify-content: center;
-        gap: 15px;
-        flex-wrap: wrap;
-    }
-
-    #limparFiltros {
-        width: 50%;
-        margin-top: 10px;
-        padding: 15px;
-    }
-
-    /* Estilo dos Botões Editar e Excluir */
-    .btn-editar-registro, .btn-excluir-registro {
-        display: inline-block; /* Muda para inline-block para permitir alinhamento horizontal */
-        width: auto; /* Remove width: 100% para que os botões tenham largura natural */
-        padding: 6px 10px;
-        border: none;
-        border-radius: 6px;
-        cursor: pointer;
-        font-size: 1em;
-        font-weight: 600;
-        transition: background 0.3s ease, transform 0.2s ease;
-        margin: 0 4px; /* Ajusta a margem para espaçamento horizontal */
-    }
-
-    .botoes-acao {
-        display: flex;
-        gap: 10px;
-        margin-top: 5px;
-    }
-
-    /* Transforma a tabela em "cards" para evitar scroll horizontal */
-    #tabelaProducoes {
-        display: block;
-        overflow: visible;
+    .gp-card-col-a {
         width: 100%;
-    }
-
-    #tabelaProducoes thead {
-        display: none; /* Esconde o cabeçalho em mobile */
-    }
-
-    #tabelaProducoes tbody {
-        display: block;
-    }
-
-    #tabelaProducoes tr {
-        display: flex;
-        flex-wrap: wrap; /* Permite quebra para múltiplas linhas */
-        gap: 8px; /* Espaço entre os balões */
-        margin-bottom: 15px;
-        background: #fff;
-        border-radius: 8px;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-        padding: 10px;
-    }
-
-    #tabelaProducoes td {
-        display: inline;
-        align-items: center;
-        flex: 1 1 auto;
-        min-width: 120px;
-        max-width: 50%;
-        border-bottom: none;
-        padding: 6px 10px;
-        font-size: 0.85em;
-        background: #f8f9fa;
-        border-radius: 6px;
-        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
-        color: #2c3e50;
-      color: #2c3e50;
-    }
-
-    /* Adiciona rótulos antes dos dados com dois pontos */
-    #tabelaProducoes td:before {
-        content: attr(data-label) ": "; /* Inclui dois pontos */
-        font-weight: 600;
-        color: #34495e;
-        display: inline; /* Rótulo e valor na mesma linha */
-        margin-right: 5px; /* Espaço entre rótulo e valor */
-    }
-
-    /* Ajusta os botões de ação */
-    #tabelaProducoes td:nth-child(11) {
-        display: flex;
+        flex-direction: row;
         gap: 10px;
-        justify-content: space-between;
-        flex-wrap: wrap;
-        flex: 0 0 100%; /* Ocupa toda a linha */
-        background: none; /* Remove fundo de balão para ações */
-        box-shadow: none; /* Remove sombra para ações */
-        padding: 5px 8px;
+        padding: 10px 12px;
+        border-right: none;
+        border-bottom: 1px solid #f1f5f9;
+        justify-content: flex-start;
     }
 
-    #tabelaProducoes td:nth-child(11):before { /* <<< E AQUI TAMBÉM */
-        display: none; /* Remove o rótulo "Ação" para os botões */
-    }
-
-    #tabelaProducoes td.edit-mode,
-    #tabelaProducoes td[data-field="funcionario"],
-    #tabelaProducoes td[data-field="quantidade"] {
-        flex: 1 1 100%; /* Faz os campos editáveis ocuparem a linha toda */
-        max-width: 100%;
-    }
-
-    .btn-editar-registro,
-    .btn-excluir-registro {
-        width: 48%;
-        margin: 0;
-    }
-
-    .pagination {
-        flex-wrap: wrap; /* Permite quebra de linha na paginação */
-        gap: 5px;
-    }
-
-    .pagination button {
+    .gp-card-col-variante {
+        width: 100%;
+        flex-direction: row;
+        gap: 10px;
         padding: 8px 12px;
-        font-size: 0.9em;
-    }
-}
-
-/* Breakpoint para telas menores (max-width: 414px, como iPhone XR) */
-@media (max-width: 414px) {
-
-    .filter-group{
-       width:40%;
-    }
-    .filter-group select,
-    .filter-group input {
-        font-size: 0.85em;
+        border-right: none;
+        border-bottom: 1px solid #f1f5f9;
+        justify-content: flex-start;
     }
 
+    .gp-variante-foto {
+        width: 44px;
+        height: 44px;
+    }
 
+    .gp-avatar-nome,
+    .gp-variante-nome {
+        max-width: none;
+    }
+
+    .gp-card-col-c {
+        width: 100%;
+        flex-direction: row;
+        border-left: none;
+        border-top: 1px solid #f1f5f9;
+        padding: 8px 12px;
+    }
+
+    .gp-btn-card {
+        flex: 1;
+        min-height: 44px;
+    }
+
+    .gp-modal {
+        max-width: 100%;
+        max-height: 95vh;
+    }
 }

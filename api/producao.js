@@ -193,7 +193,7 @@ router.get('/status-funcionarios', async (req, res) => {
             WHERE u.data_demissao IS NULL
             AND ('costureira' = ANY(u.tipos) OR 'tiktik' = ANY(u.tipos))
             AND (u.is_test IS FALSE OR u.is_test IS NULL)
-            AND (u.is_freelance IS FALSE OR u.is_freelance IS NULL)
+            AND NOT ('prestador_externo' = ANY(u.tipos))
             GROUP BY u.id
             ORDER BY u.nome ASC;
         `;

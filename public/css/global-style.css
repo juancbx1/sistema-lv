@@ -4502,7 +4502,7 @@ font-weight: 500;
 
 @media (max-width: 768px) {
     .gs-tab-nav { padding: 0 12px; }
-    .gs-tab-btn { padding: 10px 14px; font-size: 0.85rem; }
+    .gs-tab-btn { padding: 10px 14px; font-size: 0.9rem; }
 }
 
 /* ===== CARD DE DEMANDA (REDESIGN v2) ===== */

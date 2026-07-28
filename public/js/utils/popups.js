@@ -213,11 +213,17 @@ export function mostrarPromptNumerico(mensagem, opcoes = {}) {
  * @param {string} [opcoes.placeholder=''] - O placeholder do campo de texto.
  * @param {string} [opcoes.tipo='info'] - O tipo de popup para a cor da borda.
  * @param {string} [opcoes.textoConfirmar='Confirmar'] - Texto do botão de confirmação.
+ * @param {string} [opcoes.valorInicial=''] - Texto inicial selecionado para edição.
  * @returns {Promise<string|null>} - O texto inserido ou null se o usuário cancelar.
  */
 export function mostrarPromptTexto(mensagem, opcoes = {}) {
     removerPopupExistente();
-    const { placeholder = '', tipo = 'info', textoConfirmar = 'Confirmar' } = opcoes;
+    const {
+        placeholder = '',
+        tipo = 'info',
+        textoConfirmar = 'Confirmar',
+        valorInicial = '',
+    } = opcoes;
 
     return new Promise((resolve) => {
         const container = document.createElement('div');
@@ -244,6 +250,12 @@ export function mostrarPromptTexto(mensagem, opcoes = {}) {
         const btnCancelar = container.querySelector('.popup-btn-cancelar');
         const overlay = container.querySelector('.popup-overlay');
 
+        if (valorInicial) {
+            textarea.value = valorInicial;
+            // Seleciona o texto para facilitar a edição (mesmo comportamento do prompt nativo)
+            textarea.select();
+        }
+
         const fecharPopup = (valor) => {
             removerPopupExistente();
             resolve(valor);
@@ -259,7 +271,7 @@ export function mostrarPromptTexto(mensagem, opcoes = {}) {
         btnCancelar.onclick = () => fecharPopup(null);
         overlay.onclick = () => fecharPopup(null);
 
-        textarea.focus();
+        if (!valorInicial) textarea.focus();
     });
 }
 

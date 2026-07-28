@@ -41,110 +41,346 @@ const verificarTokenInterna = (reqOriginal) => {
     }
 };
 
-async function registrarLog(dbClient, idUsuario, nomeUsuario, acao, dados) {
+/** Lançamentos ativos = soft delete ausente */
+const SQL_LANC_ATIVO = 'excluido_em IS NULL';
+const SQL_LANC_ATIVO_ALIAS = (alias = 'l') => `${alias}.excluido_em IS NULL`;
+
+/**
+ * Soft delete de um ou mais lançamentos (e vínculos de transferência / estornos filhos).
+ * Não apaga linhas nem itens — permite auditoria e futura reativação.
+ */
+async function softDeleteLancamento(dbClient, idLancamento, idUsuario, { cascade = true } = {}) {
+    const atualRes = await dbClient.query(
+        `SELECT * FROM fc_lancamentos WHERE id = $1 AND excluido_em IS NULL FOR UPDATE`,
+        [idLancamento]
+    );
+    if (atualRes.rows.length === 0) return null;
+    const atual = atualRes.rows[0];
+    if (atual.excluido_em) return atual;
+
+    const ids = new Set([Number(idLancamento)]);
+
+    if (cascade) {
+        if (atual.id_transferencia_vinculada) {
+            ids.add(Number(atual.id_transferencia_vinculada));
+        }
+        const estornosRes = await dbClient.query(
+            `SELECT id FROM fc_lancamentos WHERE id_estorno_de = $1 AND excluido_em IS NULL`,
+            [idLancamento]
+        );
+        for (const row of estornosRes.rows) ids.add(Number(row.id));
+    }
+
+    // Agenda que apontava para estes lançamentos volta a pendente
+    for (const id of ids) {
+        await dbClient.query(
+            `UPDATE fc_contas_agendadas
+             SET id_lancamento_efetivado = NULL, status = 'PENDENTE'
+             WHERE id_lancamento_efetivado = $1`,
+            [id]
+        );
+    }
+
+    // Soft delete é marcado só por excluido_em — status_edicao NÃO pode ser 'EXCLUIDO'
+    // (constraint status_edicao_check: OK, PENDENTE_*, ESTORNADO, EDITADO_APROVADO, EDICAO_REJEITADA).
+    const idsArr = [...ids];
+    const result = await dbClient.query(
+        `UPDATE fc_lancamentos
+         SET excluido_em = NOW(),
+             id_usuario_exclusao = $2
+         WHERE id = ANY($1::int[])
+           AND excluido_em IS NULL
+         RETURNING *`,
+        [idsArr, idUsuario]
+    );
+
+    return result.rows.find((r) => Number(r.id) === Number(idLancamento)) || result.rows[0] || null;
+}
+
+/** Extrai id da agenda a partir da descrição gerada na baixa: "Baixa da conta agendada #123: ..." */
+function parseAgendaIdFromDescricaoBaixa(descricao) {
+    const m = String(descricao || '').match(/Baixa da conta agendada #(\d+)/i);
+    return m ? Number(m[1]) : null;
+}
+
+/**
+ * Impede reativar baixa se a parcela da Agenda já tiver outra baixa ativa (evita saldo duplicado).
+ */
+async function assertPodeRestaurarBaixaAgenda(dbClient, lancamento) {
+    const agendaId = parseAgendaIdFromDescricaoBaixa(lancamento.descricao);
+    if (!agendaId) return null;
+
+    const agRes = await dbClient.query(
+        `SELECT id, status, id_lancamento_efetivado, descricao
+         FROM fc_contas_agendadas
+         WHERE id = $1
+         FOR UPDATE`,
+        [agendaId]
+    );
+    if (agRes.rows.length === 0) return null;
+
+    const agenda = agRes.rows[0];
+    const efetivadoId = agenda.id_lancamento_efetivado != null ? Number(agenda.id_lancamento_efetivado) : null;
+    if (efetivadoId && efetivadoId !== Number(lancamento.id)) {
+        const outroAtivo = await dbClient.query(
+            `SELECT id FROM fc_lancamentos WHERE id = $1 AND excluido_em IS NULL`,
+            [efetivadoId]
+        );
+        if (outroAtivo.rows.length > 0) {
+            const err = new Error(
+                `Não é possível reativar o lançamento #${lancamento.id}: a parcela #${agendaId} da Agenda já tem outra baixa ativa (#${efetivadoId}). ` +
+                `Exclua a baixa nova antes de desfazer esta exclusão, ou deixe o histórico como está.`
+            );
+            err.statusCode = 409;
+            throw err;
+        }
+    }
+    return agenda;
+}
+
+/**
+ * Reativa lançamento soft-deleted (e vínculos de transferência / estornos filhos soft-deletados).
+ * Tenta religar Agenda quando a descrição for de baixa de conta agendada.
+ */
+async function softRestoreLancamento(dbClient, idLancamento, { cascade = true } = {}) {
+    const atualRes = await dbClient.query(
+        `SELECT * FROM fc_lancamentos WHERE id = $1 AND excluido_em IS NOT NULL FOR UPDATE`,
+        [idLancamento]
+    );
+    if (atualRes.rows.length === 0) return null;
+    const atual = atualRes.rows[0];
+
+    const agenda = await assertPodeRestaurarBaixaAgenda(dbClient, atual);
+
+    const ids = new Set([Number(idLancamento)]);
+    if (cascade) {
+        if (atual.id_transferencia_vinculada) {
+            ids.add(Number(atual.id_transferencia_vinculada));
+        }
+        const estornosRes = await dbClient.query(
+            `SELECT id FROM fc_lancamentos WHERE id_estorno_de = $1 AND excluido_em IS NOT NULL`,
+            [idLancamento]
+        );
+        for (const row of estornosRes.rows) ids.add(Number(row.id));
+    }
+
+    // Limpa flags de pendência de exclusão/aprovação que ficaram na solicitação;
+    // preserva ESTORNADO / EDITADO_APROVADO / etc.
+    const result = await dbClient.query(
+        `UPDATE fc_lancamentos
+         SET excluido_em = NULL,
+             id_usuario_exclusao = NULL,
+             status_edicao = CASE
+                 WHEN status_edicao IN ('PENDENTE_EXCLUSAO', 'PENDENTE_APROVACAO') THEN 'OK'
+                 ELSE status_edicao
+             END,
+             motivo_rejeicao = CASE
+                 WHEN status_edicao IN ('PENDENTE_EXCLUSAO', 'PENDENTE_APROVACAO') THEN NULL
+                 ELSE motivo_rejeicao
+             END
+         WHERE id = ANY($1::int[])
+           AND excluido_em IS NOT NULL
+         RETURNING *`,
+        [[...ids]]
+    );
+
+    const restaurado = result.rows.find((r) => Number(r.id) === Number(idLancamento)) || result.rows[0] || null;
+
+    // Religa Agenda se era baixa e a parcela ainda está livre / aponta para este id (ou efetivado soft-deleted)
+    if (restaurado && agenda) {
+        const agendaId = Number(agenda.id);
+        await dbClient.query(
+            `UPDATE fc_contas_agendadas
+             SET id_lancamento_efetivado = $1,
+                 status = 'PAGO',
+                 atualizado_em = NOW()
+             WHERE id = $2
+               AND (
+                 id_lancamento_efetivado IS NULL
+                 OR id_lancamento_efetivado = $1
+                 OR NOT EXISTS (
+                   SELECT 1 FROM fc_lancamentos l
+                   WHERE l.id = fc_contas_agendadas.id_lancamento_efetivado
+                     AND l.excluido_em IS NULL
+                 )
+               )`,
+            [restaurado.id, agendaId]
+        );
+    }
+
+    return restaurado;
+}
+
+async function registrarLog(dbClient, idUsuario, nomeUsuario, acao, dados = {}) {
     try {
         let detalhes = '';
         let dadosAlterados = { antes: dados.antes || null, depois: dados.depois || null };
 
-        // Função auxiliar para evitar repetição
         const getInfoEntidade = (entidade) => {
             if (!entidade) return { nome: 'N/A', tipo: 'N/A' };
             if (entidade.nome_conta) return { nome: entidade.nome_conta, tipo: 'Conta Bancária' };
-            if (entidade.hasOwnProperty('id_grupo')) return { nome: entidade.nome, tipo: 'Categoria' }; // Se tem id_grupo, é uma categoria
-            if (entidade.nome) return { nome: entidade.nome, tipo: 'Favorecido/Grupo' }; // Se não, é um favorecido ou grupo
+            if (entidade.taxa_recarga_percentual !== undefined && entidade.taxa_recarga_percentual !== null && !entidade.id_grupo) {
+                // Concessionária VT (não confundir com categoria)
+                if (entidade.nome && !entidade.tipo) return { nome: entidade.nome, tipo: 'Concessionária VT' };
+            }
+            if (Object.prototype.hasOwnProperty.call(entidade, 'id_grupo')) return { nome: entidade.nome, tipo: 'Categoria' };
+            if (entidade.tipo === 'DESPESA' || entidade.tipo === 'RECEITA') return { nome: entidade.nome, tipo: 'Grupo' };
+            if (entidade.nome) return { nome: entidade.nome, tipo: 'Favorecido' };
             return { nome: 'Entidade Desconhecida', tipo: 'N/A' };
         };
 
-        switch(acao) {
+        const descLanc = (l) => l?.descricao || 'sem descrição';
+        const fmtData = (d) => {
+            if (!d) return 'data não informada';
+            const raw = String(d).slice(0, 10);
+            return new Date(`${raw}T12:00:00Z`).toLocaleDateString('pt-BR');
+        };
+
+        switch (acao) {
             // --- LANÇAMENTOS ---
             case 'CRIACAO_LANCAMENTO':
-                detalhes = `Criou ${dados.depois.tipo.toLowerCase()} de ${formatCurrency(dados.depois.valor)} ("${dados.depois.descricao || 'sem descrição'}").`;
+                detalhes = `Criou ${(dados.depois?.tipo || 'lançamento').toLowerCase()} de ${formatCurrency(dados.depois?.valor)} ("${descLanc(dados.depois)}").`;
                 break;
-            case 'CRIACAO_LANCAMENTO_DETALHADO':
-                const tipoRateio = dados.depois.tipo_rateio === 'COMPRA' ? 'compra detalhada' : 'rateio';
-                detalhes = `Criou ${tipoRateio} de ${formatCurrency(dados.depois.valor)} ("${dados.depois.descricao}") com ${dados.depois.itens.length} itens.`;
+            case 'CRIACAO_LANCAMENTO_DETALHADO': {
+                const tipoRateio = dados.depois?.tipo_rateio === 'COMPRA' ? 'compra detalhada' : 'rateio';
+                const qtdItens = Array.isArray(dados.depois?.itens) ? dados.depois.itens.length : 0;
+                detalhes = `Criou ${tipoRateio} de ${formatCurrency(dados.depois?.valor)} ("${descLanc(dados.depois)}") com ${qtdItens} itens.`;
                 break;
+            }
             case 'CRIACAO_TRANSFERENCIA':
                 detalhes = `Realizou transferência de ${formatCurrency(dados.valor)} da conta "${dados.contaOrigem}" para "${dados.contaDestino}".`;
-                dadosAlterados = { depois: dados }; // Armazena todos os dados da transferência
+                dadosAlterados = { depois: dados };
                 break;
             case 'EDICAO_LANCAMENTO':
-                detalhes = `Editou o lançamento #${dados.depois.id}. O valor foi de ${formatCurrency(dados.antes.valor)} para ${formatCurrency(dados.depois.valor)}.`;
+                detalhes = `Editou o lançamento #${dados.depois?.id}. O valor foi de ${formatCurrency(dados.antes?.valor)} para ${formatCurrency(dados.depois?.valor)}.`;
                 break;
             case 'EXCLUSAO_LANCAMENTO':
-                detalhes = `Excluiu o lançamento #${dados.antes.id} ("${dados.antes.descricao || 'sem descrição'}") no valor de ${formatCurrency(dados.antes.valor)}.`;
+                detalhes = `Excluiu (cancelamento lógico) o lançamento #${dados.antes?.id} ("${descLanc(dados.antes)}") no valor de ${formatCurrency(dados.antes?.valor)}.`;
+                break;
+            case 'REATIVACAO_LANCAMENTO':
+                detalhes = `Reativou o lançamento #${dados.depois?.id} ("${descLanc(dados.depois)}") anteriormente excluído.`;
+                break;
+            case 'REGISTRO_ESTORNO':
+                detalhes = `Registrou estorno de ${formatCurrency(dados.lancamento_estorno?.valor || dados.valor_estornado)} sobre o lançamento #${dados.lancamento_original?.id} ("${descLanc(dados.lancamento_original)}").`;
+                dadosAlterados = { antes: dados.lancamento_original || null, depois: dados.lancamento_estorno || dados };
+                break;
+            case 'REVERSAO_ESTORNO':
+                detalhes = `Reverteu o estorno #${dados.lancamento_estorno?.id}, restaurando o lançamento original #${dados.lancamento_original_id || dados.lancamento_estorno?.id_estorno_de}.`;
+                dadosAlterados = { antes: dados.lancamento_estorno || null, depois: { id_original: dados.lancamento_original_id } };
                 break;
 
-            // --- FLUXO DE APROVAÇÃO ---
+            // --- FLUXO DE APROVAÇÃO / SOLICITAÇÕES ---
             case 'SOLICITACAO_EDICAO':
-                detalhes = `Solicitou edição para o lançamento #${dados.id_lancamento}. Justificativa: "${dados.justificativa}".`;
+                detalhes = `Solicitou edição do lançamento #${dados.id_lancamento}. Justificativa: "${dados.justificativa || 'não informada'}".`;
                 dadosAlterados = { depois: dados };
                 break;
             case 'SOLICITACAO_EXCLUSAO':
-                detalhes = `Solicitou exclusão para o lançamento #${dados.id_lancamento}. Justificativa: "${dados.justificativa}".`;
+                detalhes = `Solicitou exclusão do lançamento #${dados.id_lancamento}. Justificativa: "${dados.justificativa || 'não informada'}".`;
                 dadosAlterados = { depois: dados };
                 break;
-            case 'APROVACAO_SOLICITACAO': { // Adicionando chaves por boa prática
-                const solicitacaoDoLog = dados.solicitacao; 
-                
-                const tipo = solicitacaoDoLog.tipo_solicitacao.toLowerCase();
-                const lancamentoAlvo = solicitacaoDoLog.dados_antigos; 
-                const desc = lancamentoAlvo?.descricao || 'sem descrição';
-
-                detalhes = `Aprovou a solicitação de ${tipo} para o lançamento #${solicitacaoDoLog.id_lancamento} ("${desc}"), feita por ${solicitacaoDoLog.nome_solicitante}.`;
-                dadosAlterados = { depois: { solicitacao: solicitacaoDoLog } };
+            case 'SOLICITACAO_ESTORNO':
+                detalhes = `Solicitou estorno do lançamento #${dados.id_lancamento} no valor de ${formatCurrency(dados.valor_estornado)}.`;
+                dadosAlterados = { depois: dados };
+                break;
+            case 'SOLICITACAO_REVERSAO_ESTORNO':
+                detalhes = `Solicitou reversão do estorno #${dados.id_lancamento}.`;
+                dadosAlterados = { depois: dados };
+                break;
+            case 'SOLICITACAO_CRIACAO': {
+                const proposto = dados.lancamento_proposto || {};
+                const descProp = proposto.descricao || proposto.dados_pai?.descricao || 'sem descrição';
+                const dataProp = proposto.data_transacao || proposto.dados_pai?.data_transacao;
+                detalhes = `Solicitou criação de lançamento com data especial (${fmtData(dataProp)}): "${descProp}". Justificativa: "${dados.justificativa || 'não informada'}".`;
+                dadosAlterados = { depois: dados };
                 break;
             }
-            case 'REJEICAO_SOLICITACAO':
-                detalhes = `Rejeitou a solicitação de ${dados.solicitacao.tipo_solicitacao.toLowerCase()} para o lançamento #${dados.solicitacao.id_lancamento}. Motivo: "${dados.motivo}".`;
-                dadosAlterados = { depois: { solicitacao: dados.solicitacao, motivo: dados.motivo } };
+            case 'APROVACAO_SOLICITACAO': {
+                const s = dados.solicitacao || {};
+                const tipo = (s.tipo_solicitacao || 'solicitação').toLowerCase();
+                if (s.tipo_solicitacao === 'CRIACAO_DATAS_ESPECIAIS') {
+                    const desc = s.dados_novos?.lancamento_proposto?.descricao
+                        || s.dados_novos?.lancamento_proposto?.dados_pai?.descricao
+                        || 'sem descrição';
+                    detalhes = `Aprovou a solicitação de criação de lançamento ("${desc}"), feita por ${s.nome_solicitante || 'usuário'}.`;
+                } else {
+                    const desc = s.dados_antigos?.descricao || 'sem descrição';
+                    detalhes = `Aprovou a solicitação de ${tipo} do lançamento #${s.id_lancamento} ("${desc}"), feita por ${s.nome_solicitante || 'usuário'}.`;
+                }
+                dadosAlterados = { depois: { solicitacao: s } };
                 break;
+            }
+            case 'REJEICAO_SOLICITACAO': {
+                const s = dados.solicitacao || {};
+                const tipo = (s.tipo_solicitacao || 'solicitação').toLowerCase();
+                if (s.tipo_solicitacao === 'CRIACAO_DATAS_ESPECIAIS') {
+                    detalhes = `Rejeitou a solicitação de criação de lançamento. Motivo: "${dados.motivo || 'não informado'}".`;
+                } else {
+                    detalhes = `Rejeitou a solicitação de ${tipo} do lançamento #${s.id_lancamento}. Motivo: "${dados.motivo || 'não informado'}".`;
+                }
+                dadosAlterados = { depois: { solicitacao: s, motivo: dados.motivo } };
+                break;
+            }
 
             // --- AGENDAMENTOS ---
             case 'CRIACAO_AGENDAMENTO':
-                detalhes = `Agendou ${dados.depois.tipo.replace('A_', '').toLowerCase()} de ${formatCurrency(dados.depois.valor)} para ${new Date(dados.depois.data_vencimento + 'T12:00:00Z').toLocaleDateString('pt-BR')} ("${dados.depois.descricao}").`;
+                detalhes = `Agendou ${(dados.depois?.tipo || '').replace('A_', '').toLowerCase() || 'conta'} de ${formatCurrency(dados.depois?.valor)} para ${fmtData(dados.depois?.data_vencimento)} ("${descLanc(dados.depois)}").`;
                 break;
             case 'CRIACAO_LOTE_AGENDAMENTO':
-                detalhes = `Agendou ${dados.depois.parcelas} parcelas ("${dados.depois.descricao_lote}") totalizando ${formatCurrency(dados.depois.valor_total)}.`;
+                detalhes = `Agendou ${dados.depois?.parcelas || 0} parcelas ("${dados.depois?.descricao_lote || 'lote'}") totalizando ${formatCurrency(dados.depois?.valor_total)}.`;
                 break;
             case 'BAIXA_AGENDAMENTO':
-                detalhes = `Deu baixa no agendamento #${dados.agendamento.id} ("${dados.agendamento.descricao}") no valor de ${formatCurrency(dados.agendamento.valor)}.`;
-                dadosAlterados = { depois: { agendamento: dados.agendamento, lancamentoGeradoId: dados.lancamentoGeradoId }};
+                detalhes = `Deu baixa no agendamento #${dados.agendamento?.id} ("${descLanc(dados.agendamento)}") no valor de ${formatCurrency(dados.agendamento?.valor)}.`;
+                dadosAlterados = { depois: { agendamento: dados.agendamento, lancamentoGeradoId: dados.lancamentoGeradoId } };
                 break;
             case 'EDICAO_AGENDAMENTO':
-                detalhes = `Editou o agendamento pendente #${dados.depois.id}. O valor foi de ${formatCurrency(dados.antes.valor)} para ${formatCurrency(dados.depois.valor)}.`;
+                detalhes = `Editou o agendamento #${dados.depois?.id || dados.antes?.id}. Valor: ${formatCurrency(dados.antes?.valor)} → ${formatCurrency(dados.depois?.valor)}.`;
                 break;
             case 'EXCLUSAO_AGENDAMENTO':
-                detalhes = `Excluiu o agendamento pendente #${dados.antes.id} ("${dados.antes.descricao}") de ${formatCurrency(dados.antes.valor)}.`;
+                detalhes = `Excluiu o agendamento pendente #${dados.antes?.id} ("${descLanc(dados.antes)}") de ${formatCurrency(dados.antes?.valor)}.`;
                 break;
-            
+            case 'EXCLUSAO_AGENDAMENTO_FORCADA':
+                detalhes = `Excluiu permanentemente o agendamento #${dados.antes?.id} ("${descLanc(dados.antes)}", status: ${dados.antes?.status || 'N/A'}) de ${formatCurrency(dados.antes?.valor)}.`;
+                break;
+            case 'EDICAO_LOTE_DESCRICAO':
+                detalhes = `Alterou a descrição do lote #${dados.id_lote} para "${dados.nova_descricao_base}".`;
+                dadosAlterados = { antes: { id_lote: dados.id_lote, descricao_exemplo: dados.descricao_antes }, depois: { nova_descricao_base: dados.nova_descricao_base } };
+                break;
+
             // --- CONFIGURAÇÕES ---
-            case 'CRIACAO_ENTIDADE':
+            case 'CRIACAO_ENTIDADE': {
                 const infoCriacao = getInfoEntidade(dados.depois);
                 detalhes = `Criou ${infoCriacao.tipo.toLowerCase()} "${infoCriacao.nome}".`;
                 break;
-            case 'EDICAO_ENTIDADE':
+            }
+            case 'EDICAO_ENTIDADE': {
                 const infoEdicaoAntes = getInfoEntidade(dados.antes);
                 const infoEdicaoDepois = getInfoEntidade(dados.depois);
                 detalhes = `Alterou ${infoEdicaoDepois.tipo.toLowerCase()} de "${infoEdicaoAntes.nome}" para "${infoEdicaoDepois.nome}".`;
                 break;
-            case 'ALTERACAO_STATUS_CONTATO':
-                const novoStatus = dados.depois.ativo ? 'Ativo' : 'Inativo';
-                detalhes = `Alterou o status do favorecido "${dados.depois.nome}" para ${novoStatus}.`;
+            }
+            case 'ALTERACAO_STATUS_CONTATO': {
+                const novoStatus = dados.depois?.ativo ? 'Ativo' : 'Inativo';
+                detalhes = `Alterou o status do favorecido "${dados.depois?.nome}" para ${novoStatus}.`;
+                break;
+            }
+            case 'CRIACAO_CONCESSIONARIA_VT':
+                detalhes = `Cadastrou concessionária de VT "${dados.depois?.nome}" com taxa de ${dados.depois?.taxa_recarga_percentual}%.`;
+                break;
+            case 'EDICAO_CONCESSIONARIA_VT':
+                detalhes = `Atualizou concessionária de VT "${dados.depois?.nome}" (taxa ${dados.depois?.taxa_recarga_percentual}%, ${dados.depois?.ativo ? 'ativa' : 'inativa'}).`;
                 break;
 
             default:
                 detalhes = `Ação de auditoria não especificada para o tipo: ${acao}`;
         }
-        
+
         const query = `
             INSERT INTO fc_logs_auditoria (id_usuario, nome_usuario, acao, detalhes, dados_alterados)
             VALUES ($1, $2, $3, $4, $5);
         `;
         await dbClient.query(query, [idUsuario, nomeUsuario, acao, detalhes, dadosAlterados]);
-
     } catch (logError) {
-        console.error("ERRO CRÍTICO AO REGISTRAR LOG DE AUDITORIA:", logError);
+        console.error('ERRO CRÍTICO AO REGISTRAR LOG DE AUDITORIA:', logError);
     }
 }
 
@@ -205,6 +441,7 @@ router.post('/concessionarias-vt', async (req, res) => {
         dbClient = await pool.connect();
         const query = `INSERT INTO config_concessionarias_vt (nome, taxa_recarga_percentual) VALUES ($1, $2) RETURNING *`;
         const result = await dbClient.query(query, [nome, taxa_recarga_percentual]);
+        await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'CRIACAO_CONCESSIONARIA_VT', { depois: result.rows[0] });
         res.status(201).json(result.rows[0]);
     } catch (error) {
         if (error.code === '23505') { // Erro de nome único
@@ -231,11 +468,16 @@ router.put('/concessionarias-vt/:id', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        const antesRes = await dbClient.query('SELECT * FROM config_concessionarias_vt WHERE id = $1', [id]);
         const query = `UPDATE config_concessionarias_vt SET nome = $1, taxa_recarga_percentual = $2, ativo = $3, updated_at = NOW() WHERE id = $4 RETURNING *`;
         const result = await dbClient.query(query, [nome, taxa_recarga_percentual, ativo, id]);
         if (result.rowCount === 0) {
             return res.status(404).json({ error: 'Concessionária não encontrada.' });
         }
+        await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'EDICAO_CONCESSIONARIA_VT', {
+            antes: antesRes.rows[0] || null,
+            depois: result.rows[0],
+        });
         res.status(200).json(result.rows[0]);
     } catch (error) {
         if (error.code === '23505') {
@@ -270,7 +512,7 @@ router.get('/dashboard', async (req, res) => {
                     END
                 ), 0) as saldo_atual
             FROM fc_contas_bancarias cb
-            LEFT JOIN fc_lancamentos l ON l.id_conta_bancaria = cb.id
+            LEFT JOIN fc_lancamentos l ON l.id_conta_bancaria = cb.id AND l.excluido_em IS NULL
             WHERE cb.ativo = true
             GROUP BY cb.id, cb.nome_conta, cb.saldo_inicial
             ORDER BY cb.nome_conta;
@@ -408,7 +650,8 @@ router.get('/relatorios/dre-simplificado', async (req, res) => {
             FROM fc_lancamentos
             WHERE
                 data_transacao BETWEEN $1 AND $2
-                AND id_transferencia_vinculada IS NULL;
+                AND id_transferencia_vinculada IS NULL
+                AND excluido_em IS NULL;
         `;
 
         const result = await dbClient.query(dreQuery, [dataInicio, dataFim]);
@@ -458,6 +701,7 @@ router.get('/relatorios/despesas-por-categoria', async (req, res) => {
                 l.tipo = 'DESPESA'
                 AND l.data_transacao BETWEEN $1 AND $2
                 AND l.id_transferencia_vinculada IS NULL
+                AND l.excluido_em IS NULL
             GROUP BY
                 cat.nome
             ORDER BY
@@ -732,7 +976,7 @@ router.get('/lancamentos', async (req, res) => {
     try {
         dbClient = await pool.connect();
 
-        let whereClauses = [];
+        let whereClauses = ['l.excluido_em IS NULL'];
         let params = [];
         let paramIndex = 1;
 
@@ -859,6 +1103,92 @@ router.get('/lancamentos', async (req, res) => {
     } catch (error) {
         console.error('[API GET /lancamentos] Erro:', error);
         res.status(500).json({ error: 'Erro ao buscar lançamentos.', details: error.message });
+    } finally {
+        if (dbClient) dbClient.release();
+    }
+});
+
+/**
+ * Info gerencial do lançamento (clique no card):
+ * quem criou, alterações/solicitações (edição, exclusão, estorno…), quem aprovou/rejeitou.
+ */
+router.get('/lancamentos/:id/info-gerencial', async (req, res) => {
+    if (!req.permissoesUsuario.includes('exibir-informacao-gerencial')) {
+        return res.status(403).json({ error: 'Permissão negada.' });
+    }
+
+    const id = parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) {
+        return res.status(400).json({ error: 'ID de lançamento inválido.' });
+    }
+
+    let dbClient;
+    try {
+        dbClient = await pool.connect();
+
+        const lancRes = await dbClient.query(
+            `SELECT
+                l.id,
+                l.descricao,
+                l.status_edicao,
+                l.motivo_rejeicao,
+                l.data_lancamento,
+                l.atualizado_em,
+                l.id_estorno_de,
+                l.id_transferencia_vinculada,
+                l.id_usuario_lancamento,
+                l.id_usuario_edicao,
+                u_criador.nome AS nome_usuario,
+                u_editor.nome AS nome_usuario_edicao
+             FROM fc_lancamentos l
+             JOIN usuarios u_criador ON l.id_usuario_lancamento = u_criador.id
+             LEFT JOIN usuarios u_editor ON l.id_usuario_edicao = u_editor.id
+             WHERE l.id = $1 AND l.excluido_em IS NULL`,
+            [id]
+        );
+
+        if (lancRes.rows.length === 0) {
+            return res.status(404).json({ error: 'Lançamento não encontrado.' });
+        }
+
+        const lanc = lancRes.rows[0];
+
+        const solRes = await dbClient.query(
+            `SELECT
+                sa.id,
+                sa.tipo_solicitacao,
+                sa.status,
+                sa.data_solicitacao,
+                sa.data_decisao,
+                sa.justificativa_solicitante,
+                sa.motivo_rejeicao,
+                u_sol.nome AS nome_solicitante,
+                u_apr.nome AS nome_aprovador
+             FROM fc_solicitacoes_alteracao sa
+             JOIN usuarios u_sol ON sa.id_usuario_solicitante = u_sol.id
+             LEFT JOIN usuarios u_apr ON sa.id_usuario_aprovador = u_apr.id
+             WHERE sa.id_lancamento = $1
+             ORDER BY sa.data_solicitacao DESC, sa.id DESC`,
+            [id]
+        );
+
+        res.status(200).json({
+            id: lanc.id,
+            descricao: lanc.descricao,
+            status_edicao: lanc.status_edicao,
+            motivo_rejeicao: lanc.motivo_rejeicao,
+            criado_por: lanc.nome_usuario,
+            criado_em: lanc.data_lancamento,
+            editado_por: lanc.nome_usuario_edicao || null,
+            editado_em: lanc.atualizado_em || null,
+            eh_estorno: Boolean(lanc.id_estorno_de),
+            id_estorno_de: lanc.id_estorno_de || null,
+            eh_transferencia: Boolean(lanc.id_transferencia_vinculada),
+            solicitacoes: solRes.rows,
+        });
+    } catch (error) {
+        console.error(`[API GET /lancamentos/${req.params.id}/info-gerencial] Erro:`, error);
+        res.status(500).json({ error: 'Erro ao buscar informação gerencial.', details: error.message });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -1110,7 +1440,7 @@ router.put('/lancamentos/:id', async (req, res) => {
         dbClient = await pool.connect();
         await dbClient.query('BEGIN');
 
-        const lancamentoOriginalRes = await dbClient.query('SELECT * FROM fc_lancamentos WHERE id = $1 FOR UPDATE', [id]);
+        const lancamentoOriginalRes = await dbClient.query('SELECT * FROM fc_lancamentos WHERE id = $1 AND excluido_em IS NULL FOR UPDATE', [id]);
         if (lancamentoOriginalRes.rows.length === 0) {
             await dbClient.query('ROLLBACK');
             return res.status(404).json({ error: 'Lançamento não encontrado.' });
@@ -1192,7 +1522,7 @@ router.post('/lancamentos/:id/solicitar-exclusao', async (req, res) => {
         dbClient = await pool.connect();
         await dbClient.query('BEGIN');
 
-        const lancamentoOriginalRes = await dbClient.query('SELECT * FROM fc_lancamentos WHERE id = $1 FOR UPDATE', [id]);
+        const lancamentoOriginalRes = await dbClient.query('SELECT * FROM fc_lancamentos WHERE id = $1 AND excluido_em IS NULL FOR UPDATE', [id]);
         if (lancamentoOriginalRes.rows.length === 0) {
             await dbClient.query('ROLLBACK');
             return res.status(404).json({ error: 'Lançamento não encontrado.' });
@@ -1219,7 +1549,9 @@ router.post('/lancamentos/:id/solicitar-exclusao', async (req, res) => {
                 }
             }
 
-            // Registra o log ANTES de deletar os dados
+            // Soft delete (mantém itens e linha para auditoria / futura reativação)
+            await softDeleteLancamento(dbClient, id, req.usuarioLogado.id, { cascade: true });
+
             await registrarLog(
                 dbClient,
                 req.usuarioLogado.id,
@@ -1227,14 +1559,9 @@ router.post('/lancamentos/:id/solicitar-exclusao', async (req, res) => {
                 'EXCLUSAO_LANCAMENTO',
                 { antes: lancamentoParaLog }
             );
-
-            // Ações de exclusão no banco de dados
-            await dbClient.query("UPDATE fc_contas_agendadas SET id_lancamento_efetivado = NULL, status = 'PENDENTE' WHERE id_lancamento_efetivado = $1", [id]);
-            await dbClient.query('DELETE FROM fc_lancamento_itens WHERE id_lancamento_pai = $1', [id]);
-            await dbClient.query('DELETE FROM fc_lancamentos WHERE id = $1', [id]);
             
             await dbClient.query('COMMIT');
-            return res.status(200).json({ message: 'Lançamento excluído com sucesso. A conta agendada original, se existir, voltou a ficar pendente.' });
+            return res.status(200).json({ message: 'Lançamento excluído com sucesso (cancelamento lógico). A conta agendada original, se existir, voltou a ficar pendente.' });
         
         } else {
             // FLUXO DO USUÁRIO COMUM: Cria solicitação
@@ -1280,7 +1607,7 @@ router.post('/lancamentos/:id/estornar', async (req, res) => {
         dbClient = await pool.connect();
         await dbClient.query('BEGIN');
 
-        const lancamentoOriginalRes = await dbClient.query('SELECT * FROM fc_lancamentos WHERE id = $1 FOR UPDATE', [idLancamentoOriginal]);
+        const lancamentoOriginalRes = await dbClient.query('SELECT * FROM fc_lancamentos WHERE id = $1 AND excluido_em IS NULL FOR UPDATE', [idLancamentoOriginal]);
         if (lancamentoOriginalRes.rows.length === 0) throw new Error('Lançamento original não encontrado.');
         const lancamentoOriginal = lancamentoOriginalRes.rows[0];
 
@@ -1318,8 +1645,13 @@ router.post('/lancamentos/:id/estornar', async (req, res) => {
 
             // Muda o status para indicar que há uma ação pendente
             await dbClient.query(`UPDATE fc_lancamentos SET status_edicao = 'PENDENTE_APROVACAO' WHERE id = $1`, [idLancamentoOriginal]);
-            
-            // await registrarLog(...)
+
+            await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'SOLICITACAO_ESTORNO', {
+                id_lancamento: idLancamentoOriginal,
+                valor_estornado: dadosEstorno.valor_estornado,
+                dados_estorno: dadosEstorno,
+                solicitacao: solRes.rows[0],
+            });
             
             await dbClient.query('COMMIT');
             return res.status(202).json({ message: 'Solicitação de estorno enviada para aprovação.' });
@@ -1348,7 +1680,7 @@ router.post('/lancamentos/:id/reverter-estorno', async (req, res) => {
         dbClient = await pool.connect();
         await dbClient.query('BEGIN');
 
-        const estornoRes = await dbClient.query('SELECT * FROM fc_lancamentos WHERE id = $1 FOR UPDATE', [idLancamentoEstorno]);
+        const estornoRes = await dbClient.query('SELECT * FROM fc_lancamentos WHERE id = $1 AND excluido_em IS NULL FOR UPDATE', [idLancamentoEstorno]);
         if (estornoRes.rows.length === 0) throw new Error('Lançamento de estorno não encontrado.');
         const lancamentoEstorno = estornoRes.rows[0];
         if (!lancamentoEstorno.id_estorno_de) throw new Error('Este lançamento não é um estorno.');
@@ -1361,10 +1693,17 @@ router.post('/lancamentos/:id/reverter-estorno', async (req, res) => {
         // FLUXO DO ADMIN: Executa diretamente
         if (req.permissoesUsuario.includes('aprovar-alteracao-financeira')) {
             
-            await dbClient.query('DELETE FROM fc_lancamentos WHERE id = $1', [idLancamentoEstorno]);
-            await dbClient.query("UPDATE fc_lancamentos SET status_edicao = 'OK' WHERE id = $1", [lancamentoEstorno.id_estorno_de]);
-            
-            // await registrarLog(...)
+            // Soft delete do lançamento de estorno (não apaga a linha)
+            await softDeleteLancamento(dbClient, idLancamentoEstorno, req.usuarioLogado.id, { cascade: false });
+            await dbClient.query(
+                "UPDATE fc_lancamentos SET status_edicao = 'OK' WHERE id = $1 AND excluido_em IS NULL",
+                [lancamentoEstorno.id_estorno_de]
+            );
+
+            await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'REVERSAO_ESTORNO', {
+                lancamento_estorno: lancamentoEstorno,
+                lancamento_original_id: lancamentoEstorno.id_estorno_de,
+            });
             
             await dbClient.query('COMMIT');
             return res.status(200).json({ message: 'Estorno revertido com sucesso.' });
@@ -1378,6 +1717,11 @@ router.post('/lancamentos/:id/reverter-estorno', async (req, res) => {
             );
 
             await dbClient.query(`UPDATE fc_lancamentos SET status_edicao = 'PENDENTE_APROVACAO' WHERE id = $1`, [idLancamentoEstorno]);
+
+            await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'SOLICITACAO_REVERSAO_ESTORNO', {
+                id_lancamento: idLancamentoEstorno,
+                solicitacao: solRes.rows[0],
+            });
             
             await dbClient.query('COMMIT');
             return res.status(202).json({ message: 'Solicitação de reversão de estorno enviada para aprovação.' });
@@ -1526,7 +1870,7 @@ router.put('/lancamentos/detalhado/:id', async (req, res) => {
         await dbClient.query('BEGIN');
 
         // Lógica para checar se já existe uma solicitação pendente
-        const lancamentoOriginalRes = await dbClient.query('SELECT * FROM fc_lancamentos WHERE id = $1 FOR UPDATE', [idLancamentoPai]);
+        const lancamentoOriginalRes = await dbClient.query('SELECT * FROM fc_lancamentos WHERE id = $1 AND excluido_em IS NULL FOR UPDATE', [idLancamentoPai]);
         if (lancamentoOriginalRes.rows.length === 0) throw new Error('Lançamento não encontrado.');
         const lancamentoOriginal = lancamentoOriginalRes.rows[0];
 
@@ -2032,6 +2376,13 @@ router.put('/contas-agendadas/detalhado/:id', async (req, res) => {
         dbClient = await pool.connect();
         await dbClient.query('BEGIN');
 
+        const antesRes = await dbClient.query("SELECT * FROM fc_contas_agendadas WHERE id = $1 AND status = 'PENDENTE' FOR UPDATE", [idPai]);
+        if (antesRes.rowCount === 0) {
+            await dbClient.query('ROLLBACK');
+            return res.status(404).json({ error: 'Agendamento pendente não encontrado.' });
+        }
+        const antes = antesRes.rows[0];
+
         // 1. Apaga os filhos antigos
         await dbClient.query('DELETE FROM fc_contas_agendadas_itens WHERE id_conta_agendada_pai = $1', [idPai]);
         
@@ -2039,9 +2390,10 @@ router.put('/contas-agendadas/detalhado/:id', async (req, res) => {
         const paiQuery = `
             UPDATE fc_contas_agendadas
             SET tipo = $1, descricao = $2, valor = $3, data_vencimento = $4, id_categoria = $5, id_contato = $6, tipo_rateio = $7, atualizado_em = NOW()
-            WHERE id = $8 AND status = 'PENDENTE';
+            WHERE id = $8 AND status = 'PENDENTE'
+            RETURNING *;
         `;
-        await dbClient.query(paiQuery, [
+        const depoisRes = await dbClient.query(paiQuery, [
             tipo, descricao, valor_total_calculado, data_vencimento,
             tipo_rateio === 'COMPRA' ? null : id_categoria,
             id_contato, tipo_rateio, idPai
@@ -2058,6 +2410,11 @@ router.put('/contas-agendadas/detalhado/:id', async (req, res) => {
                 idPai, item.id_categoria, item.id_contato_item || null, item.descricao_item, item.valor_item
             ]);
         }
+
+        await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'EDICAO_AGENDAMENTO', {
+            antes,
+            depois: depoisRes.rows[0],
+        });
 
         await dbClient.query('COMMIT');
         res.status(200).json({ message: 'Agendamento detalhado atualizado com sucesso.' });
@@ -2104,6 +2461,10 @@ router.delete('/contas-agendadas/:id/force', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        const antesRes = await dbClient.query('SELECT * FROM fc_contas_agendadas WHERE id = $1', [id]);
+        if (antesRes.rowCount === 0) {
+            return res.status(404).json({ error: 'Agendamento não encontrado com este ID.' });
+        }
         // Deleta o agendamento-pai. O 'ON DELETE CASCADE' cuidará dos filhos.
         // Esta query NÃO verifica o status, permitindo apagar agendamentos já baixados.
         const result = await dbClient.query('DELETE FROM fc_contas_agendadas WHERE id = $1', [id]);
@@ -2111,6 +2472,10 @@ router.delete('/contas-agendadas/:id/force', async (req, res) => {
         if (result.rowCount === 0) {
             return res.status(404).json({ error: 'Agendamento não encontrado com este ID.' });
         }
+
+        await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'EXCLUSAO_AGENDAMENTO_FORCADA', {
+            antes: antesRes.rows[0],
+        });
         
         res.status(200).json({ message: 'Agendamento excluído permanentemente com sucesso.' });
     } catch (error) {
@@ -2148,6 +2513,8 @@ router.put('/lotes/:id/descricao', async (req, res) => {
             throw new Error('Nenhuma parcela pendente encontrada para este lote.');
         }
 
+        const descricaoAntes = parcelasRes.rows[0]?.descricao || null;
+
         // 2. Atualiza cada parcela com a nova descrição base + número da parcela
         const totalParcelas = parcelasRes.rowCount;
         for (let i = 0; i < totalParcelas; i++) {
@@ -2155,6 +2522,13 @@ router.put('/lotes/:id/descricao', async (req, res) => {
             const novaDescricaoCompleta = `${nova_descricao_base.trim()} - Parcela ${i + 1}/${totalParcelas}`;
             await dbClient.query('UPDATE fc_contas_agendadas SET descricao = $1 WHERE id = $2', [novaDescricaoCompleta, parcela.id]);
         }
+
+        await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'EDICAO_LOTE_DESCRICAO', {
+            id_lote: idLote,
+            nova_descricao_base: nova_descricao_base.trim(),
+            descricao_antes: descricaoAntes,
+            parcelas_atualizadas: totalParcelas,
+        });
 
         await dbClient.query('COMMIT');
         res.status(200).json({ message: 'Descrição do lote atualizada com sucesso.' });
@@ -2168,6 +2542,86 @@ router.put('/lotes/:id/descricao', async (req, res) => {
     }
 });
 
+/**
+ * Para solicitações de EXCLUSAO: detecta se o lançamento é baixa de Agenda
+ * e carrega dados da parcela (batch).
+ * @returns {Map<number, object>} chave = id do lançamento
+ */
+async function carregarContextoAgendaPorExclusoes(dbClient, exclusoes) {
+    /** @type {Map<number, object>} */
+    const porLancamento = new Map();
+    if (!exclusoes.length) return porLancamento;
+
+    const lancToAgenda = new Map();
+    for (const item of exclusoes) {
+        const idLanc = Number(item.id_lancamento);
+        if (!idLanc) continue;
+        const desc =
+            item.descricao_lancamento
+            || item.lancamento_descricao_atual
+            || item.dados_antigos?.descricao
+            || '';
+        const agendaId = parseAgendaIdFromDescricaoBaixa(desc);
+        if (agendaId) lancToAgenda.set(idLanc, agendaId);
+    }
+    if (lancToAgenda.size === 0) return porLancamento;
+
+    const uniqAgendaIds = [...new Set([...lancToAgenda.values()])];
+    const agRes = await dbClient.query(
+        `SELECT ca.id,
+                ca.descricao,
+                ca.status,
+                ca.id_lancamento_efetivado,
+                ca.data_vencimento,
+                ca.valor,
+                CASE
+                  WHEN ca.id_lancamento_efetivado IS NOT NULL
+                   AND EXISTS (
+                     SELECT 1 FROM fc_lancamentos lx
+                     WHERE lx.id = ca.id_lancamento_efetivado
+                       AND lx.excluido_em IS NULL
+                   )
+                  THEN true
+                  ELSE false
+                END AS tem_baixa_ativa
+         FROM fc_contas_agendadas ca
+         WHERE ca.id = ANY($1::int[])`,
+        [uniqAgendaIds]
+    );
+    const agendaById = new Map(agRes.rows.map((a) => [Number(a.id), a]));
+
+    for (const [idLanc, agendaId] of lancToAgenda.entries()) {
+        const ag = agendaById.get(Number(agendaId));
+        if (!ag) {
+            porLancamento.set(idLanc, {
+                id_agenda: agendaId,
+                descricao: '',
+                status: 'DESCONHECIDO',
+                id_efetivado: null,
+                baixa_substituta_ativa: false,
+                id_baixa_substituta: null,
+                data_vencimento: null,
+                valor: null,
+            });
+            continue;
+        }
+        const efetivadoId = ag.id_lancamento_efetivado != null ? Number(ag.id_lancamento_efetivado) : null;
+        const temBaixaAtiva = Boolean(ag.tem_baixa_ativa);
+        const eOutraBaixa = temBaixaAtiva && efetivadoId != null && efetivadoId !== Number(idLanc);
+        porLancamento.set(idLanc, {
+            id_agenda: Number(ag.id),
+            descricao: ag.descricao || '',
+            status: ag.status || '',
+            id_efetivado: efetivadoId,
+            baixa_substituta_ativa: eOutraBaixa,
+            id_baixa_substituta: eOutraBaixa ? efetivadoId : null,
+            data_vencimento: ag.data_vencimento || null,
+            valor: ag.valor != null ? Number(ag.valor) : null,
+        });
+    }
+    return porLancamento;
+}
+
 // GET /api/financeiro/aprovacoes-pendentes
 router.get('/aprovacoes-pendentes', async (req, res) => {
 
@@ -2180,15 +2634,63 @@ router.get('/aprovacoes-pendentes', async (req, res) => {
     try {
         dbClient = await pool.connect();
         const query = `
-            SELECT sa.*, u.nome as nome_solicitante
+            SELECT sa.*,
+                   u.nome AS nome_solicitante,
+                   l.descricao AS descricao_lancamento
             FROM fc_solicitacoes_alteracao sa
             JOIN usuarios u ON sa.id_usuario_solicitante = u.id
+            LEFT JOIN fc_lancamentos l ON sa.id_lancamento = l.id
             WHERE sa.status = 'PENDENTE'
             ORDER BY sa.data_solicitacao ASC;
         `;     
         const result = await dbClient.query(query);
+
+        const exclusoes = result.rows.filter((r) => r.tipo_solicitacao === 'EXCLUSAO' && r.id_lancamento);
+        const agendaMap = await carregarContextoAgendaPorExclusoes(dbClient, exclusoes);
+
+        const rows = result.rows.map((row) => {
+            if (row.tipo_solicitacao !== 'EXCLUSAO' || !row.id_lancamento) {
+                return { ...row, origem_exclusao: null, contexto_agenda: null, resumo_origem: null };
+            }
+            const idLanc = Number(row.id_lancamento);
+            const infoAgenda = agendaMap.get(idLanc) || null;
+            const desc = row.descricao_lancamento || row.dados_antigos?.descricao || '';
+            const agendaIdParsed = parseAgendaIdFromDescricaoBaixa(desc);
+
+            if (infoAgenda || agendaIdParsed) {
+                const ctx = infoAgenda || {
+                    id_agenda: agendaIdParsed,
+                    descricao: '',
+                    status: '',
+                    data_vencimento: null,
+                };
+                return {
+                    ...row,
+                    origem_exclusao: 'agenda',
+                    contexto_agenda: ctx,
+                    resumo_origem: {
+                        label: `Agenda · parcela #${ctx.id_agenda}`,
+                        detalhe: ctx.descricao
+                            ? `Baixa da parcela: ${ctx.descricao}`
+                            : 'Baixa de uma conta da Agenda',
+                        efeito: 'Se aprovar: some do extrato e a parcela volta como pendente na Agenda.',
+                    },
+                };
+            }
+
+            return {
+                ...row,
+                origem_exclusao: 'lancamento',
+                contexto_agenda: null,
+                resumo_origem: {
+                    label: 'Lançamento normal',
+                    detalhe: 'Não veio de uma baixa da Agenda',
+                    efeito: 'Se aprovar: some do extrato e do saldo (fica oculto no banco).',
+                },
+            };
+        });
         
-        res.status(200).json(result.rows);
+        res.status(200).json(rows);
 
     } catch (error) {
         // Este log é o mais importante em caso de erro 500
@@ -2198,6 +2700,323 @@ router.get('/aprovacoes-pendentes', async (req, res) => {
         if (dbClient) {
             dbClient.release();
         }
+    }
+});
+
+// GET /api/financeiro/aprovacoes-historico?status=APROVADO|REJEITADO&page=1&limit=12
+router.get('/aprovacoes-historico', async (req, res) => {
+    if (!req.permissoesUsuario || !req.permissoesUsuario.includes('aprovar-alteracao-financeira')) {
+        return res.status(403).json({ error: 'Permissão negada.' });
+    }
+
+    const pageNum = Math.max(1, parseInt(String(req.query.page || '1'), 10) || 1);
+    const limitNum = Math.min(50, Math.max(1, parseInt(String(req.query.limit || '12'), 10) || 12));
+    const offset = (pageNum - 1) * limitNum;
+    const statusRaw = String(req.query.status || '').trim().toUpperCase();
+    const statusFilter = statusRaw === 'APROVADO' || statusRaw === 'REJEITADO' ? statusRaw : null;
+
+    let dbClient;
+    try {
+        dbClient = await pool.connect();
+
+        // Histórico = tudo que já saiu da fila (não pendente).
+        // Aceita variações de capitalização legadas.
+        const whereParts = [`UPPER(TRIM(sa.status::text)) <> 'PENDENTE'`];
+        const countParams = [];
+        const listParams = [];
+
+        if (statusFilter) {
+            countParams.push(statusFilter);
+            listParams.push(statusFilter);
+            whereParts.push(`UPPER(TRIM(sa.status::text)) = $${countParams.length}`);
+        }
+
+        const whereSql = whereParts.join(' AND ');
+
+        const countRes = await dbClient.query(
+            `SELECT COUNT(*)::int AS total
+             FROM fc_solicitacoes_alteracao sa
+             WHERE ${whereSql}`,
+            countParams
+        );
+        const total = Number(countRes.rows[0]?.total) || 0;
+
+        listParams.push(limitNum, offset);
+        const limitIdx = listParams.length - 1;
+        const offsetIdx = listParams.length;
+
+        const listRes = await dbClient.query(
+            `SELECT sa.id,
+                    sa.id_lancamento,
+                    sa.tipo_solicitacao,
+                    sa.status,
+                    sa.dados_antigos,
+                    sa.dados_novos,
+                    sa.id_usuario_solicitante,
+                    sa.justificativa_solicitante,
+                    sa.id_usuario_aprovador,
+                    sa.motivo_rejeicao,
+                    sa.data_solicitacao,
+                    sa.data_decisao,
+                    COALESCE(u.nome, 'Usuário removido') AS nome_solicitante,
+                    ua.nome AS nome_aprovador,
+                    l.excluido_em AS lancamento_excluido_em,
+                    l.status_edicao AS lancamento_status_edicao,
+                    l.descricao AS lancamento_descricao_atual
+             FROM fc_solicitacoes_alteracao sa
+             LEFT JOIN usuarios u ON sa.id_usuario_solicitante = u.id
+             LEFT JOIN usuarios ua ON sa.id_usuario_aprovador = ua.id
+             LEFT JOIN fc_lancamentos l ON sa.id_lancamento = l.id
+             WHERE ${whereSql}
+             ORDER BY COALESCE(sa.data_decisao, sa.data_solicitacao) DESC NULLS LAST, sa.id DESC
+             LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+            listParams
+        );
+
+        // Para exclusões: descobrir se veio de baixa de Agenda e se a parcela já tem outra baixa ativa
+        const exclusoesOcultas = listRes.rows.filter(
+            (row) =>
+                row.tipo_solicitacao === 'EXCLUSAO'
+                && row.id_lancamento != null
+                && row.lancamento_excluido_em != null
+        );
+
+        /** @type {Map<number, { id_agenda: number, descricao: string, status: string, id_efetivado: number|null, baixa_substituta_ativa: boolean, id_baixa_substituta: number|null }>} */
+        const agendaInfoPorLancamento = new Map();
+
+        if (exclusoesOcultas.length > 0) {
+            const descricoes = exclusoesOcultas.map((r) => ({
+                idLanc: Number(r.id_lancamento),
+                desc: r.lancamento_descricao_atual
+                    || r.dados_antigos?.descricao
+                    || '',
+            }));
+
+            const agendaIds = [];
+            const lancToAgenda = new Map();
+            for (const { idLanc, desc } of descricoes) {
+                const agendaId = parseAgendaIdFromDescricaoBaixa(desc);
+                if (agendaId) {
+                    lancToAgenda.set(idLanc, agendaId);
+                    agendaIds.push(agendaId);
+                }
+            }
+
+            if (agendaIds.length > 0) {
+                const uniqAgendaIds = [...new Set(agendaIds)];
+                const agRes = await dbClient.query(
+                    `SELECT ca.id,
+                            ca.descricao,
+                            ca.status,
+                            ca.id_lancamento_efetivado,
+                            CASE
+                              WHEN ca.id_lancamento_efetivado IS NOT NULL
+                               AND EXISTS (
+                                 SELECT 1 FROM fc_lancamentos lx
+                                 WHERE lx.id = ca.id_lancamento_efetivado
+                                   AND lx.excluido_em IS NULL
+                               )
+                              THEN true
+                              ELSE false
+                            END AS tem_baixa_ativa
+                     FROM fc_contas_agendadas ca
+                     WHERE ca.id = ANY($1::int[])`,
+                    [uniqAgendaIds]
+                );
+                const agendaById = new Map(agRes.rows.map((a) => [Number(a.id), a]));
+
+                for (const [idLanc, agendaId] of lancToAgenda.entries()) {
+                    const ag = agendaById.get(Number(agendaId));
+                    if (!ag) continue;
+                    const efetivadoId = ag.id_lancamento_efetivado != null ? Number(ag.id_lancamento_efetivado) : null;
+                    const temBaixaAtiva = Boolean(ag.tem_baixa_ativa);
+                    const eOutraBaixa = temBaixaAtiva && efetivadoId != null && efetivadoId !== Number(idLanc);
+                    agendaInfoPorLancamento.set(Number(idLanc), {
+                        id_agenda: Number(ag.id),
+                        descricao: ag.descricao || '',
+                        status: ag.status || '',
+                        id_efetivado: efetivadoId,
+                        baixa_substituta_ativa: eOutraBaixa,
+                        id_baixa_substituta: eOutraBaixa ? efetivadoId : null,
+                    });
+                }
+            }
+        }
+
+        const rows = listRes.rows.map((row) => {
+            const statusUp = String(row.status || '').trim().toUpperCase();
+            const statusNorm = statusUp === 'APROVADA' ? 'APROVADO' : statusUp === 'REJEITADA' ? 'REJEITADO' : statusUp;
+            const oculto = row.lancamento_excluido_em != null;
+            const eExclusaoAprovada = statusNorm === 'APROVADO' && row.tipo_solicitacao === 'EXCLUSAO' && row.id_lancamento != null;
+
+            let origem_exclusao = null; // 'lancamento' | 'agenda'
+            let contexto_agenda = null;
+            let pode_desfazer_exclusao = false;
+            let bloqueio_desfazer = null;
+            let mensagem_desfazer = null;
+
+            if (eExclusaoAprovada) {
+                const desc = row.lancamento_descricao_atual || row.dados_antigos?.descricao || '';
+                const agendaIdParsed = parseAgendaIdFromDescricaoBaixa(desc);
+                const infoAgenda = agendaInfoPorLancamento.get(Number(row.id_lancamento)) || null;
+
+                if (agendaIdParsed || infoAgenda) {
+                    origem_exclusao = 'agenda';
+                    contexto_agenda = infoAgenda || {
+                        id_agenda: agendaIdParsed,
+                        descricao: '',
+                        status: 'DESCONHECIDO',
+                        id_efetivado: null,
+                        baixa_substituta_ativa: false,
+                        id_baixa_substituta: null,
+                    };
+
+                    if (!oculto) {
+                        mensagem_desfazer = 'Esta baixa já está de volta no extrato (exclusão já desfeita).';
+                        pode_desfazer_exclusao = false;
+                    } else if (contexto_agenda.baixa_substituta_ativa) {
+                        bloqueio_desfazer = 'agenda_com_outra_baixa';
+                        pode_desfazer_exclusao = false;
+                        mensagem_desfazer =
+                            `Esta exclusão era a baixa da parcela #${contexto_agenda.id_agenda} da Agenda` +
+                            (contexto_agenda.descricao ? ` (“${contexto_agenda.descricao}”)` : '') +
+                            `. A parcela já foi paga de novo (baixa #${contexto_agenda.id_baixa_substituta}). ` +
+                            `Não dá para reativar a antiga — o dinheiro contaria duas vezes. Se a baixa nova estiver errada, exclua a nova em Lançamentos.`;
+                    } else {
+                        pode_desfazer_exclusao = true;
+                        const parcelaLivre = !contexto_agenda.id_efetivado || String(contexto_agenda.status).toUpperCase() === 'PENDENTE';
+                        mensagem_desfazer = parcelaLivre
+                            ? `Esta exclusão era a baixa da parcela #${contexto_agenda.id_agenda} da Agenda` +
+                              (contexto_agenda.descricao ? ` (“${contexto_agenda.descricao}”)` : '') +
+                              `. A parcela está de novo como pendente — ao desfazer, o lançamento volta e a Agenda volta a “paga”.`
+                            : `Esta exclusão era a baixa da parcela #${contexto_agenda.id_agenda} da Agenda. Pode reativar com segurança: não há outra baixa ativa nessa parcela.`;
+                    }
+                } else {
+                    origem_exclusao = 'lancamento';
+                    if (!oculto) {
+                        mensagem_desfazer = 'Este lançamento já está de volta no extrato (exclusão já desfeita).';
+                        pode_desfazer_exclusao = false;
+                    } else {
+                        pode_desfazer_exclusao = true;
+                        mensagem_desfazer =
+                            'Esta exclusão era de um lançamento normal (não veio da Agenda). Ao desfazer, ele volta a aparecer no extrato e no saldo.';
+                    }
+                }
+            }
+
+            return {
+                ...row,
+                status: statusNorm,
+                origem_exclusao,
+                contexto_agenda,
+                pode_desfazer_exclusao,
+                bloqueio_desfazer,
+                mensagem_desfazer,
+            };
+        });
+
+        res.status(200).json({
+            rows,
+            total,
+            page: pageNum,
+            limit: limitNum,
+            totalPaginas: Math.max(1, Math.ceil(total / limitNum) || 1),
+        });
+    } catch (error) {
+        console.error('[API GET /aprovacoes-historico] ERRO:', error);
+        res.status(500).json({ error: 'Erro ao buscar histórico de decisões.', details: error.message });
+    } finally {
+        if (dbClient) dbClient.release();
+    }
+});
+
+// POST /api/financeiro/aprovacoes/:id/desfazer-exclusao
+// Reativa lançamento soft-deletado após exclusão APROVADA (não reabre a solicitação).
+router.post('/aprovacoes/:id/desfazer-exclusao', async (req, res) => {
+    if (!req.permissoesUsuario || !req.permissoesUsuario.includes('aprovar-alteracao-financeira')) {
+        return res.status(403).json({ error: 'Permissão negada.' });
+    }
+
+    const { id } = req.params;
+    let dbClient;
+    try {
+        dbClient = await pool.connect();
+        await dbClient.query('BEGIN');
+
+        const solRes = await dbClient.query(
+            `SELECT sa.*, u.nome AS nome_solicitante
+             FROM fc_solicitacoes_alteracao sa
+             JOIN usuarios u ON sa.id_usuario_solicitante = u.id
+             WHERE sa.id = $1
+             FOR UPDATE OF sa`,
+            [id]
+        );
+        if (solRes.rows.length === 0) {
+            throw Object.assign(new Error('Solicitação não encontrada.'), { statusCode: 404 });
+        }
+        const solicitacao = solRes.rows[0];
+
+        if (solicitacao.tipo_solicitacao !== 'EXCLUSAO') {
+            throw Object.assign(new Error('Só é possível desfazer exclusões aprovadas.'), { statusCode: 400 });
+        }
+        if (solicitacao.status !== 'APROVADO') {
+            throw Object.assign(new Error('A exclusão só pode ser desfeita se a solicitação estiver aprovada.'), { statusCode: 400 });
+        }
+        if (!solicitacao.id_lancamento) {
+            throw Object.assign(new Error('Solicitação sem lançamento vinculado.'), { statusCode: 400 });
+        }
+
+        const lancAntes = await dbClient.query(
+            `SELECT * FROM fc_lancamentos WHERE id = $1`,
+            [solicitacao.id_lancamento]
+        );
+        if (lancAntes.rows.length === 0) {
+            throw Object.assign(new Error('Lançamento não encontrado.'), { statusCode: 404 });
+        }
+        if (lancAntes.rows[0].excluido_em == null) {
+            throw Object.assign(
+                new Error('Este lançamento já está ativo (a exclusão já foi desfeita ou o lançamento foi reativado).'),
+                { statusCode: 409 }
+            );
+        }
+
+        const restaurado = await softRestoreLancamento(dbClient, solicitacao.id_lancamento, { cascade: true });
+        if (!restaurado) {
+            throw Object.assign(new Error('Não foi possível reativar o lançamento.'), { statusCode: 500 });
+        }
+
+        await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'REATIVACAO_LANCAMENTO', {
+            depois: restaurado,
+            solicitacao_id: solicitacao.id,
+            motivo: 'Desfazer exclusão aprovada',
+        });
+
+        await dbClient.query(
+            `INSERT INTO fc_notificacoes (id_usuario_destino, tipo, mensagem)
+             VALUES ($1, 'INFO', $2)`,
+            [
+                solicitacao.id_usuario_solicitante,
+                `A exclusão do lançamento <strong>#${restaurado.id}</strong> ("${restaurado.descricao || 'sem descrição'}") foi <strong>desfeita</strong> por ${req.usuarioLogado.nome}. O lançamento voltou ao extrato e ao saldo.`,
+            ]
+        );
+
+        await dbClient.query('COMMIT');
+        res.status(200).json({
+            message: 'Exclusão desfeita. O lançamento voltou a aparecer no extrato e no saldo.',
+            lancamento: restaurado,
+        });
+    } catch (error) {
+        if (dbClient) await dbClient.query('ROLLBACK');
+        const status = error.statusCode || 500;
+        if (status >= 500) {
+            console.error(`[API /aprovacoes/${id}/desfazer-exclusao] ERRO:`, error);
+        }
+        res.status(status).json({
+            error: error.message || 'Erro ao desfazer exclusão.',
+            details: error.message,
+        });
+    } finally {
+        if (dbClient) dbClient.release();
     }
 });
 
@@ -2261,10 +3080,8 @@ router.post('/aprovacoes/:id/aprovar', async (req, res) => {
             }
 
             case 'EXCLUSAO': {
-                await dbClient.query("UPDATE fc_contas_agendadas SET id_lancamento_efetivado = NULL, status = 'PENDENTE' WHERE id_lancamento_efetivado = $1", [idLancamento]);
-                await dbClient.query('DELETE FROM fc_lancamento_itens WHERE id_lancamento_pai = $1', [idLancamento]);
-                await dbClient.query('DELETE FROM fc_lancamentos WHERE id = $1', [idLancamento]);
-                mensagemNotificacao = `Sua solicitação para excluir o lançamento <strong>#${idLancamento}</strong> foi APROVADA.`;
+                await softDeleteLancamento(dbClient, idLancamento, req.usuarioLogado.id, { cascade: true });
+                mensagemNotificacao = `Sua solicitação para excluir o lançamento <strong>#${idLancamento}</strong> foi APROVADA (cancelamento lógico).`;
                 break;
             }
             
@@ -2280,8 +3097,11 @@ router.post('/aprovacoes/:id/aprovar', async (req, res) => {
             case 'REVERSAO_ESTORNO': {
                 const lancamentoEstorno = solicitacao.dados_antigos;
                 const idLancamentoOriginal = lancamentoEstorno.id_estorno_de;
-                await dbClient.query('DELETE FROM fc_lancamentos WHERE id = $1', [idLancamento]);
-                await dbClient.query("UPDATE fc_lancamentos SET status_edicao = 'OK' WHERE id = $1", [idLancamentoOriginal]);
+                await softDeleteLancamento(dbClient, idLancamento, req.usuarioLogado.id, { cascade: false });
+                await dbClient.query(
+                    "UPDATE fc_lancamentos SET status_edicao = 'OK' WHERE id = $1 AND excluido_em IS NULL",
+                    [idLancamentoOriginal]
+                );
                 mensagemNotificacao = `Sua solicitação para reverter o estorno <strong>#${idLancamento}</strong> foi APROVADA.`;
                 break;
             }
@@ -2406,20 +3226,48 @@ router.post('/aprovacoes/:id/rejeitar', async (req, res) => {
     }
 });
 
-// GET /api/financeiro/notificacoes - Busca as notificações do usuário logado
+// GET /api/financeiro/notificacoes - Busca as notificações do usuário logado (paginado)
 router.get('/notificacoes', async (req, res) => {
     const { id: idUsuario } = req.usuarioLogado;
+    const pageNum = Math.max(1, parseInt(String(req.query.page || '1'), 10) || 1);
+    const limitNum = Math.min(50, Math.max(1, parseInt(String(req.query.limit || '10'), 10) || 10));
+    const offset = (pageNum - 1) * limitNum;
+
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const query = `
-            SELECT * FROM fc_notificacoes 
-            WHERE id_usuario_destino = $1 
-            ORDER BY criado_em DESC 
-            LIMIT 30; -- Limita para as 30 mais recentes para não sobrecarregar
+        const listQuery = `
+            SELECT id, tipo, mensagem, criado_em, lida
+            FROM fc_notificacoes
+            WHERE id_usuario_destino = $1
+            ORDER BY criado_em DESC, id DESC
+            LIMIT $2 OFFSET $3;
         `;
-        const result = await dbClient.query(query, [idUsuario]);
-        res.status(200).json(result.rows);
+        const countQuery = `
+            SELECT COUNT(*)::int AS total,
+                   COUNT(*) FILTER (WHERE lida = false)::int AS nao_lidas
+            FROM fc_notificacoes
+            WHERE id_usuario_destino = $1;
+        `;
+        const [listResult, countResult] = await Promise.all([
+            dbClient.query(listQuery, [idUsuario, limitNum, offset]),
+            dbClient.query(countQuery, [idUsuario]),
+        ]);
+
+        const total = countResult.rows[0]?.total || 0;
+        const naoLidas = countResult.rows[0]?.nao_lidas || 0;
+        const totalPages = Math.ceil(total / limitNum) || 1;
+
+        // Compatível com o frontend antigo (array) se não pedir page explicitamente?
+        // Agora sempre retorna objeto paginado — o front foi atualizado junto.
+        res.status(200).json({
+            notificacoes: listResult.rows,
+            currentPage: pageNum,
+            totalPages,
+            total,
+            naoLidas,
+            limit: limitNum,
+        });
     } catch (error) {
         console.error('[API GET /notificacoes] Erro:', error);
         res.status(500).json({ error: 'Erro ao buscar notificações.', details: error.message });
@@ -2462,48 +3310,83 @@ router.post('/notificacoes/marcar-todas-como-lidas', async (req, res) => {
     }
 });
 
-// GET /api/financeiro/logs - Busca os logs de auditoria
+// GET /api/financeiro/logs - Busca os logs de auditoria (com busca e filtros)
 router.get('/logs', async (req, res) => {
     if (!req.permissoesUsuario.includes('aprovar-alteracao-financeira')) {
         return res.status(403).json({ error: 'Permissão negada.' });
     }
-    
-    // Captura os parâmetros de paginação da query
-    const { limit = 10, page = 1 } = req.query; // Padrão de 10 logs por página
-    const offset = (parseInt(page) - 1) * parseInt(limit);
-    
+
+    const {
+        limit = 15,
+        page = 1,
+        q = '',
+        acao = '',
+        usuario = '',
+        dataInicio = '',
+        dataFim = '',
+    } = req.query;
+
+    const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
+    const limitNum = Math.min(50, Math.max(1, parseInt(String(limit), 10) || 15));
+    const offset = (pageNum - 1) * limitNum;
+
+    const where = [];
+    const params = [];
+
+    if (String(q).trim()) {
+        const termo = '%' + String(q).trim() + '%';
+        params.push(termo, termo, termo);
+        where.push('(detalhes ILIKE $' + (params.length - 2) + ' OR nome_usuario ILIKE $' + (params.length - 1) + ' OR acao ILIKE $' + params.length + ')');
+    }
+    if (String(acao).trim()) {
+        params.push(String(acao).trim());
+        where.push('acao = $' + params.length);
+    }
+    if (String(usuario).trim()) {
+        params.push('%' + String(usuario).trim() + '%');
+        where.push('nome_usuario ILIKE $' + params.length);
+    }
+    if (String(dataInicio).trim()) {
+        params.push(String(dataInicio).trim());
+        where.push('data_evento::date >= $' + params.length + '::date');
+    }
+    if (String(dataFim).trim()) {
+        params.push(String(dataFim).trim());
+        where.push('data_evento::date <= $' + params.length + '::date');
+    }
+
+    const whereSql = where.length ? ('WHERE ' + where.join(' AND ')) : '';
+
     let dbClient;
     try {
         dbClient = await pool.connect();
 
-        // Query para buscar a página atual de logs
         const logsQuery = `
-            SELECT * FROM fc_logs_auditoria
+            SELECT id, id_usuario, nome_usuario, acao, detalhes, dados_alterados, data_evento
+            FROM fc_logs_auditoria
+            ${whereSql}
             ORDER BY data_evento DESC, id DESC
-            LIMIT $1 OFFSET $2;
+            LIMIT $${params.length + 1} OFFSET $${params.length + 2};
         `;
+        const countQuery = `SELECT COUNT(*)::int AS total FROM fc_logs_auditoria ${whereSql}`;
 
-        // Query para contar o número TOTAL de logs (para calcular as páginas)
-        const countQuery = `SELECT COUNT(*) FROM fc_logs_auditoria;`;
-        
-        // Executa as duas queries em paralelo para otimizar
         const [logsResult, countResult] = await Promise.all([
-            dbClient.query(logsQuery, [limit, offset]),
-            dbClient.query(countQuery)
+            dbClient.query(logsQuery, [...params, limitNum, offset]),
+            dbClient.query(countQuery, params),
         ]);
 
-        const totalLogs = parseInt(countResult.rows[0].count, 10);
-        const totalPages = Math.ceil(totalLogs / limit) || 1;
-        
-        // Retorna um objeto contendo os logs e as informações de paginação
+        const totalLogs = countResult.rows[0]?.total || 0;
+        const totalPages = Math.ceil(totalLogs / limitNum) || 1;
+
         res.status(200).json({
             logs: logsResult.rows,
-            currentPage: parseInt(page),
-            totalPages: totalPages
+            currentPage: pageNum,
+            totalPages,
+            total: totalLogs,
+            limit: limitNum,
         });
-
     } catch (error) {
-        console.error("[API GET /logs] Erro:", error);
+        console.error('[API GET /logs] Erro:', error);
         res.status(500).json({ error: 'Erro ao buscar histórico de auditoria.', details: error.message });
     } finally {
         if (dbClient) dbClient.release();
@@ -2599,11 +3482,17 @@ router.post('/lancamentos/solicitar-criacao', async (req, res) => {
             VALUES (NULL, 'CRIACAO_DATAS_ESPECIAIS', $1, $2, $3) RETURNING *;
         `;
 
-        await dbClient.query(solQuery, [
+        const solRes = await dbClient.query(solQuery, [
             JSON.stringify({ lancamento_proposto: lancamento_proposto }), // Salva a estrutura { lancamento_proposto: ... }
             req.usuarioLogado.id,
             justificativa
         ]);
+
+        await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'SOLICITACAO_CRIACAO', {
+            lancamento_proposto,
+            justificativa,
+            solicitacao: solRes.rows[0],
+        });
 
         await dbClient.query('COMMIT');
         res.status(202).json({ message: 'Solicitação de lançamento com data especial enviada para aprovação.' });

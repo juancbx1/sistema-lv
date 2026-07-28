@@ -109,6 +109,7 @@ export const permissoesDisponiveis = [
     { id: 'criar-favorecido', label: 'Ação: Criar novos favorecidos (clientes/fornecedores)', categoria: 'Financeiro — Caixa e Lançamentos' },
     { id: 'visualizar-relatorios', label: 'Ação: Gerar relatórios financeiros', categoria: 'Financeiro — Caixa e Lançamentos' },
     { id: 'aprovar-alteracao-financeira', label: 'Ação: Aprovar/Rejeitar edições e exclusões', categoria: 'Financeiro — Caixa e Lançamentos' },
+    { id: 'exibir-informacao-gerencial', label: 'Ação: Ver informação gerencial nos cards de lançamento', categoria: 'Financeiro — Caixa e Lançamentos' },
     { id: 'permite-excluir-agendamentos', label: 'Ação: Pode excluir agendamentos (pelo ID)', categoria: 'Financeiro — Caixa e Lançamentos' },
     { id: 'acesso-relatorios-financeiros', label: 'Ação: Pode ver relatórios financeiros', categoria: 'Financeiro — Caixa e Lançamentos' },
 

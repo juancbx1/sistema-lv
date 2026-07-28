@@ -6,36 +6,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Central de Pagamentos</title>
     <!-- Seus CSS existentes -->
-    <link href='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/main.min.css' rel='stylesheet' />
-    <link href='https://cdn.jsdelivr.net/npm/@fullcalendar/daygrid@6.1.11/main.min.css' rel='stylesheet' />
     <link rel="stylesheet" href="/css/global-style.css">
     <link rel="stylesheet" href="/css/menu-lateral.css">
     <link rel="stylesheet" href="/css/central-de-pagamentos.css"> 
     <link rel="stylesheet" href="/css/popups.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css">
-    <!-- Bibliotecas externas -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
 </head>
 <body>
 
     <!-- Container onde o React será montado -->
-    <div id="cpag-react-root"></div>
+    <div class="hamburger-menu">
+        <i class="fas fa-bars"></i>
+        <i class="fas fa-times"></i>
+    </div>
+    <main id="root" class="gs-card"></main>
 
     <!-- Seus Scripts -->
-    <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js'></script>
-    <script src='https://cdn.jsdelivr.net/npm/@fullcalendar/locales-all@6.1.11/index.global.min.js'></script>
-    
     <!-- Script do Menu Lateral (Legado/Misto) -->
     <script src="/js/carregar-menu-lateral.js" type="module"></script>
 
-    <!-- Importa a lógica de paginação para ficar disponível globalmente -->
-    <script type="module">
-        import { renderizarPaginacao } from '/js/utils/Paginacao.js';
-        window.renderizarPaginacao = renderizarPaginacao;
-    </script>
-    
     <!-- Ponto de Entrada do React -->
-    <script type="module" src="/src/main-cpag.jsx"></script>
+    <script type="module" src="/src/main-cpag.tsx"></script>
 </body>
 </html>

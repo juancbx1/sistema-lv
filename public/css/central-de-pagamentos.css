@@ -25,6 +25,12 @@ body {
     transition: margin-left 0.3s ease;
 }
 
+@media (max-width: 1024px) {
+    body {
+        padding: 40px 40px 10px 40px;
+    }
+}
+
 /* Esconde elementos marcados como .hidden */
 .hidden {
     display: none !important;

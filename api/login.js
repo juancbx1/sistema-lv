@@ -5,6 +5,7 @@ const { Pool } = pkg;
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import express from 'express';
+import { carregarContextoEmpresa } from './contexto-empresa.js';
 
 // 1. Cria um novo Roteador do Express
 const router = express.Router();
@@ -30,7 +31,21 @@ router.post('/', async (req, res) => {
   try {
     clienteDb = await pool.connect();
     const result = await clienteDb.query(
-      'SELECT id, nome, nome_usuario, email, senha, tipos, permissoes, nivel, data_demissao FROM usuarios WHERE nome_usuario = $1',
+      `
+        SELECT
+          id,
+          nome,
+          nome_usuario,
+          email,
+          senha,
+          tipos,
+          permissoes,
+          nivel,
+          data_demissao,
+          COALESCE(arquivado, FALSE) AS arquivado
+        FROM usuarios
+        WHERE nome_usuario = $1
+      `,
       [nomeUsuario]
     );
     const usuario = result.rows[0];
@@ -54,12 +69,53 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // O payload do token contém as informações essenciais para identificar o usuário
+    if (usuario.arquivado) {
+      return res.status(403).json({
+        error: 'CONTA_INATIVA',
+        nome: usuario.nome,
+      });
+    }
+
+    let contexto;
+    try {
+      contexto = await carregarContextoEmpresa(clienteDb, { id: usuario.id });
+    } catch (error) {
+      if (error.codigo === 'EMPRESA_NAO_AUTORIZADA') {
+        const vinculoEncerrado = await clienteDb.query(
+          `
+            SELECT EXISTS (
+              SELECT 1
+              FROM usuarios_empresas
+              WHERE usuario_id = $1
+                AND data_demissao IS NOT NULL
+            ) AS encerrado
+          `,
+          [usuario.id]
+        );
+
+        if (vinculoEncerrado.rows[0]?.encerrado) {
+          return res.status(403).json({
+            error: 'CONTRATO_ENCERRADO',
+            nome: usuario.nome,
+          });
+        }
+
+        return res.status(403).json({
+          error: 'SEM_EMPRESA_ATIVA',
+          nome: usuario.nome,
+        });
+      }
+      throw error;
+    }
+
     const payload = {
       id: usuario.id,
       nome_usuario: usuario.nome_usuario,
       nome: usuario.nome,
-      tipos: usuario.tipos || [],
+      tipos: contexto.vinculo?.tipos || [],
+      empresa_id: contexto.empresa.id,
+      vinculo_empresa_id: contexto.vinculo?.id || null,
+      superadministrador: contexto.identidade.superadministrador,
     };
 
     // Se o usuário escolheu "manter conectado", emitir token de longa duração (30 dias).
@@ -75,7 +131,16 @@ router.post('/', async (req, res) => {
 
     // O frontend agora é responsável por pegar este token e fazer uma
     // chamada subsequente para /api/usuarios/me para obter os detalhes completos.
-    res.status(200).json({ token });
+    res.status(200).json({
+      token,
+      empresaAtiva: {
+        id: contexto.empresa.id,
+        codigo: contexto.empresa.codigo,
+        nome_fantasia: contexto.empresa.nome_fantasia,
+        logo_url: contexto.empresa.logo_url,
+        cor_identificacao: contexto.empresa.cor_identificacao,
+      },
+    });
 
   } catch (error) {
     console.error('[API /login] Erro durante o processo de login:', error);

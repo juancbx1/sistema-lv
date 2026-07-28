@@ -24,6 +24,27 @@
         <input type="file" id="mlUploadPhotoInput" accept="image/*" style="display: none;">
     </div>
 
+    <div class="ml-company-area">
+        <button
+            id="mlCompanySelector"
+            class="ml-company-selector"
+            type="button"
+            aria-haspopup="dialog"
+            aria-controls="mlCompanyOverlay"
+            aria-label="Selecionar empresa ativa"
+        >
+            <span class="ml-company-brand" aria-hidden="true">
+                <img id="mlCompanyLogo" class="ml-company-logo" alt="">
+                <span id="mlCompanyInitials" class="ml-company-initials">LV</span>
+            </span>
+            <span class="ml-company-copy">
+                <span class="ml-company-eyebrow">Empresa ativa</span>
+                <span id="mlCompanyName" class="ml-company-name">Carregando...</span>
+            </span>
+            <i class="fas fa-chevron-down ml-company-chevron" aria-hidden="true"></i>
+        </button>
+    </div>
+
     <nav class="ml-nav">
         <ul>
             <!-- Seção Produtividade -->
@@ -62,7 +83,7 @@
     </nav>
     
     <div class="ml-footer">
-        <span>Lojas Variara</span>
+        <span id="mlFooterCompanyName">Lojas Variara</span>
         <span id="mlAppVersion" class="ml-version"></span>
     </div>
 </div>

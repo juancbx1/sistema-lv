@@ -2,6 +2,19 @@
 
 import { permissoesDisponiveis, permissoesPorTipo, permissoesValidas } from '/js/utils/permissoes.js';
 
+export function limparContextoEmpresaLocal() {
+  localStorage.removeItem('empresaAtiva');
+  localStorage.removeItem('empresaId');
+  sessionStorage.removeItem('empresaAtiva');
+  sessionStorage.removeItem('empresaId');
+}
+
+export function salvarContextoEmpresaLocal(usuario, storage = localStorage) {
+  if (!usuario?.empresa_ativa?.id) return;
+  storage.setItem('empresaId', String(usuario.empresa_ativa.id));
+  storage.setItem('empresaAtiva', JSON.stringify(usuario.empresa_ativa));
+}
+
 export async function sincronizarPermissoesUsuario(usuario) {
   if (!usuario) return null;
 
@@ -37,7 +50,8 @@ export async function sincronizarPermissoesUsuario(usuario) {
  */
 export async function verificarAutenticacao(pagina, permissoesRequeridas = [], modo = 'all') {
     // Em modo impersonação, a aba usa sessionStorage para não afetar o token do admin
-    const token = sessionStorage.getItem('impersonation_token') || localStorage.getItem('token');
+    const tokenImpersonacao = sessionStorage.getItem('impersonation_token');
+    const token = tokenImpersonacao || localStorage.getItem('token');
     if (!token) {
         console.log('[Auth] Token não encontrado, redirecionando para login.');
         window.location.href = '/index.html';
@@ -60,6 +74,10 @@ export async function verificarAutenticacao(pagina, permissoesRequeridas = [], m
 
         let usuarioLogado = await response.json();
         localStorage.setItem('permissoes', JSON.stringify(usuarioLogado.permissoes || []));
+        salvarContextoEmpresaLocal(
+            usuarioLogado,
+            tokenImpersonacao ? sessionStorage : localStorage
+        );
 
         const permissoes = usuarioLogado.permissoes || [];
 
@@ -104,6 +122,7 @@ export async function verificarAutenticacao(pagina, permissoesRequeridas = [], m
         console.error('[Auth] Erro final na verificação:', error.message);
         localStorage.removeItem('token');
         localStorage.removeItem('permissoes');
+        limparContextoEmpresaLocal();
         window.location.href = error.message === 'Token expirado'
             ? '/admin/token-expirado.html'
             : '/index.html';
@@ -119,6 +138,7 @@ export function logout() {
 
   localStorage.removeItem('token');
   localStorage.removeItem('permissoes');
+  limparContextoEmpresaLocal();
 
   console.log('Chaves no localStorage DEPOIS de remover itens de sessão:', Object.keys(localStorage));
   console.log('--- REDIRECIONANDO PARA LOGIN ---');

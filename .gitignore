@@ -15,3 +15,6 @@ regra de negocio das OP.txt
 # Planejamento local — não commitar
 _planejamento/
 
+# Backups locais do banco — contêm dados sensíveis, nunca commitar
+_backups/
+

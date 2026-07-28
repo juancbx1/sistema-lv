@@ -43,6 +43,7 @@ import gincanasRouter from './api/gincanas.js';
 import gincanasPagamentosRouter from './api/gincanas-pagamentos.js';
 import auditLogRouter from './api/audit-log.js';
 import gerenciarProducaoRouter from './api/gerenciar-producao.js';
+import contextoEmpresaRouter, { middlewareContextoEmpresa } from './api/contexto-empresa.js';
 
 
 const app = express();
@@ -96,6 +97,8 @@ for (const routerName in routers) {
 
 // --- Montar os roteadores da API ---
 app.use('/api/login', loginRouter);
+app.use('/api', middlewareContextoEmpresa);
+app.use('/api/contexto-empresa', contextoEmpresaRouter);
 app.use('/api/usuarios', usuariosRouter);
 app.use('/api/cortes', cortesRouter);
 app.use('/api/producoes', producoesRouter);

@@ -145,7 +145,7 @@ export async function atualizarStatusUsuarioDB(usuarioId, novoStatus) {
 // ---------------------------------------------------------------
 const backendPermissoesValidas = new Set(frontendPermissoesDisponiveis.map(p => p.id));
 
-export async function getPermissoesCompletasUsuarioDB(dbClient, usuarioId) {
+export async function getPermissoesCompletasUsuarioDB(dbClient, usuarioId, empresaId = null) {
     let localClient = dbClient; // Usa o cliente passado, se houver
     let clientGerenciadoLocalmente = false;
 
@@ -155,12 +155,39 @@ export async function getPermissoesCompletasUsuarioDB(dbClient, usuarioId) {
             clientGerenciadoLocalmente = true;
         }
 
-        const userResult = await localClient.query('SELECT tipos, permissoes FROM usuarios WHERE id = $1', [usuarioId]);
+        const userResult = await localClient.query(
+            `
+                SELECT
+                    CASE
+                        WHEN $2::integer IS NULL THEN COALESCE(u.tipos, '{}'::text[])
+                        ELSE COALESCE(ue.tipos, '{}'::text[])
+                    END AS tipos,
+                    CASE
+                        WHEN $2::integer IS NULL THEN COALESCE(u.permissoes, '{}'::text[])
+                        ELSE COALESCE(ue.permissoes, '{}'::text[])
+                    END AS permissoes,
+                    ue.id AS vinculo_id,
+                    COALESCE(uag.superadministrador, FALSE) AS superadministrador,
+                    COALESCE(uag.permissoes, '{}'::text[]) AS permissoes_globais
+                FROM usuarios u
+                LEFT JOIN usuarios_empresas ue
+                  ON ue.usuario_id = u.id
+                 AND ue.empresa_id = $2
+                 AND ue.ativo
+                LEFT JOIN usuarios_acessos_globais uag
+                  ON uag.usuario_id = u.id
+                WHERE u.id = $1
+            `,
+            [usuarioId, empresaId]
+        );
         if (userResult.rows.length === 0) {
             console.error(`[getPermissoesCompletasUsuarioDB] Usuário ID ${usuarioId} não encontrado no DB.`);
             throw new Error('Usuário não encontrado no DB para buscar permissões.');
         }
         const usuarioDB = userResult.rows[0];
+        if (empresaId && !usuarioDB.vinculo_id && !usuarioDB.superadministrador) {
+            throw new Error('Usuário sem vínculo ativo com a empresa para buscar permissões.');
+        }
 
         const tipos = Array.isArray(usuarioDB.tipos) ? usuarioDB.tipos : (typeof usuarioDB.tipos === 'string' ? [usuarioDB.tipos] : []);
         const tipoMap = {
@@ -176,6 +203,7 @@ export async function getPermissoesCompletasUsuarioDB(dbClient, usuarioId) {
         });
 
         (usuarioDB.permissoes || []).forEach(p => permissoesBase.add(p));
+        (usuarioDB.permissoes_globais || []).forEach(p => permissoesBase.add(p));
 
         if (isAdmin) { // Garante que admin (tipo) sempre tenha todas as permissões definidas para 'admin' em permissoesPorTipo
             (frontendPermissoesPorTipo['admin'] || []).forEach(permissao => permissoesBase.add(permissao));
@@ -239,16 +267,69 @@ router.use(async (req, res, next) => {
 router.get('/me', async (req, res) => {
     const { usuarioLogado, dbCliente } = req; // usuarioLogado tem o ID do token
     try {
-        // Busca o usuário do banco para garantir dados atualizados (seu código original)
         const result = await dbCliente.query(
-            'SELECT id, nome, nome_usuario, email, tipos, nivel, permissoes FROM usuarios WHERE id = $1',
-            [usuarioLogado.id]
+            `
+                SELECT
+                    u.id,
+                    u.nome,
+                    u.nome_usuario,
+                    u.email,
+                    COALESCE(ue.tipos, '{}'::text[]) AS tipos,
+                    ue.nivel,
+                    COALESCE(ue.permissoes, '{}'::text[]) AS permissoes,
+                    ue.id AS vinculo_empresa_id,
+                    e.id AS empresa_id,
+                    e.codigo AS empresa_codigo,
+                    e.razao_social AS empresa_razao_social,
+                    e.nome_fantasia AS empresa_nome_fantasia,
+                    e.logo_url AS empresa_logo_url,
+                    e.cor_identificacao AS empresa_cor_identificacao,
+                    e.timezone AS empresa_timezone,
+                    e.eh_legada AS empresa_eh_legada,
+                    COALESCE(uag.superadministrador, FALSE) AS superadministrador
+                FROM usuarios u
+                JOIN empresas e
+                  ON e.id = $2
+                 AND e.ativa
+                LEFT JOIN usuarios_empresas ue
+                  ON ue.usuario_id = u.id
+                 AND ue.empresa_id = e.id
+                 AND ue.ativo
+                LEFT JOIN usuarios_acessos_globais uag
+                  ON uag.usuario_id = u.id
+                WHERE u.id = $1
+                  AND (
+                    ue.id IS NOT NULL
+                    OR COALESCE(uag.superadministrador, FALSE)
+                  )
+            `,
+            [usuarioLogado.id, req.empresaId]
         );
         if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Usuário não encontrado no DB.' });
+            return res.status(403).json({
+                error: 'Usuário sem vínculo ativo com a empresa.',
+                codigo: 'EMPRESA_NAO_AUTORIZADA',
+            });
         }
         
         let usuarioCompleto = result.rows[0];
+        usuarioCompleto.empresa_ativa = {
+            id: usuarioCompleto.empresa_id,
+            codigo: usuarioCompleto.empresa_codigo,
+            razao_social: usuarioCompleto.empresa_razao_social,
+            nome_fantasia: usuarioCompleto.empresa_nome_fantasia,
+            logo_url: usuarioCompleto.empresa_logo_url,
+            cor_identificacao: usuarioCompleto.empresa_cor_identificacao,
+            timezone: usuarioCompleto.empresa_timezone,
+            eh_legada: usuarioCompleto.empresa_eh_legada,
+        };
+        delete usuarioCompleto.empresa_codigo;
+        delete usuarioCompleto.empresa_razao_social;
+        delete usuarioCompleto.empresa_nome_fantasia;
+        delete usuarioCompleto.empresa_logo_url;
+        delete usuarioCompleto.empresa_cor_identificacao;
+        delete usuarioCompleto.empresa_timezone;
+        delete usuarioCompleto.empresa_eh_legada;
         
         // --- INÍCIO DA MODIFICAÇÃO ---
 
@@ -264,7 +345,11 @@ router.get('/me', async (req, res) => {
         // --- FIM DA MODIFICAÇÃO ---
 
         // Sincroniza/calcula as permissões totais do usuário (seu código original)
-        usuarioCompleto.permissoes = await getPermissoesCompletasUsuarioDB(dbCliente, usuarioLogado.id);
+        usuarioCompleto.permissoes = await getPermissoesCompletasUsuarioDB(
+            dbCliente,
+            usuarioLogado.id,
+            req.empresaId
+        );
         
         res.status(200).json(usuarioCompleto);
 
@@ -751,7 +836,11 @@ router.put('/:id/status', async (req, res) => {
     try {
         dbClient = await pool.connect();
         
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(
+            dbClient,
+            usuarioLogado.id,
+            req.empresaId
+        );
         if (!permissoes.includes('gerenciar-permissoes')) {
             return res.status(403).json({ error: 'Permissão negada para alterar status de usuários.' });
         }
@@ -856,7 +945,11 @@ router.post('/:id/foto-oficial', uploadMulter.single('foto'), async (req, res) =
     try {
         dbClient = await pool.connect();
 
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(
+            dbClient,
+            usuarioLogado.id,
+            req.empresaId
+        );
         if (!permissoes.includes('editar-usuarios')) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
@@ -889,16 +982,35 @@ router.post('/:id/impersonar', async (req, res) => {
     try {
         dbClient = await pool.connect();
 
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(
+            dbClient,
+            usuarioLogado.id,
+            req.empresaId
+        );
         if (!permissoes.includes('gerenciar-permissoes')) {
             return res.status(403).json({ error: 'Permissão negada. Apenas administradores podem usar impersonação.' });
         }
 
         const result = await dbClient.query(
-            `SELECT id, nome, nome_usuario, tipos
-             FROM usuarios
-             WHERE id = $1 AND (arquivado IS FALSE OR arquivado IS NULL) AND data_demissao IS NULL`,
-            [idAlvo]
+            `
+                SELECT
+                    u.id,
+                    u.nome,
+                    u.nome_usuario,
+                    ue.id AS vinculo_empresa_id,
+                    ue.tipos
+                FROM usuarios u
+                JOIN usuarios_empresas ue
+                  ON ue.usuario_id = u.id
+                 AND ue.empresa_id = $2
+                 AND ue.ativo
+                JOIN empresas e
+                  ON e.id = ue.empresa_id
+                 AND e.ativa
+                WHERE u.id = $1
+                  AND (u.arquivado IS FALSE OR u.arquivado IS NULL)
+            `,
+            [idAlvo, req.empresaId]
         );
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Usuário não encontrado ou já desligado.' });
@@ -917,6 +1029,9 @@ router.post('/:id/impersonar', async (req, res) => {
                 nome_usuario: alvo.nome_usuario,
                 nome: alvo.nome,
                 tipos: tiposAlvo,
+                empresa_id: req.empresaId,
+                vinculo_empresa_id: alvo.vinculo_empresa_id,
+                superadministrador: false,
                 impersonando: true,
                 impersonadoPor: usuarioLogado.id,
             },

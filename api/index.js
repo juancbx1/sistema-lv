@@ -26,6 +26,7 @@ import perfisRouter from './perfis.js';
 import historicoRouter from './historico.js'; 
 import metasRouter from './metas.js';
 import realProducaoRouter from './real-producao.js';
+import contextoEmpresaRouter, { middlewareContextoEmpresa } from './contexto-empresa.js';
 
 const app = express();
 
@@ -35,6 +36,8 @@ app.use(express.json());
 // --- Montar os roteadores da API ---
 // Note que o caminho agora é relativo à raiz da API
 app.use('/login', loginRouter);
+app.use(middlewareContextoEmpresa);
+app.use('/contexto-empresa', contextoEmpresaRouter);
 app.use('/usuarios', usuariosRouter);
 app.use('/cortes', cortesRouter);
 app.use('/producoes', producoesRouter);

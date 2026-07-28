@@ -115,6 +115,314 @@
     background-color: var(--ml-cor-fundo-hover);
 }
 
+/* Contexto empresarial */
+.ml-company-area {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--ml-cor-borda);
+}
+
+.ml-company-selector,
+.ml-company-compact {
+    --ml-empresa-cor: var(--ml-cor-primaria);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 52px;
+    width: 100%;
+    border: 1px solid #dbe4ee;
+    border-radius: 12px;
+    background: linear-gradient(145deg, #ffffff, #f4f7fa);
+    color: var(--ml-cor-texto-principal);
+    cursor: pointer;
+    text-align: left;
+    box-shadow: 0 4px 14px rgba(33, 37, 41, 0.06);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.ml-company-selector {
+    padding: 9px 10px;
+}
+
+.ml-company-selector:hover,
+.ml-company-selector:focus-visible,
+.ml-company-compact:hover,
+.ml-company-compact:focus-visible {
+    border-color: var(--ml-empresa-cor);
+    box-shadow: 0 6px 18px color-mix(in srgb, var(--ml-empresa-cor) 18%, transparent);
+    outline: none;
+}
+
+.ml-company-selector:active,
+.ml-company-compact:active {
+    transform: scale(0.985);
+}
+
+.ml-company-brand,
+.ml-company-option-brand {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    flex: 0 0 38px;
+    overflow: hidden;
+    border-radius: 11px;
+    background: linear-gradient(145deg, var(--ml-empresa-cor), #26384a);
+    color: #fff;
+    box-shadow: 0 4px 10px color-mix(in srgb, var(--ml-empresa-cor) 24%, transparent);
+}
+
+.ml-company-logo,
+.ml-company-option-logo {
+    display: none;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    background: #fff;
+}
+
+.ml-company-logo.is-visible,
+.ml-company-option-logo.is-visible {
+    display: block;
+}
+
+.ml-company-logo.is-visible + .ml-company-initials,
+.ml-company-option-logo.is-visible + .ml-company-option-initials {
+    display: none;
+}
+
+.ml-company-initials,
+.ml-company-option-initials {
+    font-size: 0.76rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+}
+
+.ml-company-copy,
+.ml-company-option-copy {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.ml-company-eyebrow {
+    color: var(--ml-cor-texto-secundario);
+    font-size: 0.64rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    line-height: 1.2;
+    text-transform: uppercase;
+}
+
+.ml-company-name,
+.ml-company-compact-name,
+.ml-company-option-name {
+    overflow: hidden;
+    color: var(--ml-cor-texto-principal);
+    font-size: 0.86rem;
+    font-weight: 700;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ml-company-chevron {
+    flex: 0 0 auto;
+    color: var(--ml-cor-texto-secundario);
+    font-size: 0.72rem;
+    transition: transform 0.2s ease;
+}
+
+.ml-company-selector[aria-expanded="true"] .ml-company-chevron,
+.ml-company-compact[aria-expanded="true"] .ml-company-chevron {
+    transform: rotate(180deg);
+}
+
+.ml-company-compact {
+    position: fixed;
+    top: 15px;
+    left: 70px;
+    z-index: 1000;
+    display: none;
+    width: auto;
+    max-width: min(280px, calc(100vw - 145px));
+    min-height: 44px;
+    padding: 5px 9px 5px 6px;
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+.ml-company-compact .ml-company-brand {
+    width: 32px;
+    height: 32px;
+    flex-basis: 32px;
+    border-radius: 9px;
+}
+
+.ml-company-compact.is-menu-open {
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.ml-company-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10050;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(15, 23, 42, 0.52);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.ml-company-overlay[hidden] {
+    display: none;
+}
+
+.ml-company-overlay.is-visible {
+    opacity: 1;
+}
+
+.ml-company-dialog {
+    display: flex;
+    width: min(440px, 100%);
+    max-height: min(620px, calc(100vh - 40px));
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid rgba(219, 228, 238, 0.9);
+    border-radius: 18px;
+    background: #fff;
+    box-shadow: 0 24px 64px rgba(15, 23, 42, 0.28);
+    transform: translateY(12px) scale(0.985);
+    transition: transform 0.22s ease;
+}
+
+.ml-company-overlay.is-visible .ml-company-dialog {
+    transform: translateY(0) scale(1);
+}
+
+.ml-company-dialog-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 18px 20px;
+    border-bottom: 1px solid #e9eef4;
+}
+
+.ml-company-dialog-title {
+    margin: 0;
+    color: #1f2937;
+    font-size: 1rem;
+    font-weight: 750;
+}
+
+.ml-company-dialog-subtitle {
+    margin: 4px 0 0;
+    color: #64748b;
+    font-size: 0.78rem;
+    line-height: 1.4;
+}
+
+.ml-company-close {
+    display: grid;
+    width: 44px;
+    height: 44px;
+    flex: 0 0 44px;
+    place-items: center;
+    border: 0;
+    border-radius: 12px;
+    background: #f1f5f9;
+    color: #475569;
+    cursor: pointer;
+    font-size: 1rem;
+}
+
+.ml-company-close:hover,
+.ml-company-close:focus-visible {
+    background: #e2e8f0;
+    outline: 2px solid #94a3b8;
+    outline-offset: 1px;
+}
+
+.ml-company-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow-y: auto;
+    padding: 16px;
+}
+
+.ml-company-option {
+    --ml-empresa-cor: var(--ml-cor-primaria);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    min-height: 64px;
+    padding: 10px 12px;
+    border: 1px solid #dce5ee;
+    border-radius: 14px;
+    background: #fff;
+    color: #1f2937;
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.18s ease, background-color 0.18s ease, transform 0.18s ease;
+}
+
+.ml-company-option:hover,
+.ml-company-option:focus-visible {
+    border-color: var(--ml-empresa-cor);
+    background: color-mix(in srgb, var(--ml-empresa-cor) 5%, #fff);
+    outline: none;
+    transform: translateY(-1px);
+}
+
+.ml-company-option.is-active {
+    border-color: var(--ml-empresa-cor);
+    background: color-mix(in srgb, var(--ml-empresa-cor) 8%, #fff);
+    cursor: default;
+}
+
+.ml-company-option:disabled {
+    opacity: 0.68;
+    cursor: wait;
+    transform: none;
+}
+
+.ml-company-option-meta {
+    color: #64748b;
+    font-size: 0.72rem;
+    line-height: 1.25;
+}
+
+.ml-company-option-status {
+    display: grid;
+    width: 30px;
+    height: 30px;
+    flex: 0 0 30px;
+    place-items: center;
+    border-radius: 50%;
+    color: #94a3b8;
+}
+
+.ml-company-option.is-active .ml-company-option-status {
+    background: var(--ml-empresa-cor);
+    color: #fff;
+}
+
+body.ml-company-modal-open {
+    overflow: hidden;
+}
+
 /* Navegação Principal */
 .ml-nav {
     flex-grow: 1;
@@ -249,6 +557,10 @@
     }
     .hamburger-menu.active {
         left: calc(var(--ml-largura-menu) + 15px);
+    }
+
+    .ml-company-compact {
+        display: flex;
     }
 }
 
@@ -643,6 +955,38 @@
     }
     .ml-modal-header h3 {
         font-size: 1.1rem;
+    }
+
+    .ml-company-overlay {
+        align-items: flex-end;
+        padding: 0;
+    }
+
+    .ml-company-dialog {
+        width: 100%;
+        max-height: min(78vh, 620px);
+        border-right: 0;
+        border-bottom: 0;
+        border-left: 0;
+        border-radius: 20px 20px 0 0;
+        padding-bottom: env(safe-area-inset-bottom);
+        transform: translateY(100%);
+    }
+
+    .ml-company-overlay.is-visible .ml-company-dialog {
+        transform: translateY(0);
+    }
+
+    .ml-company-dialog-header {
+        padding: 16px;
+    }
+
+    .ml-company-list {
+        padding: 12px 12px 16px;
+    }
+
+    .ml-company-option {
+        min-height: 68px;
     }
 }
 

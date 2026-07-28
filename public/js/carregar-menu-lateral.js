@@ -1,5 +1,9 @@
 // /js/carregar-menu-lateral.js
-import { logout } from '/js/utils/auth.js';
+import {
+    limparContextoEmpresaLocal,
+    logout,
+    salvarContextoEmpresaLocal,
+} from '/js/utils/auth.js';
 import { changelog } from '/js/utils/changelog-data.js';
 
 // ── Modal de novidades da versão (admin) ─────────────────────────────────────
@@ -384,6 +388,355 @@ function fecharModalAvatares() {
     }
 }
 
+const estadoEmpresaMenu = {
+    empresaAtiva: null,
+    empresas: [],
+    trocandoPara: null,
+    ultimoFoco: null,
+};
+
+function obterTokenDaSessao() {
+    const tokenImpersonacao = sessionStorage.getItem('impersonation_token');
+    return {
+        token: tokenImpersonacao || localStorage.getItem('token'),
+        storage: tokenImpersonacao ? sessionStorage : localStorage,
+        tokenKey: tokenImpersonacao ? 'impersonation_token' : 'token',
+    };
+}
+
+function obterIniciaisEmpresa(empresa) {
+    const nome = String(empresa?.nome_fantasia || empresa?.razao_social || 'Empresa').trim();
+    const partes = nome.split(/\s+/).filter(Boolean);
+    if (partes.length === 1) return partes[0].slice(0, 2).toUpperCase();
+    return `${partes[0][0] || ''}${partes.at(-1)?.[0] || ''}`.toUpperCase();
+}
+
+function obterCorEmpresa(empresa) {
+    return /^#[0-9a-f]{6}$/i.test(empresa?.cor_identificacao || '')
+        ? empresa.cor_identificacao
+        : '#007bff';
+}
+
+function configurarMarcaEmpresa(container, empresa) {
+    if (!container) return;
+    container.style.setProperty('--ml-empresa-cor', obterCorEmpresa(empresa));
+
+    const imagem = container.querySelector('.ml-company-logo, .ml-company-option-logo');
+    const iniciais = container.querySelector('.ml-company-initials, .ml-company-option-initials');
+    if (iniciais) iniciais.textContent = obterIniciaisEmpresa(empresa);
+
+    if (!imagem) return;
+    imagem.classList.remove('is-visible');
+    imagem.removeAttribute('src');
+    imagem.onerror = null;
+
+    if (empresa?.logo_url) {
+        imagem.onload = () => imagem.classList.add('is-visible');
+        imagem.onerror = () => {
+            imagem.classList.remove('is-visible');
+            imagem.removeAttribute('src');
+        };
+        imagem.src = empresa.logo_url;
+    }
+}
+
+function criarGatilhoEmpresaCompacto() {
+    let compacto = document.getElementById('mlCompanyCompact');
+    if (compacto) return compacto;
+
+    compacto = document.createElement('button');
+    compacto.id = 'mlCompanyCompact';
+    compacto.className = 'ml-company-compact';
+    compacto.type = 'button';
+    compacto.setAttribute('aria-haspopup', 'dialog');
+    compacto.setAttribute('aria-controls', 'mlCompanyOverlay');
+    compacto.setAttribute('aria-label', 'Selecionar empresa ativa');
+    compacto.innerHTML = `
+        <span class="ml-company-brand" aria-hidden="true">
+            <img class="ml-company-logo" alt="">
+            <span class="ml-company-initials">LV</span>
+        </span>
+        <span class="ml-company-copy">
+            <span class="ml-company-eyebrow">Empresa</span>
+            <span class="ml-company-compact-name">Carregando...</span>
+        </span>
+        <i class="fas fa-chevron-down ml-company-chevron" aria-hidden="true"></i>
+    `;
+    compacto.addEventListener('click', abrirSeletorEmpresa);
+    document.body.appendChild(compacto);
+    return compacto;
+}
+
+function atualizarIdentidadeEmpresa() {
+    const empresa = estadoEmpresaMenu.empresaAtiva;
+    if (!empresa) return;
+
+    const seletor = document.getElementById('mlCompanySelector');
+    const compacto = criarGatilhoEmpresaCompacto();
+    const nome = empresa.nome_fantasia || empresa.razao_social || 'Empresa';
+
+    if (seletor) {
+        configurarMarcaEmpresa(seletor, empresa);
+        const nomeDesktop = document.getElementById('mlCompanyName');
+        if (nomeDesktop) nomeDesktop.textContent = nome;
+        seletor.title = `Empresa ativa: ${nome}`;
+    }
+
+    configurarMarcaEmpresa(compacto, empresa);
+    const nomeCompacto = compacto.querySelector('.ml-company-compact-name');
+    if (nomeCompacto) nomeCompacto.textContent = nome;
+    compacto.title = `Empresa ativa: ${nome}`;
+
+    const nomeRodape = document.getElementById('mlFooterCompanyName');
+    if (nomeRodape) nomeRodape.textContent = nome;
+}
+
+function criarDialogoEmpresas() {
+    let overlay = document.getElementById('mlCompanyOverlay');
+    if (overlay) return overlay;
+
+    overlay = document.createElement('div');
+    overlay.id = 'mlCompanyOverlay';
+    overlay.className = 'ml-company-overlay';
+    overlay.hidden = true;
+    overlay.innerHTML = `
+        <section
+            class="ml-company-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mlCompanyDialogTitle"
+            aria-describedby="mlCompanyDialogSubtitle"
+        >
+            <header class="ml-company-dialog-header">
+                <div>
+                    <h2 id="mlCompanyDialogTitle" class="ml-company-dialog-title">Escolher empresa</h2>
+                    <p id="mlCompanyDialogSubtitle" class="ml-company-dialog-subtitle">
+                        O sistema será recarregado no contexto selecionado.
+                    </p>
+                </div>
+                <button id="mlCompanyClose" class="ml-company-close" type="button" aria-label="Fechar">
+                    <i class="fas fa-times" aria-hidden="true"></i>
+                </button>
+            </header>
+            <div id="mlCompanyList" class="ml-company-list"></div>
+        </section>
+    `;
+
+    overlay.addEventListener('click', (event) => {
+        if (event.target === overlay) fecharSeletorEmpresa();
+    });
+    overlay.querySelector('#mlCompanyClose').addEventListener('click', fecharSeletorEmpresa);
+    document.body.appendChild(overlay);
+
+    if (!document.documentElement.dataset.mlCompanyEscape) {
+        document.documentElement.dataset.mlCompanyEscape = 'true';
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && !overlay.hidden) fecharSeletorEmpresa();
+        });
+    }
+
+    return overlay;
+}
+
+function criarOpcaoEmpresa(empresa) {
+    const ativa = Number(empresa.id) === Number(estadoEmpresaMenu.empresaAtiva?.id);
+    const botao = document.createElement('button');
+    botao.type = 'button';
+    botao.className = `ml-company-option${ativa ? ' is-active' : ''}`;
+    botao.style.setProperty('--ml-empresa-cor', obterCorEmpresa(empresa));
+    botao.disabled = Boolean(estadoEmpresaMenu.trocandoPara);
+    botao.setAttribute('aria-current', ativa ? 'true' : 'false');
+
+    const marca = document.createElement('span');
+    marca.className = 'ml-company-option-brand';
+    marca.setAttribute('aria-hidden', 'true');
+    const logo = document.createElement('img');
+    logo.className = 'ml-company-option-logo';
+    logo.alt = '';
+    const iniciais = document.createElement('span');
+    iniciais.className = 'ml-company-option-initials';
+    marca.append(logo, iniciais);
+
+    const copia = document.createElement('span');
+    copia.className = 'ml-company-option-copy';
+    const nome = document.createElement('span');
+    nome.className = 'ml-company-option-name';
+    nome.textContent = empresa.nome_fantasia || empresa.razao_social || 'Empresa';
+    const meta = document.createElement('span');
+    meta.className = 'ml-company-option-meta';
+    if (Number(estadoEmpresaMenu.trocandoPara) === Number(empresa.id)) {
+        meta.textContent = 'Aplicando empresa...';
+    } else if (ativa) {
+        meta.textContent = 'Em uso agora';
+    } else if (empresa.empresa_principal) {
+        meta.textContent = 'Empresa principal';
+    } else {
+        meta.textContent = 'Disponível para sua conta';
+    }
+    copia.append(nome, meta);
+
+    const status = document.createElement('span');
+    status.className = 'ml-company-option-status';
+    status.setAttribute('aria-hidden', 'true');
+    const icone = document.createElement('i');
+    icone.className = ativa ? 'fas fa-check' : 'fas fa-chevron-right';
+    status.appendChild(icone);
+
+    botao.append(marca, copia, status);
+    configurarMarcaEmpresa(botao, empresa);
+
+    botao.addEventListener('click', () => {
+        if (ativa) {
+            fecharSeletorEmpresa();
+            return;
+        }
+        trocarEmpresaAtiva(empresa.id);
+    });
+
+    return botao;
+}
+
+function renderizarListaEmpresas() {
+    const lista = document.getElementById('mlCompanyList');
+    if (!lista) return;
+    lista.replaceChildren();
+    estadoEmpresaMenu.empresas.forEach((empresa) => {
+        lista.appendChild(criarOpcaoEmpresa(empresa));
+    });
+}
+
+function abrirSeletorEmpresa(event) {
+    if (event?.currentTarget) estadoEmpresaMenu.ultimoFoco = event.currentTarget;
+    const overlay = criarDialogoEmpresas();
+    renderizarListaEmpresas();
+    overlay.hidden = false;
+    document.body.classList.add('ml-company-modal-open');
+    document.getElementById('mlCompanySelector')?.setAttribute('aria-expanded', 'true');
+    document.getElementById('mlCompanyCompact')?.setAttribute('aria-expanded', 'true');
+    requestAnimationFrame(() => {
+        overlay.classList.add('is-visible');
+        overlay.querySelector('.ml-company-option.is-active, .ml-company-close')?.focus();
+    });
+}
+
+function fecharSeletorEmpresa() {
+    const overlay = document.getElementById('mlCompanyOverlay');
+    if (!overlay || overlay.hidden || estadoEmpresaMenu.trocandoPara) return;
+    overlay.classList.remove('is-visible');
+    document.body.classList.remove('ml-company-modal-open');
+    document.getElementById('mlCompanySelector')?.setAttribute('aria-expanded', 'false');
+    document.getElementById('mlCompanyCompact')?.setAttribute('aria-expanded', 'false');
+    setTimeout(() => {
+        overlay.hidden = true;
+        estadoEmpresaMenu.ultimoFoco?.focus?.();
+    }, 200);
+}
+
+function limparCachesDaEmpresaAnterior() {
+    const chavesExatas = [
+        'permissoes',
+        'usuarios',
+        'usuarios_timestamp',
+        'producoes',
+        'producoes_timestamp',
+        'produtosCadastrados',
+        'produtosCadastrados_timestamp',
+        'embalarDetalheAtual',
+        'ultimoProdutoEditado',
+        'meta_diaria_planejada',
+        'buscasRecentes',
+        'demanda_recentes',
+        'op_cortes_recentes',
+    ];
+    const prefixos = ['historico_busca_', 'radar_buscas_'];
+
+    [localStorage, sessionStorage].forEach((storage) => {
+        chavesExatas.forEach((chave) => storage.removeItem(chave));
+        Object.keys(storage)
+            .filter((chave) => prefixos.some((prefixo) => chave.startsWith(prefixo)))
+            .forEach((chave) => storage.removeItem(chave));
+    });
+    limparContextoEmpresaLocal();
+}
+
+async function trocarEmpresaAtiva(empresaId) {
+    if (estadoEmpresaMenu.trocandoPara) return;
+    const sessao = obterTokenDaSessao();
+    if (!sessao.token) {
+        logout();
+        return;
+    }
+
+    estadoEmpresaMenu.trocandoPara = Number(empresaId);
+    renderizarListaEmpresas();
+
+    try {
+        const response = await fetch('/api/contexto-empresa/trocar', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${sessao.token}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ empresaId: Number(empresaId) }),
+        });
+        const resultado = await response.json().catch(() => ({}));
+        if (!response.ok || !resultado.token) {
+            throw new Error(resultado.error || 'Não foi possível trocar a empresa.');
+        }
+
+        limparCachesDaEmpresaAnterior();
+        sessao.storage.setItem(sessao.tokenKey, resultado.token);
+        salvarContextoEmpresaLocal(
+            { empresa_ativa: resultado.empresaAtiva },
+            sessao.storage
+        );
+        window.location.reload();
+    } catch (error) {
+        estadoEmpresaMenu.trocandoPara = null;
+        renderizarListaEmpresas();
+        mostrarPopup(error.message, 'erro', 5000);
+    }
+}
+
+async function inicializarContextoEmpresa(token, usuarioLogado) {
+    criarGatilhoEmpresaCompacto();
+    criarDialogoEmpresas();
+    document.getElementById('mlCompanySelector')?.addEventListener('click', abrirSeletorEmpresa);
+
+    if (usuarioLogado?.empresa_ativa) {
+        estadoEmpresaMenu.empresaAtiva = usuarioLogado.empresa_ativa;
+        estadoEmpresaMenu.empresas = [usuarioLogado.empresa_ativa];
+        atualizarIdentidadeEmpresa();
+    }
+
+    try {
+        const response = await fetch('/api/contexto-empresa', {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        const contexto = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(contexto.error || 'Falha ao consultar empresas disponíveis.');
+        }
+
+        estadoEmpresaMenu.empresaAtiva = contexto.empresaAtiva;
+        estadoEmpresaMenu.empresas = contexto.empresas || [];
+        salvarContextoEmpresaLocal(
+            { empresa_ativa: contexto.empresaAtiva },
+            obterTokenDaSessao().storage
+        );
+        atualizarIdentidadeEmpresa();
+        renderizarListaEmpresas();
+    } catch (error) {
+        console.error('[Menu] Erro ao carregar contexto empresarial:', error);
+        if (!estadoEmpresaMenu.empresaAtiva) {
+            const nome = document.getElementById('mlCompanyName');
+            if (nome) nome.textContent = 'Empresa indisponível';
+            const compacto = document.querySelector('.ml-company-compact-name');
+            if (compacto) compacto.textContent = 'Empresa indisponível';
+        }
+    }
+}
+
 // Função que busca os avatares na API e os exibe no modal
 async function inicializarMenu() {
     // Busca o menu hambúrguer no início de tudo
@@ -437,6 +790,8 @@ async function inicializarMenu() {
             console.log('[Frontend] Nenhum avatar_url encontrado. Usando imagem placeholder.');
         }
 
+        await inicializarContextoEmpresa(token, usuarioLogado);
+
         // --- Configuração dos Eventos do Menu ---
 
         // Logout (Funcionalidade antiga mantida)
@@ -472,6 +827,10 @@ async function inicializarMenu() {
                 if (hamburgerMenu.classList.contains('loading')) return;
                 menuLateral.classList.toggle('active');
                 hamburgerMenu.classList.toggle('active');
+                document.getElementById('mlCompanyCompact')?.classList.toggle(
+                    'is-menu-open',
+                    menuLateral.classList.contains('active')
+                );
             });
 
             document.querySelectorAll('.ml-nav a').forEach(link => {
@@ -479,6 +838,7 @@ async function inicializarMenu() {
                     if (window.innerWidth <= 1024) {
                         menuLateral.classList.remove('active');
                         hamburgerMenu.classList.remove('active');
+                        document.getElementById('mlCompanyCompact')?.classList.remove('is-menu-open');
                     }
                 });
             });
@@ -490,6 +850,7 @@ async function inicializarMenu() {
                     if (!isClickInsideMenu && !isClickOnHamburger && menuLateral.classList.contains('active')) {
                         menuLateral.classList.remove('active');
                         hamburgerMenu.classList.remove('active');
+                        document.getElementById('mlCompanyCompact')?.classList.remove('is-menu-open');
                     }
                 }
             });

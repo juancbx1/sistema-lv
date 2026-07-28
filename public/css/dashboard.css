@@ -2043,8 +2043,9 @@ body.ds-body.autenticado {
     gap: 15px; /* Aumenta o espaçamento */
     padding: 8px 15px;
     border-top: 1px solid var(--ds-cor-cinza-claro-fundo);
+}
 
-    /* Transforma o link de comentário em um botão */
+/* Transforma o link de comentário em um botão */
 .ds-comentarios-toggle {
     background: none;
     border: none;
@@ -2064,7 +2065,6 @@ body.ds-body.autenticado {
 .ds-comentarios-toggle:hover {
     background-color: var(--ds-cor-cinza-hover-item);
     color: var(--ds-cor-primaria);
-}
 }
 
 .ds-like-count {

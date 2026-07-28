@@ -93,12 +93,11 @@ export default function OPFormulario({ corteSelecionado, onOPCriada, onSetGerand
                 quantidade: qtdFinal,
                 data_entrega: dataEntrega,
                 observacoes: observacoes,
-                status: 'em-aberto', // Backend muda pra 'produzindo' ao vincular corte?
+                // O backend define o status como produzindo ao criar a OP vinculada ao corte.
                                      // O backend do Split já trata status='usado' no corte.
                                      // Vamos manter 'produzindo' se já tiver corte.
                                      // Na verdade, a API POST decide o status.
                                      // Mas o payload pede status. Vamos mandar 'produzindo' pois já tem corte.
-                status: 'produzindo', 
                 corte_origem_id: corteSelecionado.id,
                 demanda_id: demandaId || null
             };

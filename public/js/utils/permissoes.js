@@ -54,6 +54,11 @@ export const permissoesDisponiveis = [
     { id: 'adicionar-ferias', label: 'Ação: Adicionar Férias', categoria: 'Usuários e Permissões' },
     { id: 'excluir-usuarios', label: 'Ação: Excluir usuários', categoria: 'Usuários e Permissões' },
     { id: 'gerenciar-permissoes', label: 'Ação: Alterar permissões individuais', categoria: 'Usuários e Permissões' },
+    { id: 'acesso-gestao-organizacional', label: 'Ver Gestão Organizacional', categoria: 'Gestão Organizacional' },
+    { id: 'visualizar-empresas', label: 'Ação: Visualizar empresas cadastradas', categoria: 'Gestão Organizacional' },
+    { id: 'gerenciar-empresas', label: 'Ação: Criar e editar empresas', categoria: 'Gestão Organizacional' },
+    { id: 'vincular-usuarios-empresas', label: 'Ação: Gerenciar vínculos entre pessoas e empresas', categoria: 'Gestão Organizacional' },
+    { id: 'visualizar-todas-empresas', label: 'Ação: Visualizar pessoas de todas as empresas', categoria: 'Gestão Organizacional' },
 
     // --- PRODUTOS, KITS E MATÉRIAS-PRIMAS ---
     { id: 'acesso-cadastrar-produto', label: 'Ver Tela de Cadastro de Produtos', categoria: 'Produtos e Kits' },
@@ -187,6 +192,8 @@ export const permissoesPorTipo = {
         'acesso-admin-geral',
         'acesso-home',
         'acesso-usuarios-cadastrados',
+        'acesso-gestao-organizacional',
+        'visualizar-empresas',
         'acesso-ordens-de-producao',
         'acesso-ordens-de-arremates',
         'acesso-estoque',

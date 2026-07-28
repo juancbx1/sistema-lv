@@ -35,6 +35,7 @@ const MODULOS_POR_PREFIXO = [
     ['/producoes', 'gerenciar-producao'],
     ['/producao', 'gerenciar-producao'],
     ['/produtos', 'produtos'],
+    ['/gestao-organizacional', 'gestao-organizacional'],
     ['/usuarios', 'gestao-organizacional'],
     ['/perfis', 'gestao-organizacional'],
     ['/avatares', 'gestao-organizacional'],
@@ -398,6 +399,7 @@ export async function middlewareContextoEmpresa(req, res, next) {
 
         next();
     } catch (error) {
+        console.error('[contexto-empresa middleware]', error);
         res.status(error.statusCode || 500).json({
             error: error.message || 'Erro ao validar o contexto empresarial.',
             codigo: error.codigo || 'ERRO_CONTEXTO_EMPRESA',

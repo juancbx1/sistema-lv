@@ -810,7 +810,10 @@ async function inicializarMenu() {
         // Marcar link ativo (Funcionalidade antiga mantida)
         const currentPagePath = window.location.pathname;
         document.querySelectorAll('.ml-nav a').forEach(link => {
-            if (link.pathname === currentPagePath) {
+            const ehCompatibilidadeGestao =
+                currentPagePath === '/admin/usuarios-cadastrados.html'
+                && link.pathname === '/admin/gestao-organizacional.html';
+            if (link.pathname === currentPagePath || ehCompatibilidadeGestao) {
                 link.classList.add('active');
             }
         });

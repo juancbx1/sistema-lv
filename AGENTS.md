@@ -42,29 +42,36 @@ O sistema está em transição planejada de empresa única para **multiempresas*
 |---|---|
 | Fase 0 — auditoria e desenho | Concluída |
 | Fase 1 — fundação do banco | Executada e validada na Neon |
-| Fase 2 — contexto empresarial | Implementada, testada e commitada localmente |
-| Fase 3 — login e sessão | Implementada, testada e commitada localmente |
-| Fase 4 — seletor universal | Implementada, validada visualmente e commitada localmente |
-| Fase 5 em diante | Não iniciada |
+| Fase 2 — contexto empresarial | Publicada e validada em produção |
+| Fase 3 — login e sessão | Publicada e validada em produção |
+| Fase 4 — seletor universal | Publicada e validada em produção |
+| Fase 5 — Gestão Organizacional | Implementada; migration executada e validada; aguarda publicação e smoke em produção |
+| Fase 6 em diante | Não iniciada |
 
 Situação operacional:
 
-- a produção continua funcionando como empresa única;
+- a infraestrutura multiempresa está ativa, mas a produção continua operando
+  somente com `Lojas Variara`;
 - a Neon já contém as tabelas fundamentais, a empresa `Lojas Variara`, os 18
   vínculos iniciais e o catálogo de 18 módulos;
 - nenhum módulo de negócio possui isolamento por `empresa_id` ainda;
 - nenhuma empresa secundária foi cadastrada ou liberada em produção;
-- localmente, o backend já possui contexto universal, troca de empresa, JWT
+- o backend possui contexto universal, troca de empresa, JWT
   contextual, `/usuarios/me` contextual e impersonação por empresa;
-- localmente, o menu compartilhado já possui seletor no PC, tablet e celular;
-- a troca local entre duas empresas foi validada e módulos legados falharam
+- o menu compartilhado possui seletor no PC, tablet e celular;
+- a troca entre duas empresas foi validada localmente e módulos legados falharam
   fechados com `403` na empresa secundária;
-- as Fases 2–4 possuem commit local, mas ainda não tiveram push, deploy ou teste
-  de fumaça em produção;
-- o próximo desenvolvimento funcional previsto é a Fase 5 — **Gestão
-  Organizacional**;
-- o checkpoint de produção continua sendo publicar e validar com segurança as
-  Fases 2–4 antes de permitir qualquer empresa secundária real.
+- as Fases 2–4 foram publicadas e aprovadas em smoke test em 2026-07-28;
+- a Fase 5 — **Gestão Organizacional** — está implementada e validada
+  localmente; a migration foi aprovada na Neon e ainda aguarda publicação e
+  smoke em produção;
+- a rota oficial é `/admin/gestao-organizacional.html`; a URL antiga
+  `/admin/usuarios-cadastrados.html` permanece compatível;
+- a API dedicada é `/api/gestao-organizacional`;
+- a migration de liberação do módulo é
+  `_planejamento/migration-multiempresas-fase5-gestao-organizacional.sql`;
+- nenhuma empresa secundária real poderá ser liberada antes da migração de pelo
+  menos um módulo de negócio.
 
 ---
 
@@ -389,7 +396,7 @@ Tabela de controle para evitar retrabalho. Atualizar sempre que uma etapa for co
 
 | Gerenciar Permissões | `permissoes-usuarios.css` | ✅ | ❌ | ✅ | ✅ | Concluída 2026-05-23. Duas abas: Permissões + Auditoria. Prefixo `Permissoes*`. Editor: lista plana com search bar (substituiu acordeão) — filtra permissões em tempo real; exclui ex-membros e prestadores da lista de usuários. Auditoria: paginação clássica 12/pág com `gs-paginacao-*`; dropdown de usuários busca tabela `usuarios` (não só audit_log). Infraestrutura: `api/audit.js` + `api/audit-log.js` + tabela `audit_log`. JS legado `admin-permissoes-usuarios.js` deletado. |
 
-| Usuários Cadastrados | `usuarios-cadastrados.css` | ✅ | ❌ | ✅ | ✅ | Redesenhado 2026-05-23. Prefixo `UC*`. Cards com borda-charme por categoria, drawer de edição com férias+vínculo internos, acordeão "Ex-membros". Tipo `ex_socio` como campo em `tipos[]` (sem datas). Tipo `prestador_externo` implementado. Migration `_planejamento/migration-prestador-externo.sql` executada em produção (2026-05-23). |
+| Gestão Organizacional | `gestao-organizacional.css` | ✅ | ❌ | ✅ | ✅ | Fase 5 implementada localmente em 2026-07-28. Prefixo `GO*`. Abas Pessoas e Acessos / Empresas, identidade global separada de vínculos, múltiplas empresas, desligamento por vínculo e URL antiga compatível. Migration aprovada; aguarda publicação e smoke em produção. |
 
 | Home / Admin | `home.css` | ✅ | ❌ | ❌ | ❌ | |
 

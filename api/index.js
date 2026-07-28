@@ -27,6 +27,7 @@ import historicoRouter from './historico.js';
 import metasRouter from './metas.js';
 import realProducaoRouter from './real-producao.js';
 import contextoEmpresaRouter, { middlewareContextoEmpresa } from './contexto-empresa.js';
+import gestaoOrganizacionalRouter from './gestao-organizacional.js';
 
 const app = express();
 
@@ -38,6 +39,7 @@ app.use(express.json());
 app.use('/login', loginRouter);
 app.use(middlewareContextoEmpresa);
 app.use('/contexto-empresa', contextoEmpresaRouter);
+app.use('/gestao-organizacional', gestaoOrganizacionalRouter);
 app.use('/usuarios', usuariosRouter);
 app.use('/cortes', cortesRouter);
 app.use('/producoes', producoesRouter);

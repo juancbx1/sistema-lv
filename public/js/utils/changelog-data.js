@@ -20,6 +20,17 @@
 
 export const changelog = [
     {
+        versao: '1.36.0',
+        data: '28/07/2026',
+        admin: [
+            'Sistema preparado para operar com múltiplas empresas, com contexto empresarial seguro e seletor universal no menu',
+            'Nova página "Gestão Organizacional", reunindo as abas "Pessoas e Acessos" e "Empresas"',
+            'Agora uma pessoa pode possuir vínculos, funções e permissões diferentes em uma ou mais empresas, mantendo um único login',
+            'Novo cadastro de empresas com perfil organizacional, identidade visual, dados fiscais e configuração de módulos disponíveis',
+        ],
+        dashboard: [],
+    },
+    {
         versao: '1.35.0',
         data: '27/05/2026',
         admin: [

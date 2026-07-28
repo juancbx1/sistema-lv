@@ -1,12 +1,70 @@
-# CLAUDE.md — Sistema LV
+# AGENTS.md — Sistema LV
 
-Este arquivo é lido automaticamente pelo Claude Code ao iniciar. Contém o contexto permanente do projeto: stack, arquitetura, padrões e regras de negócio. **Sempre atualize este arquivo quando uma nova decisão importante for tomada.**
+Este arquivo é lido automaticamente pelo Codex ao iniciar. Contém o contexto permanente do projeto: stack, arquitetura, padrões e regras de negócio. **Sempre atualize este arquivo quando uma nova decisão importante for tomada.**
 
 ---
 
 ## Visão Geral do Projeto
 
 Sistema web interno de gestão industrial para uma confecção. Controla o ciclo completo de produção: Ordens de Produção (OPs), cortes, produção por etapas, arremates, embalagem, estoque, financeiro, pagamentos de funcionários e dashboard de desempenho.
+
+---
+
+## Projeto Multiempresas — decisão estrutural aprovada
+
+O sistema está em transição planejada de empresa única para **multiempresas**. O documento mestre e checklist de execução ficam em:
+
+`_planejamento/sistema-multiempresas.md`
+
+### Decisões obrigatórias
+
+- `usuarios` continuará representando a identidade global da pessoa e suas credenciais.
+- O vínculo com cada empresa ficará em `usuarios_empresas`, incluindo tipos/funções, permissões, situação, admissão/demissão, salário, nível e contato financeiro específicos daquele vínculo.
+- Um usuário poderá pertencer a uma ou mais empresas, mantendo um único login.
+- A empresa ativa será validada no backend e transportada no JWT; a troca de empresa emitirá novo token e recarregará a página.
+- O seletor universal ficará no menu lateral no PC e próximo ao hamburger no tablet/celular.
+- A página Usuários Cadastrados será evoluída para **Gestão Organizacional**, com abas **Pessoas e Acessos** e **Empresas**.
+- O Financeiro será o primeiro módulo de negócio migrado integralmente.
+- Toda entidade empresarial deverá possuir vínculo explícito com `empresa_id`, direto ou garantido por uma entidade pai.
+- Toda consulta por ID, alteração ou exclusão empresarial deverá validar também `empresa_id`; filtrar apenas listagens não é suficiente.
+- O frontend nunca será a autoridade de isolamento. `empresa_id` não deve ser aceito cegamente do body.
+- Durante a migração, empresas secundárias não podem acessar módulos ainda não convertidos. Esses módulos devem ser bloqueados, nunca exibir dados da empresa principal.
+- Migrações serão aditivas primeiro. Campos empresariais legados de `usuarios` só poderão ser removidos na fase final, depois da migração de todos os consumidores.
+- O staging foi abandonado. Mudanças de banco devem ser ensaiadas em uma restauração local validada do backup e só podem seguir diretamente para produção após autorização explícita.
+- O contexto empresarial do backend fica centralizado em `api/contexto-empresa.js`. Tokens legados sem `empresa_id` resolvem temporariamente o vínculo principal; rotas não mapeadas falham fechadas para empresas secundárias.
+- Alterações multiempresa devem ser publicadas em commits seletivos, com revisão
+  do diff e validação antes do push. O procedimento fica em
+  `_planejamento/multiempresas-controle-de-arquivos.md`.
+
+### Estado executivo em 2026-07-28
+
+| Frente | Estado |
+|---|---|
+| Fase 0 — auditoria e desenho | Concluída |
+| Fase 1 — fundação do banco | Executada e validada na Neon |
+| Fase 2 — contexto empresarial | Implementada, testada e commitada localmente |
+| Fase 3 — login e sessão | Implementada, testada e commitada localmente |
+| Fase 4 — seletor universal | Implementada, validada visualmente e commitada localmente |
+| Fase 5 em diante | Não iniciada |
+
+Situação operacional:
+
+- a produção continua funcionando como empresa única;
+- a Neon já contém as tabelas fundamentais, a empresa `Lojas Variara`, os 18
+  vínculos iniciais e o catálogo de 18 módulos;
+- nenhum módulo de negócio possui isolamento por `empresa_id` ainda;
+- nenhuma empresa secundária foi cadastrada ou liberada em produção;
+- localmente, o backend já possui contexto universal, troca de empresa, JWT
+  contextual, `/usuarios/me` contextual e impersonação por empresa;
+- localmente, o menu compartilhado já possui seletor no PC, tablet e celular;
+- a troca local entre duas empresas foi validada e módulos legados falharam
+  fechados com `403` na empresa secundária;
+- as Fases 2–4 possuem commit local, mas ainda não tiveram push, deploy ou teste
+  de fumaça em produção;
+- o próximo desenvolvimento funcional previsto é a Fase 5 — **Gestão
+  Organizacional**;
+- o checkpoint de produção continua sendo publicar e validar com segurança as
+  Fases 2–4 antes de permitir qualquer empresa secundária real.
 
 ---
 
@@ -43,7 +101,7 @@ Sistema web interno de gestão industrial para uma confecção. Controla o ciclo
 ├── server.js                   # Express local (dev)
 ├── vite.config.js              # Build config — root é /public
 ├── vercel.json                 # Config de produção (Vercel)
-└── CLAUDE.md                   # Este arquivo
+└── AGENTS.md                   # Este arquivo
 ```
 
 ### Como o Vite está configurado
@@ -126,6 +184,7 @@ Usar `try/catch` com `dbClient` obtido via `pool.connect()` e `dbClient.release(
 **As APIs NÃO fazem checagem de permissão ou tipo de usuário além do JWT.** O controle de acesso fica inteiramente na camada de página, via `verificarAutenticacao('caminho/pagina.html', ['permissao-necessaria'])` no entry point React.
 
 Isso significa que toda rota em `/api/*` verifica apenas se o token é válido (middleware de autenticação). Nunca adicionar `if (!isAdmin(req))`, `if (!req.usuarioLogado.tipos.includes('x'))` ou similares nas rotas — é trabalho duplicado que vai contra o padrão e vai gerar bugs de acesso.
+
 
 Referência: `api/alertas.js` segue esse padrão desde sempre.
 
@@ -254,6 +313,7 @@ O erro mais comum ao redesenhar páginas é colocar `gs-card` no **lugar errado*
 ```
 ```jsx
 // componente raiz — usa Fragment, NUNCA div com gs-card
+
 export default function MinhaPage() {
     return (
         <>
@@ -303,41 +363,43 @@ A **única exceção** é quando a aba tem sub-seções visualmente independente
 
 Tabela de controle para evitar retrabalho. Atualizar sempre que uma etapa for concluída.
 
-| Área | Arquivo CSS | React 100% | CSS Limpo | Usa gs-card | Observações |
-|---|---|---|---|---|---|
-| Login / Index | `login.css` | ✅ | ✅ | N/A | React 100% (27/04). `LoginApp.jsx` único. Tablet-first (2 col), glassmorphism. Token 8h/30d via `manterConectado`. Demitidos → tela de despedida + cooldown crescente. |
+| Área | Arquivo CSS | React 100% | TypeScript | CSS Limpo | Usa gs-card | Observações |
+|---|---|---|---|---|---|---|
+| Login / Index | `login.css` | ✅ | ❌ | ✅ | N/A | React 100% (27/04). `LoginApp.jsx` único. Tablet-first (2 col), glassmorphism. Token 8h/30d via `manterConectado`. Demitidos → tela de despedida + cooldown crescente. |
 
-| Ordens de Produção | `ordens-de-producao.css` | ✅ | ✅ | ✅ (via alias) | Referência de qualidade. 
+| Ordens de Produção | `ordens-de-producao.css` | ✅ | ❌ | ✅ | ✅ (via alias) | Referência de qualidade. |
 
-| Calendário da Empresa | `calendario.css` | ✅ | ✅ | ✅ | Página nova — estrutura padrão aplicada |
+| Calendário da Empresa | `calendario.css` | ✅ | ❌ | ✅ | ✅ | Página nova — estrutura padrão aplicada |
 
-| Central de Alertas | `config-alertas.css` | ✅ | ❌ | ✅ | Redesenhada em 2026-05-16 com 2 abas: Alertas Gerais + Avisos Popups. `ConfigAlertasGerais.jsx` + `AvisosPopupAdmin.jsx` + `AvisosPopupModal.jsx`. Avisos Popup v1.0 completo (DB + API + UI). Permissão: `gerenciar-avisos-popup` em `permissoes.js`. |
+| Central de Alertas | `config-alertas.css` | ✅ | ❌ | ❌ | ✅ | Redesenhada em 2026-05-16 com 2 abas: Alertas Gerais + Avisos Popups. `ConfigAlertasGerais.jsx` + `AvisosPopupAdmin.jsx` + `AvisosPopupModal.jsx`. Avisos Popup v1.0 completo (DB + API + UI). Permissão: `gerenciar-avisos-popup` em `permissoes.js`. |
 
-| Centro de Incentivos | `incentivos.css` | ✅ | ✅ | ✅ | v5.1 concluído (2026-05-23). Todas as abas 100% React: Gincanas, Metas e Comissões, Pontos por Atividade, Pagamentos. Arquivos legados deletados (`ponto-por-processo.html/js/css`). Hook tiktik (`api/arremates.js`) deferido para v4.x — sem data. Testes de gincana corrida/equipe/produto_especifico/semanal pendentes de validação manual. |
+| Centro de Incentivos | `incentivos.css` | ✅ | ❌ | ✅ | ✅ | v5.1 concluído (2026-05-23). Todas as abas 100% React: Gincanas, Metas e Comissões, Pontos por Atividade, Pagamentos. Arquivos legados deletados (`ponto-por-processo.html/js/css`). Hook tiktik (`api/arremates.js`) deferido para v4.x — sem data. Testes de gincana corrida/equipe/produto_especifico/semanal pendentes de validação manual. |
 
-| Central de Pagamentos | `central-de-pagamentos.css` | ✅ | ❌ | ❌ | |
+| Central de Pagamentos | `central-de-pagamentos.css` | ✅ | ✅ | ✅ | ✅ | Concluída em 2026-07-11. Migração integral do código específico para React + TypeScript/TSX, com shell visual padrão (`main.gs-card`, `UIHeaderPagina`, `gs-tab-nav`, `gs-conteudo-pagina`) alinhado à referência de Ordens de Produção. `npm run typecheck` e `npm run build` aprovados. Dependências JS compartilhadas ficam para a migração global futura das páginas. |
 
-| Dashboard Funcionário | `dashboard.css` | ✅ | ❌ | ❌ | Mobile-first, estrutura diferente. `DashFabGincana.jsx` (2026-05-20) substitui `DashGincanaCard` inline — gincanas agora em FAB + bottom sheet. Redesign completo 2026-05-24: `DashHeader` com dock (4 botões + divider), tipo+ciclo e avatar clicável; `DSUploader.jsx` (novo componente de upload compartilhado — variantes dropzone/avatar/inline); `DashPerfilModal` redesenhado com hero gradiente escuro, galeria DSUploader, streak de produção, conquistas do ciclo, melhor dia, gincanas vencidas; `DashPagamentosModal` com wallet topo dark + saldos lado a lado (Comissões / Premiações); `DashRankingCard` com mini pódio e estado campeã dourado. APIs novas: `GET /api/dashboard/streak`, `GET /api/dashboard/conquistas-ciclo`. |
+| Dashboard Funcionário | `dashboard.css` | ✅ | ❌ | ❌ | ❌ | Mobile-first, estrutura diferente. `DashFabGincana.jsx` (2026-05-20) substitui `DashGincanaCard` inline — gincanas agora em FAB + bottom sheet. Redesign completo 2026-05-24: `DashHeader` com dock (4 botões + divider), tipo+ciclo e avatar clicável; `DSUploader.jsx` (novo componente de upload compartilhado — variantes dropzone/avatar/inline); `DashPerfilModal` redesenhado com hero gradiente escuro, galeria DSUploader, streak de produção, conquistas do ciclo, melhor dia, gincanas vencidas; `DashPagamentosModal` com wallet topo dark + saldos lado a lado (Comissões / Premiações); `DashRankingCard` com mini pódio e estado campeã dourado. APIs novas: `GET /api/dashboard/streak`, `GET /api/dashboard/conquistas-ciclo`. |
 
-| Arremates | `arremates.css` | ✅ | ❌ | ✅ | v1.0 (2026-05-04) + v2.0 (2026-05-05) + v3.0 Items 1-4 (2026-05-13/14) concluídos. v3.0: `PontoHelpers.js` e `UILinhaDoTempoDia.jsx` extraídos como compartilhados; `ArremateStatusCard` reescrito com layout `cracha-tiktik` idêntico ao OPStatusCard (cronômetro interval-aware, bottom sheets, tolerância S3, liberar intervalo); `ArreMatePainelAtividades` refatorado com estrutura `oa-*` idêntica ao OPPainelAtividades (ALMOCO/PAUSA no grid principal, inativos completos, todos os handlers de ponto). CSS: 4657 → 5850 linhas. v3.0 implementação 100% concluída (Items 1–5). Aguarda verificação manual em browser. Deletar manualmente: `ArremateToast.jsx` e `ArremateAcoesLote.jsx`. Ver `_planejamento/arremates-redesign.md`. |
+| Arremates | `arremates.css` | ✅ | ❌ | ❌ | ✅ | v1.0 (2026-05-04) + v2.0 (2026-05-05) + v3.0 Items 1-4 (2026-05-13/14) concluídos. v3.0: `PontoHelpers.js` e `UILinhaDoTempoDia.jsx` extraídos como compartilhados; `ArremateStatusCard` reescrito com layout `cracha-tiktik` idêntico ao OPStatusCard (cronômetro interval-aware, bottom sheets, tolerância S3, liberar intervalo); `ArreMatePainelAtividades` refatorado com estrutura `oa-*` idêntica ao OPPainelAtividades (ALMOCO/PAUSA no grid principal, inativos completos, todos os handlers de ponto). CSS: 4657 → 5850 linhas. v3.0 implementação 100% concluída (Items 1–5). Aguarda verificação manual em browser. Deletar manualmente: `ArremateToast.jsx` e `ArremateAcoesLote.jsx`. Ver `_planejamento/arremates-redesign.md`. |
 
-| Embalagem de Produtos | `embalagem-de-produtos.css` | ❓ | ❌ | ❌ | Verificar migração React |
+| Embalagem de Produtos | `embalagem-de-produtos.css` | ❓ | ❓ | ❌ | ❌ | Verificar migração React |
 
-| Estoque | `estoque.css` | ❓ | ❌ | ❌ | Verificar migração React |
+| Estoque | `estoque.css` | ❓ | ❓ | ❌ | ❌ | Verificar migração React |
 
-| Financeiro | `financeiro.css` | ❓ | ❌ | ❌ | Verificar migração React |
+| Financeiro | `financeiro.css` | ✅ | ✅ | ✅ | ✅ | Migração React+TS **encerrada** (2026-07-27). Árvore única (`main-financeiro.tsx` + `FinanceiroPage` + `FinanceiroContext`), sem multi-root/bridges/legado. CSS limpo. Typecheck/build OK; validação manual das abas OK. **Novas features liberadas.** Plano: `_planejamento/migrando-financeiro-para-typescript.md`. |
 
-| Gerenciar Permissões | `permissoes-usuarios.css` | ✅ | ✅ | ✅ | Concluída 2026-05-23. Duas abas: Permissões + Auditoria. Prefixo `Permissoes*`. Editor: lista plana com search bar (substituiu acordeão) — filtra permissões em tempo real; exclui ex-membros e prestadores da lista de usuários. Auditoria: paginação clássica 12/pág com `gs-paginacao-*`; dropdown de usuários busca tabela `usuarios` (não só audit_log). Infraestrutura: `api/audit.js` + `api/audit-log.js` + tabela `audit_log`. JS legado `admin-permissoes-usuarios.js` deletado. |
+| Gerenciar Permissões | `permissoes-usuarios.css` | ✅ | ❌ | ✅ | ✅ | Concluída 2026-05-23. Duas abas: Permissões + Auditoria. Prefixo `Permissoes*`. Editor: lista plana com search bar (substituiu acordeão) — filtra permissões em tempo real; exclui ex-membros e prestadores da lista de usuários. Auditoria: paginação clássica 12/pág com `gs-paginacao-*`; dropdown de usuários busca tabela `usuarios` (não só audit_log). Infraestrutura: `api/audit.js` + `api/audit-log.js` + tabela `audit_log`. JS legado `admin-permissoes-usuarios.js` deletado. |
 
-| Usuários Cadastrados | `usuarios-cadastrados.css` | ✅ | ✅ | ✅ | Redesenhado 2026-05-23. Prefixo `UC*`. Cards com borda-charme por categoria, drawer de edição com férias+vínculo internos, acordeão "Ex-membros". Tipo `ex_socio` como campo em `tipos[]` (sem datas). Tipo `prestador_externo` implementado. Migration `_planejamento/migration-prestador-externo.sql` executada em produção e staging (2026-05-23). |
+| Usuários Cadastrados | `usuarios-cadastrados.css` | ✅ | ❌ | ✅ | ✅ | Redesenhado 2026-05-23. Prefixo `UC*`. Cards com borda-charme por categoria, drawer de edição com férias+vínculo internos, acordeão "Ex-membros". Tipo `ex_socio` como campo em `tipos[]` (sem datas). Tipo `prestador_externo` implementado. Migration `_planejamento/migration-prestador-externo.sql` executada em produção (2026-05-23). |
 
-| Home / Admin | `home.css` | ✅ | ❌ | ❌ | |
+| Home / Admin | `home.css` | ✅ | ❌ | ❌ | ❌ | |
 
-| Gerenciar Produção | `gerenciar-producao.css` | ✅ | ✅ | ✅ | Concluída 2026-05-27. Prefixo `GP*`. Carregamento automático últimos 3 dias ao abrir. Fluxo duplo de exclusão: direta (`excluir-registro-producao-direto`) ou solicitação com aprovação (`excluir-registro-producao`). Painel de Aprovações com fila pendentes + histórico paginado + filtros. Permissões: `excluir-registro-producao`, `excluir-registro-producao-direto`, `ver-painel-aprovacoes-producao`, `aprovar-exclusao-producao`. Tabela `producoes_solicitacoes_exclusao` com snapshot JSONB e lock FOR UPDATE. Migration: `_planejamento/migration-gerenciar-producao-solicitacoes.sql`. API: `api/gerenciar-producao.js`. |
+| Gerenciar Produção | `gerenciar-producao.css` | ✅ | ❌ | ✅ | ✅ | Concluída 2026-05-27. Prefixo `GP*`. Carregamento automático últimos 3 dias ao abrir. Fluxo duplo de exclusão: direta (`excluir-registro-producao-direto`) ou solicitação com aprovação (`excluir-registro-producao`). Painel de Aprovações com fila pendentes + histórico paginado + filtros. Permissões: `excluir-registro-producao`, `excluir-registro-producao-direto`, `ver-painel-aprovacoes-producao`, `aprovar-exclusao-producao`. Tabela `producoes_solicitacoes_exclusao` com snapshot JSONB e lock FOR UPDATE. Migration: `_planejamento/migration-gerenciar-producao-solicitacoes.sql`. API: `api/gerenciar-producao.js`. |
 
-| Produção Geral | `producao-geral.css` | ✅ | ✅ | ✅ | v1.0 + v2.0 + v3.0 implementados (2026-04-26). Prefixo `PG*`, recharts, filtros client-side, PGMetaTimeline, banner histórico, Pontos Extras |
+| Produção Geral | `producao-geral.css` | ✅ | ❌ | ✅ | ✅ | v1.0 + v2.0 + v3.0 implementados (2026-04-26). Prefixo `PG*`, recharts, filtros client-side, PGMetaTimeline, banner histórico, Pontos Extras |
 
-> ✅ Concluído | ❌ Pendente | ❓ Não verificado — checar antes de trabalhar na área
+> Status de TypeScript: ✅ migrado para TypeScript | ⚠️ parcial/em transição | ❌ ainda não migrado | ❓ não verificado.
+
+> ✅ Concluído | ⚠️ TS = em transição para TypeScript | ❌ Pendente | ❓ Não verificado — checar antes de trabalhar na área
 
 ---
 
@@ -379,6 +441,7 @@ Funções puras compartilhadas entre `OPStatusCard` e `ArremateStatusCard` (e qu
 - Avatar: gradiente `var(--gs-primaria) → #8e44ad`, circular, pulsa quando idle (tamanho lg), gira quando scanning
 - Terminal: fundo `#f4f8fb`, fonte `Courier New`, prompt `›` / `✓`, cursor `▌` piscante
 - Botão: neutro (cinza) no idle → azul no scanning/done
+
 
 ---
 
@@ -508,6 +571,7 @@ O botão tem position: absolute/fixed?
     └── ← segue para Padrão A
 ```
 
+
 **Checklist ao implementar qualquer bloqueio:**
 1. Qual padrão? → Ver árvore de decisão acima.
 2. Algum componente PAI passa o handler condicionalmente (`onHandler={temPermissao ? fn : null}`)? → Remover a condição do pai, o filho cuida do bloqueio.
@@ -636,6 +700,7 @@ A **borda-charme** é um dos elementos visuais mais marcantes e consistentes do 
     background-color: #22c55e;      /* verde: disponível */
     border-radius: 10px 0 0 10px;   /* acompanha os 10px do card */
 }
+
 .op-corte-item--com-demanda .card-borda-charme { background-color: #3b82f6; } /* azul */
 .op-corte-item--urgente     .card-borda-charme { background-color: #f97316; } /* laranja */
 ```
@@ -721,34 +786,14 @@ Esse padrão existe em `api/arremates.js` e deve ser replicado onde houver neces
   - `GET /api/cron/arquivar-concluidas` — `48 2 * * *` (2h48 UTC, diário) — arquiva demandas concluídas
   - `GET /api/cron/registrar-intervalos` — `*/5 10-20 * * *` (a cada 5min, 10h–20h UTC = 7h–17h SP) — detecta S1/S2 e grava intervalos no `ponto_diario` independente de qualquer supervisor estar com a tela aberta. Auth via header `Authorization: Bearer CRON_SECRET`.
 
-### Ambientes (Staging)
+### Ambiente de produção
 
-O projeto tem dois ambientes configurados no Vercel desde 2026-05-01:
+O staging foi abandonado e não faz parte do fluxo do projeto. O ambiente ativo é
+a produção na branch `main`, com banco Neon `sistema_lv_db` em `sa-east-1`.
 
-| Ambiente | Branch git | URL | Banco |
-|---|---|---|---|
-| Produção | `main` | URL principal do projeto | `sistema_lv_db` (Neon, sa-east-1) |
-| Staging | `staging` | `sistema-lv-git-staging-lojas-variara.vercel.app` | `sistema-lv-staging` (Neon, us-east-1) |
-
-**Fluxo de trabalho atual:** desenvolvimento direto na `main` (push → produção). O staging existe para quando for necessário testar mudanças arriscadas antes de ir à produção.
-
-**Para usar o staging quando necessário:**
-```bash
-git checkout staging      # muda para o trilho de teste
-# ... faz as alterações ...
-git push origin staging   # publica no ambiente de preview (banco de staging)
-git checkout main
-git merge staging
-git push origin main      # manda para produção
-git checkout staging      # volta ao staging para continuar
-```
-
-**Utilitários de staging em `_planejamento/`:**
-- `gerar-schema-staging.js` — exporta schema da produção → `schema-staging.sql`
-- `testar-staging.js` — compara tabelas e colunas entre produção e staging
-- `seed-staging.js` — cria usuário admin de teste no staging (login: `admin_staging` / `staging123`)
-
-**Banner visual:** quando `VITE_ENV=staging`, o componente `UIHeaderPagina` exibe um banner laranja fixo no topo de todas as páginas admin. Em produção, `VITE_ENV=production` — banner não aparece.
+Para mudanças de banco, o fluxo obrigatório é: backup completo validado,
+restauração e ensaio local, autorização explícita, execução em produção e
+validação pós-migration.
 
 ---
 
@@ -764,6 +809,7 @@ Uma **sequence do PostgreSQL** é um objeto atômico do banco — incrementar e 
 
 ### Como está implementado (2026-05-16)
 
+
 **`POST /api/cortes`** — o campo `pn` é **opcional** no body. O INSERT usa:
 ```sql
 COALESCE($7, nextval('cortes_pn_seq')::text)
@@ -778,7 +824,7 @@ COALESCE($7, nextval('cortes_pn_seq')::text)
 **Frontend — quem ainda ENVIA `pn` (código legado):**
 - `OPRegistroCorte.jsx` — wizard de 3 passos (planejado para deleção após `OPQuickLogModal` ser validado em produção)
 
-**Migration rodada em produção e staging (2026-05-16):** `_planejamento/migration-cortes-pn-seq.sql`
+**Migration rodada em produção (2026-05-16):** `_planejamento/migration-cortes-pn-seq.sql`
 
 ### Regra para código novo
 
@@ -893,6 +939,7 @@ gincanas_premios_ganhos (id, gincana_id, usuario_id, nivel_label, descricao_prem
 | Cadência de pagamento | 5º dia útil do mês | Toda sexta-feira |
 | Dashboard | Bolso "Comissões" em `DashPagamentosModal` | Bolso "Premiações" em `DashPagamentosModal` |
 
+
 ### Fase calculada em runtime
 
 A `fase` **não é armazenada** — derivada em `calcularFase()` comparando `NOW()` com os timestamps:
@@ -995,15 +1042,28 @@ Para gincanas do tipo `meta` que já estão `encerrada` ou `encerrada_semana`, o
 
 ---
 
-## Observações para o Claude
+## Observações para o Codex
 
 - Ao criar novos componentes React, seguir o padrão de prefixo por domínio e colocar **sempre** em `public/src/components/` — nunca em subpastas.
 - Ao criar novas rotas de API, adicionar o import e o `app.use` correspondente no `server.js`.
 - **Nunca usar `saldo_op` diretamente** — calcular sempre a partir de `quantidade_real_produzida - total_ja_arrematado`.
 - O arquivo `regra de negocio das OP.txt` na raiz contém exemplos concretos das regras de OP com dados reais do banco.
-- Ao tomar uma decisão arquitetural importante ou implementar uma regra de negócio nova, **atualizar este CLAUDE.md**.
+- Ao tomar uma decisão arquitetural importante ou implementar uma regra de negócio nova, **atualizar este AGENTS.md**.
 - A pasta `_planejamento/` na raiz contém planos detalhados por funcionalidade (spec, checklist, decisões). **Sempre ler o arquivo relevante antes de começar a implementar qualquer coisa**. Arquivos existentes: `central-de-alertas.md`, `horario-empregados.md`, `producao-geral.md`, `organizacao-sistemica.md`, `gincanas.md`.
 - **Nunca usar `is_test` users em cálculos, listagens ou relatórios** — o filtro já está nas queries principais, mas atentar ao criar novas queries que listem funcionários.
 - **A tabela `usuarios` NÃO tem coluna `ativo`** — usar `data_demissao IS NULL` para filtrar funcionários ativos. O campo `ativo` existe em outras tabelas (avatares, configuracoes, etc.), nunca em `usuarios`.
 
+### Decisão arquitetural — Financeiro em React + TypeScript (encerrada)
+
+- A página `public/admin/financeiro.html` é integralmente React + TypeScript: `main-financeiro.tsx` + `FinanceiroPage` + `FinanceiroContext`.
+- Sem `admin-financeiro.js`, sem multi-root e sem bridges `window`/`CustomEvent` para comunicação interna da página.
+- **Migração encerrada em 2026-07-27** (validação manual OK; CSS limpo). **Novas features liberadas.**
+- Features novas devem continuar em `.ts`/`.tsx` na árvore única. Plano histórico: `_planejamento/migrando-financeiro-para-typescript.md`.
+
 ---
+
+## REGRA MAXIMA — CONTROLE DE ALTERACOES
+
+**NUNCA COMMITAR. NUNCA FAZER PUSH. NUNCA PUBLICAR OU FAZER DEPLOY EM PRODUCAO.**
+
+O usuario revisa todas as alteracoes e executa pessoalmente os commits, pushes e deploys. Esta regra vale para todo o projeto, sem excecao, mesmo quando uma tarefa parecer concluida ou quando uma ferramenta sugerir automatizar essas operacoes.

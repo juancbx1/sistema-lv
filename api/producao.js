@@ -652,7 +652,7 @@ router.post('/sugestao-tarefa', async (req, res) => {
             historicoMap.set(`${row.produto_id}-${row.processo}`, parseInt(row.contagem));
         });
 
-        // 2. Datas de abertura das OPs (data_entrega = data de criação, per CLAUDE.md)
+        // 2. Datas de abertura das OPs (data_entrega = data de criação, conforme AGENTS.md)
         // numero em ordens_de_producao é character varying — cast ::text[]
         const todasOps = [...new Set(candidatas.flatMap(c => c.origem_ops || []).map(String))];
         const opDatesMap = new Map(); // chave = string do numero da OP

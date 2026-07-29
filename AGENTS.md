@@ -16,6 +16,13 @@ O sistema está em transição planejada de empresa única para **multiempresas*
 
 `_planejamento/sistema-multiempresas.md`
 
+**Estado atual:** Fase 6 — migração integral do Financeiro para multiempresas.
+A fundação multiempresa e a Gestão Organizacional já estão em produção. A
+migration de preparação do Financeiro foi executada e validada na Neon em
+28/07/2026; a API foi isolada e validada, e o teste transacional das constraints
+empresariais foi aprovado com sete de sete cenários em 29/07/2026. A migration
+de finalização permanece pendente até a publicação e o smoke da empresa legada.
+
 ### Decisões obrigatórias
 
 - `usuarios` continuará representando a identidade global da pessoa e suas credenciais.
@@ -28,6 +35,9 @@ O sistema está em transição planejada de empresa única para **multiempresas*
 - O seletor universal ficará no menu lateral no PC e próximo ao hamburger no tablet/celular.
 - A página Usuários Cadastrados será evoluída para **Gestão Organizacional**, com abas **Pessoas e Acessos** e **Empresas**.
 - O Financeiro será o primeiro módulo de negócio migrado integralmente.
+- O plano executável da Fase 6, incluindo isolamento do Financeiro e redesign
+  dos modais, fica em
+  `_planejamento/financeiro-multiempresas-e-redesign-modais.md`.
 - Toda entidade empresarial deverá possuir vínculo explícito com `empresa_id`, direto ou garantido por uma entidade pai.
 - Toda consulta por ID, alteração ou exclusão empresarial deverá validar também `empresa_id`; filtrar apenas listagens não é suficiente.
 - O frontend nunca será a autoridade de isolamento. `empresa_id` não deve ser aceito cegamente do body.
@@ -85,17 +95,22 @@ O sistema está em transição planejada de empresa única para **multiempresas*
 | Fase 3 — login e sessão | Publicada e validada em produção |
 | Fase 4 — seletor universal | Publicada e validada em produção |
 | Fase 5 — Gestão Organizacional | Concluída, publicada e aprovada em produção |
-| Fase 6 — Financeiro como piloto | Aguardando triagem das próximas features e correções |
+| Fase 6 — Financeiro como piloto | Isolamento e teste transacional concluídos; publicação, smoke e finalização pendentes |
 | Fase 7 em diante | Não iniciada |
 
 Situação operacional:
 
-- a infraestrutura multiempresa está ativa, mas a produção continua operando
-  somente com `Lojas Variara`;
+- a infraestrutura multiempresa está ativa; `Lojas Variara` permanece como
+  única empresa operando o Financeiro, e `Neila Confecções` ainda não possui
+  acesso ao módulo;
 - a Neon já contém as tabelas fundamentais, a empresa `Lojas Variara`, os 18
   vínculos iniciais e o catálogo de 18 módulos;
-- nenhum módulo de negócio possui isolamento por `empresa_id` ainda;
-- nenhuma empresa secundária foi cadastrada ou liberada em produção;
+- o Financeiro recebeu `empresa_id` nas 13 tabelas por migration de preparação,
+  mas a migration de finalização ainda não foi executada;
+- o teste transacional das constraints empresariais foi aprovado com sete de
+  sete cenários e `ROLLBACK`, sem deixar fixtures na Neon;
+- `Neila Confecções` está cadastrada, porém o Financeiro continua bloqueado para
+  empresas secundárias;
 - o backend possui contexto universal, troca de empresa, JWT
   contextual, `/usuarios/me` contextual e impersonação por empresa;
 - o menu compartilhado possui seletor no PC, tablet e celular;

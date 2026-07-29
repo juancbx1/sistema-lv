@@ -2,61 +2,92 @@
 import 'dotenv/config';
 import pkg from 'pg';
 const { Pool } = pkg;
-import jwt from 'jsonwebtoken';
 import express from 'express';
 import { getPermissoesCompletasUsuarioDB } from './usuarios.js';
+import { obterEmpresaIdDoContexto } from './contexto-empresa.js';
 
 const router = express.Router();
 const pool = new Pool({
     connectionString: process.env.POSTGRES_URL,
     timezone: 'UTC',
 });
-const SECRET_KEY = process.env.JWT_SECRET;
-
-// Objeto para mapear nomes lógicos para IDs de categoria
-const CATEGORIA_MAP = {
-    SALARIO: 13,
-    BONUS_PREMIACOES: 15,
-    VALE_TRANSPORTE: 37,
-    COMISSAO: 52,
-    BENEFICIOS_DIVERSOS: 89
+const NOMES_CATEGORIAS_PAGAMENTO = {
+    SALARIO: 'Salário',
+    BONUS_PREMIACOES: 'Bônus e Premiações',
+    VALE_TRANSPORTE: 'Vale Transporte',
+    COMISSAO: 'Comissão',
+    BENEFICIOS_DIVERSOS: 'Vale Alimentação',
+    TAXA_VT: 'Taxas de VT',
 };
 
-// Função de inicialização simplificada (Apenas loga sucesso, já que os IDs são hardcoded)
-async function inicializarMapeamentoCategorias() {
-    console.log('[API Pagamentos] Mapeamento de categorias inicializado com IDs fixos.');
-}
+async function carregarCategoriasPagamento(dbClient, empresaId, chavesNecessarias) {
+    const nomes = chavesNecessarias.map((chave) => {
+        const nome = NOMES_CATEGORIAS_PAGAMENTO[chave];
+        if (!nome) {
+            throw new Error(`Categoria lógica de pagamento inválida: "${chave}".`);
+        }
+        return nome;
+    });
+    const result = await dbClient.query(
+        `SELECT c.id, c.nome
+           FROM fc_categorias c
+           JOIN fc_grupos_financeiros g
+             ON g.id = c.id_grupo
+            AND g.empresa_id = c.empresa_id
+          WHERE c.empresa_id = $1
+            AND c.nome = ANY($2::text[])
+            AND g.tipo = 'DESPESA'`,
+        [empresaId, nomes]
+    );
 
-// Chama a função de inicialização uma vez quando o servidor sobe
-inicializarMapeamentoCategorias();
+    const porNome = new Map();
+    for (const categoria of result.rows) {
+        if (porNome.has(categoria.nome)) {
+            throw new Error(
+                `A empresa possui mais de uma categoria financeira chamada "${categoria.nome}".`
+            );
+        }
+        porNome.set(categoria.nome, categoria.id);
+    }
+
+    const mapa = {};
+    for (const chave of chavesNecessarias) {
+        const nome = NOMES_CATEGORIAS_PAGAMENTO[chave];
+        const id = porNome.get(nome);
+        if (!id) {
+            throw new Error(
+                `A categoria financeira obrigatória "${nome}" não está configurada para a empresa ativa.`
+            );
+        }
+        mapa[chave] = id;
+    }
+    return mapa;
+}
 
 // --- Middleware de Autenticação para este Módulo ---
 router.use(async (req, res, next) => {
 
     let dbClient;
     try {
-        const token = req.headers.authorization?.split(' ')[1];
-        if (!token) {
-            return res.status(401).json({ error: 'Token não fornecido.' });
+        const empresaId = obterEmpresaIdDoContexto(req);
+        if (!req.usuarioLogado?.id) {
+            return res.status(401).json({ error: 'Usuário autenticado não encontrado.' });
         }
-        
-        // 1. Decodifica o token para obter o ID do usuário
-        req.usuarioLogado = jwt.verify(token, SECRET_KEY);
-        
-        // 2. Conecta ao banco de dados para buscar as permissões
+
         dbClient = await pool.connect();
-        req.permissoesUsuario = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id);
+        req.permissoesUsuario = await getPermissoesCompletasUsuarioDB(
+            dbClient,
+            req.usuarioLogado.id,
+            empresaId
+        );
         
         next(); // Passa para a rota específica (ex: /efetuar, /registros-dias)
 
     } catch (error) {
-        let message = 'Token inválido ou expirado.';
-        if (error.name === 'TokenExpiredError') {
-            message = 'Sessão expirada. Faça login novamente.';
-        } else {
-            console.error('[PAGAMENTOS MIDDLEWARE] Erro:', error);
-        }
-        return res.status(401).json({ error: message, details: 'jwt_error' });
+        console.error('[PAGAMENTOS MIDDLEWARE] Erro:', error);
+        return res.status(error.statusCode || 500).json({
+            error: error.message || 'Erro ao validar o contexto empresarial.',
+        });
     } finally {
         // IMPORTANTE: O middleware libera a conexão.
         // As rotas que o seguem precisarão de sua própria conexão.
@@ -380,8 +411,42 @@ router.post('/efetuar', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
-        
-        const userRes = await dbClient.query('SELECT id_contato_financeiro FROM usuarios WHERE id = $1', [id_funcionario]);
+        const categoriaPorTipoPagamento = {
+            COMISSAO: 'COMISSAO',
+            BONUS: 'BONUS_PREMIACOES',
+            VALE_TRANSPORTE: 'VALE_TRANSPORTE',
+            SALARIO: 'SALARIO',
+            BENEFICIOS: 'BENEFICIOS_DIVERSOS',
+        };
+        const chaveCategoria = categoriaPorTipoPagamento[tipoPagamento];
+        const categoriasPagamento = await carregarCategoriasPagamento(
+            dbClient,
+            req.empresaId,
+            [chaveCategoria]
+        );
+        const contaRes = await dbClient.query(
+            `SELECT id
+               FROM fc_contas_bancarias
+              WHERE id = $1
+                AND empresa_id = $2
+                AND ativo`,
+            [id_conta_debito, req.empresaId]
+        );
+        if (contaRes.rows.length === 0) {
+            throw new Error('Conta de débito não encontrada na empresa ativa.');
+        }
+
+        const userRes = await dbClient.query(
+            `SELECT ue.id_contato_financeiro
+               FROM usuarios_empresas ue
+               JOIN fc_contatos c
+                 ON c.id = ue.id_contato_financeiro
+                AND c.empresa_id = ue.empresa_id
+              WHERE ue.usuario_id = $1
+                AND ue.empresa_id = $2
+                AND ue.ativo`,
+            [id_funcionario, req.empresaId]
+        );
         if (userRes.rows.length === 0 || !userRes.rows[0].id_contato_financeiro) {
             throw new Error(`O empregado ${nome_funcionario} não possui um contato financeiro vinculado.`);
         }
@@ -396,8 +461,20 @@ router.post('/efetuar', async (req, res) => {
         //    Isso garante que o timestamp salvo é o do servidor do banco de dados.
         //    Os parâmetros foram reordenados.
         await dbClient.query(
-            `INSERT INTO fc_lancamentos (id_conta_bancaria, id_categoria, tipo, valor, data_transacao, descricao, id_contato, id_usuario_lancamento) VALUES ($1, $2, 'DESPESA', $3, NOW(), $4, $5, $6)`,
-            [id_conta_debito, idCategoria, valor, descricao, idContato, id_usuario_pagador]
+            `INSERT INTO fc_lancamentos (
+                id_conta_bancaria, id_categoria, tipo, valor, data_transacao,
+                descricao, id_contato, id_usuario_lancamento, empresa_id
+            )
+            VALUES ($1, $2, 'DESPESA', $3, NOW(), $4, $5, $6, $7)`,
+            [
+                id_conta_debito,
+                idCategoria,
+                valor,
+                descricao,
+                idContato,
+                id_usuario_pagador,
+                req.empresaId,
+            ]
         );
     };
 
@@ -407,20 +484,21 @@ router.post('/efetuar', async (req, res) => {
             const checkQuery = "SELECT id FROM historico_pagamentos_funcionarios WHERE usuario_id = $1 AND ciclo_nome = $2";
             const checkResult = await dbClient.query(checkQuery, [id_funcionario, nomeCicloOuMotivo]);
             if (checkResult.rowCount > 0) {
+                await dbClient.query('ROLLBACK');
                 return res.status(409).json({ error: `Pagamento de comissão para o ciclo "${nomeCicloOuMotivo}" já foi registrado.` });
             }
             
-            await fazerLancamento(CATEGORIA_MAP.COMISSAO, proventos.comissao, `Pgto Comissão (${nomeCicloOuMotivo}) para ${nome_funcionario}`, id_contato_financeiro);
+            await fazerLancamento(categoriasPagamento.COMISSAO, proventos.comissao, `Pgto Comissão (${nomeCicloOuMotivo}) para ${nome_funcionario}`, id_contato_financeiro);
 
         } else if (tipoPagamento === 'BONUS') {
             const { proventos } = calculo;
-            await fazerLancamento(CATEGORIA_MAP.BONUS_PREMIACOES, proventos.beneficios, `Bônus/Premiação: ${nomeCicloOuMotivo}`, id_contato_financeiro);
+            await fazerLancamento(categoriasPagamento.BONUS_PREMIACOES, proventos.beneficios, `Bônus/Premiação: ${nomeCicloOuMotivo}`, id_contato_financeiro);
         
         } else if (tipoPagamento === 'SALARIO') {
             // Lançamento Financeiro Simples
             // O valor total já vem calculado do frontend em totais.totalLiquidoAPagar
             await fazerLancamento(
-                CATEGORIA_MAP.SALARIO, // Usa o ID 13 fixo
+                categoriasPagamento.SALARIO,
                 totais.totalLiquidoAPagar, 
                 `Pagamento de Salário (${nomeCicloOuMotivo}) para ${nome_funcionario}`, 
                 id_contato_financeiro
@@ -428,7 +506,7 @@ router.post('/efetuar', async (req, res) => {
 
         } else if (tipoPagamento === 'BENEFICIOS') {
             await fazerLancamento(
-                CATEGORIA_MAP.BENEFICIOS_DIVERSOS, 
+                categoriasPagamento.BENEFICIOS_DIVERSOS,
                 totais.totalLiquidoAPagar, 
                 `Pagamento de (${nomeCicloOuMotivo})`, 
                 id_contato_financeiro
@@ -443,7 +521,7 @@ router.post('/efetuar', async (req, res) => {
             }
 
             const descricaoLancamento = `Recarga VT (${datas_pagas.length} dias)`;
-            await fazerLancamento(CATEGORIA_MAP.VALE_TRANSPORTE, totais.totalLiquidoAPagar, descricaoLancamento, id_contato_financeiro);
+            await fazerLancamento(categoriasPagamento.VALE_TRANSPORTE, totais.totalLiquidoAPagar, descricaoLancamento, id_contato_financeiro);
 
             for (const data of datas_pagas) {
                 await dbClient.query(
@@ -531,7 +609,11 @@ router.get('/registros-dias', async (req, res) => {
         dbClient = await pool.connect();
 
         // <<< A VERIFICAÇÃO DE PERMISSÃO AGORA ACONTECE AQUI DENTRO >>>
-        const permissoesUsuario = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoesUsuario = await getPermissoesCompletasUsuarioDB(
+            dbClient,
+            usuarioLogado.id,
+            req.empresaId
+        );
         if (!permissoesUsuario.includes('acessar-central-pagamentos')) {
             return res.status(403).json({ error: 'Permissão negada para acessar esta funcionalidade.' });
         }
@@ -969,8 +1051,6 @@ router.post('/lote-vt', async (req, res) => {
     const { 
         id_conta_debito, 
         id_concessionaria,
-        id_contato_concessionaria,
-        nome_concessionaria,
         data_referencia_inicio,
         data_referencia_fim,
         valor_total_vt, // Soma dos VTs dos empregados
@@ -983,9 +1063,6 @@ router.post('/lote-vt', async (req, res) => {
         return res.status(400).json({ error: 'Dados incompletos para o lote.' });
     }
 
-    // ID da Categoria "Taxas de VT" (Conforme você criou no banco)
-    const ID_CATEGORIA_TAXA_VT = 88; 
-
     let dbClient;
     try {
         dbClient = await pool.connect();
@@ -993,21 +1070,77 @@ router.post('/lote-vt', async (req, res) => {
 
         const idUsuarioPagador = req.usuarioLogado.id;
         const dataHoje = new Date();
+        const categoriasPagamento = await carregarCategoriasPagamento(
+            dbClient,
+            req.empresaId,
+            ['VALE_TRANSPORTE', 'TAXA_VT']
+        );
+        const contaRes = await dbClient.query(
+            `SELECT id
+               FROM fc_contas_bancarias
+              WHERE id = $1
+                AND empresa_id = $2
+                AND ativo`,
+            [id_conta_debito, req.empresaId]
+        );
+        if (contaRes.rows.length === 0) {
+            throw new Error('Conta de débito não encontrada na empresa ativa.');
+        }
+        const concessionariaRes = await dbClient.query(
+            `SELECT id, nome, id_contato_financeiro
+               FROM config_concessionarias_vt
+              WHERE id = $1
+                AND empresa_id = $2
+                AND ativo`,
+            [id_concessionaria, req.empresaId]
+        );
+        if (concessionariaRes.rows.length === 0) {
+            throw new Error('Concessionária não encontrada na empresa ativa.');
+        }
+        const concessionaria = concessionariaRes.rows[0];
+        const nomeConcessionaria = concessionaria.nome;
+        const idsUsuarios = itens.map((item) => Number(item.usuario_id));
+        const contatosRes = await dbClient.query(
+            `SELECT ue.usuario_id, ue.id_contato_financeiro
+               FROM usuarios_empresas ue
+               LEFT JOIN fc_contatos c
+                 ON c.id = ue.id_contato_financeiro
+                AND c.empresa_id = ue.empresa_id
+              WHERE ue.usuario_id = ANY($1::int[])
+                AND ue.empresa_id = $2
+                AND ue.ativo
+                AND (
+                    ue.id_contato_financeiro IS NULL
+                    OR c.id IS NOT NULL
+                )`,
+            [idsUsuarios, req.empresaId]
+        );
+        const contatoPorUsuario = new Map(
+            contatosRes.rows.map((row) => [
+                Number(row.usuario_id),
+                row.id_contato_financeiro,
+            ])
+        );
+        if (contatoPorUsuario.size !== new Set(idsUsuarios).size) {
+            throw new Error('O lote contém pessoa sem vínculo ativo com a empresa.');
+        }
 
         // --- PASSO A: Lançamento Financeiro do MONTANTE DE VT (DETALHADO) ---
         // Cria o registro PAI (tipo_rateio = 'DETALHADO')
         if (valor_total_vt > 0) {
             const resPai = await dbClient.query(
                 `INSERT INTO fc_lancamentos 
-                 (id_conta_bancaria, id_categoria, tipo, tipo_rateio, valor, data_transacao, descricao, id_usuario_lancamento) 
-                 VALUES ($1, $2, 'DESPESA', 'DETALHADO', $3, NOW(), $4, $5)
+                 (id_conta_bancaria, id_categoria, tipo, tipo_rateio, valor,
+                  data_transacao, descricao, id_usuario_lancamento, empresa_id)
+                 VALUES ($1, $2, 'DESPESA', 'DETALHADO', $3, NOW(), $4, $5, $6)
                  RETURNING id`,
                 [
                     id_conta_debito, 
-                    CATEGORIA_MAP.VALE_TRANSPORTE, 
+                    categoriasPagamento.VALE_TRANSPORTE,
                     valor_total_vt, 
-                    `Recarga VT (${nome_concessionaria}) - ${itens.length} funcionários`, 
-                    idUsuarioPagador
+                    `Recarga VT (${nomeConcessionaria}) - ${itens.length} funcionários`,
+                    idUsuarioPagador,
+                    req.empresaId
                 ]
             );
             
@@ -1021,14 +1154,16 @@ router.post('/lote-vt', async (req, res) => {
                 
                 await dbClient.query(
                     `INSERT INTO fc_lancamento_itens 
-                     (id_lancamento_pai, id_categoria, id_contato_item, descricao_item, valor_total_item) 
-                     VALUES ($1, $2, $3, $4, $5)`,
+                     (id_lancamento_pai, id_categoria, id_contato_item,
+                      descricao_item, valor_total_item, empresa_id)
+                     VALUES ($1, $2, $3, $4, $5, $6)`,
                     [
                         idPai,
-                        CATEGORIA_MAP.VALE_TRANSPORTE, // O item herda a categoria de VT
-                        item.id_contato_financeiro || null, // Vínculo com o empregado no financeiro
+                        categoriasPagamento.VALE_TRANSPORTE,
+                        contatoPorUsuario.get(Number(item.usuario_id)) || null,
                         descItem,
-                        item.valor_total
+                        item.valor_total,
+                        req.empresaId
                     ]
                 );
             }
@@ -1037,15 +1172,20 @@ router.post('/lote-vt', async (req, res) => {
         // --- PASSO B: Lançamento Financeiro da TAXA (SEPARADO) ---
         if (valor_total_taxa > 0) {
             await dbClient.query(
-                `INSERT INTO fc_lancamentos (id_conta_bancaria, id_categoria, tipo, valor, data_transacao, descricao, id_usuario_lancamento, id_contato) 
-                 VALUES ($1, $2, 'DESPESA', $3, NOW(), $4, $5, $6)`,
+                `INSERT INTO fc_lancamentos (
+                    id_conta_bancaria, id_categoria, tipo, valor,
+                    data_transacao, descricao, id_usuario_lancamento,
+                    id_contato, empresa_id
+                 )
+                 VALUES ($1, $2, 'DESPESA', $3, NOW(), $4, $5, $6, $7)`,
                 [
                     id_conta_debito, 
-                    ID_CATEGORIA_TAXA_VT, 
+                    categoriasPagamento.TAXA_VT,
                     valor_total_taxa, 
-                    `Taxa Adm. VT (${nome_concessionaria})`, 
+                    `Taxa Adm. VT (${nomeConcessionaria})`,
                     idUsuarioPagador,
-                    id_contato_concessionaria || null // <--- USA O ID RECEBIDO
+                    concessionaria.id_contato_financeiro || null,
+                    req.empresaId
                 ]
             );
         }
@@ -1058,7 +1198,7 @@ router.post('/lote-vt', async (req, res) => {
             // Criamos um objeto "detalhes" simulado para manter compatibilidade com o sistema antigo
             const detalhesSimulados = {
                 tipoPagamento: 'VALE_TRANSPORTE',
-                detalhes: { ciclo: { nome: `${nome_concessionaria} (${dias_qtd} dias)` } },
+                detalhes: { ciclo: { nome: `${nomeConcessionaria} (${dias_qtd} dias)` } },
                 datas_pagas: datas_lista
             };
 
@@ -1068,7 +1208,7 @@ router.post('/lote-vt', async (req, res) => {
                 VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
                 [
                     usuario_id, 
-                    `Recarga VT (${nome_concessionaria})`, 
+                    `Recarga VT (${nomeConcessionaria})`,
                     valor_total, 
                     idUsuarioPagador, 
                     JSON.stringify(detalhesSimulados), 
@@ -1085,7 +1225,7 @@ router.post('/lote-vt', async (req, res) => {
                         await dbClient.query(
                             `INSERT INTO registro_dias_trabalhados (usuario_id, data, status, valor_referencia, observacao) 
                              VALUES ($1, $2, 'PAGO', $3, $4)`,
-                            [usuario_id, dataStr, (valor_total / dias_qtd) || 0, `Lote VT ${nome_concessionaria}`]
+                            [usuario_id, dataStr, (valor_total / dias_qtd) || 0, `Lote VT ${nomeConcessionaria}`]
                         );
                     }
                 }

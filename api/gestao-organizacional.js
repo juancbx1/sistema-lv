@@ -273,6 +273,86 @@ async function sincronizarLegado(client, usuarioId, vinculo, empresa) {
     );
 }
 
+function tipoContatoDoVinculo(vinculo) {
+    const tipos = vinculo.tipos || [];
+    if (tipos.some((tipo) => tipo === 'socio' || tipo === 'ex_socio')) {
+        return 'SOCIOS';
+    }
+    if (tipos.includes('prestador_externo') || vinculo.is_freelance) {
+        return 'FORNECEDOR';
+    }
+    return 'EMPREGADO';
+}
+
+async function garantirContatoFinanceiroVinculo(
+    client,
+    usuarioId,
+    empresaId,
+    nomePessoa,
+    vinculo
+) {
+    if (!vinculo.ativo || !vinculo.elegivel_pagamento) return null;
+
+    const vinculoAtual = await client.query(
+        `SELECT id_contato_financeiro
+           FROM usuarios_empresas
+          WHERE usuario_id = $1
+            AND empresa_id = $2
+          FOR UPDATE`,
+        [usuarioId, empresaId]
+    );
+    if (!vinculoAtual.rows[0]) {
+        throw erro(404, 'Vínculo empresarial não encontrado para configurar o contato financeiro.');
+    }
+
+    const contatoAtualId = vinculoAtual.rows[0].id_contato_financeiro;
+    if (contatoAtualId) {
+        const contatoValido = await client.query(
+            `SELECT id
+               FROM fc_contatos
+              WHERE id = $1
+                AND empresa_id = $2`,
+            [contatoAtualId, empresaId]
+        );
+        if (!contatoValido.rows[0]) {
+            throw erro(409, 'O contato financeiro atual não pertence à empresa do vínculo.');
+        }
+        return contatoAtualId;
+    }
+
+    const tipoContato = tipoContatoDoVinculo(vinculo);
+    const contatoExistente = await client.query(
+        `SELECT id
+           FROM fc_contatos
+          WHERE empresa_id = $1
+            AND nome = $2
+            AND tipo = $3
+          LIMIT 1`,
+        [empresaId, nomePessoa, tipoContato]
+    );
+    let contatoId = contatoExistente.rows[0]?.id;
+
+    if (!contatoId) {
+        const novoContato = await client.query(
+            `INSERT INTO fc_contatos (nome, tipo, ativo, empresa_id)
+             VALUES ($1, $2, TRUE, $3)
+             RETURNING id`,
+            [nomePessoa, tipoContato, empresaId]
+        );
+        contatoId = novoContato.rows[0].id;
+    }
+
+    await client.query(
+        `UPDATE usuarios_empresas
+            SET id_contato_financeiro = $1,
+                atualizado_em = NOW()
+          WHERE usuario_id = $2
+            AND empresa_id = $3`,
+        [contatoId, usuarioId, empresaId]
+    );
+    return contatoId;
+}
+
 async function definirPrincipal(client, usuarioId, vinculoId, principal) {
     if (!principal) return;
     await client.query(
@@ -578,6 +658,14 @@ router.post('/pessoas', async (req, res) => {
                 vinculo.data_demissao, vinculo.is_freelance, vinculo.ativo,
             ]
         );
+        const contatoFinanceiroId = await garantirContatoFinanceiroVinculo(
+            client,
+            pessoa.id,
+            empresaId,
+            nome,
+            vinculo
+        );
+        vinculoResult.rows[0].id_contato_financeiro = contatoFinanceiroId;
         await sincronizarLegado(client, pessoa.id, vinculo, empresa);
         await client.query('COMMIT');
         res.status(201).json({ ...pessoa, vinculo: vinculoResult.rows[0] });
@@ -645,7 +733,10 @@ router.post('/pessoas/:id/vinculos', async (req, res) => {
         client = await pool.connect();
         await client.query('BEGIN');
         const empresa = await buscarEmpresa(client, empresaId, { somenteAtiva: true });
-        const pessoa = await client.query('SELECT id FROM usuarios WHERE id = $1', [usuarioId]);
+        const pessoa = await client.query(
+            'SELECT id, nome FROM usuarios WHERE id = $1',
+            [usuarioId]
+        );
         if (!pessoa.rows[0]) throw erro(404, 'Pessoa não encontrada.');
         const quantidade = await client.query(
             'SELECT COUNT(*)::integer AS total FROM usuarios_empresas WHERE usuario_id = $1',
@@ -679,6 +770,14 @@ router.post('/pessoas/:id/vinculos', async (req, res) => {
                 vinculo.data_demissao, vinculo.is_freelance, vinculo.ativo, principal,
             ]
         );
+        const contatoFinanceiroId = await garantirContatoFinanceiroVinculo(
+            client,
+            usuarioId,
+            empresaId,
+            pessoa.rows[0].nome,
+            vinculo
+        );
+        result.rows[0].id_contato_financeiro = contatoFinanceiroId;
         await sincronizarLegado(client, usuarioId, vinculo, empresa);
         await client.query('COMMIT');
         res.status(201).json(result.rows[0]);
@@ -705,8 +804,16 @@ router.put('/vinculos/:id', async (req, res) => {
         client = await pool.connect();
         await client.query('BEGIN');
         const atualResult = await client.query(
-            `SELECT ue.usuario_id, ue.empresa_id, ue.empresa_principal, e.nome_fantasia, e.ativa, e.eh_legada
+            `SELECT
+                ue.usuario_id,
+                ue.empresa_id,
+                ue.empresa_principal,
+                u.nome AS nome_pessoa,
+                e.nome_fantasia,
+                e.ativa,
+                e.eh_legada
              FROM usuarios_empresas ue
+             JOIN usuarios u ON u.id = ue.usuario_id
              JOIN empresas e ON e.id = ue.empresa_id
              WHERE ue.id = $1
              FOR UPDATE`,
@@ -770,6 +877,14 @@ router.put('/vinculos/:id', async (req, res) => {
                 [vinculoPrincipalSubstitutoId]
             );
         }
+        const contatoFinanceiroId = await garantirContatoFinanceiroVinculo(
+            client,
+            atual.usuario_id,
+            atual.empresa_id,
+            identidade?.nome || atual.nome_pessoa,
+            vinculo
+        );
+        result.rows[0].id_contato_financeiro = contatoFinanceiroId;
         await sincronizarLegado(client, atual.usuario_id, vinculo, atual);
         await client.query('COMMIT');
         res.json(result.rows[0]);

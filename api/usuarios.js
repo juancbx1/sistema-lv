@@ -412,7 +412,7 @@ router.get('/', async (req, res) => {
                 u.salario_fixo, u.valor_passagem_diaria, u.elegivel_pagamento,
                 u.desconto_inss_percentual, 
                 u.desconto_vt_percentual,
-                u.id_contato_financeiro, u.data_admissao,
+                ue.id_contato_financeiro, ue.data_admissao,
                 u.data_demissao,
                 u.horario_entrada_1, u.horario_saida_1,
                 u.horario_entrada_2, u.horario_saida_2,
@@ -434,15 +434,23 @@ router.get('/', async (req, res) => {
                     WHERE fe.id_usuario = u.id AND CURRENT_DATE BETWEEN fe.data_inicio AND fe.data_fim
                 ) AS esta_de_ferias
             FROM usuarios u
-            LEFT JOIN fc_contatos c ON u.id_contato_financeiro = c.id
+            JOIN usuarios_empresas ue
+              ON ue.usuario_id = u.id
+             AND ue.empresa_id = $2
+             AND ue.ativo
+            LEFT JOIN fc_contatos c
+              ON ue.id_contato_financeiro = c.id
+             AND c.empresa_id = ue.empresa_id
             WHERE (u.arquivado IS FALSE OR u.arquivado IS NULL) -- <<< ESCONDE OS ARQUIVADOS
               AND (u.is_test IS FALSE OR u.is_test IS NULL)   -- <<< ESCONDE USUÁRIOS DE TESTE
             ORDER BY u.nome ASC;
         `;
     // Passamos a variável de ambiente como um parâmetro para a query
-    const result = await dbCliente.query(query, [process.env.DEFAULT_AVATAR_URL]);
+    const result = await dbCliente.query(
+        query,
+        [process.env.DEFAULT_AVATAR_URL, req.empresaId]
+    );
 
-    res.status(200).json(result.rows);
         res.status(200).json(result.rows);
     } catch (error) {
         console.error('[router/usuarios GET] Erro:', error);
@@ -456,7 +464,11 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
     const { usuarioLogado, dbCliente } = req;
     try {
-        const permissoesUsuarioAtual = await getPermissoesCompletasUsuarioDB(dbCliente, usuarioLogado.id);
+        const permissoesUsuarioAtual = await getPermissoesCompletasUsuarioDB(
+            dbCliente,
+            usuarioLogado.id,
+            req.empresaId
+        );
         if (!permissoesUsuarioAtual.includes('acesso-cadastrar-usuarios')) {
             return res.status(403).json({ error: 'Permissão negada para criar usuários' });
         }
@@ -489,6 +501,25 @@ router.post('/', async (req, res) => {
             ] 
         );
         const novoUsuarioId = userResult.rows[0].id;
+        await dbCliente.query(
+            `INSERT INTO usuarios_empresas (
+                usuario_id, empresa_id, tipos, permissoes, nivel, salario_fixo,
+                valor_passagem_diaria, desconto_inss_percentual,
+                desconto_vt_percentual, ativo, empresa_principal
+             )
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE, TRUE)`,
+            [
+                novoUsuarioId,
+                req.empresaId,
+                tipos,
+                [],
+                nivel,
+                salario_fixo || 0,
+                valor_passagem_diaria || 0,
+                desconto_inss_percentual || 9.00,
+                desconto_vt_percentual || 6.00,
+            ]
+        );
 
         // 2. Vínculo com Concessionárias de VT
         if (concessionaria_ids && Array.isArray(concessionaria_ids) && concessionaria_ids.length > 0) {
@@ -502,23 +533,34 @@ router.post('/', async (req, res) => {
         if (ehEmpregado) {
             let contatoId;
             const existingContactRes = await dbCliente.query(
-                "SELECT id FROM fc_contatos WHERE nome = $1 AND tipo = 'EMPREGADO' LIMIT 1",
-                [nome]
+                `SELECT id
+                   FROM fc_contatos
+                  WHERE nome = $1
+                    AND tipo = 'EMPREGADO'
+                    AND empresa_id = $2
+                  LIMIT 1`,
+                [nome, req.empresaId]
             );
 
             if (existingContactRes.rows.length > 0) {
                 contatoId = existingContactRes.rows[0].id;
             } else {
                 const newContactRes = await dbCliente.query(
-                    "INSERT INTO fc_contatos (nome, tipo, ativo) VALUES ($1, 'EMPREGADO', TRUE) RETURNING id",
-                    [nome]
+                    `INSERT INTO fc_contatos (nome, tipo, ativo, empresa_id)
+                     VALUES ($1, 'EMPREGADO', TRUE, $2)
+                     RETURNING id`,
+                    [nome, req.empresaId]
                 );
                 contatoId = newContactRes.rows[0].id;
             }
 
             await dbCliente.query(
-                "UPDATE usuarios SET id_contato_financeiro = $1 WHERE id = $2",
-                [contatoId, novoUsuarioId]
+                `UPDATE usuarios_empresas
+                    SET id_contato_financeiro = $1,
+                        atualizado_em = NOW()
+                  WHERE usuario_id = $2
+                    AND empresa_id = $3`,
+                [contatoId, novoUsuarioId, req.empresaId]
             );
         }
         
@@ -544,7 +586,11 @@ router.post('/', async (req, res) => {
 router.put('/', async (req, res) => {
     const { usuarioLogado, dbCliente } = req;
     try {
-        const permissoesUsuarioAtual = await getPermissoesCompletasUsuarioDB(dbCliente, usuarioLogado.id);
+        const permissoesUsuarioAtual = await getPermissoesCompletasUsuarioDB(
+            dbCliente,
+            usuarioLogado.id,
+            req.empresaId
+        );
         if (!permissoesUsuarioAtual.includes('editar-usuarios')) {
             return res.status(403).json({ error: 'Permissão negada para editar usuários' });
         }
@@ -603,7 +649,6 @@ router.put('/', async (req, res) => {
         
         if (elegivel_pagamento !== undefined) { fieldsToUpdate.push(`elegivel_pagamento = $${paramIndex++}`); values.push(elegivel_pagamento); }
         
-        if (id_contato_financeiro !== undefined) { fieldsToUpdate.push(`id_contato_financeiro = $${paramIndex++}`); values.push(id_contato_financeiro); }
         if (permissoesIndividuais !== undefined) {
             const permissoesValidas = permissoesIndividuais.filter(p => backendPermissoesValidas.has(p));
             fieldsToUpdate.push(`permissoes = $${paramIndex++}`);
@@ -629,6 +674,37 @@ router.put('/', async (req, res) => {
             await dbCliente.query(queryText, values);
         }
 
+        if (id_contato_financeiro !== undefined) {
+            const contatoId = id_contato_financeiro || null;
+
+            if (contatoId !== null) {
+                const contatoRes = await dbCliente.query(
+                    `SELECT id
+                       FROM fc_contatos
+                      WHERE id = $1
+                        AND empresa_id = $2`,
+                    [contatoId, req.empresaId]
+                );
+                if (contatoRes.rows.length === 0) {
+                    throw new Error('Contato financeiro não pertence à empresa ativa.');
+                }
+            }
+
+            const vinculoRes = await dbCliente.query(
+                `UPDATE usuarios_empresas
+                    SET id_contato_financeiro = $1,
+                        atualizado_em = NOW()
+                  WHERE usuario_id = $2
+                    AND empresa_id = $3
+                    AND ativo
+                RETURNING id`,
+                [contatoId, id, req.empresaId]
+            );
+            if (vinculoRes.rows.length === 0) {
+                throw new Error('Usuário sem vínculo ativo com a empresa selecionada.');
+            }
+        }
+
         // --- 2. Lógica para atualizar a tabela 'usuario_concessionaria_vt' ---
         if (concessionaria_ids && Array.isArray(concessionaria_ids)) {
             await dbCliente.query('DELETE FROM usuario_concessionaria_vt WHERE usuario_id = $1', [id]);
@@ -644,7 +720,11 @@ router.put('/', async (req, res) => {
         // Retorna o usuário atualizado para consistência no frontend
         const finalUserRes = await dbCliente.query('SELECT * FROM usuarios WHERE id = $1', [id]);
         let usuarioAtualizado = finalUserRes.rows[0];
-        usuarioAtualizado.permissoes_totais = await getPermissoesCompletasUsuarioDB(dbCliente, usuarioAtualizado.id);
+        usuarioAtualizado.permissoes_totais = await getPermissoesCompletasUsuarioDB(
+            dbCliente,
+            usuarioAtualizado.id,
+            req.empresaId
+        );
 
         if (permissoesIndividuais !== undefined) {
             const permissoesValidasParaSalvar = permissoesIndividuais.filter(p => backendPermissoesValidas.has(p));
@@ -676,7 +756,11 @@ router.put('/', async (req, res) => {
 router.put('/batch', async (req, res) => {
     const { usuarioLogado, dbCliente } = req;
     try {
-        const permissoesUsuarioAtual = await getPermissoesCompletasUsuarioDB(dbCliente, usuarioLogado.id);
+        const permissoesUsuarioAtual = await getPermissoesCompletasUsuarioDB(
+            dbCliente,
+            usuarioLogado.id,
+            req.empresaId
+        );
         if (!permissoesUsuarioAtual.includes('gerenciar-permissoes')) {
             return res.status(403).json({ error: 'Permissão negada para gerenciar permissões em lote' });
         }
@@ -740,7 +824,11 @@ router.put('/batch', async (req, res) => {
 router.delete('/', async (req, res) => {
     const { usuarioLogado, dbCliente } = req;
     try {
-        const permissoesUsuarioAtual = await getPermissoesCompletasUsuarioDB(dbCliente, usuarioLogado.id);
+        const permissoesUsuarioAtual = await getPermissoesCompletasUsuarioDB(
+            dbCliente,
+            usuarioLogado.id,
+            req.empresaId
+        );
         if (!permissoesUsuarioAtual.includes('excluir-usuarios')) {
             return res.status(403).json({ error: 'Permissão negada para excluir usuários' });
         }
@@ -792,7 +880,11 @@ router.get('/buscar-contatos-empregado', async (req, res) => {
     const termoBusca = req.query.q;
 
     try {
-        const permissoesUsuarioAtual = await getPermissoesCompletasUsuarioDB(dbCliente, usuarioLogado.id);
+        const permissoesUsuarioAtual = await getPermissoesCompletasUsuarioDB(
+            dbCliente,
+            usuarioLogado.id,
+            req.empresaId
+        );
         if (!permissoesUsuarioAtual.includes('editar-usuarios')) {
             return res.status(403).json({ error: 'Permissão negada para buscar contatos.' });
         }
@@ -804,13 +896,14 @@ router.get('/buscar-contatos-empregado', async (req, res) => {
         const query = `
             SELECT id, nome, tipo 
             FROM fc_contatos 
-            WHERE 
-                nome ILIKE $1 
+            WHERE
+                nome ILIKE $1
+                AND empresa_id = $2
                 AND tipo = 'EMPREGADO' 
                 AND ativo = true 
             ORDER BY nome LIMIT 10
         `;
-        const params = [`%${termoBusca.trim()}%`];
+        const params = [`%${termoBusca.trim()}%`, req.empresaId];
 
         const result = await dbCliente.query(query, params);
         
@@ -874,7 +967,11 @@ router.get('/:id/ferias', async (req, res) => {
     try {
         // Para visualizar o histórico, exigimos a mesma permissão de "editar usuários",
         // pois são informações sensíveis de RH.
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbCliente, req.usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(
+            dbCliente,
+            req.usuarioLogado.id,
+            req.empresaId
+        );
         if (!permissoes.includes('editar-usuarios')) {
             return res.status(403).json({ error: 'Permissão negada para visualizar o histórico de férias.' });
         }
@@ -912,7 +1009,11 @@ router.post('/:id/ferias', async (req, res) => {
 
     try {
         // Verificação de permissão específica
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbCliente, req.usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(
+            dbCliente,
+            req.usuarioLogado.id,
+            req.empresaId
+        );
         if (!permissoes.includes('adicionar-ferias')) { 
             return res.status(403).json({ error: 'Permissão negada para adicionar férias.' });
         }

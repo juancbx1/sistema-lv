@@ -2,9 +2,9 @@
 import 'dotenv/config';
 import pkg from 'pg';
 const { Pool } = pkg;
-import jwt from 'jsonwebtoken';
 import express from 'express';
-import { getPermissoesCompletasUsuarioDB } from './usuarios.js'; // Importe a função de permissões
+import { getPermissoesCompletasUsuarioDB } from './usuarios.js';
+import { obterEmpresaIdDoContexto } from './contexto-empresa.js';
 import etag from 'etag';
 
 const formatCurrency = (value) => {
@@ -22,24 +22,101 @@ const pool = new Pool({
     connectionString: process.env.POSTGRES_URL,
     timezone: 'UTC',
 });
-const SECRET_KEY = process.env.JWT_SECRET;
+const TABELAS_FINANCEIRAS_EMPRESARIAIS = new Set([
+    'fc_contas_bancarias',
+    'fc_grupos_financeiros',
+    'fc_categorias',
+    'fc_contatos',
+    'fc_lancamentos',
+    'fc_contas_agendadas',
+    'fc_lotes_agendamento',
+    'fc_solicitacoes_alteracao',
+    'config_concessionarias_vt',
+]);
 
-// --- Função para verificar o token internamente ---
-const verificarTokenInterna = (reqOriginal) => {
-    const authHeader = reqOriginal.headers.authorization;
-    if (!authHeader) throw new Error('Token não fornecido');
-    const token = authHeader.split(' ')[1];
-    if (!token) throw new Error('Token mal formatado');
-    try {
-        const decoded = jwt.verify(token, SECRET_KEY, { ignoreExpiration: false });
-        return decoded;
-    } catch (error) {
-        const newError = new Error(error.name === 'TokenExpiredError' ? 'Token expirado' : 'Token inválido');
-        newError.statusCode = 401;
-        if (error.name === 'TokenExpiredError') newError.details = 'jwt expired';
-        throw newError;
+function erroFinanceiro(statusCode, mensagem) {
+    return Object.assign(new Error(mensagem), { statusCode });
+}
+
+async function exigirRecursoDaEmpresa(
+    dbClient,
+    tabela,
+    id,
+    empresaId,
+    { nome = 'Recurso', forUpdate = false } = {}
+) {
+    if (!TABELAS_FINANCEIRAS_EMPRESARIAIS.has(tabela)) {
+        throw new Error(`Tabela financeira não autorizada no helper: ${tabela}`);
     }
-};
+
+    const result = await dbClient.query(
+        `SELECT *
+           FROM ${tabela}
+          WHERE id = $1
+            AND empresa_id = $2
+          ${forUpdate ? 'FOR UPDATE' : ''}`,
+        [id, empresaId]
+    );
+
+    if (result.rows.length === 0) {
+        throw erroFinanceiro(404, `${nome} não encontrado no contexto da empresa ativa.`);
+    }
+    return result.rows[0];
+}
+
+async function validarReferenciasLancamento(
+    dbClient,
+    empresaId,
+    dadosPai,
+    itens = [],
+    tipoRateio = null
+) {
+    await exigirRecursoDaEmpresa(
+        dbClient,
+        'fc_contas_bancarias',
+        dadosPai.id_conta_bancaria,
+        empresaId,
+        { nome: 'Conta bancária' }
+    );
+
+    if (tipoRateio !== 'COMPRA' && dadosPai.id_categoria) {
+        await exigirRecursoDaEmpresa(
+            dbClient,
+            'fc_categorias',
+            dadosPai.id_categoria,
+            empresaId,
+            { nome: 'Categoria' }
+        );
+    }
+    if (dadosPai.id_contato) {
+        await exigirRecursoDaEmpresa(
+            dbClient,
+            'fc_contatos',
+            dadosPai.id_contato,
+            empresaId,
+            { nome: 'Favorecido' }
+        );
+    }
+
+    for (const item of itens) {
+        await exigirRecursoDaEmpresa(
+            dbClient,
+            'fc_categorias',
+            item.id_categoria,
+            empresaId,
+            { nome: 'Categoria do item' }
+        );
+        if (item.id_contato_item) {
+            await exigirRecursoDaEmpresa(
+                dbClient,
+                'fc_contatos',
+                item.id_contato_item,
+                empresaId,
+                { nome: 'Favorecido do item' }
+            );
+        }
+    }
+}
 
 /** Lançamentos ativos = soft delete ausente */
 const SQL_LANC_ATIVO = 'excluido_em IS NULL';
@@ -49,10 +126,21 @@ const SQL_LANC_ATIVO_ALIAS = (alias = 'l') => `${alias}.excluido_em IS NULL`;
  * Soft delete de um ou mais lançamentos (e vínculos de transferência / estornos filhos).
  * Não apaga linhas nem itens — permite auditoria e futura reativação.
  */
-async function softDeleteLancamento(dbClient, idLancamento, idUsuario, { cascade = true } = {}) {
+async function softDeleteLancamento(
+    dbClient,
+    idLancamento,
+    idUsuario,
+    empresaId,
+    { cascade = true } = {}
+) {
     const atualRes = await dbClient.query(
-        `SELECT * FROM fc_lancamentos WHERE id = $1 AND excluido_em IS NULL FOR UPDATE`,
-        [idLancamento]
+        `SELECT *
+           FROM fc_lancamentos
+          WHERE id = $1
+            AND empresa_id = $2
+            AND excluido_em IS NULL
+          FOR UPDATE`,
+        [idLancamento, empresaId]
     );
     if (atualRes.rows.length === 0) return null;
     const atual = atualRes.rows[0];
@@ -65,8 +153,12 @@ async function softDeleteLancamento(dbClient, idLancamento, idUsuario, { cascade
             ids.add(Number(atual.id_transferencia_vinculada));
         }
         const estornosRes = await dbClient.query(
-            `SELECT id FROM fc_lancamentos WHERE id_estorno_de = $1 AND excluido_em IS NULL`,
-            [idLancamento]
+            `SELECT id
+               FROM fc_lancamentos
+              WHERE id_estorno_de = $1
+                AND empresa_id = $2
+                AND excluido_em IS NULL`,
+            [idLancamento, empresaId]
         );
         for (const row of estornosRes.rows) ids.add(Number(row.id));
     }
@@ -76,8 +168,9 @@ async function softDeleteLancamento(dbClient, idLancamento, idUsuario, { cascade
         await dbClient.query(
             `UPDATE fc_contas_agendadas
              SET id_lancamento_efetivado = NULL, status = 'PENDENTE'
-             WHERE id_lancamento_efetivado = $1`,
-            [id]
+             WHERE id_lancamento_efetivado = $1
+               AND empresa_id = $2`,
+            [id, empresaId]
         );
     }
 
@@ -89,9 +182,10 @@ async function softDeleteLancamento(dbClient, idLancamento, idUsuario, { cascade
          SET excluido_em = NOW(),
              id_usuario_exclusao = $2
          WHERE id = ANY($1::int[])
+           AND empresa_id = $3
            AND excluido_em IS NULL
          RETURNING *`,
-        [idsArr, idUsuario]
+        [idsArr, idUsuario, empresaId]
     );
 
     return result.rows.find((r) => Number(r.id) === Number(idLancamento)) || result.rows[0] || null;
@@ -106,7 +200,7 @@ function parseAgendaIdFromDescricaoBaixa(descricao) {
 /**
  * Impede reativar baixa se a parcela da Agenda já tiver outra baixa ativa (evita saldo duplicado).
  */
-async function assertPodeRestaurarBaixaAgenda(dbClient, lancamento) {
+async function assertPodeRestaurarBaixaAgenda(dbClient, lancamento, empresaId) {
     const agendaId = parseAgendaIdFromDescricaoBaixa(lancamento.descricao);
     if (!agendaId) return null;
 
@@ -114,8 +208,9 @@ async function assertPodeRestaurarBaixaAgenda(dbClient, lancamento) {
         `SELECT id, status, id_lancamento_efetivado, descricao
          FROM fc_contas_agendadas
          WHERE id = $1
+           AND empresa_id = $2
          FOR UPDATE`,
-        [agendaId]
+        [agendaId, empresaId]
     );
     if (agRes.rows.length === 0) return null;
 
@@ -123,8 +218,12 @@ async function assertPodeRestaurarBaixaAgenda(dbClient, lancamento) {
     const efetivadoId = agenda.id_lancamento_efetivado != null ? Number(agenda.id_lancamento_efetivado) : null;
     if (efetivadoId && efetivadoId !== Number(lancamento.id)) {
         const outroAtivo = await dbClient.query(
-            `SELECT id FROM fc_lancamentos WHERE id = $1 AND excluido_em IS NULL`,
-            [efetivadoId]
+            `SELECT id
+               FROM fc_lancamentos
+              WHERE id = $1
+                AND empresa_id = $2
+                AND excluido_em IS NULL`,
+            [efetivadoId, empresaId]
         );
         if (outroAtivo.rows.length > 0) {
             const err = new Error(
@@ -142,15 +241,25 @@ async function assertPodeRestaurarBaixaAgenda(dbClient, lancamento) {
  * Reativa lançamento soft-deleted (e vínculos de transferência / estornos filhos soft-deletados).
  * Tenta religar Agenda quando a descrição for de baixa de conta agendada.
  */
-async function softRestoreLancamento(dbClient, idLancamento, { cascade = true } = {}) {
+async function softRestoreLancamento(
+    dbClient,
+    idLancamento,
+    empresaId,
+    { cascade = true } = {}
+) {
     const atualRes = await dbClient.query(
-        `SELECT * FROM fc_lancamentos WHERE id = $1 AND excluido_em IS NOT NULL FOR UPDATE`,
-        [idLancamento]
+        `SELECT *
+           FROM fc_lancamentos
+          WHERE id = $1
+            AND empresa_id = $2
+            AND excluido_em IS NOT NULL
+          FOR UPDATE`,
+        [idLancamento, empresaId]
     );
     if (atualRes.rows.length === 0) return null;
     const atual = atualRes.rows[0];
 
-    const agenda = await assertPodeRestaurarBaixaAgenda(dbClient, atual);
+    const agenda = await assertPodeRestaurarBaixaAgenda(dbClient, atual, empresaId);
 
     const ids = new Set([Number(idLancamento)]);
     if (cascade) {
@@ -158,8 +267,12 @@ async function softRestoreLancamento(dbClient, idLancamento, { cascade = true } 
             ids.add(Number(atual.id_transferencia_vinculada));
         }
         const estornosRes = await dbClient.query(
-            `SELECT id FROM fc_lancamentos WHERE id_estorno_de = $1 AND excluido_em IS NOT NULL`,
-            [idLancamento]
+            `SELECT id
+               FROM fc_lancamentos
+              WHERE id_estorno_de = $1
+                AND empresa_id = $2
+                AND excluido_em IS NOT NULL`,
+            [idLancamento, empresaId]
         );
         for (const row of estornosRes.rows) ids.add(Number(row.id));
     }
@@ -179,9 +292,10 @@ async function softRestoreLancamento(dbClient, idLancamento, { cascade = true } 
                  ELSE motivo_rejeicao
              END
          WHERE id = ANY($1::int[])
+           AND empresa_id = $2
            AND excluido_em IS NOT NULL
          RETURNING *`,
-        [[...ids]]
+        [[...ids], empresaId]
     );
 
     const restaurado = result.rows.find((r) => Number(r.id) === Number(idLancamento)) || result.rows[0] || null;
@@ -195,24 +309,29 @@ async function softRestoreLancamento(dbClient, idLancamento, { cascade = true } 
                  status = 'PAGO',
                  atualizado_em = NOW()
              WHERE id = $2
+               AND empresa_id = $3
                AND (
                  id_lancamento_efetivado IS NULL
                  OR id_lancamento_efetivado = $1
                  OR NOT EXISTS (
                    SELECT 1 FROM fc_lancamentos l
                    WHERE l.id = fc_contas_agendadas.id_lancamento_efetivado
+                     AND l.empresa_id = fc_contas_agendadas.empresa_id
                      AND l.excluido_em IS NULL
                  )
                )`,
-            [restaurado.id, agendaId]
+            [restaurado.id, agendaId, empresaId]
         );
     }
 
     return restaurado;
 }
 
-async function registrarLog(dbClient, idUsuario, nomeUsuario, acao, dados = {}) {
+async function registrarLog(dbClient, idUsuario, nomeUsuario, acao, dados = {}, empresaId) {
     try {
+        if (!Number.isSafeInteger(Number(empresaId)) || Number(empresaId) <= 0) {
+            throw new Error('Contexto empresarial ausente ao registrar log financeiro.');
+        }
         let detalhes = '';
         let dadosAlterados = { antes: dados.antes || null, depois: dados.depois || null };
 
@@ -375,10 +494,15 @@ async function registrarLog(dbClient, idUsuario, nomeUsuario, acao, dados = {}) 
         }
 
         const query = `
-            INSERT INTO fc_logs_auditoria (id_usuario, nome_usuario, acao, detalhes, dados_alterados)
-            VALUES ($1, $2, $3, $4, $5);
+            INSERT INTO fc_logs_auditoria (
+                id_usuario, nome_usuario, acao, detalhes, dados_alterados, empresa_id
+            )
+            VALUES ($1, $2, $3, $4, $5, $6);
         `;
-        await dbClient.query(query, [idUsuario, nomeUsuario, acao, detalhes, dadosAlterados]);
+        await dbClient.query(
+            query,
+            [idUsuario, nomeUsuario, acao, detalhes, dadosAlterados, empresaId]
+        );
     } catch (logError) {
         console.error('ERRO CRÍTICO AO REGISTRAR LOG DE AUDITORIA:', logError);
     }
@@ -389,10 +513,17 @@ async function registrarLog(dbClient, idUsuario, nomeUsuario, acao, dados = {}) 
 // Este "porteiro" verifica se o usuário tem a permissão MÍNIMA para acessar qualquer coisa do financeiro.
 router.use(async (req, res, next) => {
     try {
-        req.usuarioLogado = verificarTokenInterna(req);
+        const empresaId = obterEmpresaIdDoContexto(req);
+        if (!req.usuarioLogado?.id) {
+            throw erroFinanceiro(401, 'Usuário autenticado não encontrado.');
+        }
         const dbClient = await pool.connect();
         try {
-            const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id);
+            const permissoesCompletas = await getPermissoesCompletasUsuarioDB(
+                dbClient,
+                req.usuarioLogado.id,
+                empresaId
+            );
             // A permissão base para este módulo
             if (!permissoesCompletas.includes('acesso-financeiro')) {
                 return res.status(403).json({ error: 'Permissão negada para acessar o módulo financeiro.' });
@@ -414,7 +545,13 @@ router.get('/concessionarias-vt', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const result = await dbClient.query('SELECT * FROM config_concessionarias_vt ORDER BY nome');
+        const result = await dbClient.query(
+            `SELECT *
+               FROM config_concessionarias_vt
+              WHERE empresa_id = $1
+              ORDER BY nome`,
+            [req.empresaId]
+        );
                 
         res.status(200).json(result.rows);
     } catch (error) {
@@ -439,9 +576,25 @@ router.post('/concessionarias-vt', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const query = `INSERT INTO config_concessionarias_vt (nome, taxa_recarga_percentual) VALUES ($1, $2) RETURNING *`;
-        const result = await dbClient.query(query, [nome, taxa_recarga_percentual]);
-        await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'CRIACAO_CONCESSIONARIA_VT', { depois: result.rows[0] });
+        const query = `
+            INSERT INTO config_concessionarias_vt (
+                nome, taxa_recarga_percentual, empresa_id
+            )
+            VALUES ($1, $2, $3)
+            RETURNING *
+        `;
+        const result = await dbClient.query(
+            query,
+            [nome, taxa_recarga_percentual, req.empresaId]
+        );
+        await registrarLog(
+            dbClient,
+            req.usuarioLogado.id,
+            req.usuarioLogado.nome,
+            'CRIACAO_CONCESSIONARIA_VT',
+            { depois: result.rows[0] },
+            req.empresaId
+        );
         res.status(201).json(result.rows[0]);
     } catch (error) {
         if (error.code === '23505') { // Erro de nome único
@@ -468,16 +621,34 @@ router.put('/concessionarias-vt/:id', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const antesRes = await dbClient.query('SELECT * FROM config_concessionarias_vt WHERE id = $1', [id]);
-        const query = `UPDATE config_concessionarias_vt SET nome = $1, taxa_recarga_percentual = $2, ativo = $3, updated_at = NOW() WHERE id = $4 RETURNING *`;
-        const result = await dbClient.query(query, [nome, taxa_recarga_percentual, ativo, id]);
+        const antes = await exigirRecursoDaEmpresa(
+            dbClient,
+            'config_concessionarias_vt',
+            id,
+            req.empresaId,
+            { nome: 'Concessionária' }
+        );
+        const query = `
+            UPDATE config_concessionarias_vt
+               SET nome = $1,
+                   taxa_recarga_percentual = $2,
+                   ativo = $3,
+                   updated_at = NOW()
+             WHERE id = $4
+               AND empresa_id = $5
+             RETURNING *
+        `;
+        const result = await dbClient.query(
+            query,
+            [nome, taxa_recarga_percentual, ativo, id, req.empresaId]
+        );
         if (result.rowCount === 0) {
             return res.status(404).json({ error: 'Concessionária não encontrada.' });
         }
         await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'EDICAO_CONCESSIONARIA_VT', {
-            antes: antesRes.rows[0] || null,
+            antes,
             depois: result.rows[0],
-        });
+        }, req.empresaId);
         res.status(200).json(result.rows[0]);
     } catch (error) {
         if (error.code === '23505') {
@@ -512,8 +683,12 @@ router.get('/dashboard', async (req, res) => {
                     END
                 ), 0) as saldo_atual
             FROM fc_contas_bancarias cb
-            LEFT JOIN fc_lancamentos l ON l.id_conta_bancaria = cb.id AND l.excluido_em IS NULL
+            LEFT JOIN fc_lancamentos l
+              ON l.id_conta_bancaria = cb.id
+             AND l.empresa_id = cb.empresa_id
+             AND l.excluido_em IS NULL
             WHERE cb.ativo = true
+              AND cb.empresa_id = $1
             GROUP BY cb.id, cb.nome_conta, cb.saldo_inicial
             ORDER BY cb.nome_conta;
         `;
@@ -534,13 +709,14 @@ router.get('/dashboard', async (req, res) => {
                 COALESCE(SUM(valor) FILTER (WHERE tipo = 'A_PAGAR' AND data_vencimento > CURRENT_DATE + INTERVAL '3 days' AND data_vencimento <= CURRENT_DATE + INTERVAL '5 days'), 0) as a_pagar_5d_total
 
             FROM fc_contas_agendadas
-            WHERE status = 'PENDENTE';
+            WHERE status = 'PENDENTE'
+              AND empresa_id = $1;
         `;
 
         // Executa as duas queries em paralelo
         const [saldosResult, alertasResult] = await Promise.all([
-            dbClient.query(saldosQuery),
-            dbClient.query(alertasQuery)
+            dbClient.query(saldosQuery, [req.empresaId]),
+            dbClient.query(alertasQuery, [req.empresaId])
         ]);
         
         res.status(200).json({
@@ -571,26 +747,34 @@ router.get('/header-status', async (req, res) => {
                 COUNT(*) FILTER (WHERE data_vencimento = CURRENT_DATE) as hoje_count,
                 COALESCE(SUM(valor) FILTER (WHERE data_vencimento = CURRENT_DATE), 0) as hoje_total
             FROM fc_contas_agendadas
-            WHERE status = 'PENDENTE' AND tipo = 'A_PAGAR';
+            WHERE status = 'PENDENTE'
+              AND tipo = 'A_PAGAR'
+              AND empresa_id = $1;
         `;
 
         // Query para a última atividade (log mais recente)
         const ultimaAtividadeQuery = `
             SELECT id, detalhes, data_evento
-            FROM fc_logs_auditoria 
+            FROM fc_logs_auditoria
+            WHERE empresa_id = $1
             ORDER BY data_evento DESC, id DESC
             LIMIT 1;
         `;
         
         // Query para aprovações pendentes
-        const aprovacoesQuery = `SELECT COUNT(*) as pendentes_count FROM fc_solicitacoes_alteracao WHERE status = 'PENDENTE';`;
+        const aprovacoesQuery = `
+            SELECT COUNT(*) as pendentes_count
+              FROM fc_solicitacoes_alteracao
+             WHERE status = 'PENDENTE'
+               AND empresa_id = $1
+        `;
 
         // Executa as queries em paralelo para máxima eficiência
         const [alertasResult, atividadeResult, aprovacoesResult] = await Promise.all([
-            dbClient.query(alertasQuery),
-            dbClient.query(ultimaAtividadeQuery),
+            dbClient.query(alertasQuery, [req.empresaId]),
+            dbClient.query(ultimaAtividadeQuery, [req.empresaId]),
             req.permissoesUsuario.includes('aprovar-alteracao-financeira') 
-                ? dbClient.query(aprovacoesQuery) 
+                ? dbClient.query(aprovacoesQuery, [req.empresaId])
                 : Promise.resolve({ rows: [{ pendentes_count: 0 }] })
         ]);
 
@@ -649,12 +833,16 @@ router.get('/relatorios/dre-simplificado', async (req, res) => {
                 COALESCE(SUM(valor) FILTER (WHERE tipo = 'DESPESA'), 0) AS "totalDespesas"
             FROM fc_lancamentos
             WHERE
-                data_transacao BETWEEN $1 AND $2
+                empresa_id = $1
+                AND data_transacao BETWEEN $2 AND $3
                 AND id_transferencia_vinculada IS NULL
                 AND excluido_em IS NULL;
         `;
 
-        const result = await dbClient.query(dreQuery, [dataInicio, dataFim]);
+        const result = await dbClient.query(
+            dreQuery,
+            [req.empresaId, dataInicio, dataFim]
+        );
         
         const { totalReceitas, totalDespesas } = result.rows[0];
 
@@ -696,10 +884,13 @@ router.get('/relatorios/despesas-por-categoria', async (req, res) => {
                 cat.nome AS "nome",
                 SUM(l.valor)::numeric AS "valor"
             FROM fc_lancamentos l
-            JOIN fc_categorias cat ON l.id_categoria = cat.id
+            JOIN fc_categorias cat
+              ON l.id_categoria = cat.id
+             AND l.empresa_id = cat.empresa_id
             WHERE
-                l.tipo = 'DESPESA'
-                AND l.data_transacao BETWEEN $1 AND $2
+                l.empresa_id = $1
+                AND l.tipo = 'DESPESA'
+                AND l.data_transacao BETWEEN $2 AND $3
                 AND l.id_transferencia_vinculada IS NULL
                 AND l.excluido_em IS NULL
             GROUP BY
@@ -709,7 +900,10 @@ router.get('/relatorios/despesas-por-categoria', async (req, res) => {
             LIMIT 10;
         `;
         
-        const result = await dbClient.query(categoriasQuery, [dataInicio, dataFim]);
+        const result = await dbClient.query(
+            categoriasQuery,
+            [req.empresaId, dataInicio, dataFim]
+        );
 
         res.status(200).json(result.rows);
 
@@ -731,9 +925,28 @@ router.get('/configuracoes', async (req, res) => {
         dbClient = await pool.connect();
         
         const [contasResult, gruposResult, categoriasResult] = await Promise.all([
-            dbClient.query('SELECT * FROM fc_contas_bancarias WHERE ativo = true ORDER BY nome_conta'),
-            dbClient.query('SELECT * FROM fc_grupos_financeiros ORDER BY tipo, nome'),
-            dbClient.query('SELECT * FROM fc_categorias ORDER BY nome')
+            dbClient.query(
+                `SELECT *
+                   FROM fc_contas_bancarias
+                  WHERE ativo = true
+                    AND empresa_id = $1
+                  ORDER BY nome_conta`,
+                [req.empresaId]
+            ),
+            dbClient.query(
+                `SELECT *
+                   FROM fc_grupos_financeiros
+                  WHERE empresa_id = $1
+                  ORDER BY tipo, nome`,
+                [req.empresaId]
+            ),
+            dbClient.query(
+                `SELECT *
+                   FROM fc_categorias
+                  WHERE empresa_id = $1
+                  ORDER BY nome`,
+                [req.empresaId]
+            )
         ]);
 
         res.status(200).json({
@@ -764,13 +977,26 @@ router.post('/contas', async (req, res) => {
     try {
         dbClient = await pool.connect();
         const query = `
-            INSERT INTO fc_contas_bancarias (nome_conta, banco, agencia, numero_conta, saldo_inicial)
-            VALUES ($1, $2, $3, $4, $5) RETURNING *;
+            INSERT INTO fc_contas_bancarias (
+                nome_conta, banco, agencia, numero_conta, saldo_inicial, empresa_id
+            )
+            VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING *;
         `;
-        const result = await dbClient.query(query, [nome_conta, banco, agencia, numero_conta, saldo_inicial || 0]);
+        const result = await dbClient.query(
+            query,
+            [nome_conta, banco, agencia, numero_conta, saldo_inicial || 0, req.empresaId]
+        );
         const novaConta = result.rows[0]; // Guarda o resultado em uma variável para usar no log
 
-    await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'CRIACAO_ENTIDADE', { depois: novaConta });
+    await registrarLog(
+        dbClient,
+        req.usuarioLogado.id,
+        req.usuarioLogado.nome,
+        'CRIACAO_ENTIDADE',
+        { depois: novaConta },
+        req.empresaId
+    );
 
     res.status(201).json(novaConta);
     } catch (error) {
@@ -797,30 +1023,47 @@ router.put('/contas/:id', async (req, res) => {
         await dbClient.query('BEGIN');
 
         // 1. Busque o estado original ANTES de atualizar
-        const originalRes = await dbClient.query('SELECT * FROM fc_contas_bancarias WHERE id = $1 FOR UPDATE', [id]);
-        if (originalRes.rows.length === 0) {
-            throw new Error('Conta bancária não encontrada.');
-        }
-        const contaOriginal = originalRes.rows[0];
+        const contaOriginal = await exigirRecursoDaEmpresa(
+            dbClient,
+            'fc_contas_bancarias',
+            id,
+            req.empresaId,
+            { nome: 'Conta bancária', forUpdate: true }
+        );
 
         // 2. Execute a atualização
         const query = `
             UPDATE fc_contas_bancarias
             SET nome_conta = $1, banco = $2, agencia = $3, numero_conta = $4, ativo = $5, atualizado_em = NOW()
-            WHERE id = $6 RETURNING *;
+            WHERE id = $6
+              AND empresa_id = $7
+            RETURNING *;
         `;
-        const result = await dbClient.query(query, [nome_conta, banco, agencia, numero_conta, ativo, id]);
+        const result = await dbClient.query(
+            query,
+            [nome_conta, banco, agencia, numero_conta, ativo, id, req.empresaId]
+        );
         const contaAtualizada = result.rows[0];
 
         // 3. REGISTRE O LOG
-        await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'EDICAO_ENTIDADE', { antes: contaOriginal, depois: contaAtualizada });
+        await registrarLog(
+            dbClient,
+            req.usuarioLogado.id,
+            req.usuarioLogado.nome,
+            'EDICAO_ENTIDADE',
+            { antes: contaOriginal, depois: contaAtualizada },
+            req.empresaId
+        );
 
         await dbClient.query('COMMIT');
         res.status(200).json(contaAtualizada);
 
     } catch (error) {
         if (dbClient) await dbClient.query('ROLLBACK');
-        res.status(500).json({ error: 'Erro ao atualizar conta bancária.', details: error.message });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao atualizar conta bancária.',
+            details: error.statusCode ? undefined : error.message,
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -839,11 +1082,22 @@ router.post('/grupos', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const query = `INSERT INTO fc_grupos_financeiros (nome, tipo) VALUES ($1, $2) RETURNING *;`;
-        const result = await dbClient.query(query, [nome, tipo]);
+        const query = `
+            INSERT INTO fc_grupos_financeiros (nome, tipo, empresa_id)
+            VALUES ($1, $2, $3)
+            RETURNING *;
+        `;
+        const result = await dbClient.query(query, [nome, tipo, req.empresaId]);
         const novaConta = result.rows[0]; // Pega a nova entidade criada
 
-        await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'CRIACAO_ENTIDADE', { depois: novaConta });
+        await registrarLog(
+            dbClient,
+            req.usuarioLogado.id,
+            req.usuarioLogado.nome,
+            'CRIACAO_ENTIDADE',
+            { depois: novaConta },
+            req.empresaId
+        );
 
         res.status(201).json(novaConta);
     } catch (error) {
@@ -869,26 +1123,44 @@ router.put('/grupos/:id', async (req, res) => {
         await dbClient.query('BEGIN');
 
         // 1. Busca o estado original
-        const originalRes = await dbClient.query('SELECT * FROM fc_grupos_financeiros WHERE id = $1 FOR UPDATE', [id]);
-        if (originalRes.rows.length === 0) {
-            throw new Error('Grupo não encontrado.');
-        }
-        const grupoOriginal = originalRes.rows[0];
+        const grupoOriginal = await exigirRecursoDaEmpresa(
+            dbClient,
+            'fc_grupos_financeiros',
+            id,
+            req.empresaId,
+            { nome: 'Grupo financeiro', forUpdate: true }
+        );
 
         // 2. Executa a atualização
-        const query = `UPDATE fc_grupos_financeiros SET nome = $1, tipo = $2, atualizado_em = NOW() WHERE id = $3 RETURNING *;`;
-        const result = await dbClient.query(query, [nome, tipo, id]);
+        const query = `
+            UPDATE fc_grupos_financeiros
+               SET nome = $1, tipo = $2, atualizado_em = NOW()
+             WHERE id = $3
+               AND empresa_id = $4
+             RETURNING *;
+        `;
+        const result = await dbClient.query(query, [nome, tipo, id, req.empresaId]);
         const grupoAtualizado = result.rows[0];
 
         // 3. Registra o log
-        await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'EDICAO_ENTIDADE', { antes: grupoOriginal, depois: grupoAtualizado });
+        await registrarLog(
+            dbClient,
+            req.usuarioLogado.id,
+            req.usuarioLogado.nome,
+            'EDICAO_ENTIDADE',
+            { antes: grupoOriginal, depois: grupoAtualizado },
+            req.empresaId
+        );
         
         await dbClient.query('COMMIT');
         res.status(200).json(grupoAtualizado);
 
     } catch (error) {
         if (dbClient) await dbClient.query('ROLLBACK');
-        res.status(500).json({ error: 'Erro ao atualizar grupo financeiro.', details: error.message });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao atualizar grupo financeiro.',
+            details: error.statusCode ? undefined : error.message,
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -907,15 +1179,36 @@ router.post('/categorias', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const query = `INSERT INTO fc_categorias (nome, id_grupo) VALUES ($1, $2) RETURNING *;`;
-        const result = await dbClient.query(query, [nome, id_grupo]);
+        await exigirRecursoDaEmpresa(
+            dbClient,
+            'fc_grupos_financeiros',
+            id_grupo,
+            req.empresaId,
+            { nome: 'Grupo financeiro' }
+        );
+        const query = `
+            INSERT INTO fc_categorias (nome, id_grupo, empresa_id)
+            VALUES ($1, $2, $3)
+            RETURNING *;
+        `;
+        const result = await dbClient.query(query, [nome, id_grupo, req.empresaId]);
         const novaConta = result.rows[0]; // Pega a nova entidade criada
 
-        await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'CRIACAO_ENTIDADE', { depois: novaConta });
+        await registrarLog(
+            dbClient,
+            req.usuarioLogado.id,
+            req.usuarioLogado.nome,
+            'CRIACAO_ENTIDADE',
+            { depois: novaConta },
+            req.empresaId
+        );
 
         res.status(201).json(novaConta);
     } catch (error) {
-        res.status(500).json({ error: 'Erro ao criar categoria.', details: error.message });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao criar categoria.',
+            details: error.statusCode ? undefined : error.message,
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -937,26 +1230,51 @@ router.put('/categorias/:id', async (req, res) => {
         await dbClient.query('BEGIN');
 
         // 1. Busca o estado original
-        const originalRes = await dbClient.query('SELECT * FROM fc_categorias WHERE id = $1 FOR UPDATE', [id]);
-        if (originalRes.rows.length === 0) {
-            throw new Error('Categoria não encontrada.');
-        }
-        const categoriaOriginal = originalRes.rows[0];
+        const categoriaOriginal = await exigirRecursoDaEmpresa(
+            dbClient,
+            'fc_categorias',
+            id,
+            req.empresaId,
+            { nome: 'Categoria', forUpdate: true }
+        );
+        await exigirRecursoDaEmpresa(
+            dbClient,
+            'fc_grupos_financeiros',
+            id_grupo,
+            req.empresaId,
+            { nome: 'Grupo financeiro' }
+        );
 
         // 2. Executa a atualização
-        const query = `UPDATE fc_categorias SET nome = $1, id_grupo = $2, atualizado_em = NOW() WHERE id = $3 RETURNING *;`; // << REMOVA o "nome as nome_categoria" daqui
-        const result = await dbClient.query(query, [nome, id_grupo, id]);
+        const query = `
+            UPDATE fc_categorias
+               SET nome = $1, id_grupo = $2, atualizado_em = NOW()
+             WHERE id = $3
+               AND empresa_id = $4
+             RETURNING *;
+        `;
+        const result = await dbClient.query(query, [nome, id_grupo, id, req.empresaId]);
         const categoriaAtualizada = result.rows[0];
 
         // 3. Registra o log
-        await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'EDICAO_ENTIDADE', { antes: categoriaOriginal, depois: categoriaAtualizada });
+        await registrarLog(
+            dbClient,
+            req.usuarioLogado.id,
+            req.usuarioLogado.nome,
+            'EDICAO_ENTIDADE',
+            { antes: categoriaOriginal, depois: categoriaAtualizada },
+            req.empresaId
+        );
 
         await dbClient.query('COMMIT');
         res.status(200).json(categoriaAtualizada);
 
     } catch (error) {
         if (dbClient) await dbClient.query('ROLLBACK');
-        res.status(500).json({ error: 'Erro ao atualizar categoria.', details: error.message });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao atualizar categoria.',
+            details: error.statusCode ? undefined : error.message,
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -976,9 +1294,9 @@ router.get('/lancamentos', async (req, res) => {
     try {
         dbClient = await pool.connect();
 
-        let whereClauses = ['l.excluido_em IS NULL'];
-        let params = [];
-        let paramIndex = 1;
+        let whereClauses = ['l.excluido_em IS NULL', 'l.empresa_id = $1'];
+        let params = [req.empresaId];
+        let paramIndex = 2;
 
         if (dataInicio) {
             whereClauses.push(`l.data_transacao >= $${paramIndex++}`);
@@ -1044,9 +1362,15 @@ router.get('/lancamentos', async (req, res) => {
 
         const baseQuery = `
             FROM fc_lancamentos l
-            JOIN fc_contas_bancarias cb ON l.id_conta_bancaria = cb.id
-            LEFT JOIN fc_categorias cat ON l.id_categoria = cat.id
-            LEFT JOIN fc_contatos fav ON l.id_contato = fav.id
+            JOIN fc_contas_bancarias cb
+              ON l.id_conta_bancaria = cb.id
+             AND l.empresa_id = cb.empresa_id
+            LEFT JOIN fc_categorias cat
+              ON l.id_categoria = cat.id
+             AND l.empresa_id = cat.empresa_id
+            LEFT JOIN fc_contatos fav
+              ON l.id_contato = fav.id
+             AND l.empresa_id = fav.empresa_id
             JOIN usuarios u_criador ON l.id_usuario_lancamento = u_criador.id
             LEFT JOIN usuarios u_editor ON l.id_usuario_edicao = u_editor.id 
         `;
@@ -1072,9 +1396,14 @@ router.get('/lancamentos', async (req, res) => {
                         'nome_contato_item', contato_item.nome
                     ))
                     FROM fc_lancamento_itens li
-                    LEFT JOIN fc_categorias cat_item ON li.id_categoria = cat_item.id
-                    LEFT JOIN fc_contatos contato_item ON li.id_contato_item = contato_item.id
+                    LEFT JOIN fc_categorias cat_item
+                      ON li.id_categoria = cat_item.id
+                     AND li.empresa_id = cat_item.empresa_id
+                    LEFT JOIN fc_contatos contato_item
+                      ON li.id_contato_item = contato_item.id
+                     AND li.empresa_id = contato_item.empresa_id
                     WHERE li.id_lancamento_pai = l.id
+                      AND li.empresa_id = l.empresa_id
                 ) as itens
             ${baseQuery}
             ${whereString}
@@ -1143,8 +1472,10 @@ router.get('/lancamentos/:id/info-gerencial', async (req, res) => {
              FROM fc_lancamentos l
              JOIN usuarios u_criador ON l.id_usuario_lancamento = u_criador.id
              LEFT JOIN usuarios u_editor ON l.id_usuario_edicao = u_editor.id
-             WHERE l.id = $1 AND l.excluido_em IS NULL`,
-            [id]
+             WHERE l.id = $1
+               AND l.empresa_id = $2
+               AND l.excluido_em IS NULL`,
+            [id, req.empresaId]
         );
 
         if (lancRes.rows.length === 0) {
@@ -1168,8 +1499,9 @@ router.get('/lancamentos/:id/info-gerencial', async (req, res) => {
              JOIN usuarios u_sol ON sa.id_usuario_solicitante = u_sol.id
              LEFT JOIN usuarios u_apr ON sa.id_usuario_aprovador = u_apr.id
              WHERE sa.id_lancamento = $1
+               AND sa.empresa_id = $2
              ORDER BY sa.data_solicitacao DESC, sa.id DESC`,
-            [id]
+            [id, req.empresaId]
         );
 
         res.status(200).json({
@@ -1210,10 +1542,35 @@ router.post('/lancamentos', async (req, res) => {
         dbClient = await pool.connect();
         await dbClient.query('BEGIN');
 
+        await exigirRecursoDaEmpresa(
+            dbClient,
+            'fc_contas_bancarias',
+            id_conta_bancaria,
+            req.empresaId,
+            { nome: 'Conta bancária' }
+        );
+        await exigirRecursoDaEmpresa(
+            dbClient,
+            'fc_categorias',
+            id_categoria,
+            req.empresaId,
+            { nome: 'Categoria' }
+        );
+        if (id_contato) {
+            await exigirRecursoDaEmpresa(
+                dbClient,
+                'fc_contatos',
+                id_contato,
+                req.empresaId,
+                { nome: 'Favorecido' }
+            );
+        }
+
         const query = `
             INSERT INTO fc_lancamentos 
-                (id_conta_bancaria, id_categoria, tipo, valor, data_transacao, descricao, id_contato, id_usuario_lancamento)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+                (id_conta_bancaria, id_categoria, tipo, valor, data_transacao,
+                 descricao, id_contato, id_usuario_lancamento, empresa_id)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING *;
         `;
         const result = await dbClient.query(query, [
@@ -1224,7 +1581,8 @@ router.post('/lancamentos', async (req, res) => {
             data_transacao,
             descricao,
             id_contato || null,
-            req.usuarioLogado.id
+            req.usuarioLogado.id,
+            req.empresaId
         ]);
         const novoLancamento = result.rows[0];
 
@@ -1233,7 +1591,8 @@ router.post('/lancamentos', async (req, res) => {
             req.usuarioLogado.id,
             req.usuarioLogado.nome,
             'CRIACAO_LANCAMENTO',
-            { depois: novoLancamento } 
+            { depois: novoLancamento },
+            req.empresaId
         );
 
         await dbClient.query('COMMIT');
@@ -1242,7 +1601,10 @@ router.post('/lancamentos', async (req, res) => {
     } catch (error) {
         if(dbClient) await dbClient.query('ROLLBACK');
         console.error("[API POST /lancamentos] Erro:", error);
-        res.status(500).json({ error: 'Erro ao criar lançamento.', details: error.message });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao criar lançamento.',
+            details: error.statusCode ? undefined : error.message,
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -1266,8 +1628,16 @@ router.get('/contatos', async (req, res) => {
         dbClient = await pool.connect();
 
         // Alteramos a query para selecionar também a coluna 'tipo'
-        const query = 'SELECT id, nome, tipo FROM fc_contatos WHERE nome ILIKE $1 AND ativo = true ORDER BY nome LIMIT 10';
-        const params = [`%${termoBusca.trim()}%`];
+        const query = `
+            SELECT id, nome, tipo
+              FROM fc_contatos
+             WHERE nome ILIKE $1
+               AND ativo = true
+               AND empresa_id = $2
+             ORDER BY nome
+             LIMIT 10
+        `;
+        const params = [`%${termoBusca.trim()}%`, req.empresaId];
 
         const result = await dbClient.query(query, params);
         
@@ -1290,7 +1660,13 @@ router.get('/contatos/all', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const result = await dbClient.query('SELECT * FROM fc_contatos ORDER BY nome');
+        const result = await dbClient.query(
+            `SELECT *
+               FROM fc_contatos
+              WHERE empresa_id = $1
+              ORDER BY nome`,
+            [req.empresaId]
+        );
         res.status(200).json(result.rows);
     } catch (error) {
         res.status(500).json({ error: 'Erro ao buscar todos os contatos.', details: error.message });
@@ -1316,8 +1692,17 @@ router.post('/contatos', async (req, res) => {
         dbClient = await pool.connect();
 
         // 1. VERIFICA SE JÁ EXISTE um contato com o mesmo nome e tipo.
-        const checkQuery = 'SELECT id FROM fc_contatos WHERE nome = $1 AND tipo = $2';
-        const existingContact = await dbClient.query(checkQuery, [nome, tipo]);
+        const checkQuery = `
+            SELECT id
+              FROM fc_contatos
+             WHERE nome = $1
+               AND tipo = $2
+               AND empresa_id = $3
+        `;
+        const existingContact = await dbClient.query(
+            checkQuery,
+            [nome, tipo, req.empresaId]
+        );
 
         // 2. SE EXISTIR, retorna um erro amigável (409 Conflict).
         if (existingContact.rows.length > 0) {
@@ -1325,11 +1710,25 @@ router.post('/contatos', async (req, res) => {
         }
 
         // 3. SE NÃO EXISTIR, prossegue com a criação.
-        const insertQuery = 'INSERT INTO fc_contatos (nome, tipo, cpf_cnpj, observacoes) VALUES ($1, $2, $3, $4) RETURNING *;';
-        const result = await dbClient.query(insertQuery, [nome, tipo, cpf_cnpj, observacoes]);
+        const insertQuery = `
+            INSERT INTO fc_contatos (nome, tipo, cpf_cnpj, observacoes, empresa_id)
+            VALUES ($1, $2, $3, $4, $5)
+            RETURNING *;
+        `;
+        const result = await dbClient.query(
+            insertQuery,
+            [nome, tipo, cpf_cnpj, observacoes, req.empresaId]
+        );
         
         const novaConta = result.rows[0]; // Pega a nova entidade criada
-        await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'CRIACAO_ENTIDADE', { depois: novaConta });
+        await registrarLog(
+            dbClient,
+            req.usuarioLogado.id,
+            req.usuarioLogado.nome,
+            'CRIACAO_ENTIDADE',
+            { depois: novaConta },
+            req.empresaId
+        );
 
         res.status(201).json(novaConta);
 
@@ -1360,30 +1759,47 @@ router.put('/contatos/:id', async (req, res) => {
         await dbClient.query('BEGIN');
 
         // 1. Busca o estado original
-        const originalRes = await dbClient.query('SELECT * FROM fc_contatos WHERE id = $1 FOR UPDATE', [id]);
-        if (originalRes.rows.length === 0) {
-            throw new Error('Contato não encontrado.');
-        }
-        const contatoOriginal = originalRes.rows[0];
+        const contatoOriginal = await exigirRecursoDaEmpresa(
+            dbClient,
+            'fc_contatos',
+            id,
+            req.empresaId,
+            { nome: 'Contato', forUpdate: true }
+        );
 
         // 2. Executa a atualização
         const query = `
             UPDATE fc_contatos 
             SET nome = $1, tipo = $2, cpf_cnpj = $3, observacoes = $4 
-            WHERE id = $5 RETURNING *;
+            WHERE id = $5
+              AND empresa_id = $6
+            RETURNING *;
         `;
-        const result = await dbClient.query(query, [nome, tipo, cpf_cnpj, observacoes, id]);
+        const result = await dbClient.query(
+            query,
+            [nome, tipo, cpf_cnpj, observacoes, id, req.empresaId]
+        );
         const contatoAtualizado = result.rows[0];
 
         // 3. Registra o log
-        await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'EDICAO_ENTIDADE', { antes: contatoOriginal, depois: contatoAtualizado });
+        await registrarLog(
+            dbClient,
+            req.usuarioLogado.id,
+            req.usuarioLogado.nome,
+            'EDICAO_ENTIDADE',
+            { antes: contatoOriginal, depois: contatoAtualizado },
+            req.empresaId
+        );
 
         await dbClient.query('COMMIT');
         res.status(200).json(contatoAtualizado);
 
     } catch (error) {
         if (dbClient) await dbClient.query('ROLLBACK');
-        res.status(500).json({ error: 'Erro ao atualizar contato.', details: error.message });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao atualizar contato.',
+            details: error.statusCode ? undefined : error.message,
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -1406,22 +1822,42 @@ router.put('/contatos/:id/status', async (req, res) => {
         dbClient = await pool.connect();
         await dbClient.query('BEGIN');
 
-        const originalRes = await dbClient.query('SELECT * FROM fc_contatos WHERE id = $1 FOR UPDATE', [id]);
-        if (originalRes.rows.length === 0) throw new Error('Favorecido não encontrado.');
-        const contatoOriginal = originalRes.rows[0];
+        const contatoOriginal = await exigirRecursoDaEmpresa(
+            dbClient,
+            'fc_contatos',
+            id,
+            req.empresaId,
+            { nome: 'Favorecido', forUpdate: true }
+        );
 
-        const query = 'UPDATE fc_contatos SET ativo = $1 WHERE id = $2 RETURNING *;';
-        const result = await dbClient.query(query, [ativo, id]);
+        const query = `
+            UPDATE fc_contatos
+               SET ativo = $1
+             WHERE id = $2
+               AND empresa_id = $3
+             RETURNING *;
+        `;
+        const result = await dbClient.query(query, [ativo, id, req.empresaId]);
         const contatoAtualizado = result.rows[0];
 
-        await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'ALTERACAO_STATUS_CONTATO', { antes: contatoOriginal, depois: contatoAtualizado });
+        await registrarLog(
+            dbClient,
+            req.usuarioLogado.id,
+            req.usuarioLogado.nome,
+            'ALTERACAO_STATUS_CONTATO',
+            { antes: contatoOriginal, depois: contatoAtualizado },
+            req.empresaId
+        );
 
         await dbClient.query('COMMIT');
         res.status(200).json(contatoAtualizado);
 
     } catch (error) {
         if (dbClient) await dbClient.query('ROLLBACK');
-        res.status(500).json({ error: 'Erro ao alterar status do favorecido.', details: error.message });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao alterar status do favorecido.',
+            details: error.statusCode ? undefined : error.message,
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -1440,13 +1876,16 @@ router.put('/lancamentos/:id', async (req, res) => {
         dbClient = await pool.connect();
         await dbClient.query('BEGIN');
 
-        const lancamentoOriginalRes = await dbClient.query('SELECT * FROM fc_lancamentos WHERE id = $1 AND excluido_em IS NULL FOR UPDATE', [id]);
-        if (lancamentoOriginalRes.rows.length === 0) {
-            await dbClient.query('ROLLBACK');
-            return res.status(404).json({ error: 'Lançamento não encontrado.' });
+        const lancamentoOriginal = await exigirRecursoDaEmpresa(
+            dbClient,
+            'fc_lancamentos',
+            id,
+            req.empresaId,
+            { nome: 'Lançamento', forUpdate: true }
+        );
+        if (lancamentoOriginal.excluido_em) {
+            throw erroFinanceiro(404, 'Lançamento não encontrado no contexto da empresa ativa.');
         }
-        
-        const lancamentoOriginal = lancamentoOriginalRes.rows[0];
 
         if (lancamentoOriginal.status_edicao === 'PENDENTE_APROVACAO' || lancamentoOriginal.status_edicao === 'PENDENTE_EXCLUSAO') {
              await dbClient.query('ROLLBACK');
@@ -1456,6 +1895,29 @@ router.put('/lancamentos/:id', async (req, res) => {
         if (req.permissoesUsuario.includes('aprovar-alteracao-financeira')) {
             // FLUXO DO ADMIN: Edita diretamente
             const { valor, data_transacao, id_categoria, id_conta_bancaria, descricao, id_contato } = novosDados;
+            await exigirRecursoDaEmpresa(
+                dbClient,
+                'fc_contas_bancarias',
+                id_conta_bancaria,
+                req.empresaId,
+                { nome: 'Conta bancária' }
+            );
+            await exigirRecursoDaEmpresa(
+                dbClient,
+                'fc_categorias',
+                id_categoria,
+                req.empresaId,
+                { nome: 'Categoria' }
+            );
+            if (id_contato) {
+                await exigirRecursoDaEmpresa(
+                    dbClient,
+                    'fc_contatos',
+                    id_contato,
+                    req.empresaId,
+                    { nome: 'Favorecido' }
+                );
+            }
             
             const queryUpdate = `
                 UPDATE fc_lancamentos 
@@ -1463,16 +1925,26 @@ router.put('/lancamentos/:id', async (req, res) => {
                     status_edicao='OK', motivo_rejeicao=NULL, 
                     id_usuario_edicao = $7, -- Adiciona o ID do editor
                     atualizado_em = NOW()    -- Adiciona a data/hora atual
-                WHERE id = $8 RETURNING *;`;
+                WHERE id = $8
+                  AND empresa_id = $9
+                RETURNING *;`;
             
             // <<< MUDANÇA NOS PARÂMETROS >>>
             const updatedResult = await dbClient.query(queryUpdate, [
                 valor, data_transacao, id_categoria, id_conta_bancaria, descricao, id_contato, 
                 req.usuarioLogado.id, // Parâmetro $7
-                id                      // Parâmetro $8
+                id,
+                req.empresaId
             ]);
             
-            await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'EDICAO_LANCAMENTO', { antes: lancamentoOriginal, depois: updatedResult.rows[0] });
+            await registrarLog(
+                dbClient,
+                req.usuarioLogado.id,
+                req.usuarioLogado.nome,
+                'EDICAO_LANCAMENTO',
+                { antes: lancamentoOriginal, depois: updatedResult.rows[0] },
+                req.empresaId
+            );
             
             await dbClient.query('COMMIT');
             return res.status(200).json({ 
@@ -1484,19 +1956,33 @@ router.put('/lancamentos/:id', async (req, res) => {
 
             const solRes = await dbClient.query(
                 `INSERT INTO fc_solicitacoes_alteracao 
-                    (id_lancamento, tipo_solicitacao, dados_antigos, dados_novos, id_usuario_solicitante, justificativa_solicitante) 
-                VALUES ($1, 'EDICAO', $2, $3, $4, $5) RETURNING *;`, 
+                    (id_lancamento, tipo_solicitacao, dados_antigos, dados_novos,
+                     id_usuario_solicitante, justificativa_solicitante, empresa_id)
+                VALUES ($1, 'EDICAO', $2, $3, $4, $5, $6) RETURNING *;`,
                 // Adicionamos a justificativa no insert também
-                [id, JSON.stringify(lancamentoOriginal), JSON.stringify(novosDados), req.usuarioLogado.id, justificativa]
+                [
+                    id,
+                    JSON.stringify(lancamentoOriginal),
+                    JSON.stringify(novosDados),
+                    req.usuarioLogado.id,
+                    justificativa,
+                    req.empresaId,
+                ]
             );
-            await dbClient.query(`UPDATE fc_lancamentos SET status_edicao = 'PENDENTE_APROVACAO', motivo_rejeicao=NULL WHERE id = $1`, [id]);
+            await dbClient.query(
+                `UPDATE fc_lancamentos
+                    SET status_edicao = 'PENDENTE_APROVACAO', motivo_rejeicao = NULL
+                  WHERE id = $1
+                    AND empresa_id = $2`,
+                [id, req.empresaId]
+            );
             
             // CORREÇÃO AQUI: Passamos a justificativa para o log
             await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'SOLICITACAO_EDICAO', { 
                 id_lancamento: id, 
                 justificativa: justificativa,
                 solicitacao: solRes.rows[0]
-            });
+            }, req.empresaId);
             
             await dbClient.query('COMMIT');
             return res.status(202).json({ message: 'Edição solicitada e aguardando aprovação.' });
@@ -1504,7 +1990,10 @@ router.put('/lancamentos/:id', async (req, res) => {
     } catch (error) {
         if (dbClient) await dbClient.query('ROLLBACK');
         console.error("[API PUT /lancamentos/:id] Erro:", error);
-        res.status(500).json({ error: 'Erro ao processar edição do lançamento.', details: error.message });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao processar edição do lançamento.',
+            details: error.statusCode ? undefined : error.message,
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -1522,13 +2011,16 @@ router.post('/lancamentos/:id/solicitar-exclusao', async (req, res) => {
         dbClient = await pool.connect();
         await dbClient.query('BEGIN');
 
-        const lancamentoOriginalRes = await dbClient.query('SELECT * FROM fc_lancamentos WHERE id = $1 AND excluido_em IS NULL FOR UPDATE', [id]);
-        if (lancamentoOriginalRes.rows.length === 0) {
-            await dbClient.query('ROLLBACK');
-            return res.status(404).json({ error: 'Lançamento não encontrado.' });
+        const lancamentoOriginal = await exigirRecursoDaEmpresa(
+            dbClient,
+            'fc_lancamentos',
+            id,
+            req.empresaId,
+            { nome: 'Lançamento', forUpdate: true }
+        );
+        if (lancamentoOriginal.excluido_em) {
+            throw erroFinanceiro(404, 'Lançamento não encontrado no contexto da empresa ativa.');
         }
-        
-        const lancamentoOriginal = lancamentoOriginalRes.rows[0];
 
         if (['PENDENTE_APROVACAO', 'PENDENTE_EXCLUSAO'].includes(lancamentoOriginal.status_edicao)) {
             await dbClient.query('ROLLBACK');
@@ -1541,8 +2033,12 @@ router.post('/lancamentos/:id/solicitar-exclusao', async (req, res) => {
             const lancamentoParaLog = { ...lancamentoOriginal };
             if (lancamentoParaLog.tipo_rateio) {
                 const primeiroItemRes = await dbClient.query(
-                    'SELECT id_categoria FROM fc_lancamento_itens WHERE id_lancamento_pai = $1 LIMIT 1',
-                    [id]
+                    `SELECT id_categoria
+                       FROM fc_lancamento_itens
+                      WHERE id_lancamento_pai = $1
+                        AND empresa_id = $2
+                      LIMIT 1`,
+                    [id, req.empresaId]
                 );
                 if (primeiroItemRes.rows.length > 0) {
                     lancamentoParaLog.id_categoria = primeiroItemRes.rows[0].id_categoria;
@@ -1550,14 +2046,21 @@ router.post('/lancamentos/:id/solicitar-exclusao', async (req, res) => {
             }
 
             // Soft delete (mantém itens e linha para auditoria / futura reativação)
-            await softDeleteLancamento(dbClient, id, req.usuarioLogado.id, { cascade: true });
+            await softDeleteLancamento(
+                dbClient,
+                id,
+                req.usuarioLogado.id,
+                req.empresaId,
+                { cascade: true }
+            );
 
             await registrarLog(
                 dbClient,
                 req.usuarioLogado.id,
                 req.usuarioLogado.nome,
                 'EXCLUSAO_LANCAMENTO',
-                { antes: lancamentoParaLog }
+                { antes: lancamentoParaLog },
+                req.empresaId
             );
             
             await dbClient.query('COMMIT');
@@ -1569,17 +2072,34 @@ router.post('/lancamentos/:id/solicitar-exclusao', async (req, res) => {
                 await dbClient.query('ROLLBACK');
                 return res.status(400).json({ error: 'A justificativa é obrigatória para solicitar a exclusão.' });
             }
-            await dbClient.query("UPDATE fc_lancamentos SET status_edicao = 'PENDENTE_EXCLUSAO', motivo_rejeicao = NULL WHERE id = $1", [id]);
+            await dbClient.query(
+                `UPDATE fc_lancamentos
+                    SET status_edicao = 'PENDENTE_EXCLUSAO', motivo_rejeicao = NULL
+                  WHERE id = $1
+                    AND empresa_id = $2`,
+                [id, req.empresaId]
+            );
             const solRes = await dbClient.query(
-                `INSERT INTO fc_solicitacoes_alteracao (id_lancamento, tipo_solicitacao, dados_antigos, id_usuario_solicitante, justificativa_solicitante) VALUES ($1, 'EXCLUSAO', $2, $3, $4) RETURNING *;`, 
-                [id, JSON.stringify(lancamentoOriginal), req.usuarioLogado.id, justificativa.trim()]
+                `INSERT INTO fc_solicitacoes_alteracao (
+                    id_lancamento, tipo_solicitacao, dados_antigos,
+                    id_usuario_solicitante, justificativa_solicitante, empresa_id
+                )
+                VALUES ($1, 'EXCLUSAO', $2, $3, $4, $5)
+                RETURNING *;`,
+                [
+                    id,
+                    JSON.stringify(lancamentoOriginal),
+                    req.usuarioLogado.id,
+                    justificativa.trim(),
+                    req.empresaId,
+                ]
             );
           
             await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'SOLICITACAO_EXCLUSAO', {
                 id_lancamento: id,
                 justificativa: justificativa.trim(), // Garantir que a justificativa seja passada
                 solicitacao: solRes.rows[0]
-            });
+            }, req.empresaId);
 
             await dbClient.query('COMMIT');
             return res.status(202).json({ message: 'Solicitação de exclusão enviada para aprovação.' });
@@ -1587,7 +2107,12 @@ router.post('/lancamentos/:id/solicitar-exclusao', async (req, res) => {
     } catch (error) {
         if (dbClient) await dbClient.query('ROLLBACK');
         console.error(`[API /solicitar-exclusao] ERRO CRÍTICO no processamento da exclusão do lançamento #${id}:`, error);
-        res.status(500).json({ error: 'Erro interno ao processar solicitação de exclusão.', details: error.message });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode
+                ? error.message
+                : 'Erro interno ao processar solicitação de exclusão.',
+            details: error.statusCode ? undefined : error.message,
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -1607,9 +2132,16 @@ router.post('/lancamentos/:id/estornar', async (req, res) => {
         dbClient = await pool.connect();
         await dbClient.query('BEGIN');
 
-        const lancamentoOriginalRes = await dbClient.query('SELECT * FROM fc_lancamentos WHERE id = $1 AND excluido_em IS NULL FOR UPDATE', [idLancamentoOriginal]);
-        if (lancamentoOriginalRes.rows.length === 0) throw new Error('Lançamento original não encontrado.');
-        const lancamentoOriginal = lancamentoOriginalRes.rows[0];
+        const lancamentoOriginal = await exigirRecursoDaEmpresa(
+            dbClient,
+            'fc_lancamentos',
+            idLancamentoOriginal,
+            req.empresaId,
+            { nome: 'Lançamento original', forUpdate: true }
+        );
+        if (lancamentoOriginal.excluido_em) {
+            throw erroFinanceiro(404, 'Lançamento original não encontrado.');
+        }
 
         if (lancamentoOriginal.status_edicao !== 'OK' && lancamentoOriginal.status_edicao !== 'ESTORNADO' && lancamentoOriginal.status_edicao !== 'EDITADO_APROVADO' && lancamentoOriginal.status_edicao !== 'EDICAO_REJEITADA') {
             await dbClient.query('ROLLBACK'); 
@@ -1618,14 +2150,55 @@ router.post('/lancamentos/:id/estornar', async (req, res) => {
 
         // FLUXO DO ADMIN: Executa diretamente (sem mudanças aqui)
         if (req.permissoesUsuario.includes('aprovar-alteracao-financeira')) {
-            
-            const estornoQuery = `INSERT INTO fc_lancamentos (id_conta_bancaria, id_categoria, tipo, valor, data_transacao, descricao, id_contato, id_usuario_lancamento, id_estorno_de) VALUES ($1, $2, 'RECEITA', $3, $4, $5, $6, $7, $8) RETURNING *;`;
+            await exigirRecursoDaEmpresa(
+                dbClient,
+                'fc_contas_bancarias',
+                dadosEstorno.id_conta_bancaria,
+                req.empresaId,
+                { nome: 'Conta bancária' }
+            );
+
+            const estornoQuery = `
+                INSERT INTO fc_lancamentos (
+                    id_conta_bancaria, id_categoria, tipo, valor,
+                    data_transacao, descricao, id_contato,
+                    id_usuario_lancamento, id_estorno_de, empresa_id
+                )
+                VALUES ($1, $2, 'RECEITA', $3, $4, $5, $6, $7, $8, $9)
+                RETURNING *;
+            `;
             const descricaoEstorno = `Estorno do lançamento #${idLancamentoOriginal}: ${lancamentoOriginal.descricao}`;
-            const estornoResult = await dbClient.query(estornoQuery, [dadosEstorno.id_conta_bancaria, lancamentoOriginal.id_categoria, dadosEstorno.valor_estornado, dadosEstorno.data_transacao, descricaoEstorno, lancamentoOriginal.id_contato, req.usuarioLogado.id, idLancamentoOriginal]);
+            const estornoResult = await dbClient.query(estornoQuery, [
+                dadosEstorno.id_conta_bancaria,
+                lancamentoOriginal.id_categoria,
+                dadosEstorno.valor_estornado,
+                dadosEstorno.data_transacao,
+                descricaoEstorno,
+                lancamentoOriginal.id_contato,
+                req.usuarioLogado.id,
+                idLancamentoOriginal,
+                req.empresaId,
+            ]);
             
-            await dbClient.query("UPDATE fc_lancamentos SET status_edicao = 'ESTORNADO' WHERE id = $1", [idLancamentoOriginal]);
+            await dbClient.query(
+                `UPDATE fc_lancamentos
+                    SET status_edicao = 'ESTORNADO'
+                  WHERE id = $1
+                    AND empresa_id = $2`,
+                [idLancamentoOriginal, req.empresaId]
+            );
             
-            await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'REGISTRO_ESTORNO', { lancamento_original: lancamentoOriginal, lancamento_estorno: estornoResult.rows[0] });
+            await registrarLog(
+                dbClient,
+                req.usuarioLogado.id,
+                req.usuarioLogado.nome,
+                'REGISTRO_ESTORNO',
+                {
+                    lancamento_original: lancamentoOriginal,
+                    lancamento_estorno: estornoResult.rows[0],
+                },
+                req.empresaId
+            );
             
             await dbClient.query('COMMIT');
             return res.status(201).json({ message: 'Estorno registrado com sucesso!' });
@@ -1634,24 +2207,36 @@ router.post('/lancamentos/:id/estornar', async (req, res) => {
         else {
 
             const solRes = await dbClient.query(
-                `INSERT INTO fc_solicitacoes_alteracao (id_lancamento, tipo_solicitacao, dados_antigos, dados_novos, id_usuario_solicitante) VALUES ($1, 'ESTORNO', $2, $3, $4) RETURNING *;`,
+                `INSERT INTO fc_solicitacoes_alteracao (
+                    id_lancamento, tipo_solicitacao, dados_antigos,
+                    dados_novos, id_usuario_solicitante, empresa_id
+                )
+                VALUES ($1, 'ESTORNO', $2, $3, $4, $5)
+                RETURNING *;`,
                 [
                     idLancamentoOriginal, 
                     JSON.stringify(lancamentoOriginal),
                     JSON.stringify(dadosEstorno),
-                    req.usuarioLogado.id
+                    req.usuarioLogado.id,
+                    req.empresaId
                 ]
             );
 
             // Muda o status para indicar que há uma ação pendente
-            await dbClient.query(`UPDATE fc_lancamentos SET status_edicao = 'PENDENTE_APROVACAO' WHERE id = $1`, [idLancamentoOriginal]);
+            await dbClient.query(
+                `UPDATE fc_lancamentos
+                    SET status_edicao = 'PENDENTE_APROVACAO'
+                  WHERE id = $1
+                    AND empresa_id = $2`,
+                [idLancamentoOriginal, req.empresaId]
+            );
 
             await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'SOLICITACAO_ESTORNO', {
                 id_lancamento: idLancamentoOriginal,
                 valor_estornado: dadosEstorno.valor_estornado,
                 dados_estorno: dadosEstorno,
                 solicitacao: solRes.rows[0],
-            });
+            }, req.empresaId);
             
             await dbClient.query('COMMIT');
             return res.status(202).json({ message: 'Solicitação de estorno enviada para aprovação.' });
@@ -1660,7 +2245,10 @@ router.post('/lancamentos/:id/estornar', async (req, res) => {
     } catch (error) {
         if (dbClient) await dbClient.query('ROLLBACK');
         console.error(`[API /lancamentos/${idLancamentoOriginal}/estornar] Erro:`, error);
-        res.status(500).json({ error: 'Erro ao processar o estorno.', details: error.message });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao processar o estorno.',
+            details: error.statusCode ? undefined : error.message,
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -1680,9 +2268,16 @@ router.post('/lancamentos/:id/reverter-estorno', async (req, res) => {
         dbClient = await pool.connect();
         await dbClient.query('BEGIN');
 
-        const estornoRes = await dbClient.query('SELECT * FROM fc_lancamentos WHERE id = $1 AND excluido_em IS NULL FOR UPDATE', [idLancamentoEstorno]);
-        if (estornoRes.rows.length === 0) throw new Error('Lançamento de estorno não encontrado.');
-        const lancamentoEstorno = estornoRes.rows[0];
+        const lancamentoEstorno = await exigirRecursoDaEmpresa(
+            dbClient,
+            'fc_lancamentos',
+            idLancamentoEstorno,
+            req.empresaId,
+            { nome: 'Lançamento de estorno', forUpdate: true }
+        );
+        if (lancamentoEstorno.excluido_em) {
+            throw erroFinanceiro(404, 'Lançamento de estorno não encontrado.');
+        }
         if (!lancamentoEstorno.id_estorno_de) throw new Error('Este lançamento não é um estorno.');
 
         if (lancamentoEstorno.status_edicao !== 'OK' && lancamentoEstorno.status_edicao !== 'EDITADO_APROVADO' && lancamentoEstorno.status_edicao !== 'EDICAO_REJEITADA') {
@@ -1694,16 +2289,26 @@ router.post('/lancamentos/:id/reverter-estorno', async (req, res) => {
         if (req.permissoesUsuario.includes('aprovar-alteracao-financeira')) {
             
             // Soft delete do lançamento de estorno (não apaga a linha)
-            await softDeleteLancamento(dbClient, idLancamentoEstorno, req.usuarioLogado.id, { cascade: false });
+            await softDeleteLancamento(
+                dbClient,
+                idLancamentoEstorno,
+                req.usuarioLogado.id,
+                req.empresaId,
+                { cascade: false }
+            );
             await dbClient.query(
-                "UPDATE fc_lancamentos SET status_edicao = 'OK' WHERE id = $1 AND excluido_em IS NULL",
-                [lancamentoEstorno.id_estorno_de]
+                `UPDATE fc_lancamentos
+                    SET status_edicao = 'OK'
+                  WHERE id = $1
+                    AND empresa_id = $2
+                    AND excluido_em IS NULL`,
+                [lancamentoEstorno.id_estorno_de, req.empresaId]
             );
 
             await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'REVERSAO_ESTORNO', {
                 lancamento_estorno: lancamentoEstorno,
                 lancamento_original_id: lancamentoEstorno.id_estorno_de,
-            });
+            }, req.empresaId);
             
             await dbClient.query('COMMIT');
             return res.status(200).json({ message: 'Estorno revertido com sucesso.' });
@@ -1712,16 +2317,32 @@ router.post('/lancamentos/:id/reverter-estorno', async (req, res) => {
         else {
             // Aqui, o 'id_lancamento' na solicitação é o ID do ESTORNO (que queremos apagar)
             const solRes = await dbClient.query(
-                `INSERT INTO fc_solicitacoes_alteracao (id_lancamento, tipo_solicitacao, dados_antigos, id_usuario_solicitante) VALUES ($1, 'REVERSAO_ESTORNO', $2, $3) RETURNING *;`,
-                [idLancamentoEstorno, lancamentoEstorno, req.usuarioLogado.id]
+                `INSERT INTO fc_solicitacoes_alteracao (
+                    id_lancamento, tipo_solicitacao, dados_antigos,
+                    id_usuario_solicitante, empresa_id
+                )
+                VALUES ($1, 'REVERSAO_ESTORNO', $2, $3, $4)
+                RETURNING *;`,
+                [
+                    idLancamentoEstorno,
+                    lancamentoEstorno,
+                    req.usuarioLogado.id,
+                    req.empresaId,
+                ]
             );
 
-            await dbClient.query(`UPDATE fc_lancamentos SET status_edicao = 'PENDENTE_APROVACAO' WHERE id = $1`, [idLancamentoEstorno]);
+            await dbClient.query(
+                `UPDATE fc_lancamentos
+                    SET status_edicao = 'PENDENTE_APROVACAO'
+                  WHERE id = $1
+                    AND empresa_id = $2`,
+                [idLancamentoEstorno, req.empresaId]
+            );
 
             await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'SOLICITACAO_REVERSAO_ESTORNO', {
                 id_lancamento: idLancamentoEstorno,
                 solicitacao: solRes.rows[0],
-            });
+            }, req.empresaId);
             
             await dbClient.query('COMMIT');
             return res.status(202).json({ message: 'Solicitação de reversão de estorno enviada para aprovação.' });
@@ -1729,7 +2350,10 @@ router.post('/lancamentos/:id/reverter-estorno', async (req, res) => {
     } catch (error) {
         if (dbClient) await dbClient.query('ROLLBACK');
         console.error(`[API /reverter-estorno] Erro:`, error);
-        res.status(500).json({ error: 'Erro ao reverter o estorno.', details: error.message });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao reverter o estorno.',
+            details: error.statusCode ? undefined : error.message,
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -1788,10 +2412,56 @@ router.post('/lancamentos/detalhado', async (req, res) => {
         dbClient = await pool.connect();
         await dbClient.query('BEGIN');
 
+        await exigirRecursoDaEmpresa(
+            dbClient,
+            'fc_contas_bancarias',
+            id_conta_bancaria,
+            req.empresaId,
+            { nome: 'Conta bancária' }
+        );
+        if (id_contato) {
+            await exigirRecursoDaEmpresa(
+                dbClient,
+                'fc_contatos',
+                id_contato,
+                req.empresaId,
+                { nome: 'Favorecido' }
+            );
+        }
+        if (tipo_rateio !== 'COMPRA' && id_categoria) {
+            await exigirRecursoDaEmpresa(
+                dbClient,
+                'fc_categorias',
+                id_categoria,
+                req.empresaId,
+                { nome: 'Categoria' }
+            );
+        }
+        for (const item of itens_filho) {
+            await exigirRecursoDaEmpresa(
+                dbClient,
+                'fc_categorias',
+                item.id_categoria,
+                req.empresaId,
+                { nome: 'Categoria do item' }
+            );
+            if (item.id_contato_item) {
+                await exigirRecursoDaEmpresa(
+                    dbClient,
+                    'fc_contatos',
+                    item.id_contato_item,
+                    req.empresaId,
+                    { nome: 'Favorecido do item' }
+                );
+            }
+        }
+
         const lancamentoPaiQuery = `
             INSERT INTO fc_lancamentos 
-                (id_conta_bancaria, tipo, valor, valor_desconto, data_transacao, descricao, id_contato, id_categoria, id_usuario_lancamento, tipo_rateio)
-            VALUES ($1, 'DESPESA', $2, $3, $4, $5, $6, $7, $8, $9) 
+                (id_conta_bancaria, tipo, valor, valor_desconto, data_transacao,
+                 descricao, id_contato, id_categoria, id_usuario_lancamento,
+                 tipo_rateio, empresa_id)
+            VALUES ($1, 'DESPESA', $2, $3, $4, $5, $6, $7, $8, $9, $10)
             RETURNING id;
         `;
         const lancamentoPaiResult = await dbClient.query(lancamentoPaiQuery, [
@@ -1803,7 +2473,8 @@ router.post('/lancamentos/detalhado', async (req, res) => {
             id_contato, 
             tipo_rateio === 'COMPRA' ? null : id_categoria,
             req.usuarioLogado.id, 
-            tipo_rateio || null
+            tipo_rateio || null,
+            req.empresaId
         ]);
         const novoLancamentoId = lancamentoPaiResult.rows[0].id;
 
@@ -1812,13 +2483,38 @@ router.post('/lancamentos/detalhado', async (req, res) => {
             if (tipo_rateio === 'COMPRA') {
                 const valor_total_item = parseFloat(item.quantidade) * parseFloat(item.valor_unitario);
                 await dbClient.query(
-                    `INSERT INTO fc_lancamento_itens (id_lancamento_pai, id_categoria, descricao_item, quantidade, valor_unitario, valor_total_item, id_contato_item) VALUES ($1, $2, $3, $4, $5, $6, $7);`,
-                    [novoLancamentoId, item.id_categoria, item.descricao_item, item.quantidade, item.valor_unitario, valor_total_item, item.id_contato_item || null]
+                    `INSERT INTO fc_lancamento_itens (
+                        id_lancamento_pai, id_categoria, descricao_item,
+                        quantidade, valor_unitario, valor_total_item,
+                        id_contato_item, empresa_id
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8);`,
+                    [
+                        novoLancamentoId,
+                        item.id_categoria,
+                        item.descricao_item,
+                        item.quantidade,
+                        item.valor_unitario,
+                        valor_total_item,
+                        item.id_contato_item || null,
+                        req.empresaId,
+                    ]
                 );
             } else { // Para 'DETALHADO'
                  await dbClient.query(
-                    `INSERT INTO fc_lancamento_itens (id_lancamento_pai, id_categoria, descricao_item, valor_total_item, id_contato_item) VALUES ($1, $2, $3, $4, $5);`,
-                    [novoLancamentoId, item.id_categoria, item.descricao_item, item.valor_item, item.id_contato_item || null]
+                    `INSERT INTO fc_lancamento_itens (
+                        id_lancamento_pai, id_categoria, descricao_item,
+                        valor_total_item, id_contato_item, empresa_id
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6);`,
+                    [
+                        novoLancamentoId,
+                        item.id_categoria,
+                        item.descricao_item,
+                        item.valor_item,
+                        item.id_contato_item || null,
+                        req.empresaId,
+                    ]
                 );
             }
         }
@@ -1836,7 +2532,8 @@ router.post('/lancamentos/detalhado', async (req, res) => {
                     itens: itens_filho, // Passamos os itens para o log também
                     tipo_rateio: tipo_rateio 
                 } 
-            }
+            },
+            req.empresaId
         );
 
         await dbClient.query('COMMIT');
@@ -1845,7 +2542,12 @@ router.post('/lancamentos/detalhado', async (req, res) => {
     } catch (error) {
         if (dbClient) await dbClient.query('ROLLBACK');
         console.error("[API POST /lancamentos/detalhado] Erro:", error);
-        res.status(500).json({ error: 'Erro ao registrar lançamento detalhado.', details: error.message });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode
+                ? error.message
+                : 'Erro ao registrar lançamento detalhado.',
+            details: error.statusCode ? undefined : error.message,
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -1870,12 +2572,25 @@ router.put('/lancamentos/detalhado/:id', async (req, res) => {
         await dbClient.query('BEGIN');
 
         // Lógica para checar se já existe uma solicitação pendente
-        const lancamentoOriginalRes = await dbClient.query('SELECT * FROM fc_lancamentos WHERE id = $1 AND excluido_em IS NULL FOR UPDATE', [idLancamentoPai]);
-        if (lancamentoOriginalRes.rows.length === 0) throw new Error('Lançamento não encontrado.');
-        const lancamentoOriginal = lancamentoOriginalRes.rows[0];
+        const lancamentoOriginal = await exigirRecursoDaEmpresa(
+            dbClient,
+            'fc_lancamentos',
+            idLancamentoPai,
+            req.empresaId,
+            { nome: 'Lançamento', forUpdate: true }
+        );
+        if (lancamentoOriginal.excluido_em) {
+            throw erroFinanceiro(404, 'Lançamento não encontrado.');
+        }
 
          // Precisa também dos itens originais para o log "antes"
-        const itensOriginaisRes = await dbClient.query('SELECT * FROM fc_lancamento_itens WHERE id_lancamento_pai = $1', [idLancamentoPai]);
+        const itensOriginaisRes = await dbClient.query(
+            `SELECT *
+               FROM fc_lancamento_itens
+              WHERE id_lancamento_pai = $1
+                AND empresa_id = $2`,
+            [idLancamentoPai, req.empresaId]
+        );
         const dadosAntigosCompletos = { ...lancamentoOriginal, itens: itensOriginaisRes.rows };
 
 
@@ -1886,7 +2601,56 @@ router.put('/lancamentos/detalhado/:id', async (req, res) => {
         
         // Se o usuário for ADMIN, edita diretamente
         if (req.permissoesUsuario.includes('aprovar-alteracao-financeira')) {
-            await dbClient.query('DELETE FROM fc_lancamento_itens WHERE id_lancamento_pai = $1', [idLancamentoPai]);
+            await exigirRecursoDaEmpresa(
+                dbClient,
+                'fc_contas_bancarias',
+                dados_pai.id_conta_bancaria,
+                req.empresaId,
+                { nome: 'Conta bancária' }
+            );
+            if (dados_pai.id_contato) {
+                await exigirRecursoDaEmpresa(
+                    dbClient,
+                    'fc_contatos',
+                    dados_pai.id_contato,
+                    req.empresaId,
+                    { nome: 'Favorecido' }
+                );
+            }
+            if (tipo_rateio !== 'COMPRA' && dados_pai.id_categoria) {
+                await exigirRecursoDaEmpresa(
+                    dbClient,
+                    'fc_categorias',
+                    dados_pai.id_categoria,
+                    req.empresaId,
+                    { nome: 'Categoria' }
+                );
+            }
+            for (const item of itens_filho) {
+                await exigirRecursoDaEmpresa(
+                    dbClient,
+                    'fc_categorias',
+                    item.id_categoria,
+                    req.empresaId,
+                    { nome: 'Categoria do item' }
+                );
+                if (item.id_contato_item) {
+                    await exigirRecursoDaEmpresa(
+                        dbClient,
+                        'fc_contatos',
+                        item.id_contato_item,
+                        req.empresaId,
+                        { nome: 'Favorecido do item' }
+                    );
+                }
+            }
+
+            await dbClient.query(
+                `DELETE FROM fc_lancamento_itens
+                  WHERE id_lancamento_pai = $1
+                    AND empresa_id = $2`,
+                [idLancamentoPai, req.empresaId]
+            );
 
             if (tipo_rateio === 'COMPRA') {
                 const soma_itens = itens_filho.reduce((acc, item) => (acc + (parseFloat(item.quantidade) * parseFloat(item.valor_unitario))), 0);
@@ -1896,14 +2660,20 @@ router.put('/lancamentos/detalhado/:id', async (req, res) => {
                     `UPDATE fc_lancamentos 
                      SET id_conta_bancaria=$1, valor=$2, valor_desconto=$3, data_transacao=$4, descricao=$5, id_contato=$6, id_categoria=$7, tipo_rateio=$8, 
                          status_edicao='OK', id_usuario_edicao = $9, atualizado_em = NOW() 
-                     WHERE id=$10;`,
-                    [dados_pai.id_conta_bancaria, valor_total_lancamento, dados_pai.valor_desconto || 0, dados_pai.data_transacao, dados_pai.descricao, dados_pai.id_contato, null, tipo_rateio, req.usuarioLogado.id, idLancamentoPai]
+                     WHERE id=$10
+                       AND empresa_id=$11;`,
+                    [dados_pai.id_conta_bancaria, valor_total_lancamento, dados_pai.valor_desconto || 0, dados_pai.data_transacao, dados_pai.descricao, dados_pai.id_contato, null, tipo_rateio, req.usuarioLogado.id, idLancamentoPai, req.empresaId]
                 );
                 for (const item of itens_filho) {
                     const valor_total_item = parseFloat(item.quantidade) * parseFloat(item.valor_unitario);
                     await dbClient.query(
-                        `INSERT INTO fc_lancamento_itens (id_lancamento_pai, id_categoria, descricao_item, quantidade, valor_unitario, valor_total_item, id_contato_item) VALUES ($1,$2,$3,$4,$5,$6,$7);`,
-                        [idLancamentoPai, item.id_categoria, item.descricao_item, item.quantidade, item.valor_unitario, valor_total_item, item.id_contato_item || null]
+                        `INSERT INTO fc_lancamento_itens (
+                            id_lancamento_pai, id_categoria, descricao_item,
+                            quantidade, valor_unitario, valor_total_item,
+                            id_contato_item, empresa_id
+                        )
+                        VALUES ($1,$2,$3,$4,$5,$6,$7,$8);`,
+                        [idLancamentoPai, item.id_categoria, item.descricao_item, item.quantidade, item.valor_unitario, valor_total_item, item.id_contato_item || null, req.empresaId]
                     );
                 }
             } else if (tipo_rateio === 'DETALHADO') {
@@ -1913,19 +2683,33 @@ router.put('/lancamentos/detalhado/:id', async (req, res) => {
                     `UPDATE fc_lancamentos 
                      SET id_conta_bancaria=$1, valor=$2, valor_desconto=$3, data_transacao=$4, descricao=$5, id_contato=$6, id_categoria=$7, tipo_rateio=$8, 
                          status_edicao='OK', id_usuario_edicao = $9, atualizado_em = NOW() 
-                     WHERE id=$10;`,
-                    [dados_pai.id_conta_bancaria, valor_total_lancamento, 0, dados_pai.data_transacao, dados_pai.descricao, dados_pai.id_contato, dados_pai.id_categoria, tipo_rateio, req.usuarioLogado.id, idLancamentoPai]
+                     WHERE id=$10
+                       AND empresa_id=$11;`,
+                    [dados_pai.id_conta_bancaria, valor_total_lancamento, 0, dados_pai.data_transacao, dados_pai.descricao, dados_pai.id_contato, dados_pai.id_categoria, tipo_rateio, req.usuarioLogado.id, idLancamentoPai, req.empresaId]
                 );
                 for (const item of itens_filho) {
                     await dbClient.query(
-                        `INSERT INTO fc_lancamento_itens (id_lancamento_pai, id_categoria, descricao_item, valor_total_item, id_contato_item) VALUES ($1,$2,$3,$4,$5);`,
-                        [idLancamentoPai, item.id_categoria, item.descricao_item, item.valor_item, item.id_contato_item || null]
+                        `INSERT INTO fc_lancamento_itens (
+                            id_lancamento_pai, id_categoria, descricao_item,
+                            valor_total_item, id_contato_item, empresa_id
+                        )
+                        VALUES ($1,$2,$3,$4,$5,$6);`,
+                        [idLancamentoPai, item.id_categoria, item.descricao_item, item.valor_item, item.id_contato_item || null, req.empresaId]
                     );
                 }
             }
             
-             const lancamentoAtualizadoRes = await dbClient.query('SELECT * FROM fc_lancamentos WHERE id = $1', [idLancamentoPai]);
-            const itensAtualizadosRes = await dbClient.query('SELECT * FROM fc_lancamento_itens WHERE id_lancamento_pai = $1', [idLancamentoPai]);
+             const lancamentoAtualizadoRes = await dbClient.query(
+                `SELECT * FROM fc_lancamentos WHERE id = $1 AND empresa_id = $2`,
+                [idLancamentoPai, req.empresaId]
+            );
+            const itensAtualizadosRes = await dbClient.query(
+                `SELECT *
+                   FROM fc_lancamento_itens
+                  WHERE id_lancamento_pai = $1
+                    AND empresa_id = $2`,
+                [idLancamentoPai, req.empresaId]
+            );
             const dadosDepoisCompletos = { ...lancamentoAtualizadoRes.rows[0], itens: itensAtualizadosRes.rows };
 
             await registrarLog(
@@ -1933,7 +2717,8 @@ router.put('/lancamentos/detalhado/:id', async (req, res) => {
                 req.usuarioLogado.id,
                 req.usuarioLogado.nome,
                 'EDICAO_LANCAMENTO', 
-                { antes: dadosAntigosCompletos, depois: dadosDepoisCompletos }
+                { antes: dadosAntigosCompletos, depois: dadosDepoisCompletos },
+                req.empresaId
             );
 
             await dbClient.query('COMMIT');
@@ -1943,18 +2728,36 @@ router.put('/lancamentos/detalhado/:id', async (req, res) => {
             if (!justificativa) return res.status(400).json({ error: 'A justificativa é obrigatória.' });
     
             // O seu código que busca os itens originais e monta o dadosAntigosCompletos está perfeito.
-            const itensOriginaisRes = await dbClient.query('SELECT * FROM fc_lancamento_itens WHERE id_lancamento_pai = $1', [idLancamentoPai]);
-            const dadosAntigosCompletos = { ...lancamentoOriginal, itens: itensOriginaisRes.rows };
+            const solRes = await dbClient.query(
+                `INSERT INTO fc_solicitacoes_alteracao (
+                    id_lancamento, tipo_solicitacao, dados_antigos, dados_novos,
+                    id_usuario_solicitante, justificativa_solicitante, empresa_id
+                )
+                VALUES ($1, 'EDICAO', $2, $3, $4, $5, $6)
+                RETURNING *;`,
+                [
+                    idLancamentoPai,
+                    dadosAntigosCompletos,
+                    req.body,
+                    req.usuarioLogado.id,
+                    justificativa,
+                    req.empresaId,
+                ]
+            );
             
-            const solRes = await dbClient.query(`INSERT INTO fc_solicitacoes_alteracao (id_lancamento, tipo_solicitacao, dados_antigos, dados_novos, id_usuario_solicitante, justificativa_solicitante) VALUES ($1, 'EDICAO', $2, $3, $4, $5) RETURNING *;`,[idLancamentoPai, dadosAntigosCompletos, req.body, req.usuarioLogado.id, justificativa]);
-            
-            await dbClient.query(`UPDATE fc_lancamentos SET status_edicao = 'PENDENTE_APROVACAO', motivo_rejeicao=NULL WHERE id = $1`, [idLancamentoPai]);
+            await dbClient.query(
+                `UPDATE fc_lancamentos
+                    SET status_edicao = 'PENDENTE_APROVACAO', motivo_rejeicao = NULL
+                  WHERE id = $1
+                    AND empresa_id = $2`,
+                [idLancamentoPai, req.empresaId]
+            );
             
             await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'SOLICITACAO_EDICAO', {
                 id_lancamento: idLancamentoPai,
                 justificativa: justificativa,
                 solicitacao: solRes.rows[0]
-            });
+            }, req.empresaId);
 
             await dbClient.query('COMMIT');
             return res.status(202).json({ message: 'Solicitação de edição enviada para aprovação.' });
@@ -1962,7 +2765,12 @@ router.put('/lancamentos/detalhado/:id', async (req, res) => {
     } catch (error) {
         if (dbClient) await dbClient.query('ROLLBACK');
         console.error(`[API PUT /lancamentos/detalhado/${idLancamentoPai}] Erro:`, error);
-        res.status(500).json({ error: 'Erro ao processar a atualização do lançamento detalhado.', details: error.message });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode
+                ? error.message
+                : 'Erro ao processar a atualização do lançamento detalhado.',
+            details: error.statusCode ? undefined : error.message,
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -1981,9 +2789,9 @@ router.get('/contas-agendadas', async (req, res) => {
     try {
         dbClient = await pool.connect();
 
-        let whereClauses = ["ca.status = $1"];
-        const queryParams = [status];
-        let paramIndex = 2;
+        let whereClauses = ["ca.status = $1", "ca.empresa_id = $2"];
+        const queryParams = [status, req.empresaId];
+        let paramIndex = 3;
 
         if (vencimento === 'atrasadas') {
             whereClauses.push("ca.data_vencimento < CURRENT_DATE");
@@ -2007,13 +2815,22 @@ router.get('/contas-agendadas', async (req, res) => {
                         'descricao_item', i.descricao_item, 'valor_item', i.valor_item
                     ))
                     FROM fc_contas_agendadas_itens i
-                    LEFT JOIN fc_categorias cat_item ON i.id_categoria = cat_item.id
-                    LEFT JOIN fc_contatos contato_item ON i.id_contato_item = contato_item.id
+                    LEFT JOIN fc_categorias cat_item
+                      ON i.id_categoria = cat_item.id
+                     AND i.empresa_id = cat_item.empresa_id
+                    LEFT JOIN fc_contatos contato_item
+                      ON i.id_contato_item = contato_item.id
+                     AND i.empresa_id = contato_item.empresa_id
                     WHERE i.id_conta_agendada_pai = ca.id
+                      AND i.empresa_id = ca.empresa_id
                 ) as itens
             FROM fc_contas_agendadas ca
-            LEFT JOIN fc_categorias cat ON ca.id_categoria = cat.id
-            LEFT JOIN fc_contatos c ON ca.id_contato = c.id
+            LEFT JOIN fc_categorias cat
+              ON ca.id_categoria = cat.id
+             AND ca.empresa_id = cat.empresa_id
+            LEFT JOIN fc_contatos c
+              ON ca.id_contato = c.id
+             AND ca.empresa_id = c.empresa_id
             LEFT JOIN usuarios u_agenda ON ca.id_usuario_agendamento = u_agenda.id
             LEFT JOIN usuarios u_edicao ON ca.id_usuario_ultima_edicao = u_edicao.id
             WHERE ${whereString}
@@ -2068,19 +2885,50 @@ router.post('/contas-agendadas', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        await exigirRecursoDaEmpresa(
+            dbClient,
+            'fc_categorias',
+            id_categoria,
+            req.empresaId,
+            { nome: 'Categoria' }
+        );
+        if (id_contato) {
+            await exigirRecursoDaEmpresa(
+                dbClient,
+                'fc_contatos',
+                id_contato,
+                req.empresaId,
+                { nome: 'Favorecido' }
+            );
+        }
         const query = `
-            INSERT INTO fc_contas_agendadas (id_categoria, id_contato, tipo, descricao, valor, data_vencimento, id_usuario_agendamento)
-            VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *;
+            INSERT INTO fc_contas_agendadas (
+                id_categoria, id_contato, tipo, descricao, valor,
+                data_vencimento, id_usuario_agendamento, empresa_id
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            RETURNING *;
         `;
         const result = await dbClient.query(query, [
-            id_categoria, id_contato || null, tipo, descricao, valor, data_vencimento, req.usuarioLogado.id
+            id_categoria, id_contato || null, tipo, descricao, valor,
+            data_vencimento, req.usuarioLogado.id, req.empresaId
         ]);
         const novoAgendamento = result.rows[0];
-        await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'CRIACAO_AGENDAMENTO', { depois: novoAgendamento });
+        await registrarLog(
+            dbClient,
+            req.usuarioLogado.id,
+            req.usuarioLogado.nome,
+            'CRIACAO_AGENDAMENTO',
+            { depois: novoAgendamento },
+            req.empresaId
+        );
 
         res.status(201).json(novoAgendamento);
     } catch (error) {
-        res.status(500).json({ error: 'Erro ao agendar conta.', details: error.message });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao agendar conta.',
+            details: error.statusCode ? undefined : error.message,
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -2102,28 +2950,64 @@ router.put('/contas-agendadas/:id', async (req, res) => {
         dbClient = await pool.connect();
         await dbClient.query('BEGIN');
 
-        const originalRes = await dbClient.query("SELECT * FROM fc_contas_agendadas WHERE id = $1 AND status = 'PENDENTE' FOR UPDATE", [id]);
-        if (originalRes.rowCount === 0) {
-            throw new Error('Agendamento não encontrado ou já foi baixado.');
+        const agendamentoOriginal = await exigirRecursoDaEmpresa(
+            dbClient,
+            'fc_contas_agendadas',
+            id,
+            req.empresaId,
+            { nome: 'Agendamento', forUpdate: true }
+        );
+        if (agendamentoOriginal.status !== 'PENDENTE') {
+            throw erroFinanceiro(404, 'Agendamento não encontrado ou já foi baixado.');
         }
-        const agendamentoOriginal = originalRes.rows[0];
+        await exigirRecursoDaEmpresa(
+            dbClient,
+            'fc_categorias',
+            id_categoria,
+            req.empresaId,
+            { nome: 'Categoria' }
+        );
+        if (id_contato) {
+            await exigirRecursoDaEmpresa(
+                dbClient,
+                'fc_contatos',
+                id_contato,
+                req.empresaId,
+                { nome: 'Favorecido' }
+            );
+        }
 
         const query = `
             UPDATE fc_contas_agendadas 
             SET id_categoria = $1, id_contato = $2, tipo = $3, descricao = $4, valor = $5, data_vencimento = $6, id_usuario_ultima_edicao = $7, atualizado_em = NOW()
-            WHERE id = $8 RETURNING *;
+            WHERE id = $8
+              AND empresa_id = $9
+            RETURNING *;
         `;
-        const result = await dbClient.query(query, [id_categoria, id_contato || null, tipo, descricao, valor, data_vencimento, req.usuarioLogado.id, id]);
+        const result = await dbClient.query(query, [
+            id_categoria, id_contato || null, tipo, descricao, valor,
+            data_vencimento, req.usuarioLogado.id, id, req.empresaId
+        ]);
         const agendamentoAtualizado = result.rows[0];
 
-        await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'EDICAO_AGENDAMENTO', { antes: agendamentoOriginal, depois: agendamentoAtualizado });
+        await registrarLog(
+            dbClient,
+            req.usuarioLogado.id,
+            req.usuarioLogado.nome,
+            'EDICAO_AGENDAMENTO',
+            { antes: agendamentoOriginal, depois: agendamentoAtualizado },
+            req.empresaId
+        );
 
         await dbClient.query('COMMIT');
         res.status(200).json(agendamentoAtualizado);
     } catch (error) {
         if (dbClient) await dbClient.query('ROLLBACK');
         console.error(`[API PUT /contas-agendadas/${id}] Erro:`, error);
-        res.status(500).json({ error: 'Erro ao atualizar agendamento.', details: error.message });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao atualizar agendamento.',
+            details: error.statusCode ? undefined : error.message,
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -2147,17 +3031,31 @@ router.post('/contas-agendadas/:id/baixar', async (req, res) => {
         await dbClient.query('BEGIN'); // INICIA A TRANSAÇÃO
 
         // 1. Busca a conta agendada e bloqueia a linha para evitar dupla baixa (FOR UPDATE)
-        const contaAgendadaRes = await dbClient.query('SELECT * FROM fc_contas_agendadas WHERE id = $1 FOR UPDATE', [id]);
-        if (contaAgendadaRes.rows.length === 0) throw new Error('Conta agendada não encontrada.');
-        
-        const contaAgendada = contaAgendadaRes.rows[0];
+        const contaAgendada = await exigirRecursoDaEmpresa(
+            dbClient,
+            'fc_contas_agendadas',
+            id,
+            req.empresaId,
+            { nome: 'Conta agendada', forUpdate: true }
+        );
         if (contaAgendada.status !== 'PENDENTE') throw new Error(`Esta conta já possui o status "${contaAgendada.status}".`);
+        await exigirRecursoDaEmpresa(
+            dbClient,
+            'fc_contas_bancarias',
+            id_conta_bancaria,
+            req.empresaId,
+            { nome: 'Conta bancária' }
+        );
 
         // 2. Cria o lançamento real na tabela fc_lancamentos
         const tipoLancamento = contaAgendada.tipo === 'A_PAGAR' ? 'DESPESA' : 'RECEITA';
         const lancamentoQuery = `
-            INSERT INTO fc_lancamentos (id_conta_bancaria, id_categoria, tipo, valor, data_transacao, descricao, id_contato, id_usuario_lancamento)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id;
+            INSERT INTO fc_lancamentos (
+                id_conta_bancaria, id_categoria, tipo, valor, data_transacao,
+                descricao, id_contato, id_usuario_lancamento, empresa_id
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            RETURNING id;
         `;
         const lancamentoRes = await dbClient.query(lancamentoQuery, [
             id_conta_bancaria,
@@ -2167,25 +3065,39 @@ router.post('/contas-agendadas/:id/baixar', async (req, res) => {
             data_transacao,
             `Baixa da conta agendada #${id}: ${contaAgendada.descricao}`,
             contaAgendada.id_contato,
-            req.usuarioLogado.id
+            req.usuarioLogado.id,
+            req.empresaId
         ]);
         const novoLancamentoId = lancamentoRes.rows[0].id;
 
         // 3. Atualiza a conta agendada com o status "PAGO" e o ID do lançamento
-        const updateQuery = 'UPDATE fc_contas_agendadas SET status = $1, id_lancamento_efetivado = $2, atualizado_em = NOW() WHERE id = $3';
-        await dbClient.query(updateQuery, ['PAGO', novoLancamentoId, id]);
+        const updateQuery = `
+            UPDATE fc_contas_agendadas
+               SET status = $1,
+                   id_lancamento_efetivado = $2,
+                   atualizado_em = NOW()
+             WHERE id = $3
+               AND empresa_id = $4
+        `;
+        await dbClient.query(
+            updateQuery,
+            ['PAGO', novoLancamentoId, id, req.empresaId]
+        );
 
         await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'BAIXA_AGENDAMENTO', {
             agendamento: contaAgendada,
             lancamentoGeradoId: novoLancamentoId
-        });
+        }, req.empresaId);
 
         await dbClient.query('COMMIT'); // FINALIZA A TRANSAÇÃO
         res.status(200).json({ message: 'Baixa da conta realizada com sucesso!' });
 
     } catch (error) {
         if (dbClient) await dbClient.query('ROLLBACK'); // DESFAZ TUDO EM CASO DE ERRO
-        res.status(500).json({ error: 'Erro ao dar baixa na conta.', details: error.message });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao dar baixa na conta.',
+            details: error.statusCode ? undefined : error.message,
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -2209,10 +3121,16 @@ router.post('/contas-agendadas/lote', async (req, res) => {
 
         // 1. Cria o registro do Lote principal
         const loteQuery = `
-            INSERT INTO fc_lotes_agendamento (descricao_lote, valor_total, id_usuario_criacao)
-            VALUES ($1, $2, $3) RETURNING id;
+            INSERT INTO fc_lotes_agendamento (
+                descricao_lote, valor_total, id_usuario_criacao, empresa_id
+            )
+            VALUES ($1, $2, $3, $4)
+            RETURNING id;
         `;
-        const loteResult = await dbClient.query(loteQuery, [descricao_lote, valor_total, req.usuarioLogado.id]);
+        const loteResult = await dbClient.query(
+            loteQuery,
+            [descricao_lote, valor_total, req.usuarioLogado.id, req.empresaId]
+        );
         const novoLoteId = loteResult.rows[0].id;
 
         // 2. Itera sobre cada parcela e a insere no banco, vinculando ao Lote
@@ -2221,13 +3139,31 @@ router.post('/contas-agendadas/lote', async (req, res) => {
         if (!id_categoria || !tipo || !descricao || !valor || !data_vencimento) {
             throw new Error(`Dados incompletos para uma das parcelas: ${descricao}`);
         }
+        await exigirRecursoDaEmpresa(
+            dbClient,
+            'fc_categorias',
+            id_categoria,
+            req.empresaId,
+            { nome: 'Categoria da parcela' }
+        );
+        if (id_contato) {
+            await exigirRecursoDaEmpresa(
+                dbClient,
+                'fc_contatos',
+                id_contato,
+                req.empresaId,
+                { nome: 'Favorecido da parcela' }
+            );
+        }
         const parcelaQuery = `
             INSERT INTO fc_contas_agendadas 
-                (id_lote, id_categoria, id_contato, tipo, descricao, valor, data_vencimento, id_usuario_agendamento)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
+                (id_lote, id_categoria, id_contato, tipo, descricao, valor,
+                 data_vencimento, id_usuario_agendamento, empresa_id)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
         `;
         await dbClient.query(parcelaQuery, [
-            novoLoteId, id_categoria, id_contato || null, tipo, descricao, valor, data_vencimento, req.usuarioLogado.id
+            novoLoteId, id_categoria, id_contato || null, tipo, descricao,
+            valor, data_vencimento, req.usuarioLogado.id, req.empresaId
         ]);
         }
         
@@ -2237,7 +3173,8 @@ router.post('/contas-agendadas/lote', async (req, res) => {
             req.usuarioLogado.id,
             req.usuarioLogado.nome,
             'CRIACAO_LOTE_AGENDAMENTO',
-            { depois: { id: novoLoteId, descricao_lote: descricao_lote, parcelas: parcelas.length, valor_total: valor_total } }
+            { depois: { id: novoLoteId, descricao_lote: descricao_lote, parcelas: parcelas.length, valor_total: valor_total } },
+            req.empresaId
         );
 
         await dbClient.query('COMMIT'); // FINALIZA A TRANSAÇÃO
@@ -2246,7 +3183,10 @@ router.post('/contas-agendadas/lote', async (req, res) => {
     } catch (error) {
         if (dbClient) await dbClient.query('ROLLBACK'); // DESFAZ TUDO EM CASO DE ERRO
         console.error("[API POST /contas-agendadas/lote] Erro:", error);
-        res.status(500).json({ error: 'Erro ao agendar parcelas.', details: error.message });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao agendar parcelas.',
+            details: error.statusCode ? undefined : error.message,
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -2276,17 +3216,55 @@ router.post('/contas-agendadas/detalhado', async (req, res) => {
         dbClient = await pool.connect();
         await dbClient.query('BEGIN');
 
+        if (tipo_rateio !== 'COMPRA' && id_categoria) {
+            await exigirRecursoDaEmpresa(
+                dbClient,
+                'fc_categorias',
+                id_categoria,
+                req.empresaId,
+                { nome: 'Categoria' }
+            );
+        }
+        if (id_contato) {
+            await exigirRecursoDaEmpresa(
+                dbClient,
+                'fc_contatos',
+                id_contato,
+                req.empresaId,
+                { nome: 'Favorecido' }
+            );
+        }
+        for (const item of itens_filho) {
+            await exigirRecursoDaEmpresa(
+                dbClient,
+                'fc_categorias',
+                item.id_categoria,
+                req.empresaId,
+                { nome: 'Categoria do item' }
+            );
+            if (item.id_contato_item) {
+                await exigirRecursoDaEmpresa(
+                    dbClient,
+                    'fc_contatos',
+                    item.id_contato_item,
+                    req.empresaId,
+                    { nome: 'Favorecido do item' }
+                );
+            }
+        }
+
         // 1. Cria o agendamento "pai"
         const paiQuery = `
             INSERT INTO fc_contas_agendadas 
-                (tipo, descricao, valor, data_vencimento, id_categoria, id_contato, id_usuario_agendamento, tipo_rateio)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+                (tipo, descricao, valor, data_vencimento, id_categoria,
+                 id_contato, id_usuario_agendamento, tipo_rateio, empresa_id)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING id;
         `;
         const paiResult = await dbClient.query(paiQuery, [
             tipo, descricao, valor_total_calculado, data_vencimento, 
             tipo_rateio === 'COMPRA' ? null : id_categoria, 
-            id_contato, req.usuarioLogado.id, tipo_rateio
+            id_contato, req.usuarioLogado.id, tipo_rateio, req.empresaId
         ]);
         const novoPaiId = paiResult.rows[0].id;
 
@@ -2294,18 +3272,33 @@ router.post('/contas-agendadas/detalhado', async (req, res) => {
         for (const item of itens_filho) {
             const itemQuery = `
                 INSERT INTO fc_contas_agendadas_itens 
-                    (id_conta_agendada_pai, id_categoria, id_contato_item, descricao_item, valor_item)
-                VALUES ($1, $2, $3, $4, $5);
+                    (id_conta_agendada_pai, id_categoria, id_contato_item,
+                     descricao_item, valor_item, empresa_id)
+                VALUES ($1, $2, $3, $4, $5, $6);
             `;
             await dbClient.query(itemQuery, [
-                novoPaiId, item.id_categoria, item.id_contato_item || null, item.descricao_item, item.valor_item
+                novoPaiId, item.id_categoria, item.id_contato_item || null,
+                item.descricao_item, item.valor_item, req.empresaId
             ]);
         }
 
         // Buscam o agendamento pai que acabamos de criar para ter todos os dados
-        const novoAgendamentoRes = await dbClient.query('SELECT * FROM fc_contas_agendadas WHERE id = $1', [novoPaiId]);
+        const novoAgendamentoRes = await dbClient.query(
+            `SELECT *
+               FROM fc_contas_agendadas
+              WHERE id = $1
+                AND empresa_id = $2`,
+            [novoPaiId, req.empresaId]
+        );
 
-        await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'CRIACAO_AGENDAMENTO', { depois: novoAgendamentoRes.rows[0] });
+        await registrarLog(
+            dbClient,
+            req.usuarioLogado.id,
+            req.usuarioLogado.nome,
+            'CRIACAO_AGENDAMENTO',
+            { depois: novoAgendamentoRes.rows[0] },
+            req.empresaId
+        );
 
         await dbClient.query('COMMIT');
         res.status(201).json({ message: `Agendamento detalhado #${novoPaiId} criado com sucesso.` });
@@ -2313,7 +3306,12 @@ router.post('/contas-agendadas/detalhado', async (req, res) => {
     } catch (error) {
         if (dbClient) await dbClient.query('ROLLBACK');
         console.error("[API POST /contas-agendadas/detalhado] Erro:", error);
-        res.status(500).json({ error: 'Erro ao criar agendamento detalhado.', details: error.message });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode
+                ? error.message
+                : 'Erro ao criar agendamento detalhado.',
+            details: error.statusCode ? undefined : error.message,
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -2331,7 +3329,14 @@ router.delete('/contas-agendadas/:id', async (req, res) => {
         await dbClient.query('BEGIN'); 
 
         // 1. Busque o que será deletado
-        const agendamentoRes = await dbClient.query("SELECT * FROM fc_contas_agendadas WHERE id = $1 AND status = 'PENDENTE'", [id]);
+        const agendamentoRes = await dbClient.query(
+            `SELECT *
+               FROM fc_contas_agendadas
+              WHERE id = $1
+                AND empresa_id = $2
+                AND status = 'PENDENTE'`,
+            [id, req.empresaId]
+        );
         
         if (agendamentoRes.rowCount === 0) {
             // Se não encontrou, não precisa fazer rollback, só retorna o erro
@@ -2340,10 +3345,22 @@ router.delete('/contas-agendadas/:id', async (req, res) => {
         const agendamentoExcluido = agendamentoRes.rows[0];
 
         // 2. Delete
-        await dbClient.query('DELETE FROM fc_contas_agendadas WHERE id = $1', [id]);
+        await dbClient.query(
+            `DELETE FROM fc_contas_agendadas
+              WHERE id = $1
+                AND empresa_id = $2`,
+            [id, req.empresaId]
+        );
         
         // 3. REGISTRE O LOG
-        await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'EXCLUSAO_AGENDAMENTO', { antes: agendamentoExcluido });
+        await registrarLog(
+            dbClient,
+            req.usuarioLogado.id,
+            req.usuarioLogado.nome,
+            'EXCLUSAO_AGENDAMENTO',
+            { antes: agendamentoExcluido },
+            req.empresaId
+        );
 
         await dbClient.query('COMMIT');
         res.status(200).json({ message: 'Agendamento excluído com sucesso.' });
@@ -2376,51 +3393,105 @@ router.put('/contas-agendadas/detalhado/:id', async (req, res) => {
         dbClient = await pool.connect();
         await dbClient.query('BEGIN');
 
-        const antesRes = await dbClient.query("SELECT * FROM fc_contas_agendadas WHERE id = $1 AND status = 'PENDENTE' FOR UPDATE", [idPai]);
-        if (antesRes.rowCount === 0) {
-            await dbClient.query('ROLLBACK');
-            return res.status(404).json({ error: 'Agendamento pendente não encontrado.' });
+        const antes = await exigirRecursoDaEmpresa(
+            dbClient,
+            'fc_contas_agendadas',
+            idPai,
+            req.empresaId,
+            { nome: 'Agendamento', forUpdate: true }
+        );
+        if (antes.status !== 'PENDENTE') {
+            throw erroFinanceiro(404, 'Agendamento pendente não encontrado.');
         }
-        const antes = antesRes.rows[0];
+        if (tipo_rateio !== 'COMPRA' && id_categoria) {
+            await exigirRecursoDaEmpresa(
+                dbClient,
+                'fc_categorias',
+                id_categoria,
+                req.empresaId,
+                { nome: 'Categoria' }
+            );
+        }
+        if (id_contato) {
+            await exigirRecursoDaEmpresa(
+                dbClient,
+                'fc_contatos',
+                id_contato,
+                req.empresaId,
+                { nome: 'Favorecido' }
+            );
+        }
+        for (const item of itens_filho) {
+            await exigirRecursoDaEmpresa(
+                dbClient,
+                'fc_categorias',
+                item.id_categoria,
+                req.empresaId,
+                { nome: 'Categoria do item' }
+            );
+            if (item.id_contato_item) {
+                await exigirRecursoDaEmpresa(
+                    dbClient,
+                    'fc_contatos',
+                    item.id_contato_item,
+                    req.empresaId,
+                    { nome: 'Favorecido do item' }
+                );
+            }
+        }
 
         // 1. Apaga os filhos antigos
-        await dbClient.query('DELETE FROM fc_contas_agendadas_itens WHERE id_conta_agendada_pai = $1', [idPai]);
+        await dbClient.query(
+            `DELETE FROM fc_contas_agendadas_itens
+              WHERE id_conta_agendada_pai = $1
+                AND empresa_id = $2`,
+            [idPai, req.empresaId]
+        );
         
         // 2. Atualiza o pai
         const paiQuery = `
             UPDATE fc_contas_agendadas
             SET tipo = $1, descricao = $2, valor = $3, data_vencimento = $4, id_categoria = $5, id_contato = $6, tipo_rateio = $7, atualizado_em = NOW()
-            WHERE id = $8 AND status = 'PENDENTE'
+            WHERE id = $8
+              AND empresa_id = $9
+              AND status = 'PENDENTE'
             RETURNING *;
         `;
         const depoisRes = await dbClient.query(paiQuery, [
             tipo, descricao, valor_total_calculado, data_vencimento,
             tipo_rateio === 'COMPRA' ? null : id_categoria,
-            id_contato, tipo_rateio, idPai
+            id_contato, tipo_rateio, idPai, req.empresaId
         ]);
 
         // 3. Reinsere os filhos
         for (const item of itens_filho) {
             const itemQuery = `
                 INSERT INTO fc_contas_agendadas_itens 
-                    (id_conta_agendada_pai, id_categoria, id_contato_item, descricao_item, valor_item)
-                VALUES ($1, $2, $3, $4, $5);
+                    (id_conta_agendada_pai, id_categoria, id_contato_item,
+                     descricao_item, valor_item, empresa_id)
+                VALUES ($1, $2, $3, $4, $5, $6);
             `;
             await dbClient.query(itemQuery, [
-                idPai, item.id_categoria, item.id_contato_item || null, item.descricao_item, item.valor_item
+                idPai, item.id_categoria, item.id_contato_item || null,
+                item.descricao_item, item.valor_item, req.empresaId
             ]);
         }
 
         await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'EDICAO_AGENDAMENTO', {
             antes,
             depois: depoisRes.rows[0],
-        });
+        }, req.empresaId);
 
         await dbClient.query('COMMIT');
         res.status(200).json({ message: 'Agendamento detalhado atualizado com sucesso.' });
     } catch (error) {
         if (dbClient) await dbClient.query('ROLLBACK');
-        res.status(500).json({ error: 'Erro ao atualizar agendamento detalhado.', details: error.message });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode
+                ? error.message
+                : 'Erro ao atualizar agendamento detalhado.',
+            details: error.statusCode ? undefined : error.message,
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -2437,7 +3508,13 @@ router.get('/contas-agendadas/info/:id', async (req, res) => {
     try {
         dbClient = await pool.connect();
         // Query que busca o agendamento sem filtrar pelo status 'PENDENTE'
-        const result = await dbClient.query('SELECT id, descricao, valor, status, id_lancamento_efetivado FROM fc_contas_agendadas WHERE id = $1', [id]);
+        const result = await dbClient.query(
+            `SELECT id, descricao, valor, status, id_lancamento_efetivado
+               FROM fc_contas_agendadas
+              WHERE id = $1
+                AND empresa_id = $2`,
+            [id, req.empresaId]
+        );
         
         if (result.rowCount === 0) {
             return res.status(404).json({ error: 'Agendamento não encontrado com este ID.' });
@@ -2461,13 +3538,24 @@ router.delete('/contas-agendadas/:id/force', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const antesRes = await dbClient.query('SELECT * FROM fc_contas_agendadas WHERE id = $1', [id]);
+        const antesRes = await dbClient.query(
+            `SELECT *
+               FROM fc_contas_agendadas
+              WHERE id = $1
+                AND empresa_id = $2`,
+            [id, req.empresaId]
+        );
         if (antesRes.rowCount === 0) {
             return res.status(404).json({ error: 'Agendamento não encontrado com este ID.' });
         }
         // Deleta o agendamento-pai. O 'ON DELETE CASCADE' cuidará dos filhos.
         // Esta query NÃO verifica o status, permitindo apagar agendamentos já baixados.
-        const result = await dbClient.query('DELETE FROM fc_contas_agendadas WHERE id = $1', [id]);
+        const result = await dbClient.query(
+            `DELETE FROM fc_contas_agendadas
+              WHERE id = $1
+                AND empresa_id = $2`,
+            [id, req.empresaId]
+        );
         
         if (result.rowCount === 0) {
             return res.status(404).json({ error: 'Agendamento não encontrado com este ID.' });
@@ -2475,7 +3563,7 @@ router.delete('/contas-agendadas/:id/force', async (req, res) => {
 
         await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'EXCLUSAO_AGENDAMENTO_FORCADA', {
             antes: antesRes.rows[0],
-        });
+        }, req.empresaId);
         
         res.status(200).json({ message: 'Agendamento excluído permanentemente com sucesso.' });
     } catch (error) {
@@ -2506,8 +3594,13 @@ router.put('/lotes/:id/descricao', async (req, res) => {
 
         // 1. Busca todas as parcelas pendentes para reconstruir a descrição
         const parcelasRes = await dbClient.query(
-            "SELECT id, descricao FROM fc_contas_agendadas WHERE id_lote = $1 AND status = 'PENDENTE' ORDER BY data_vencimento ASC", 
-            [idLote]
+            `SELECT id, descricao
+               FROM fc_contas_agendadas
+              WHERE id_lote = $1
+                AND empresa_id = $2
+                AND status = 'PENDENTE'
+              ORDER BY data_vencimento ASC`,
+            [idLote, req.empresaId]
         );
         if (parcelasRes.rowCount === 0) {
             throw new Error('Nenhuma parcela pendente encontrada para este lote.');
@@ -2520,7 +3613,13 @@ router.put('/lotes/:id/descricao', async (req, res) => {
         for (let i = 0; i < totalParcelas; i++) {
             const parcela = parcelasRes.rows[i];
             const novaDescricaoCompleta = `${nova_descricao_base.trim()} - Parcela ${i + 1}/${totalParcelas}`;
-            await dbClient.query('UPDATE fc_contas_agendadas SET descricao = $1 WHERE id = $2', [novaDescricaoCompleta, parcela.id]);
+            await dbClient.query(
+                `UPDATE fc_contas_agendadas
+                    SET descricao = $1
+                  WHERE id = $2
+                    AND empresa_id = $3`,
+                [novaDescricaoCompleta, parcela.id, req.empresaId]
+            );
         }
 
         await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'EDICAO_LOTE_DESCRICAO', {
@@ -2528,7 +3627,7 @@ router.put('/lotes/:id/descricao', async (req, res) => {
             nova_descricao_base: nova_descricao_base.trim(),
             descricao_antes: descricaoAntes,
             parcelas_atualizadas: totalParcelas,
-        });
+        }, req.empresaId);
 
         await dbClient.query('COMMIT');
         res.status(200).json({ message: 'Descrição do lote atualizada com sucesso.' });
@@ -2547,7 +3646,7 @@ router.put('/lotes/:id/descricao', async (req, res) => {
  * e carrega dados da parcela (batch).
  * @returns {Map<number, object>} chave = id do lançamento
  */
-async function carregarContextoAgendaPorExclusoes(dbClient, exclusoes) {
+async function carregarContextoAgendaPorExclusoes(dbClient, exclusoes, empresaId) {
     /** @type {Map<number, object>} */
     const porLancamento = new Map();
     if (!exclusoes.length) return porLancamento;
@@ -2579,14 +3678,16 @@ async function carregarContextoAgendaPorExclusoes(dbClient, exclusoes) {
                    AND EXISTS (
                      SELECT 1 FROM fc_lancamentos lx
                      WHERE lx.id = ca.id_lancamento_efetivado
+                       AND lx.empresa_id = ca.empresa_id
                        AND lx.excluido_em IS NULL
                    )
                   THEN true
                   ELSE false
                 END AS tem_baixa_ativa
          FROM fc_contas_agendadas ca
-         WHERE ca.id = ANY($1::int[])`,
-        [uniqAgendaIds]
+         WHERE ca.id = ANY($1::int[])
+           AND ca.empresa_id = $2`,
+        [uniqAgendaIds, empresaId]
     );
     const agendaById = new Map(agRes.rows.map((a) => [Number(a.id), a]));
 
@@ -2639,14 +3740,21 @@ router.get('/aprovacoes-pendentes', async (req, res) => {
                    l.descricao AS descricao_lancamento
             FROM fc_solicitacoes_alteracao sa
             JOIN usuarios u ON sa.id_usuario_solicitante = u.id
-            LEFT JOIN fc_lancamentos l ON sa.id_lancamento = l.id
+            LEFT JOIN fc_lancamentos l
+              ON sa.id_lancamento = l.id
+             AND sa.empresa_id = l.empresa_id
             WHERE sa.status = 'PENDENTE'
+              AND sa.empresa_id = $1
             ORDER BY sa.data_solicitacao ASC;
         `;     
-        const result = await dbClient.query(query);
+        const result = await dbClient.query(query, [req.empresaId]);
 
         const exclusoes = result.rows.filter((r) => r.tipo_solicitacao === 'EXCLUSAO' && r.id_lancamento);
-        const agendaMap = await carregarContextoAgendaPorExclusoes(dbClient, exclusoes);
+        const agendaMap = await carregarContextoAgendaPorExclusoes(
+            dbClient,
+            exclusoes,
+            req.empresaId
+        );
 
         const rows = result.rows.map((row) => {
             if (row.tipo_solicitacao !== 'EXCLUSAO' || !row.id_lancamento) {
@@ -2721,9 +3829,12 @@ router.get('/aprovacoes-historico', async (req, res) => {
 
         // Histórico = tudo que já saiu da fila (não pendente).
         // Aceita variações de capitalização legadas.
-        const whereParts = [`UPPER(TRIM(sa.status::text)) <> 'PENDENTE'`];
-        const countParams = [];
-        const listParams = [];
+        const whereParts = [
+            `sa.empresa_id = $1`,
+            `UPPER(TRIM(sa.status::text)) <> 'PENDENTE'`,
+        ];
+        const countParams = [req.empresaId];
+        const listParams = [req.empresaId];
 
         if (statusFilter) {
             countParams.push(statusFilter);
@@ -2766,7 +3877,9 @@ router.get('/aprovacoes-historico', async (req, res) => {
              FROM fc_solicitacoes_alteracao sa
              LEFT JOIN usuarios u ON sa.id_usuario_solicitante = u.id
              LEFT JOIN usuarios ua ON sa.id_usuario_aprovador = ua.id
-             LEFT JOIN fc_lancamentos l ON sa.id_lancamento = l.id
+             LEFT JOIN fc_lancamentos l
+               ON sa.id_lancamento = l.id
+              AND sa.empresa_id = l.empresa_id
              WHERE ${whereSql}
              ORDER BY COALESCE(sa.data_decisao, sa.data_solicitacao) DESC NULLS LAST, sa.id DESC
              LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
@@ -2814,14 +3927,16 @@ router.get('/aprovacoes-historico', async (req, res) => {
                                AND EXISTS (
                                  SELECT 1 FROM fc_lancamentos lx
                                  WHERE lx.id = ca.id_lancamento_efetivado
+                                   AND lx.empresa_id = ca.empresa_id
                                    AND lx.excluido_em IS NULL
                                )
                               THEN true
                               ELSE false
                             END AS tem_baixa_ativa
                      FROM fc_contas_agendadas ca
-                     WHERE ca.id = ANY($1::int[])`,
-                    [uniqAgendaIds]
+                     WHERE ca.id = ANY($1::int[])
+                       AND ca.empresa_id = $2`,
+                    [uniqAgendaIds, req.empresaId]
                 );
                 const agendaById = new Map(agRes.rows.map((a) => [Number(a.id), a]));
 
@@ -2948,8 +4063,9 @@ router.post('/aprovacoes/:id/desfazer-exclusao', async (req, res) => {
              FROM fc_solicitacoes_alteracao sa
              JOIN usuarios u ON sa.id_usuario_solicitante = u.id
              WHERE sa.id = $1
+               AND sa.empresa_id = $2
              FOR UPDATE OF sa`,
-            [id]
+            [id, req.empresaId]
         );
         if (solRes.rows.length === 0) {
             throw Object.assign(new Error('Solicitação não encontrada.'), { statusCode: 404 });
@@ -2967,8 +4083,11 @@ router.post('/aprovacoes/:id/desfazer-exclusao', async (req, res) => {
         }
 
         const lancAntes = await dbClient.query(
-            `SELECT * FROM fc_lancamentos WHERE id = $1`,
-            [solicitacao.id_lancamento]
+            `SELECT *
+               FROM fc_lancamentos
+              WHERE id = $1
+                AND empresa_id = $2`,
+            [solicitacao.id_lancamento, req.empresaId]
         );
         if (lancAntes.rows.length === 0) {
             throw Object.assign(new Error('Lançamento não encontrado.'), { statusCode: 404 });
@@ -2980,7 +4099,12 @@ router.post('/aprovacoes/:id/desfazer-exclusao', async (req, res) => {
             );
         }
 
-        const restaurado = await softRestoreLancamento(dbClient, solicitacao.id_lancamento, { cascade: true });
+        const restaurado = await softRestoreLancamento(
+            dbClient,
+            solicitacao.id_lancamento,
+            req.empresaId,
+            { cascade: true }
+        );
         if (!restaurado) {
             throw Object.assign(new Error('Não foi possível reativar o lançamento.'), { statusCode: 500 });
         }
@@ -2989,14 +4113,17 @@ router.post('/aprovacoes/:id/desfazer-exclusao', async (req, res) => {
             depois: restaurado,
             solicitacao_id: solicitacao.id,
             motivo: 'Desfazer exclusão aprovada',
-        });
+        }, req.empresaId);
 
         await dbClient.query(
-            `INSERT INTO fc_notificacoes (id_usuario_destino, tipo, mensagem)
-             VALUES ($1, 'INFO', $2)`,
+            `INSERT INTO fc_notificacoes (
+                id_usuario_destino, tipo, mensagem, empresa_id
+             )
+             VALUES ($1, 'INFO', $2, $3)`,
             [
                 solicitacao.id_usuario_solicitante,
                 `A exclusão do lançamento <strong>#${restaurado.id}</strong> ("${restaurado.descricao || 'sem descrição'}") foi <strong>desfeita</strong> por ${req.usuarioLogado.nome}. O lançamento voltou ao extrato e ao saldo.`,
+                req.empresaId,
             ]
         );
 
@@ -3037,15 +4164,27 @@ router.post('/aprovacoes/:id/aprovar', async (req, res) => {
             SELECT sa.*, u.nome as nome_solicitante 
             FROM fc_solicitacoes_alteracao sa
             JOIN usuarios u ON sa.id_usuario_solicitante = u.id
-            WHERE sa.id = $1 AND sa.status = 'PENDENTE' FOR UPDATE;
+            WHERE sa.id = $1
+              AND sa.empresa_id = $2
+              AND sa.status = 'PENDENTE'
+            FOR UPDATE;
         `;
-        const solRes = await dbClient.query(solQuery, [id]);
+        const solRes = await dbClient.query(solQuery, [id, req.empresaId]);
 
         if (solRes.rows.length === 0) {
             throw new Error(`Solicitação #${id} não encontrada ou já processada.`);
         }
         const solicitacao = solRes.rows[0];
         const idLancamento = solicitacao.id_lancamento;
+        if (idLancamento) {
+            await exigirRecursoDaEmpresa(
+                dbClient,
+                'fc_lancamentos',
+                idLancamento,
+                req.empresaId,
+                { nome: 'Lançamento', forUpdate: true }
+            );
+        }
 
         let mensagemNotificacao = '';
 
@@ -3055,32 +4194,49 @@ router.post('/aprovacoes/:id/aprovar', async (req, res) => {
                 const dadosNovos = solicitacao.dados_novos;
                 if (dadosNovos.dados_pai) { // Lançamento Detalhado (Compra ou Rateio)
                     const { dados_pai, itens_filho, tipo_rateio } = dadosNovos;
-                    await dbClient.query('DELETE FROM fc_lancamento_itens WHERE id_lancamento_pai = $1', [idLancamento]);
+                    await validarReferenciasLancamento(
+                        dbClient,
+                        req.empresaId,
+                        dados_pai,
+                        itens_filho,
+                        tipo_rateio
+                    );
+                    await dbClient.query(
+                        `DELETE FROM fc_lancamento_itens
+                          WHERE id_lancamento_pai = $1
+                            AND empresa_id = $2`,
+                        [idLancamento, req.empresaId]
+                    );
                     if (tipo_rateio === 'COMPRA') {
                         const soma_itens = itens_filho.reduce((acc, item) => (acc + (parseFloat(item.quantidade) * parseFloat(item.valor_unitario))), 0);
                         const valor_total = soma_itens - parseFloat(dados_pai.valor_desconto || 0);
-                        await dbClient.query(`UPDATE fc_lancamentos SET id_conta_bancaria=$1, valor=$2, valor_desconto=$3, data_transacao=$4, descricao=$5, id_contato=$6, id_categoria=$7, tipo_rateio=$8, status_edicao='EDITADO_APROVADO', id_usuario_edicao=$9, atualizado_em=NOW() WHERE id=$10;`, [dados_pai.id_conta_bancaria, valor_total, dados_pai.valor_desconto || 0, dados_pai.data_transacao, dados_pai.descricao, dados_pai.id_contato, null, tipo_rateio, req.usuarioLogado.id, idLancamento]);
+                        await dbClient.query(`UPDATE fc_lancamentos SET id_conta_bancaria=$1, valor=$2, valor_desconto=$3, data_transacao=$4, descricao=$5, id_contato=$6, id_categoria=$7, tipo_rateio=$8, status_edicao='EDITADO_APROVADO', id_usuario_edicao=$9, atualizado_em=NOW() WHERE id=$10 AND empresa_id=$11;`, [dados_pai.id_conta_bancaria, valor_total, dados_pai.valor_desconto || 0, dados_pai.data_transacao, dados_pai.descricao, dados_pai.id_contato, null, tipo_rateio, req.usuarioLogado.id, idLancamento, req.empresaId]);
                         for (const item of itens_filho) {
                             const valor_total_item = parseFloat(item.quantidade) * parseFloat(item.valor_unitario);
-                            await dbClient.query(`INSERT INTO fc_lancamento_itens (id_lancamento_pai, id_categoria, descricao_item, quantidade, valor_unitario, valor_total_item, id_contato_item) VALUES ($1,$2,$3,$4,$5,$6,$7);`, [idLancamento, item.id_categoria, item.descricao_item, item.quantidade, item.valor_unitario, valor_total_item, item.id_contato_item || null]);
+                            await dbClient.query(`INSERT INTO fc_lancamento_itens (id_lancamento_pai, id_categoria, descricao_item, quantidade, valor_unitario, valor_total_item, id_contato_item, empresa_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8);`, [idLancamento, item.id_categoria, item.descricao_item, item.quantidade, item.valor_unitario, valor_total_item, item.id_contato_item || null, req.empresaId]);
                         }
                     } else if (tipo_rateio === 'DETALHADO') {
                         const valor_total = itens_filho.reduce((acc, item) => acc + parseFloat(item.valor_item || 0), 0);
-                        await dbClient.query(`UPDATE fc_lancamentos SET id_conta_bancaria=$1, valor=$2, data_transacao=$3, descricao=$4, id_contato=$5, id_categoria=$6, tipo_rateio=$7, status_edicao='EDITADO_APROVADO', id_usuario_edicao=$8, atualizado_em=NOW() WHERE id=$9;`, [dados_pai.id_conta_bancaria, valor_total, dados_pai.data_transacao, dados_pai.descricao, dados_pai.id_contato, dados_pai.id_categoria, tipo_rateio, req.usuarioLogado.id, idLancamento]);
+                        await dbClient.query(`UPDATE fc_lancamentos SET id_conta_bancaria=$1, valor=$2, data_transacao=$3, descricao=$4, id_contato=$5, id_categoria=$6, tipo_rateio=$7, status_edicao='EDITADO_APROVADO', id_usuario_edicao=$8, atualizado_em=NOW() WHERE id=$9 AND empresa_id=$10;`, [dados_pai.id_conta_bancaria, valor_total, dados_pai.data_transacao, dados_pai.descricao, dados_pai.id_contato, dados_pai.id_categoria, tipo_rateio, req.usuarioLogado.id, idLancamento, req.empresaId]);
                         for (const item of itens_filho) {
-                            await dbClient.query(`INSERT INTO fc_lancamento_itens (id_lancamento_pai, id_categoria, descricao_item, valor_total_item, id_contato_item) VALUES ($1,$2,$3,$4,$5);`, [idLancamento, item.id_categoria, item.descricao_item, item.valor_item, item.id_contato_item || null]);
+                            await dbClient.query(`INSERT INTO fc_lancamento_itens (id_lancamento_pai, id_categoria, descricao_item, valor_total_item, id_contato_item, empresa_id) VALUES ($1,$2,$3,$4,$5,$6);`, [idLancamento, item.id_categoria, item.descricao_item, item.valor_item, item.id_contato_item || null, req.empresaId]);
                         }
                     }
                 } else { // Lançamento Simples
                     const { valor, data_transacao, id_categoria, id_conta_bancaria, descricao, id_contato } = dadosNovos;
-                    await dbClient.query(`UPDATE fc_lancamentos SET valor=$1, data_transacao=$2, id_categoria=$3, id_conta_bancaria=$4, descricao=$5, id_contato=$6, status_edicao='EDITADO_APROVADO', motivo_rejeicao=NULL, id_usuario_edicao=$7, atualizado_em=NOW() WHERE id = $8;`, [valor, data_transacao, id_categoria, id_conta_bancaria, descricao, id_contato, req.usuarioLogado.id, idLancamento]);
+                    await validarReferenciasLancamento(
+                        dbClient,
+                        req.empresaId,
+                        dadosNovos
+                    );
+                    await dbClient.query(`UPDATE fc_lancamentos SET valor=$1, data_transacao=$2, id_categoria=$3, id_conta_bancaria=$4, descricao=$5, id_contato=$6, status_edicao='EDITADO_APROVADO', motivo_rejeicao=NULL, id_usuario_edicao=$7, atualizado_em=NOW() WHERE id = $8 AND empresa_id = $9;`, [valor, data_transacao, id_categoria, id_conta_bancaria, descricao, id_contato, req.usuarioLogado.id, idLancamento, req.empresaId]);
                 }
                 mensagemNotificacao = `Sua edição para o lançamento <strong>#${idLancamento}</strong> foi APROVADA.`;
                 break;
             }
 
             case 'EXCLUSAO': {
-                await softDeleteLancamento(dbClient, idLancamento, req.usuarioLogado.id, { cascade: true });
+                await softDeleteLancamento(dbClient, idLancamento, req.usuarioLogado.id, req.empresaId, { cascade: true });
                 mensagemNotificacao = `Sua solicitação para excluir o lançamento <strong>#${idLancamento}</strong> foi APROVADA (cancelamento lógico).`;
                 break;
             }
@@ -3088,8 +4244,9 @@ router.post('/aprovacoes/:id/aprovar', async (req, res) => {
             case 'ESTORNO': {
                 const lancamentoOriginalEstorno = solicitacao.dados_antigos;
                 const dadosEstorno = solicitacao.dados_novos;
-                await dbClient.query(`INSERT INTO fc_lancamentos (id_conta_bancaria, id_categoria, tipo, valor, data_transacao, descricao, id_contato, id_usuario_lancamento, id_estorno_de) VALUES ($1, $2, 'RECEITA', $3, $4, $5, $6, $7, $8);`, [dadosEstorno.id_conta_bancaria, lancamentoOriginalEstorno.id_categoria, dadosEstorno.valor_estornado, dadosEstorno.data_transacao, `Estorno do lançamento #${idLancamento}: ${lancamentoOriginalEstorno.descricao}`, lancamentoOriginalEstorno.id_contato, solicitacao.id_usuario_solicitante, idLancamento]);
-                await dbClient.query("UPDATE fc_lancamentos SET status_edicao = 'ESTORNADO' WHERE id = $1", [idLancamento]);
+                await exigirRecursoDaEmpresa(dbClient, 'fc_contas_bancarias', dadosEstorno.id_conta_bancaria, req.empresaId, { nome: 'Conta bancária' });
+                await dbClient.query(`INSERT INTO fc_lancamentos (id_conta_bancaria, id_categoria, tipo, valor, data_transacao, descricao, id_contato, id_usuario_lancamento, id_estorno_de, empresa_id) VALUES ($1, $2, 'RECEITA', $3, $4, $5, $6, $7, $8, $9);`, [dadosEstorno.id_conta_bancaria, lancamentoOriginalEstorno.id_categoria, dadosEstorno.valor_estornado, dadosEstorno.data_transacao, `Estorno do lançamento #${idLancamento}: ${lancamentoOriginalEstorno.descricao}`, lancamentoOriginalEstorno.id_contato, solicitacao.id_usuario_solicitante, idLancamento, req.empresaId]);
+                await dbClient.query("UPDATE fc_lancamentos SET status_edicao = 'ESTORNADO' WHERE id = $1 AND empresa_id = $2", [idLancamento, req.empresaId]);
                 mensagemNotificacao = `Sua solicitação para estornar o lançamento <strong>#${idLancamento}</strong> foi APROVADA.`;
                 break;
             }
@@ -3097,10 +4254,10 @@ router.post('/aprovacoes/:id/aprovar', async (req, res) => {
             case 'REVERSAO_ESTORNO': {
                 const lancamentoEstorno = solicitacao.dados_antigos;
                 const idLancamentoOriginal = lancamentoEstorno.id_estorno_de;
-                await softDeleteLancamento(dbClient, idLancamento, req.usuarioLogado.id, { cascade: false });
+                await softDeleteLancamento(dbClient, idLancamento, req.usuarioLogado.id, req.empresaId, { cascade: false });
                 await dbClient.query(
-                    "UPDATE fc_lancamentos SET status_edicao = 'OK' WHERE id = $1 AND excluido_em IS NULL",
-                    [idLancamentoOriginal]
+                    "UPDATE fc_lancamentos SET status_edicao = 'OK' WHERE id = $1 AND empresa_id = $2 AND excluido_em IS NULL",
+                    [idLancamentoOriginal, req.empresaId]
                 );
                 mensagemNotificacao = `Sua solicitação para reverter o estorno <strong>#${idLancamento}</strong> foi APROVADA.`;
                 break;
@@ -3112,30 +4269,32 @@ router.post('/aprovacoes/:id/aprovar', async (req, res) => {
                 
                 if (!lancamentoProposto.tipo_rateio) { // Simples
                     const { tipo, valor, data_transacao, id_categoria, id_conta_bancaria, id_contato, descricao } = lancamentoProposto;
-                    const res = await dbClient.query(`INSERT INTO fc_lancamentos (id_conta_bancaria, id_categoria, tipo, valor, data_transacao, descricao, id_contato, id_usuario_lancamento) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *;`, [id_conta_bancaria, id_categoria, tipo, valor, data_transacao, descricao, id_contato, solicitacao.id_usuario_solicitante]);
+                    await validarReferenciasLancamento(dbClient, req.empresaId, lancamentoProposto);
+                    const res = await dbClient.query(`INSERT INTO fc_lancamentos (id_conta_bancaria, id_categoria, tipo, valor, data_transacao, descricao, id_contato, id_usuario_lancamento, empresa_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *;`, [id_conta_bancaria, id_categoria, tipo, valor, data_transacao, descricao, id_contato, solicitacao.id_usuario_solicitante, req.empresaId]);
                     novoLancamento = res.rows[0];
                 } else { // Detalhado
                     const { dados_pai, itens_filho, tipo_rateio } = lancamentoProposto;
-                    const lancamentoPaiRes = await dbClient.query(`INSERT INTO fc_lancamentos (tipo, tipo_rateio, data_transacao, id_conta_bancaria, id_contato, id_categoria, descricao, valor, valor_desconto, id_usuario_lancamento) VALUES ('DESPESA', $1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *;`, [ tipo_rateio, dados_pai.data_transacao, dados_pai.id_conta_bancaria, dados_pai.id_contato, dados_pai.id_categoria, dados_pai.descricao, 0, dados_pai.valor_desconto || 0, solicitacao.id_usuario_solicitante ]);
+                    await validarReferenciasLancamento(dbClient, req.empresaId, dados_pai, itens_filho, tipo_rateio);
+                    const lancamentoPaiRes = await dbClient.query(`INSERT INTO fc_lancamentos (tipo, tipo_rateio, data_transacao, id_conta_bancaria, id_contato, id_categoria, descricao, valor, valor_desconto, id_usuario_lancamento, empresa_id) VALUES ('DESPESA', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *;`, [ tipo_rateio, dados_pai.data_transacao, dados_pai.id_conta_bancaria, dados_pai.id_contato, tipo_rateio === 'COMPRA' ? null : dados_pai.id_categoria, dados_pai.descricao, 0, dados_pai.valor_desconto || 0, solicitacao.id_usuario_solicitante, req.empresaId ]);
                     const lancamentoPai = lancamentoPaiRes.rows[0];
                     let somaTotalItens = 0;
                     for (const item of itens_filho) {
                         let valorDoItem = 0;
                         if (tipo_rateio === 'COMPRA') {
                             valorDoItem = (item.quantidade || 0) * (item.valor_unitario || 0);
-                            await dbClient.query('INSERT INTO fc_lancamento_itens (id_lancamento_pai, id_categoria, descricao_item, quantidade, valor_unitario, valor_total_item, id_contato_item) VALUES ($1, $2, $3, $4, $5, $6, $7);', [lancamentoPai.id, item.id_categoria, item.descricao_item, item.quantidade, item.valor_unitario, valorDoItem, item.id_contato_item || null]);
+                            await dbClient.query('INSERT INTO fc_lancamento_itens (id_lancamento_pai, id_categoria, descricao_item, quantidade, valor_unitario, valor_total_item, id_contato_item, empresa_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8);', [lancamentoPai.id, item.id_categoria, item.descricao_item, item.quantidade, item.valor_unitario, valorDoItem, item.id_contato_item || null, req.empresaId]);
                         } else {
                             valorDoItem = item.valor_item || 0;
-                            await dbClient.query('INSERT INTO fc_lancamento_itens (id_lancamento_pai, id_categoria, descricao_item, valor_total_item, id_contato_item) VALUES ($1, $2, $3, $4, $5);', [lancamentoPai.id, item.id_categoria, item.descricao_item, valorDoItem, item.id_contato_item]);
+                            await dbClient.query('INSERT INTO fc_lancamento_itens (id_lancamento_pai, id_categoria, descricao_item, valor_total_item, id_contato_item, empresa_id) VALUES ($1, $2, $3, $4, $5, $6);', [lancamentoPai.id, item.id_categoria, item.descricao_item, valorDoItem, item.id_contato_item, req.empresaId]);
                         }
                         somaTotalItens += valorDoItem;
                     }
                     const valorFinalPai = somaTotalItens - (dados_pai.valor_desconto || 0);
-                    await dbClient.query('UPDATE fc_lancamentos SET valor = $1 WHERE id = $2', [valorFinalPai, lancamentoPai.id]);
+                    await dbClient.query('UPDATE fc_lancamentos SET valor = $1 WHERE id = $2 AND empresa_id = $3', [valorFinalPai, lancamentoPai.id, req.empresaId]);
                     novoLancamento = { ...lancamentoPai, valor: valorFinalPai, data_transacao: dados_pai.data_transacao };
                 }
                 
-                await dbClient.query('UPDATE fc_solicitacoes_alteracao SET id_lancamento = $1 WHERE id = $2', [novoLancamento.id, id]);
+                await dbClient.query('UPDATE fc_solicitacoes_alteracao SET id_lancamento = $1 WHERE id = $2 AND empresa_id = $3', [novoLancamento.id, id, req.empresaId]);
                 mensagemNotificacao = `Sua lançamento proposto para a data <strong>${new Date((novoLancamento.data_transacao || '') + 'T12:00:00Z').toLocaleDateString('pt-BR')}</strong> foi APROVADO.`;
                 break;
             }
@@ -3147,12 +4306,12 @@ router.post('/aprovacoes/:id/aprovar', async (req, res) => {
         // --- ETAPA 2: Finalizar a Solicitação, Notificar e LOGAR ---
         
         // Atualiza o status da solicitação para APROVADO
-        await dbClient.query("UPDATE fc_solicitacoes_alteracao SET status = 'APROVADO', id_usuario_aprovador = $1, data_decisao = NOW() WHERE id = $2", [req.usuarioLogado.id, id]);
+        await dbClient.query("UPDATE fc_solicitacoes_alteracao SET status = 'APROVADO', id_usuario_aprovador = $1, data_decisao = NOW() WHERE id = $2 AND empresa_id = $3", [req.usuarioLogado.id, id, req.empresaId]);
         
         // Envia notificação para o usuário que solicitou
-        await dbClient.query("INSERT INTO fc_notificacoes (id_usuario_destino, tipo, mensagem) VALUES ($1, 'SUCESSO', $2);", [solicitacao.id_usuario_solicitante, mensagemNotificacao]);
+        await dbClient.query("INSERT INTO fc_notificacoes (id_usuario_destino, tipo, mensagem, empresa_id) VALUES ($1, 'SUCESSO', $2, $3);", [solicitacao.id_usuario_solicitante, mensagemNotificacao, req.empresaId]);
 
-        await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'APROVACAO_SOLICITACAO', { solicitacao });
+        await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'APROVACAO_SOLICITACAO', { solicitacao }, req.empresaId);
         
         // Se tudo ocorreu bem, confirma a transação
         await dbClient.query('COMMIT');
@@ -3161,7 +4320,10 @@ router.post('/aprovacoes/:id/aprovar', async (req, res) => {
     } catch (error) {
         if (dbClient) await dbClient.query('ROLLBACK');
         console.error(`[API /aprovacoes/aprovar] ERRO CRÍTICO ao aprovar solicitação #${id}:`, error);
-        res.status(500).json({ error: 'Erro interno ao aprovar solicitação.', details: error.message });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro interno ao aprovar solicitação.',
+            details: error.statusCode ? undefined : error.message,
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -3184,21 +4346,29 @@ router.post('/aprovacoes/:id/rejeitar', async (req, res) => {
         dbClient = await pool.connect();
         await dbClient.query('BEGIN');
 
-        const solRes = await dbClient.query("SELECT * FROM fc_solicitacoes_alteracao WHERE id = $1 AND status = 'PENDENTE' FOR UPDATE", [id]);
+        const solRes = await dbClient.query(
+            `SELECT *
+               FROM fc_solicitacoes_alteracao
+              WHERE id = $1
+                AND empresa_id = $2
+                AND status = 'PENDENTE'
+              FOR UPDATE`,
+            [id, req.empresaId]
+        );
         if (solRes.rows.length === 0) throw new Error('Solicitação não encontrada ou já processada.');
         const solicitacao = solRes.rows[0];
         
         // Se for uma solicitação de criação, não há lançamento original para atualizar.
         if (solicitacao.tipo_solicitacao !== 'CRIACAO_DATAS_ESPECIAIS') {
             await dbClient.query(
-                "UPDATE fc_lancamentos SET status_edicao = 'EDICAO_REJEITADA', motivo_rejeicao = $1 WHERE id = $2", 
-                [motivo.trim(), solicitacao.id_lancamento]
+                "UPDATE fc_lancamentos SET status_edicao = 'EDICAO_REJEITADA', motivo_rejeicao = $1 WHERE id = $2 AND empresa_id = $3",
+                [motivo.trim(), solicitacao.id_lancamento, req.empresaId]
             );
         }
         
         await dbClient.query(
-            "UPDATE fc_solicitacoes_alteracao SET status = 'REJEITADO', id_usuario_aprovador = $1, motivo_rejeicao = $2, data_decisao = NOW() WHERE id = $3", 
-            [req.usuarioLogado.id, motivo.trim(), id]
+            "UPDATE fc_solicitacoes_alteracao SET status = 'REJEITADO', id_usuario_aprovador = $1, motivo_rejeicao = $2, data_decisao = NOW() WHERE id = $3 AND empresa_id = $4",
+            [req.usuarioLogado.id, motivo.trim(), id, req.empresaId]
         );
         
         // Monta a mensagem de notificação de forma segura
@@ -3211,9 +4381,19 @@ router.post('/aprovacoes/:id/rejeitar', async (req, res) => {
             mensagemNotificacao = `Sua solicitação para alterar o lançamento <strong>#${solicitacao.id_lancamento} ("${descricaoAntiga}")</strong> foi REJEITADA. Motivo: ${motivo.trim()}`;
         }
 
-        await dbClient.query("INSERT INTO fc_notificacoes (id_usuario_destino, tipo, mensagem) VALUES ($1, 'REJEICAO', $2);", [solicitacao.id_usuario_solicitante, mensagemNotificacao]);
+        await dbClient.query(
+            "INSERT INTO fc_notificacoes (id_usuario_destino, tipo, mensagem, empresa_id) VALUES ($1, 'REJEICAO', $2, $3);",
+            [solicitacao.id_usuario_solicitante, mensagemNotificacao, req.empresaId]
+        );
         
-        await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'REJEICAO_SOLICITACAO', { solicitacao, motivo: motivo.trim() });
+        await registrarLog(
+            dbClient,
+            req.usuarioLogado.id,
+            req.usuarioLogado.nome,
+            'REJEICAO_SOLICITACAO',
+            { solicitacao, motivo: motivo.trim() },
+            req.empresaId
+        );
         
         await dbClient.query('COMMIT');
         res.status(200).json({ message: 'Solicitação rejeitada com sucesso.' });
@@ -3240,18 +4420,20 @@ router.get('/notificacoes', async (req, res) => {
             SELECT id, tipo, mensagem, criado_em, lida
             FROM fc_notificacoes
             WHERE id_usuario_destino = $1
+              AND empresa_id = $2
             ORDER BY criado_em DESC, id DESC
-            LIMIT $2 OFFSET $3;
+            LIMIT $3 OFFSET $4;
         `;
         const countQuery = `
             SELECT COUNT(*)::int AS total,
                    COUNT(*) FILTER (WHERE lida = false)::int AS nao_lidas
             FROM fc_notificacoes
-            WHERE id_usuario_destino = $1;
+            WHERE id_usuario_destino = $1
+              AND empresa_id = $2;
         `;
         const [listResult, countResult] = await Promise.all([
-            dbClient.query(listQuery, [idUsuario, limitNum, offset]),
-            dbClient.query(countQuery, [idUsuario]),
+            dbClient.query(listQuery, [idUsuario, req.empresaId, limitNum, offset]),
+            dbClient.query(countQuery, [idUsuario, req.empresaId]),
         ]);
 
         const total = countResult.rows[0]?.total || 0;
@@ -3283,8 +4465,14 @@ router.post('/notificacoes/:id/marcar-como-lida', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const query = 'UPDATE fc_notificacoes SET lida = true WHERE id = $1 AND id_usuario_destino = $2';
-        await dbClient.query(query, [idNotificacao, idUsuario]);
+        const query = `
+            UPDATE fc_notificacoes
+               SET lida = true
+             WHERE id = $1
+               AND id_usuario_destino = $2
+               AND empresa_id = $3
+        `;
+        await dbClient.query(query, [idNotificacao, idUsuario, req.empresaId]);
         res.status(204).send(); // 204 No Content, sucesso sem corpo de resposta
     } catch (error) {
         console.error('[API POST /notificacoes/marcar-como-lida] Erro:', error);
@@ -3300,7 +4488,13 @@ router.post('/notificacoes/marcar-todas-como-lidas', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
-        await dbClient.query('UPDATE fc_notificacoes SET lida = true WHERE id_usuario_destino = $1', [idUsuario]);
+        await dbClient.query(
+            `UPDATE fc_notificacoes
+                SET lida = true
+              WHERE id_usuario_destino = $1
+                AND empresa_id = $2`,
+            [idUsuario, req.empresaId]
+        );
         res.status(204).send();
     } catch (error) {
         console.error('[API POST /notificacoes/marcar-todas-como-lidas] Erro:', error);
@@ -3330,8 +4524,8 @@ router.get('/logs', async (req, res) => {
     const limitNum = Math.min(50, Math.max(1, parseInt(String(limit), 10) || 15));
     const offset = (pageNum - 1) * limitNum;
 
-    const where = [];
-    const params = [];
+    const where = ['empresa_id = $1'];
+    const params = [req.empresaId];
 
     if (String(q).trim()) {
         const termo = '%' + String(q).trim() + '%';
@@ -3417,38 +4611,65 @@ router.post('/transferencias', async (req, res) => {
         dbClient = await pool.connect();
         await dbClient.query('BEGIN'); // Inicia a transação
 
+        const contaOrigem = await exigirRecursoDaEmpresa(
+            dbClient,
+            'fc_contas_bancarias',
+            id_conta_origem,
+            req.empresaId,
+            { nome: 'Conta de origem', forUpdate: true }
+        );
+        const contaDestino = await exigirRecursoDaEmpresa(
+            dbClient,
+            'fc_contas_bancarias',
+            id_conta_destino,
+            req.empresaId,
+            { nome: 'Conta de destino', forUpdate: true }
+        );
+        await exigirRecursoDaEmpresa(
+            dbClient,
+            'fc_categorias',
+            id_categoria_transferencia,
+            req.empresaId,
+            { nome: 'Categoria de transferência' }
+        );
+
         // 1. Cria o lançamento de SAÍDA (Despesa)
         const saidaQuery = `
-            INSERT INTO fc_lancamentos (id_conta_bancaria, id_categoria, tipo, valor, data_transacao, descricao, id_usuario_lancamento)
-            VALUES ($1, $2, 'DESPESA', $3, $4, $5, $6) RETURNING id;
+            INSERT INTO fc_lancamentos (
+                id_conta_bancaria, id_categoria, tipo, valor, data_transacao,
+                descricao, id_usuario_lancamento, empresa_id
+            )
+            VALUES ($1, $2, 'DESPESA', $3, $4, $5, $6, $7)
+            RETURNING id;
         `;
         const descricaoSaida = `Transferência para conta destino. ${descricao || ''}`;
-        const resSaida = await dbClient.query(saidaQuery, [id_conta_origem, id_categoria_transferencia, valor, data_transacao, descricaoSaida, req.usuarioLogado.id]);
+        const resSaida = await dbClient.query(saidaQuery, [id_conta_origem, id_categoria_transferencia, valor, data_transacao, descricaoSaida, req.usuarioLogado.id, req.empresaId]);
         const idLancamentoSaida = resSaida.rows[0].id;
 
         // 2. Cria o lançamento de ENTRADA (Receita)
         const entradaQuery = `
-            INSERT INTO fc_lancamentos (id_conta_bancaria, id_categoria, tipo, valor, data_transacao, descricao, id_usuario_lancamento)
-            VALUES ($1, $2, 'RECEITA', $3, $4, $5, $6) RETURNING id;
+            INSERT INTO fc_lancamentos (
+                id_conta_bancaria, id_categoria, tipo, valor, data_transacao,
+                descricao, id_usuario_lancamento, empresa_id
+            )
+            VALUES ($1, $2, 'RECEITA', $3, $4, $5, $6, $7)
+            RETURNING id;
         `;
         const descricaoEntrada = `Transferência entre contas. ${descricao || ''}`;
-        const resEntrada = await dbClient.query(entradaQuery, [id_conta_destino, id_categoria_transferencia, valor, data_transacao, descricaoEntrada, req.usuarioLogado.id]);
+        const resEntrada = await dbClient.query(entradaQuery, [id_conta_destino, id_categoria_transferencia, valor, data_transacao, descricaoEntrada, req.usuarioLogado.id, req.empresaId]);
         const idLancamentoEntrada = resEntrada.rows[0].id;
 
         // 3. ATUALIZA os dois lançamentos para VINCULÁ-LOS
-        await dbClient.query('UPDATE fc_lancamentos SET id_transferencia_vinculada = $1 WHERE id = $2', [idLancamentoEntrada, idLancamentoSaida]);
-        await dbClient.query('UPDATE fc_lancamentos SET id_transferencia_vinculada = $1 WHERE id = $2', [idLancamentoSaida, idLancamentoEntrada]);
-
-        const contaOrigemRes = await dbClient.query('SELECT nome_conta FROM fc_contas_bancarias WHERE id = $1', [id_conta_origem]);
-        const contaDestinoRes = await dbClient.query('SELECT nome_conta FROM fc_contas_bancarias WHERE id = $1', [id_conta_destino]);
+        await dbClient.query('UPDATE fc_lancamentos SET id_transferencia_vinculada = $1 WHERE id = $2 AND empresa_id = $3', [idLancamentoEntrada, idLancamentoSaida, req.empresaId]);
+        await dbClient.query('UPDATE fc_lancamentos SET id_transferencia_vinculada = $1 WHERE id = $2 AND empresa_id = $3', [idLancamentoSaida, idLancamentoEntrada, req.empresaId]);
 
         // ADICIONE AQUI O REGISTRO DE LOG
         await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'CRIACAO_TRANSFERENCIA', {
             valor: valor,
-            contaOrigem: contaOrigemRes.rows[0].nome_conta,
-            contaDestino: contaDestinoRes.rows[0].nome_conta,
+            contaOrigem: contaOrigem.nome_conta,
+            contaDestino: contaDestino.nome_conta,
             descricao: descricao
-        });
+        }, req.empresaId);
 
         await dbClient.query('COMMIT'); // Confirma a transação
         res.status(201).json({ message: 'Transferência realizada com sucesso!' });
@@ -3456,7 +4677,10 @@ router.post('/transferencias', async (req, res) => {
     } catch (error) {
         if (dbClient) await dbClient.query('ROLLBACK'); // Desfaz tudo em caso de erro
         console.error('[API POST /transferencias] Erro:', error);
-        res.status(500).json({ error: 'Erro ao processar transferência.', details: error.message });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao processar transferência.',
+            details: error.statusCode ? undefined : error.message,
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -3476,23 +4700,42 @@ router.post('/lancamentos/solicitar-criacao', async (req, res) => {
         dbClient = await pool.connect();
         await dbClient.query('BEGIN');
 
+        if (lancamento_proposto.dados_pai) {
+            await validarReferenciasLancamento(
+                dbClient,
+                req.empresaId,
+                lancamento_proposto.dados_pai,
+                lancamento_proposto.itens_filho || [],
+                lancamento_proposto.tipo_rateio
+            );
+        } else {
+            await validarReferenciasLancamento(
+                dbClient,
+                req.empresaId,
+                lancamento_proposto
+            );
+        }
+
         const solQuery = `
             INSERT INTO fc_solicitacoes_alteracao 
-                (id_lancamento, tipo_solicitacao, dados_novos, id_usuario_solicitante, justificativa_solicitante) 
-            VALUES (NULL, 'CRIACAO_DATAS_ESPECIAIS', $1, $2, $3) RETURNING *;
+                (id_lancamento, tipo_solicitacao, dados_novos,
+                 id_usuario_solicitante, justificativa_solicitante, empresa_id)
+            VALUES (NULL, 'CRIACAO_DATAS_ESPECIAIS', $1, $2, $3, $4)
+            RETURNING *;
         `;
 
         const solRes = await dbClient.query(solQuery, [
             JSON.stringify({ lancamento_proposto: lancamento_proposto }), // Salva a estrutura { lancamento_proposto: ... }
             req.usuarioLogado.id,
-            justificativa
+            justificativa,
+            req.empresaId
         ]);
 
         await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'SOLICITACAO_CRIACAO', {
             lancamento_proposto,
             justificativa,
             solicitacao: solRes.rows[0],
-        });
+        }, req.empresaId);
 
         await dbClient.query('COMMIT');
         res.status(202).json({ message: 'Solicitação de lançamento com data especial enviada para aprovação.' });
@@ -3500,7 +4743,12 @@ router.post('/lancamentos/solicitar-criacao', async (req, res) => {
     } catch (error) {
         if (dbClient) await dbClient.query('ROLLBACK');
         console.error("[API /lancamentos/solicitar-criacao] Erro:", error);
-        res.status(500).json({ error: 'Erro ao processar solicitação de criação.', details: error.message });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode
+                ? error.message
+                : 'Erro ao processar solicitação de criação.',
+            details: error.statusCode ? undefined : error.message,
+        });
     } finally {
         if (dbClient) dbClient.release();
     }

@@ -10,6 +10,17 @@ import OPAgenteInterceptor from './components/OPAgenteInterceptor.jsx';
 const POLL_INTERVALO_MS = 5 * 60 * 1000; // 5 minutos
 const PENDENTE_KEY      = 'agente_enc_pendente_desde';
 
+function obterEmpresaAtivaLocal() {
+    try {
+        const storage = sessionStorage.getItem('impersonation_token')
+            ? sessionStorage
+            : localStorage;
+        return JSON.parse(storage.getItem('empresaAtiva') || 'null');
+    } catch {
+        return null;
+    }
+}
+
 function AgentesGlobais() {
     const [opsProntas, setOpsProntas]           = useState([]);
     const [temPermissao, setTemPermissao]       = useState(false);
@@ -19,7 +30,8 @@ function AgentesGlobais() {
     // Extrai primeiro nome do JWT e lê permissões do localStorage
     useEffect(() => {
         try {
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('impersonation_token')
+                || localStorage.getItem('token');
             if (!token) return;
             const payload = JSON.parse(atob(token.split('.')[1]));
             setNomeUsuario((payload.nome || '').split(' ')[0]);
@@ -31,12 +43,33 @@ function AgentesGlobais() {
 
     const buscarOps = useCallback(async () => {
         try {
-            const token = localStorage.getItem('token');
+            const token = sessionStorage.getItem('impersonation_token')
+                || localStorage.getItem('token');
             if (!token) return;
 
-            const data = await fetch('/api/ordens-de-producao/prontas-para-encerrar', {
+            const empresaAtiva = obterEmpresaAtivaLocal();
+            if (empresaAtiva?.eh_legada === false) {
+                setOpsProntas([]);
+                setTemPermissao(false);
+                localStorage.removeItem(PENDENTE_KEY);
+                return;
+            }
+
+            const response = await fetch('/api/ordens-de-producao/prontas-para-encerrar', {
                 headers: { 'Authorization': `Bearer ${token}` }
-            }).then(r => r.json());
+            });
+
+            if (response.status === 403) {
+                setOpsProntas([]);
+                setTemPermissao(false);
+                return;
+            }
+
+            if (!response.ok) {
+                throw new Error(`Falha ao consultar OPs prontas (${response.status}).`);
+            }
+
+            const data = await response.json();
 
             if (Array.isArray(data)) {
                 setOpsProntas(data);

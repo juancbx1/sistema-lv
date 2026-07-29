@@ -20,6 +20,20 @@
 
 export const changelog = [
     {
+        versao: '1.38.0',
+        versao_dashboard: '1.26.0',
+        data: '29/07/2026',
+        admin: [
+            'Financeiro multiempresa concluído: lançamentos, agenda, contas, categorias, contatos, configurações, relatórios e auditoria agora respeitam integralmente a empresa ativa',
+            'Neila Confecções liberada para operar o Financeiro com dados próprios e totalmente separados da Lojas Variara',
+            'Troca de empresa validada nos dois sentidos, preservando os dados de cada organização sem resíduos da empresa anterior',
+            'Agentes globais de Ordens de Produção deixaram de consultar módulos ainda indisponíveis para empresas secundárias',
+        ],
+        dashboard: [
+            'A tela de entrada ganhou um novo visual, mais claro e adaptado para celulares e tablets',
+        ],
+    },
+    {
         versao: '1.37.0',
         data: '28/07/2026',
         admin: [

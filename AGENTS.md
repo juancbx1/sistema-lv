@@ -21,7 +21,11 @@ A fundação multiempresa e a Gestão Organizacional já estão em produção. A
 migration de preparação do Financeiro foi executada e validada na Neon em
 28/07/2026; a API foi isolada e validada, e o teste transacional das constraints
 empresariais foi aprovado com sete de sete cenários em 29/07/2026. A migration
-de finalização permanece pendente até a publicação e o smoke da empresa legada.
+de finalização foi executada e validada na Neon em 29/07/2026. A liberação
+controlada do Financeiro para Neila Confecções também foi executada e validada;
+o teste manual entre as duas empresas foi aprovado, com dados isolados e console
+sem erros. O código estrutural foi publicado no commit `5ef2096`, e a correção
+final do agente global aguarda publicação na release `1.38.0`.
 
 ### Decisões obrigatórias
 
@@ -85,7 +89,7 @@ de finalização permanece pendente até a publicação e o smoke da empresa leg
   do diff e validação antes do push. O procedimento fica em
   `_planejamento/multiempresas-controle-de-arquivos.md`.
 
-### Estado executivo em 2026-07-28
+### Estado executivo em 2026-07-29
 
 | Frente | Estado |
 |---|---|
@@ -95,22 +99,35 @@ de finalização permanece pendente até a publicação e o smoke da empresa leg
 | Fase 3 — login e sessão | Publicada e validada em produção |
 | Fase 4 — seletor universal | Publicada e validada em produção |
 | Fase 5 — Gestão Organizacional | Concluída, publicada e aprovada em produção |
-| Fase 6 — Financeiro como piloto | Isolamento e teste transacional concluídos; publicação, smoke e finalização pendentes |
+| Fase 6 — Financeiro como piloto | Concluída funcionalmente; correção final do agente global aguarda publicação |
 | Fase 7 em diante | Não iniciada |
 
 Situação operacional:
 
-- a infraestrutura multiempresa está ativa; `Lojas Variara` permanece como
-  única empresa operando o Financeiro, e `Neila Confecções` ainda não possui
-  acesso ao módulo;
+- a infraestrutura multiempresa está ativa; `Lojas Variara` e
+  `Neila Confecções` operam o Financeiro com dados isolados;
 - a Neon já contém as tabelas fundamentais, a empresa `Lojas Variara`, os 18
   vínculos iniciais e o catálogo de 18 módulos;
-- o Financeiro recebeu `empresa_id` nas 13 tabelas por migration de preparação,
-  mas a migration de finalização ainda não foi executada;
+- o Financeiro possui `empresa_id NOT NULL` nas 13 tabelas; a finalização
+  removeu os 21 constraints legados e validou os 31 constraints empresariais;
 - o teste transacional das constraints empresariais foi aprovado com sete de
   sete cenários e `ROLLBACK`, sem deixar fixtures na Neon;
-- `Neila Confecções` está cadastrada, porém o Financeiro continua bloqueado para
-  empresas secundárias;
+- o isolamento foi publicado no commit `5ef2096`; dashboard, lançamentos,
+  agenda, baixa, configurações, menus auxiliares, lançamento real, recargas e
+  nova sessão foram aprovados no smoke da Lojas Variara;
+- `Neila Confecções` está cadastrada e habilitada no Financeiro, iniciando com
+  zero registros financeiros;
+- a migration separada de liberação da Neila e seu validador foram executados
+  e retornaram `aprovado: true`;
+- no teste manual da Neila, grupos, categorias, conta bancária, agenda,
+  lançamentos, baixas, configurações, logs e relatórios funcionaram corretamente;
+- a troca entre as empresas foi aprovada nos dois sentidos, preservando os dados
+  de cada contexto e sem erros no console;
+- o agente global de encerramento de OP fazia uma chamada bloqueada e gerava
+  `403` no console da empresa secundária;
+- `public/src/main-agentes-globais.jsx` foi ajustado localmente para não iniciar
+  polling de OP em empresa secundária enquanto esse módulo não for migrado;
+  a correção foi aprovada manualmente e aguarda publicação;
 - o backend possui contexto universal, troca de empresa, JWT
   contextual, `/usuarios/me` contextual e impersonação por empresa;
 - o menu compartilhado possui seletor no PC, tablet e celular;

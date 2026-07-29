@@ -22,11 +22,27 @@ const VAZIA = {
     ativa: true,
 };
 
+function gerarCodigoInterno(nome) {
+    return String(nome || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 50)
+        .replace(/-+$/g, '');
+}
+
 export default function GOEmpresaModal({ empresa, onClose, onSalvar }) {
     const [form, setForm] = useState({ ...VAZIA, ...(empresa || {}) });
     const [salvando, setSalvando] = useState(false);
     const [erro, setErro] = useState('');
     const alterar = (campo, valor) => setForm((atual) => ({ ...atual, [campo]: valor }));
+    const alterarNomeFantasia = (valor) => setForm((atual) => ({
+        ...atual,
+        nome_fantasia: valor,
+        codigo: empresa ? atual.codigo : gerarCodigoInterno(valor),
+    }));
 
     const salvar = async (event) => {
         event.preventDefault();
@@ -56,13 +72,14 @@ export default function GOEmpresaModal({ empresa, onClose, onSalvar }) {
                         <h3>Identificação</h3>
                         <div className="go-form-grid">
                             <label>Nome fantasia
-                                <input value={form.nome_fantasia} onChange={(e) => alterar('nome_fantasia', e.target.value)} required />
+                                <input value={form.nome_fantasia} onChange={(e) => alterarNomeFantasia(e.target.value)} required />
                             </label>
                             <label>Razão social
                                 <input value={form.razao_social || ''} onChange={(e) => alterar('razao_social', e.target.value)} />
                             </label>
                             <label>Código interno
-                                <input value={form.codigo} onChange={(e) => alterar('codigo', e.target.value.toLowerCase().replace(/\s+/g, '-'))} disabled={Boolean(empresa)} required />
+                                <input value={form.codigo} readOnly placeholder="Gerado pelo nome fantasia" required />
+                                <small>Gerado automaticamente, sem acentos e separado por hífens.</small>
                             </label>
                             <label>CNPJ
                                 <input inputMode="numeric" value={form.cnpj || ''} onChange={(e) => alterar('cnpj', e.target.value)} />

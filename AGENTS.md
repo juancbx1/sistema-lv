@@ -21,6 +21,9 @@ O sistema está em transição planejada de empresa única para **multiempresas*
 - `usuarios` continuará representando a identidade global da pessoa e suas credenciais.
 - O vínculo com cada empresa ficará em `usuarios_empresas`, incluindo tipos/funções, permissões, situação, admissão/demissão, salário, nível e contato financeiro específicos daquele vínculo.
 - Um usuário poderá pertencer a uma ou mais empresas, mantendo um único login.
+- A tela pública de login deve ser neutra quanto às empresas: não exibe nomes,
+  seletores ou mensagens que revelem a existência de outras organizações. A
+  empresa ativa e qualquer troca de contexto aparecem somente após autenticação.
 - A empresa ativa será validada no backend e transportada no JWT; a troca de empresa emitirá novo token e recarregará a página.
 - O seletor universal ficará no menu lateral no PC e próximo ao hamburger no tablet/celular.
 - A página Usuários Cadastrados será evoluída para **Gestão Organizacional**, com abas **Pessoas e Acessos** e **Empresas**.
@@ -30,6 +33,42 @@ O sistema está em transição planejada de empresa única para **multiempresas*
 - O frontend nunca será a autoridade de isolamento. `empresa_id` não deve ser aceito cegamente do body.
 - Durante a migração, empresas secundárias não podem acessar módulos ainda não convertidos. Esses módulos devem ser bloqueados, nunca exibir dados da empresa principal.
 - Migrações serão aditivas primeiro. Campos empresariais legados de `usuarios` só poderão ser removidos na fase final, depois da migração de todos os consumidores.
+- O `codigo` de uma nova empresa é gerado exclusivamente a partir do nome
+  fantasia: minúsculas, sem acentos, grupos separados por hífen e unicidade
+  obrigatória. O backend é a autoridade e o código não muda na edição.
+- Encerrar um vínculo empresarial representa a demissão daquela empresa. A ação
+  grava a data corrente no fuso `America/Sao_Paulo`, desativa somente o vínculo
+  correspondente e preserva identidade, login e vínculos com outras empresas.
+- Para vínculos com tipo `socio` ou `ex_socio`, o encerramento é uma saída
+  societária, nunca uma demissão. O campo técnico `data_demissao` é reutilizado
+  como data de saída, com terminologia societária em toda a interface.
+- Para vínculos societários, o campo técnico `data_admissao` representa o
+  início da sociedade e deve usar essa terminologia na interface.
+- Sócios não possuem salário fixo na Gestão Organizacional. O campo técnico
+  `salario_fixo` deve ser normalizado para zero e a interface deve comunicar
+  remuneração societária variável por retiradas ou distribuições.
+- Vínculos `prestador_externo` ou marcados como freelance representam prestação
+  de serviços, nunca emprego: `data_admissao` significa início da prestação,
+  `data_demissao` significa fim da prestação, `salario_fixo`, INSS e VT devem
+  ficar zerados, passagem continua opcional e permissões individuais continuam
+  disponíveis. O encerramento deve usar Encerrar prestação, nunca Demitir.
+- Cadastro inicial, novo vínculo com outra empresa e edição devem reutilizar as
+  mesmas regras e o mesmo componente de campos por tipo de vínculo.
+- Ao criar vínculo adicional para uma pessoa, a Gestão Organizacional deve
+  oferecer cópia opcional das permissões de um vínculo ativo existente: nenhuma,
+  todas ou seleção parcial. A empresa de origem é escolhida pelo operador e a
+  lista final é persistida diretamente no novo registro de `usuarios_empresas`.
+  Administradores não usam essa cópia porque o acesso total deriva do tipo.
+- O tipo `administrador` recebe automaticamente todo o catálogo definido em
+  `permissoes.js`. Não exibir nem armazenar permissões individuais redundantes
+  para esse tipo; usar `permissoes = []` e comunicar acesso total.
+- O login emite sessões de 30 dias por padrão. A troca de empresa deve preservar
+  o tempo restante do JWT e tokens legados sem `exp` recebem a política atual de
+  30 dias; não reintroduzir a antiga duração de 8 horas.
+- Métricas de membros e gestores por empresa devem excluir usuários com
+  `is_test = true` ou `arquivado = true`, usando a mesma população da listagem.
+- Na Gestão Organizacional, a edição de identidade global e vínculo empresarial
+  ocorre pelo único botão Editar vínculo e deve ser transacional no backend.
 - O staging foi abandonado. Mudanças de banco devem ser ensaiadas em uma restauração local validada do backup e só podem seguir diretamente para produção após autorização explícita.
 - O contexto empresarial do backend fica centralizado em `api/contexto-empresa.js`. Tokens legados sem `empresa_id` resolvem temporariamente o vínculo principal; rotas não mapeadas falham fechadas para empresas secundárias.
 - Alterações multiempresa devem ser publicadas em commits seletivos, com revisão
@@ -45,8 +84,9 @@ O sistema está em transição planejada de empresa única para **multiempresas*
 | Fase 2 — contexto empresarial | Publicada e validada em produção |
 | Fase 3 — login e sessão | Publicada e validada em produção |
 | Fase 4 — seletor universal | Publicada e validada em produção |
-| Fase 5 — Gestão Organizacional | Implementada; migration executada e validada; aguarda publicação e smoke em produção |
-| Fase 6 em diante | Não iniciada |
+| Fase 5 — Gestão Organizacional | Concluída, publicada e aprovada em produção |
+| Fase 6 — Financeiro como piloto | Aguardando triagem das próximas features e correções |
+| Fase 7 em diante | Não iniciada |
 
 Situação operacional:
 
@@ -62,9 +102,9 @@ Situação operacional:
 - a troca entre duas empresas foi validada localmente e módulos legados falharam
   fechados com `403` na empresa secundária;
 - as Fases 2–4 foram publicadas e aprovadas em smoke test em 2026-07-28;
-- a Fase 5 — **Gestão Organizacional** — está implementada e validada
-  localmente; a migration foi aprovada na Neon e ainda aguarda publicação e
-  smoke em produção;
+- a Fase 5 — **Gestão Organizacional** — foi publicada e aprovada em produção,
+  incluindo seletor universal, Pessoas e Acessos, Empresas e release
+  administrativa `1.36.0`;
 - a rota oficial é `/admin/gestao-organizacional.html`; a URL antiga
   `/admin/usuarios-cadastrados.html` permanece compatível;
 - a API dedicada é `/api/gestao-organizacional`;
@@ -372,7 +412,7 @@ Tabela de controle para evitar retrabalho. Atualizar sempre que uma etapa for co
 
 | Área | Arquivo CSS | React 100% | TypeScript | CSS Limpo | Usa gs-card | Observações |
 |---|---|---|---|---|---|---|
-| Login / Index | `login.css` | ✅ | ❌ | ✅ | N/A | React 100% (27/04). `LoginApp.jsx` único. Tablet-first (2 col), glassmorphism. Token 8h/30d via `manterConectado`. Demitidos → tela de despedida + cooldown crescente. |
+| Login / Index | `login.css` | ✅ | ❌ | ✅ | N/A | Redesign aprovado e aplicado em 2026-07-28. React 100%, tablet-first, painel editorial de confecção sem pessoas e formulário claro com a paleta oficial. Login público neutro quanto às empresas. Token persistente de 30 dias; demitidos → tela de despedida + cooldown crescente. |
 
 | Ordens de Produção | `ordens-de-producao.css` | ✅ | ❌ | ✅ | ✅ (via alias) | Referência de qualidade. |
 
@@ -396,7 +436,7 @@ Tabela de controle para evitar retrabalho. Atualizar sempre que uma etapa for co
 
 | Gerenciar Permissões | `permissoes-usuarios.css` | ✅ | ❌ | ✅ | ✅ | Concluída 2026-05-23. Duas abas: Permissões + Auditoria. Prefixo `Permissoes*`. Editor: lista plana com search bar (substituiu acordeão) — filtra permissões em tempo real; exclui ex-membros e prestadores da lista de usuários. Auditoria: paginação clássica 12/pág com `gs-paginacao-*`; dropdown de usuários busca tabela `usuarios` (não só audit_log). Infraestrutura: `api/audit.js` + `api/audit-log.js` + tabela `audit_log`. JS legado `admin-permissoes-usuarios.js` deletado. |
 
-| Gestão Organizacional | `gestao-organizacional.css` | ✅ | ❌ | ✅ | ✅ | Fase 5 implementada localmente em 2026-07-28. Prefixo `GO*`. Abas Pessoas e Acessos / Empresas, identidade global separada de vínculos, múltiplas empresas, desligamento por vínculo e URL antiga compatível. Migration aprovada; aguarda publicação e smoke em produção. |
+| Gestão Organizacional | `gestao-organizacional.css` | ✅ | ❌ | ✅ | ✅ | Fase 5 concluída e aprovada em produção em 2026-07-28. Prefixo `GO*`. Identidade e vínculo editados juntos, múltiplas empresas, encerramento contextual para empregados, sócios e prestadores, cópia opcional de permissões entre vínculos e URL antiga compatível. Código da empresa automático/imutável; administradores com acesso total derivado do tipo. Blocos pós-publicação 1–5 implementados localmente; aguardam validação manual. |
 
 | Home / Admin | `home.css` | ✅ | ❌ | ❌ | ❌ | |
 

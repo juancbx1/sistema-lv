@@ -82,10 +82,17 @@ function normalizarPermissoes(valor) {
     return [...new Set(valor.filter((item) => permissoesValidas.has(item)))];
 }
 
-function normalizarCodigo(valor) {
-    const codigo = texto(valor, 50)?.toLowerCase();
-    if (!codigo || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(codigo)) {
-        throw erro(400, 'O código deve usar apenas letras minúsculas, números e hífens.');
+function gerarCodigoEmpresa(nomeFantasia) {
+    const codigo = String(nomeFantasia || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 50)
+        .replace(/-+$/g, '');
+    if (!codigo) {
+        throw erro(400, 'O nome fantasia precisa gerar um código interno válido.');
     }
     return codigo;
 }
@@ -122,7 +129,7 @@ function dadosEmpresa(body, { criacao = false } = {}) {
     if (criacao && !nomeFantasia) throw erro(400, 'Nome fantasia é obrigatório.');
 
     return {
-        codigo: criacao ? normalizarCodigo(body.codigo) : undefined,
+        codigo: criacao ? gerarCodigoEmpresa(nomeFantasia) : undefined,
         razao_social: texto(body.razao_social, 160),
         nome_fantasia: nomeFantasia,
         cnpj: normalizarCnpj(body.cnpj),
@@ -148,24 +155,79 @@ function dadosVinculo(body) {
     const ativo = body.ativo === undefined ? true : Boolean(body.ativo);
     const dataDemissao = texto(body.data_demissao, 10);
     if (ativo && dataDemissao) throw erro(400, 'Um vínculo ativo não pode ter data de desligamento.');
+    const tipos = normalizarTipos(body.tipos);
+    const administrador = tipos.includes('administrador');
+    const socio = tipos.some((tipo) => tipo === 'socio' || tipo === 'ex_socio');
+    const prestador = !socio && (tipos.includes('prestador_externo') || Boolean(body.is_freelance));
 
     return {
-        tipos: normalizarTipos(body.tipos),
-        permissoes: normalizarPermissoes(body.permissoes),
+        tipos,
+        permissoes: administrador ? [] : normalizarPermissoes(body.permissoes),
         nivel: inteiroOpcional(body.nivel, 'Nível'),
-        salario_fixo: numeroNaoNegativo(body.salario_fixo),
+        salario_fixo: socio || prestador ? 0 : numeroNaoNegativo(body.salario_fixo),
         valor_passagem_diaria: numeroNaoNegativo(body.valor_passagem_diaria),
         elegivel_pagamento: body.elegivel_pagamento === undefined
             ? true
             : Boolean(body.elegivel_pagamento),
-        desconto_inss_percentual: numeroNaoNegativo(body.desconto_inss_percentual, 9),
-        desconto_vt_percentual: numeroNaoNegativo(body.desconto_vt_percentual, 6),
-        data_admissao: dataOpcional(body.data_admissao, 'Data de admissão'),
+        desconto_inss_percentual: prestador ? 0 : numeroNaoNegativo(body.desconto_inss_percentual, 9),
+        desconto_vt_percentual: prestador ? 0 : numeroNaoNegativo(body.desconto_vt_percentual, 6),
+        data_admissao: dataOpcional(
+            body.data_admissao,
+            socio ? 'Início da sociedade' : prestador ? 'Início da prestação de serviços' : 'Data de admissão'
+        ),
         data_demissao: dataOpcional(dataDemissao, 'Data de desligamento'),
-        is_freelance: Boolean(body.is_freelance),
+        is_freelance: prestador,
         ativo,
         empresa_principal: Boolean(body.empresa_principal),
     };
+}
+
+function dadosIdentidade(body) {
+    const nome = texto(body.nome, 160);
+    const nomeUsuario = texto(body.nome_usuario, 100);
+    const email = texto(body.email, 160)?.toLowerCase();
+    const senha = String(body.senha || '');
+    if (!nome || !nomeUsuario || !email) {
+        throw erro(400, 'Nome, usuário e e-mail são obrigatórios.');
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        throw erro(400, 'E-mail inválido.');
+    }
+    if (senha && senha.length < 6) {
+        throw erro(400, 'A nova senha deve ter ao menos 6 caracteres.');
+    }
+    return {
+        nome,
+        nome_completo: texto(body.nome_completo, 200),
+        nome_usuario: nomeUsuario,
+        email,
+        senha,
+    };
+}
+
+async function atualizarIdentidade(client, usuarioId, identidade) {
+    const senhaHash = identidade.senha
+        ? await bcrypt.hash(identidade.senha, 10)
+        : null;
+    const result = await client.query(
+        `UPDATE usuarios
+         SET nome = $1,
+             nome_completo = $2,
+             nome_usuario = $3,
+             email = $4,
+             senha = CASE WHEN $5::text IS NULL THEN senha ELSE $5 END
+         WHERE id = $6
+         RETURNING id`,
+        [
+            identidade.nome,
+            identidade.nome_completo,
+            identidade.nome_usuario,
+            identidade.email,
+            senhaHash,
+            usuarioId,
+        ]
+    );
+    if (!result.rows[0]) throw erro(404, 'Pessoa não encontrada.');
 }
 
 async function buscarEmpresa(client, empresaId, { somenteAtiva = false } = {}) {
@@ -237,13 +299,20 @@ router.get('/empresas', async (req, res) => {
         const result = await client.query(
             `SELECT
                 e.*,
-                COUNT(ue.id) FILTER (WHERE ue.ativo) ::integer AS total_membros,
                 COUNT(ue.id) FILTER (
                     WHERE ue.ativo
+                      AND COALESCE(u.arquivado, FALSE) = FALSE
+                      AND COALESCE(u.is_test, FALSE) = FALSE
+                )::integer AS total_membros,
+                COUNT(ue.id) FILTER (
+                    WHERE ue.ativo
+                      AND COALESCE(u.arquivado, FALSE) = FALSE
+                      AND COALESCE(u.is_test, FALSE) = FALSE
                       AND ue.tipos && ARRAY['administrador', 'supervisor', 'lider_setor']::text[]
                 )::integer AS total_gestores
              FROM empresas e
              LEFT JOIN usuarios_empresas ue ON ue.empresa_id = e.id
+             LEFT JOIN usuarios u ON u.id = ue.usuario_id
              GROUP BY e.id
              ORDER BY e.ativa DESC, e.eh_legada DESC, e.nome_fantasia ASC`
         );
@@ -262,6 +331,13 @@ router.post('/empresas', async (req, res) => {
         const empresa = dadosEmpresa(req.body, { criacao: true });
         client = await pool.connect();
         await client.query('BEGIN');
+        const codigoExistente = await client.query(
+            'SELECT id FROM empresas WHERE codigo = $1 LIMIT 1',
+            [empresa.codigo]
+        );
+        if (codigoExistente.rows[0]) {
+            throw erro(409, `Já existe uma empresa com o código interno "${empresa.codigo}".`);
+        }
         const result = await client.query(
             `INSERT INTO empresas (
                 codigo, razao_social, nome_fantasia, cnpj, logo_url, cor_identificacao,
@@ -303,7 +379,9 @@ router.post('/empresas', async (req, res) => {
         const status = error.code === '23505' ? 409 : (error.statusCode || 500);
         res.status(status).json({
             error: error.code === '23505'
-                ? 'Já existe uma empresa com esse código ou CNPJ.'
+                ? (error.constraint === 'empresas_codigo_key'
+                    ? 'Já existe uma empresa com esse código interno.'
+                    : 'Já existe uma empresa com esse CNPJ.')
                 : (error.message || 'Erro ao criar empresa.'),
         });
     } finally {
@@ -409,7 +487,10 @@ router.get('/pessoas', async (req, res) => {
                             'empresa_logo_url', e.logo_url,
                             'empresa_ativa', e.ativa,
                             'tipos', ue.tipos,
-                            'permissoes', ue.permissoes,
+                            'permissoes', CASE
+                                WHEN 'administrador' = ANY(ue.tipos) THEN ARRAY[]::text[]
+                                ELSE ue.permissoes
+                            END,
                             'nivel', ue.nivel,
                             'salario_fixo', ue.salario_fixo,
                             'valor_passagem_diaria', ue.valor_passagem_diaria,
@@ -620,6 +701,7 @@ router.put('/vinculos/:id', async (req, res) => {
     try {
         const vinculoId = inteiroPositivo(req.params.id, 'Vínculo');
         const vinculo = dadosVinculo(req.body);
+        const identidade = req.body.pessoa ? dadosIdentidade(req.body.pessoa) : null;
         client = await pool.connect();
         await client.query('BEGIN');
         const atualResult = await client.query(
@@ -632,6 +714,9 @@ router.put('/vinculos/:id', async (req, res) => {
         );
         const atual = atualResult.rows[0];
         if (!atual) throw erro(404, 'Vínculo não encontrado.');
+        if (identidade) {
+            await atualizarIdentidade(client, atual.usuario_id, identidade);
+        }
         let vinculoPrincipalSubstitutoId = null;
         if (atual.empresa_principal && !vinculo.empresa_principal) {
             const substituto = await client.query(
@@ -691,7 +776,12 @@ router.put('/vinculos/:id', async (req, res) => {
     } catch (error) {
         if (client) await client.query('ROLLBACK');
         console.error('[gestao-organizacional/vinculos PUT]', error);
-        res.status(error.statusCode || 500).json({ error: error.message || 'Erro ao atualizar vínculo.' });
+        const status = error.code === '23505' ? 409 : (error.statusCode || 500);
+        res.status(status).json({
+            error: error.code === '23505'
+                ? 'Nome de usuário ou e-mail já cadastrado.'
+                : (error.message || 'Erro ao atualizar vínculo.'),
+        });
     } finally {
         client?.release();
     }
@@ -701,12 +791,17 @@ router.post('/vinculos/:id/encerrar', async (req, res) => {
     let client;
     try {
         const vinculoId = inteiroPositivo(req.params.id, 'Vínculo');
-        const dataDemissao = dataOpcional(req.body.data_demissao, 'Data de desligamento')
-            || new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
         client = await pool.connect();
         await client.query('BEGIN');
         const atualResult = await client.query(
-            `SELECT ue.*, e.eh_legada, e.nome_fantasia, e.ativa AS empresa_ativa
+            `SELECT
+                ue.*,
+                e.eh_legada,
+                e.nome_fantasia,
+                e.ativa AS empresa_ativa,
+                (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date AS data_demissao_sistema,
+                ue.data_admissao > (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date
+                    AS admissao_posterior_demissao
              FROM usuarios_empresas ue
              JOIN empresas e ON e.id = ue.empresa_id
              WHERE ue.id = $1
@@ -715,9 +810,26 @@ router.post('/vinculos/:id/encerrar', async (req, res) => {
         );
         const atual = atualResult.rows[0];
         if (!atual) throw erro(404, 'Vínculo não encontrado.');
+        if (!atual.ativo) throw erro(409, 'Esse vínculo já foi encerrado.');
         if (atual.usuario_id === req.usuarioLogado.id && atual.empresa_id === req.empresaId) {
             throw erro(409, 'Você não pode encerrar seu próprio vínculo com a empresa ativa.');
         }
+        const socio = (atual.tipos || []).some((tipo) => tipo === 'socio' || tipo === 'ex_socio');
+        const prestador = !socio && (
+            (atual.tipos || []).includes('prestador_externo')
+            || Boolean(atual.is_freelance)
+        );
+        if (atual.admissao_posterior_demissao) {
+            throw erro(
+                409,
+                socio
+                    ? 'O início da sociedade não pode ser posterior à data de saída da empresa.'
+                    : prestador
+                        ? 'O início da prestação de serviços não pode ser posterior ao encerramento da prestação.'
+                        : 'A data de admissão não pode ser posterior à data da demissão.'
+            );
+        }
+        const dataDemissao = atual.data_demissao_sistema;
         const result = await client.query(
             `UPDATE usuarios_empresas
              SET ativo = FALSE,

@@ -1,13 +1,6 @@
 import React, { useState } from 'react';
 import { GOVinculoCampos, VINCULO_INICIAL } from './GOVinculoModal.jsx';
-
-const IDENTIDADE_INICIAL = {
-    nome: '',
-    nome_completo: '',
-    nome_usuario: '',
-    email: '',
-    senha: '',
-};
+import GOIdentidadeCampos, { IDENTIDADE_INICIAL } from './GOIdentidadeCampos.jsx';
 
 export default function GOPessoaModal({ pessoa, empresas, empresaAtivaId, onClose, onSalvar }) {
     const [identidade, setIdentidade] = useState(pessoa ? {
@@ -49,26 +42,11 @@ export default function GOPessoaModal({ pessoa, empresas, empresaAtivaId, onClos
                     <button type="button" className="go-btn-icone" onClick={onClose} aria-label="Fechar"><i className="fas fa-times"></i></button>
                 </header>
                 <div className="go-modal-corpo">
-                    <section className="go-form-secao">
-                        <h3>Dados de login</h3>
-                        <div className="go-form-grid">
-                            <label>Nome de exibição
-                                <input value={identidade.nome} onChange={(e) => setIdentidade({ ...identidade, nome: e.target.value })} required />
-                            </label>
-                            <label>Nome completo
-                                <input value={identidade.nome_completo} onChange={(e) => setIdentidade({ ...identidade, nome_completo: e.target.value })} />
-                            </label>
-                            <label>Nome de usuário
-                                <input autoComplete="off" value={identidade.nome_usuario} onChange={(e) => setIdentidade({ ...identidade, nome_usuario: e.target.value })} required />
-                            </label>
-                            <label>E-mail
-                                <input type="email" autoComplete="off" value={identidade.email} onChange={(e) => setIdentidade({ ...identidade, email: e.target.value })} required />
-                            </label>
-                            <label>{pessoa ? 'Nova senha (opcional)' : 'Senha inicial'}
-                                <input type="password" autoComplete="new-password" minLength={6} value={identidade.senha} onChange={(e) => setIdentidade({ ...identidade, senha: e.target.value })} required={!pessoa} />
-                            </label>
-                        </div>
-                    </section>
+                    <GOIdentidadeCampos
+                        identidade={identidade}
+                        onChange={setIdentidade}
+                        senhaObrigatoria={!pessoa}
+                    />
                     {!pessoa && (
                         <>
                             <label className="go-campo-destaque">Empresa inicial

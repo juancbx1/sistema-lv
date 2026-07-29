@@ -1,16 +1,12 @@
-// public/src/components/LoginApp.jsx
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { sincronizarPermissoesUsuario } from '/js/utils/auth.js';
 
-// ─── Constantes ──────────────────────────────────────────────────────────────
-
-const FRASES_LOADING = [
-  { icone: '🔍', texto: 'Verificando identidade...' },
-  { icone: '🧠', texto: 'Analisando perfil de acesso...' },
-  { icone: '⚡', texto: 'Sincronizando dados...' },
+const ETAPAS_ACESSO = [
+  'Validando seu acesso',
+  'Carregando seu perfil',
+  'Preparando o ambiente',
 ];
 
-// Cooldown crescente: 30s → 90s → 450s → ... até 4h
 function calcularCooldownMs(tentativas) {
   const base = 30_000;
   const maximo = 4 * 60 * 60 * 1000;
@@ -18,30 +14,31 @@ function calcularCooldownMs(tentativas) {
 }
 
 function formatarTempo(ms) {
-  const totalSeg = Math.ceil(ms / 1000);
-  const horas = Math.floor(totalSeg / 3600);
-  const min = Math.floor((totalSeg % 3600) / 60);
-  const seg = totalSeg % 60;
-  if (horas > 0) return `${horas}h ${min.toString().padStart(2, '0')}min`;
-  if (min > 0) return `${min}min ${seg.toString().padStart(2, '0')}seg`;
-  return `${seg}seg`;
+  const totalSegundos = Math.ceil(ms / 1000);
+  const horas = Math.floor(totalSegundos / 3600);
+  const minutos = Math.floor((totalSegundos % 3600) / 60);
+  const segundos = totalSegundos % 60;
+
+  if (horas > 0) return `${horas}h ${minutos.toString().padStart(2, '0')}min`;
+  if (minutos > 0) return `${minutos}min ${segundos.toString().padStart(2, '0')}seg`;
+  return `${segundos}seg`;
 }
 
 function salvarBloqueio(nomeUsuario, tentativas) {
-  const cooldownMs = calcularCooldownMs(tentativas);
-  const bloqueadoAte = Date.now() + cooldownMs;
+  const bloqueadoAte = Date.now() + calcularCooldownMs(tentativas);
   localStorage.setItem(
     `demitido_${nomeUsuario.toLowerCase()}`,
-    JSON.stringify({ tentativas, bloqueadoAte })
+    JSON.stringify({ tentativas, bloqueadoAte }),
   );
   return bloqueadoAte;
 }
 
 function lerBloqueio(nomeUsuario) {
+  if (!nomeUsuario) return null;
+
   try {
-    const raw = localStorage.getItem(`demitido_${nomeUsuario.toLowerCase()}`);
-    if (!raw) return null;
-    return JSON.parse(raw);
+    const bloqueio = localStorage.getItem(`demitido_${nomeUsuario.toLowerCase()}`);
+    return bloqueio ? JSON.parse(bloqueio) : null;
   } catch {
     return null;
   }
@@ -54,55 +51,87 @@ function decidirRedirecionamento(usuario) {
   return '/admin/acesso-negado.html';
 }
 
-// ─── Componente principal ─────────────────────────────────────────────────────
+function MarcaSistema({ escura = false }) {
+  return (
+    <div className={`lv-marca${escura ? ' lv-marca--escura' : ''}`} aria-label="Sistema LV">
+      <svg className="lv-marca-simbolo" viewBox="0 0 48 48" aria-hidden="true">
+        <path d="M8 7c0 15 2 28 8 30 8 3 13-24 9-24-5 0-4 27 3 27 5 0 9-9 12-17" />
+        <path className="lv-marca-fio" d="M35 22c4-3 7-2 7 1 0 4-6 6-11 4" />
+      </svg>
+      <span>Sistema LV</span>
+    </div>
+  );
+}
+
+function PainelEditorial() {
+  return (
+    <section className="lv-editorial" aria-label="Ambiente de confecção">
+      <div className="lv-editorial-sombra"></div>
+      <div className="lv-editorial-topo">
+        <MarcaSistema />
+      </div>
+
+      <div className="lv-editorial-conteudo">
+        <p className="lv-editorial-sobretitulo">Pessoas <span>•</span> Processos <span>•</span> Resultados</p>
+        <h1>Tudo o que fazemos começa com cuidado.</h1>
+        <p className="lv-editorial-texto">
+          Da primeira etapa ao último acabamento, o trabalho acontece em conjunto.
+        </p>
+        <svg className="lv-editorial-costura" viewBox="0 0 520 82" aria-hidden="true">
+          <path d="M2 44C94 88 178 79 219 39c30-29-32-47-36-9-5 49 119 49 181 11 48-29 94-27 154-8" />
+        </svg>
+      </div>
+    </section>
+  );
+}
+
+function EstruturaLogin({ children, compacto = false }) {
+  return (
+    <div className={`lv-root${compacto ? ' lv-root--compacto' : ''}`} id="lv-login-root">
+      <main className="lv-shell">
+        <PainelEditorial />
+        <section className="lv-acesso">
+          <div className="lv-acesso-marca-mobile">
+            <MarcaSistema escura />
+          </div>
+          {children}
+          <footer className="lv-acesso-rodape">Sistema LV <span>•</span> Gestão da produção</footer>
+        </section>
+      </main>
+    </div>
+  );
+}
 
 export default function LoginApp() {
-  // Telas possíveis: 'formulario' | 'loading' | 'despedida'
   const [tela, setTela] = useState('formulario');
-
-  // Formulário
   const [nomeUsuario, setNomeUsuario] = useState('');
   const [senha, setSenha] = useState('');
   const [mostrarSenha, setMostrarSenha] = useState(false);
-  const [manterConectado, setManterConectado] = useState(false);
   const [erroUsuario, setErroUsuario] = useState('');
   const [erroSenha, setErroSenha] = useState('');
   const [erroGeral, setErroGeral] = useState('');
-
-  // Loading com mensagens de "IA"
-  const [faseFrase, setFaseFrase] = useState(0);
-
-  // Microinteração de "identificação" no campo de usuário
-  const [mostrando, setMostrando] = useState(false); // "Identificando colaborador..."
-  const timerIdent = useRef(null);
-
-  // Despedida
+  const [faseAcesso, setFaseAcesso] = useState(0);
   const [nomeDemitido, setNomeDemitido] = useState('');
   const [cooldownRestante, setCooldownRestante] = useState(0);
-  const timerCooldown = useRef(null);
-
-  // Cooldown inline (mostrado no formulário enquanto digita)
   const [cooldownInline, setCooldownInline] = useState(0);
+  const timerCooldown = useRef(null);
   const timerCooldownInline = useRef(null);
 
-  // ── Auto-login com token salvo ──
-  // Token sempre vai para localStorage — a diferença entre "manter conectado" e não
-  // é apenas a duração do token (30d vs 8h), não o storage.
-  // auth.js das outras páginas só lê localStorage, então sessionStorage causaria loop.
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (!token) return;
 
     (async () => {
       try {
-        const res = await fetch('/api/usuarios/me', {
+        const response = await fetch('/api/usuarios/me', {
           headers: { Authorization: `Bearer ${token}` },
         });
-        if (!res.ok) {
+        if (!response.ok) {
           localStorage.removeItem('token');
           return;
         }
-        let usuario = await res.json();
+
+        let usuario = await response.json();
         usuario = await sincronizarPermissoesUsuario(usuario);
         localStorage.setItem('permissoes', JSON.stringify(usuario.permissoes || []));
         window.location.href = decidirRedirecionamento(usuario);
@@ -112,32 +141,20 @@ export default function LoginApp() {
     })();
   }, []);
 
-  // ── Microinteração "Identificando colaborador..." ──
-  useEffect(() => {
-    if (timerIdent.current) clearTimeout(timerIdent.current);
-    if (nomeUsuario.length >= 3) {
-      setMostrando(true);
-      timerIdent.current = setTimeout(() => setMostrando(false), 1400);
-    } else {
-      setMostrando(false);
-    }
-    return () => clearTimeout(timerIdent.current);
-  }, [nomeUsuario]);
-
-  // ── Cooldown inline: detecta bloqueio conforme o usuário digita o username ──
   useEffect(() => {
     if (timerCooldownInline.current) clearInterval(timerCooldownInline.current);
 
     const bloqueio = lerBloqueio(nomeUsuario);
     if (!bloqueio || bloqueio.bloqueadoAte <= Date.now()) {
       setCooldownInline(0);
-      return;
+      return undefined;
     }
 
     setCooldownInline(bloqueio.bloqueadoAte - Date.now());
     timerCooldownInline.current = setInterval(() => {
-      const b = lerBloqueio(nomeUsuario);
-      const restante = b ? b.bloqueadoAte - Date.now() : 0;
+      const bloqueioAtual = lerBloqueio(nomeUsuario);
+      const restante = bloqueioAtual ? bloqueioAtual.bloqueadoAte - Date.now() : 0;
+
       if (restante <= 0) {
         setCooldownInline(0);
         clearInterval(timerCooldownInline.current);
@@ -149,15 +166,14 @@ export default function LoginApp() {
     return () => clearInterval(timerCooldownInline.current);
   }, [nomeUsuario]);
 
-  // ── Contador regressivo do cooldown ──
   useEffect(() => {
-    if (tela !== 'despedida') return;
+    if (tela !== 'despedida') return undefined;
     if (timerCooldown.current) clearInterval(timerCooldown.current);
 
     timerCooldown.current = setInterval(() => {
       const bloqueio = lerBloqueio(nomeDemitido || nomeUsuario);
-      if (!bloqueio) { setCooldownRestante(0); return; }
-      const restante = bloqueio.bloqueadoAte - Date.now();
+      const restante = bloqueio ? bloqueio.bloqueadoAte - Date.now() : 0;
+
       if (restante <= 0) {
         setCooldownRestante(0);
         clearInterval(timerCooldown.current);
@@ -169,172 +185,161 @@ export default function LoginApp() {
     return () => clearInterval(timerCooldown.current);
   }, [tela, nomeDemitido, nomeUsuario]);
 
-  // ── Animação das frases de loading ──
   useEffect(() => {
-    if (tela !== 'loading') { setFaseFrase(0); return; }
-    setFaseFrase(0);
-    const intervalId = setInterval(() => {
-      setFaseFrase(f => (f < FRASES_LOADING.length - 1 ? f + 1 : f));
-    }, 900);
-    return () => clearInterval(intervalId);
+    if (tela !== 'loading') {
+      setFaseAcesso(0);
+      return undefined;
+    }
+
+    const intervalo = setInterval(() => {
+      setFaseAcesso((fase) => Math.min(fase + 1, ETAPAS_ACESSO.length - 1));
+    }, 700);
+
+    return () => clearInterval(intervalo);
   }, [tela]);
 
-  // ── Submit do formulário ──
-  const handleSubmit = useCallback(async (e) => {
-    e.preventDefault();
+  const handleSubmit = useCallback(async (event) => {
+    event.preventDefault();
     setErroUsuario('');
     setErroSenha('');
     setErroGeral('');
 
-    let hasError = false;
-    if (!nomeUsuario.trim()) { setErroUsuario('Informe o nome de usuário.'); hasError = true; }
-    if (!senha) { setErroSenha('Informe a senha.'); hasError = true; }
-    if (hasError) return;
+    let possuiErro = false;
+    if (!nomeUsuario.trim()) {
+      setErroUsuario('Informe o nome de usuário.');
+      possuiErro = true;
+    }
+    if (!senha) {
+      setErroSenha('Informe a senha.');
+      possuiErro = true;
+    }
+    if (possuiErro) return;
 
-    // Se há cooldown ativo (visível inline), não fazer request
     const bloqueio = lerBloqueio(nomeUsuario);
     if (bloqueio && bloqueio.bloqueadoAte > Date.now()) return;
 
     setTela('loading');
 
     try {
-      const res = await fetch('/api/login', {
+      const response = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nomeUsuario: nomeUsuario.trim(), senha, manterConectado }),
+        body: JSON.stringify({ nomeUsuario: nomeUsuario.trim(), senha }),
       });
 
-      if (res.status === 403) {
-        const data = await res.json().catch(() => ({}));
-        if (data.error === 'CONTRATO_ENCERRADO') {
+      if (response.status === 403) {
+        const dados = await response.json().catch(() => ({}));
+        if (dados.error === 'CONTRATO_ENCERRADO') {
           const bloqueioAtual = lerBloqueio(nomeUsuario);
           const tentativas = (bloqueioAtual?.tentativas || 0) + 1;
           const bloqueadoAte = salvarBloqueio(nomeUsuario, tentativas);
-          setNomeDemitido(data.nome || nomeUsuario);
+          setNomeDemitido(dados.nome || nomeUsuario);
           setCooldownRestante(bloqueadoAte - Date.now());
           setTela('despedida');
           return;
         }
+
+        setTela('formulario');
+        setErroGeral(
+          dados.error === 'CONTA_INATIVA'
+            ? 'Esta conta está inativa. Procure a gestão.'
+            : 'Seu acesso não está disponível. Procure a gestão.',
+        );
+        return;
       }
 
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({ error: 'Erro desconhecido.' }));
+      if (!response.ok) {
+        const dados = await response.json().catch(() => ({}));
         setTela('formulario');
-        if (data.error?.includes('nválidas') || data.error?.includes('ncorreta') || data.error?.includes('ncontrado')) {
+        if (response.status === 401) {
           setErroSenha('Usuário ou senha incorretos.');
         } else {
-          setErroGeral(data.error || 'Erro ao fazer login. Tente novamente.');
+          setErroGeral(dados.error || 'Não foi possível entrar. Tente novamente.');
         }
         return;
       }
 
-      const { token } = await res.json();
-
-      // Token sempre vai para localStorage (auth.js das outras páginas só lê localStorage).
-      // A distinção "manter conectado" é feita pela duração do token no servidor (30d vs 8h).
+      const { token } = await response.json();
       localStorage.setItem('token', token);
-      if (manterConectado) {
-        localStorage.setItem('keepLoggedIn', 'true');
-      } else {
-        localStorage.removeItem('keepLoggedIn');
-      }
 
-      // Buscar permissões e redirecionar
-      const meRes = await fetch('/api/usuarios/me', {
+      const perfilResponse = await fetch('/api/usuarios/me', {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!meRes.ok) throw new Error('Erro ao carregar perfil.');
-      let usuario = await meRes.json();
+      if (!perfilResponse.ok) throw new Error('Erro ao carregar perfil.');
+
+      let usuario = await perfilResponse.json();
       usuario = await sincronizarPermissoesUsuario(usuario);
       localStorage.setItem('permissoes', JSON.stringify(usuario.permissoes || []));
 
-      // Fade out antes de redirecionar
       document.getElementById('lv-login-root')?.classList.add('lv-fadeout');
-      setTimeout(() => { window.location.href = decidirRedirecionamento(usuario); }, 400);
-
-    } catch (err) {
-      console.error('[Login] Erro:', err);
+      setTimeout(() => {
+        window.location.href = decidirRedirecionamento(usuario);
+      }, 350);
+    } catch (error) {
+      console.error('[Login] Erro:', error);
       setTela('formulario');
       setErroGeral('Erro no servidor. Tente novamente em instantes.');
     }
-  }, [nomeUsuario, senha, manterConectado]);
+  }, [nomeUsuario, senha]);
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // RENDER — Tela de Loading
-  // ─────────────────────────────────────────────────────────────────────────
   if (tela === 'loading') {
     return (
-      <div className="lv-root" id="lv-login-root">
-        <TelaDeFundo />
-        <div className="lv-card lv-card--loading">
-          <div className="lv-loading-spinner">
-            <div className="lv-spinner-ring"></div>
-            <div className="lv-spinner-ring lv-spinner-ring--2"></div>
+      <EstruturaLogin compacto>
+        <div className="lv-estado lv-estado--loading" role="status" aria-live="polite">
+          <div className="lv-loading-simbolo" aria-hidden="true">
+            <span></span>
+            <i className="fas fa-check"></i>
           </div>
-          <div className="lv-loading-frases">
-            {FRASES_LOADING.map((f, i) => (
+          <h2>Estamos preparando tudo.</h2>
+          <p>Só mais um instante para acessar seu ambiente.</p>
+          <div className="lv-loading-etapas">
+            {ETAPAS_ACESSO.map((etapa, indice) => (
               <div
-                key={i}
-                className={`lv-loading-frase ${i === faseFrase ? 'lv-loading-frase--ativa' : i < faseFrase ? 'lv-loading-frase--passada' : ''}`}
+                className={`lv-loading-etapa${
+                  indice === faseAcesso
+                    ? ' lv-loading-etapa--ativa'
+                    : indice < faseAcesso
+                      ? ' lv-loading-etapa--concluida'
+                      : ''
+                }`}
+                key={etapa}
               >
-                <span className="lv-loading-frase-icone">{f.icone}</span>
-                <span>{f.texto}</span>
+                <span>{indice < faseAcesso ? <i className="fas fa-check"></i> : indice + 1}</span>
+                {etapa}
               </div>
             ))}
           </div>
         </div>
-      </div>
+      </EstruturaLogin>
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // RENDER — Tela de Despedida
-  // ─────────────────────────────────────────────────────────────────────────
   if (tela === 'despedida') {
-    const temCooldown = cooldownRestante > 0;
     return (
-      <div className="lv-root" id="lv-login-root">
-        <TelaDeFundo />
-        <div className="lv-card lv-card--despedida">
-          <div className="lv-despedida-icone">
-            <svg viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-              {/* Agulha estilizada com linha */}
-              <circle cx="40" cy="40" r="36" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.2)" strokeWidth="2"/>
-              <path d="M52 24 L28 56" stroke="#a7f3d0" strokeWidth="2.5" strokeLinecap="round"/>
-              <circle cx="52" cy="24" r="4" fill="#6ee7b7"/>
-              <circle cx="52" cy="24" r="2" fill="#fff"/>
-              <path d="M28 56 Q22 62 26 64 Q30 66 32 60" stroke="#a7f3d0" strokeWidth="2" strokeLinecap="round" fill="none"/>
-              {/* Pequeno coração */}
-              <path d="M38 34 C38 32 35 30 33 32 C31 34 33 37 38 40 C43 37 45 34 43 32 C41 30 38 32 38 34Z" fill="#fca5a5" opacity="0.8"/>
-            </svg>
+      <EstruturaLogin compacto>
+        <div className="lv-estado lv-estado--despedida">
+          <div className="lv-despedida-icone" aria-hidden="true">
+            <i className="fas fa-link-slash"></i>
           </div>
-
-          <h1 className="lv-despedida-titulo">
-            Até logo{nomeDemitido ? `, ${nomeDemitido.split(' ')[0]}` : ''}! 👋
-          </h1>
-
-          <p className="lv-despedida-mensagem">
-            Seu acesso ao sistema foi encerrado junto com o fim do seu vínculo de trabalho com a{' '}
-            <strong>Lojas Variara</strong>. Esperamos que essa fase tenha sido especial pra você!
+          <p className="lv-estado-sobretitulo">Vínculo encerrado</p>
+          <h2>Até logo{nomeDemitido ? `, ${nomeDemitido.split(' ')[0]}` : ''}.</h2>
+          <p>
+            Seu vínculo de acesso foi encerrado. Se precisar de documentos ou tiver alguma dúvida,
+            procure a gestão responsável.
           </p>
 
-          <p className="lv-despedida-mensagem lv-despedida-mensagem--sub">
-            Se precisar de algo — holerites, documentos, qualquer dúvida — é só procurar a gerência.
-            Muito obrigado por tudo que fez por aqui. 🌟
-          </p>
-
-          {temCooldown && (
-            <div className="lv-despedida-cooldown">
-              <span className="lv-despedida-cooldown-icone">⏳</span>
+          {cooldownRestante > 0 && (
+            <div className="lv-aviso lv-aviso--neutro">
+              <i className="fas fa-clock" aria-hidden="true"></i>
               <span>
-                Próxima tentativa disponível em{' '}
-                <strong>{formatarTempo(cooldownRestante)}</strong>
+                Outra tentativa estará disponível em <strong>{formatarTempo(cooldownRestante)}</strong>.
               </span>
             </div>
           )}
 
           <button
-            className="lv-despedida-outra-conta"
+            className="lv-btn-secundario"
+            type="button"
             onClick={() => {
               setNomeUsuario('');
               setSenha('');
@@ -344,196 +349,102 @@ export default function LoginApp() {
               setTela('formulario');
             }}
           >
-            ← Entrar com outra conta
+            <i className="fas fa-arrow-left" aria-hidden="true"></i>
+            Entrar com outra conta
           </button>
         </div>
-      </div>
+      </EstruturaLogin>
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // RENDER — Formulário de Login
-  // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div className="lv-root" id="lv-login-root">
-      <TelaDeFundo />
-
-      <div className="lv-layout">
-        {/* Coluna esquerda — identidade visual (só tablet+) */}
-        <div className="lv-identidade" aria-hidden="true">
-          <div className="lv-identidade-inner">
-            <div className="lv-logo-mark">
-              {/* Ícone de agulha/costura estilizado */}
-              <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="32" cy="32" r="30" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.15)" strokeWidth="1.5"/>
-                <path d="M44 16 L20 48" stroke="#6ee7b7" strokeWidth="3" strokeLinecap="round"/>
-                <circle cx="44" cy="16" r="5" fill="#34d399"/>
-                <circle cx="44" cy="16" r="2.5" fill="#fff"/>
-                <path d="M20 48 Q13 55 18 58 Q23 61 25 54" stroke="#6ee7b7" strokeWidth="2.5" strokeLinecap="round" fill="none"/>
-                <path d="M32 28 Q38 22 44 26" stroke="rgba(255,255,255,0.3)" strokeWidth="1.5" strokeLinecap="round" fill="none" strokeDasharray="3 3"/>
-              </svg>
-            </div>
-            <div className="lv-identidade-nome">
-              <span className="lv-identidade-sistema">Sistema</span>
-              <span className="lv-identidade-empresa">Lojas Variara</span>
-            </div>
-            <p className="lv-identidade-tagline">
-              Gestão inteligente da produção
-            </p>
-            <div className="lv-identidade-badges">
-              <span className="lv-badge">✦ Costura</span>
-              <span className="lv-badge">✦ Arremate</span>
-              <span className="lv-badge">✦ Produção</span>
-            </div>
-          </div>
+    <EstruturaLogin>
+      <div className="lv-formulario-wrap">
+        <div className="lv-formulario-cabecalho">
+          <svg className="lv-fio-icone" viewBox="0 0 64 64" aria-hidden="true">
+            <path d="M13 18c17-17 30 4 16 15-12 9-20-5-8-12 15-9 31 10 17 24-7 7-16 6-23 2" />
+            <path d="M36 46l10-8" />
+          </svg>
+          <h2>Bom ter você por aqui.</h2>
+          <p>Entre para continuar sua jornada no Sistema LV.</p>
         </div>
 
-        {/* Coluna direita — formulário */}
-        <div className="lv-form-wrap">
-          <div className="lv-card">
-            {/* Header mobile (só aparece em telas pequenas) */}
-            <div className="lv-card-header-mobile">
-              <span className="lv-card-header-mobile-nome">Lojas Variara</span>
+        <form className="lv-formulario" onSubmit={handleSubmit} noValidate>
+          <div className={`lv-campo${erroUsuario ? ' lv-campo--erro' : ''}`}>
+            <label htmlFor="lv-usuario">Usuário</label>
+            <div className="lv-input-wrap">
+              <i className="far fa-user" aria-hidden="true"></i>
+              <input
+                id="lv-usuario"
+                type="text"
+                autoComplete="username"
+                placeholder="Digite seu usuário"
+                value={nomeUsuario}
+                onChange={(event) => {
+                  setNomeUsuario(event.target.value);
+                  setErroUsuario('');
+                }}
+                autoFocus
+              />
             </div>
+            {erroUsuario && <span className="lv-campo-erro">{erroUsuario}</span>}
+          </div>
 
-            <h2 className="lv-form-titulo">Entrar no sistema</h2>
-            <p className="lv-form-subtitulo">Bem-vindo de volta. Faça seu acesso abaixo.</p>
-
-            <form onSubmit={handleSubmit} noValidate>
-              {/* Campo: usuário */}
-              <div className={`lv-field ${erroUsuario ? 'lv-field--erro' : ''}`}>
-                <label htmlFor="lv-usuario" className="lv-label">Usuário</label>
-                <div className="lv-input-wrap">
-                  <span className="lv-input-icone lv-input-icone--esquerda">
-                    <i className="fas fa-user" aria-hidden="true"></i>
-                  </span>
-                  <input
-                    id="lv-usuario"
-                    type="text"
-                    className="lv-input lv-input--com-icone"
-                    placeholder="Seu nome de usuário"
-                    autoComplete="username"
-                    value={nomeUsuario}
-                    onChange={e => { setNomeUsuario(e.target.value); setErroUsuario(''); }}
-                    autoFocus
-                  />
-                </div>
-                {erroUsuario && <span className="lv-erro-msg">{erroUsuario}</span>}
-                {/* Microinteração de "IA" */}
-                <span className={`lv-ia-hint ${mostrando ? 'lv-ia-hint--visivel' : ''}`}>
-                  <span className="lv-ia-dot"></span>
-                  Identificando colaborador...
-                </span>
-              </div>
-
-              {/* Campo: senha */}
-              <div className={`lv-field ${erroSenha ? 'lv-field--erro' : ''}`}>
-                <label htmlFor="lv-senha" className="lv-label">Senha</label>
-                <div className="lv-input-wrap">
-                  <span className="lv-input-icone lv-input-icone--esquerda">
-                    <i className="fas fa-lock" aria-hidden="true"></i>
-                  </span>
-                  <input
-                    id="lv-senha"
-                    type={mostrarSenha ? 'text' : 'password'}
-                    className="lv-input lv-input--com-icone lv-input--com-toggle"
-                    placeholder="Sua senha"
-                    autoComplete="current-password"
-                    value={senha}
-                    onChange={e => { setSenha(e.target.value); setErroSenha(''); }}
-                  />
-                  <button
-                    type="button"
-                    className="lv-toggle-senha"
-                    aria-label={mostrarSenha ? 'Ocultar senha' : 'Mostrar senha'}
-                    onClick={() => setMostrarSenha(v => !v)}
-                  >
-                    <i className={`fas ${mostrarSenha ? 'fa-eye-slash' : 'fa-eye'}`} aria-hidden="true"></i>
-                  </button>
-                </div>
-                {erroSenha && <span className="lv-erro-msg">{erroSenha}</span>}
-              </div>
-
-              {/* Manter conectado */}
-              <div className="lv-manter-wrap">
-                <label className="lv-toggle-switch" htmlFor="lv-manter">
-                  <input
-                    id="lv-manter"
-                    type="checkbox"
-                    checked={manterConectado}
-                    onChange={e => setManterConectado(e.target.checked)}
-                  />
-                  <span className="lv-toggle-track">
-                    <span className="lv-toggle-thumb"></span>
-                  </span>
-                  <span className="lv-toggle-label">Manter conectado</span>
-                </label>
-                <span className="lv-manter-detalhe">
-                  {manterConectado ? 'Acesso salvo por 30 dias' : 'Acesso encerra ao fechar o navegador'}
-                </span>
-              </div>
-
-              {/* Erro geral */}
-              {erroGeral && (
-                <div className="lv-erro-geral" role="alert">
-                  <i className="fas fa-exclamation-circle" aria-hidden="true"></i>
-                  {erroGeral}
-                </div>
-              )}
-
-              {/* Aviso de cooldown inline — aparece conforme o usuário digita */}
-              {cooldownInline > 0 && (
-                <div className="lv-cooldown-inline" role="status">
-                  <span className="lv-cooldown-inline-icone">⏳</span>
-                  <span>
-                    Acesso suspenso. Tente novamente em{' '}
-                    <strong>{formatarTempo(cooldownInline)}</strong>
-                  </span>
-                </div>
-              )}
-
+          <div className={`lv-campo${erroSenha ? ' lv-campo--erro' : ''}`}>
+            <label htmlFor="lv-senha">Senha</label>
+            <div className="lv-input-wrap">
+              <i className="fas fa-lock" aria-hidden="true"></i>
+              <input
+                id="lv-senha"
+                type={mostrarSenha ? 'text' : 'password'}
+                autoComplete="current-password"
+                placeholder="Digite sua senha"
+                value={senha}
+                onChange={(event) => {
+                  setSenha(event.target.value);
+                  setErroSenha('');
+                }}
+              />
               <button
-                type="submit"
-                className="lv-btn-entrar"
-                disabled={cooldownInline > 0}
+                className="lv-mostrar-senha"
+                type="button"
+                aria-label={mostrarSenha ? 'Ocultar senha' : 'Mostrar senha'}
+                onClick={() => setMostrarSenha((visivel) => !visivel)}
               >
-                <span>Entrar</span>
-                {cooldownInline <= 0 && <i className="fas fa-arrow-right" aria-hidden="true"></i>}
+                <i className={`far ${mostrarSenha ? 'fa-eye-slash' : 'fa-eye'}`} aria-hidden="true"></i>
               </button>
-            </form>
+            </div>
+            {erroSenha && <span className="lv-campo-erro">{erroSenha}</span>}
           </div>
-        </div>
+
+          {erroGeral && (
+            <div className="lv-aviso lv-aviso--erro" role="alert">
+              <i className="fas fa-circle-exclamation" aria-hidden="true"></i>
+              <span>{erroGeral}</span>
+            </div>
+          )}
+
+          {cooldownInline > 0 && (
+            <div className="lv-aviso lv-aviso--neutro" role="status">
+              <i className="fas fa-clock" aria-hidden="true"></i>
+              <span>
+                Acesso temporariamente suspenso. Tente novamente em{' '}
+                <strong>{formatarTempo(cooldownInline)}</strong>.
+              </span>
+            </div>
+          )}
+
+          <button className="lv-btn-entrar" type="submit" disabled={cooldownInline > 0}>
+            <span>Entrar</span>
+            <i className="fas fa-arrow-right" aria-hidden="true"></i>
+          </button>
+
+          <div className="lv-seguranca">
+            <i className="fas fa-shield-halved" aria-hidden="true"></i>
+            Ambiente interno e seguro
+          </div>
+        </form>
       </div>
-    </div>
-  );
-}
-
-// ─── Sub-componente: fundo animado ────────────────────────────────────────────
-
-function TelaDeFundo() {
-  return (
-    <div className="lv-fundo" aria-hidden="true">
-      {/* Grade de pontos animada — evoca malha de tecido */}
-      <svg className="lv-fundo-svg" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <pattern id="lv-malha" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
-            <circle cx="20" cy="20" r="1" fill="rgba(110,231,183,0.18)"/>
-          </pattern>
-          <pattern id="lv-malha-linhas" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
-            <line x1="0" y1="20" x2="40" y2="20" stroke="rgba(110,231,183,0.05)" strokeWidth="0.5"/>
-            <line x1="20" y1="0" x2="20" y2="40" stroke="rgba(110,231,183,0.05)" strokeWidth="0.5"/>
-          </pattern>
-        </defs>
-        <rect width="100%" height="100%" fill="url(#lv-malha-linhas)"/>
-        <rect width="100%" height="100%" fill="url(#lv-malha)"/>
-      </svg>
-      {/* Orbs de luz difusa */}
-      <div className="lv-orb lv-orb--1"></div>
-      <div className="lv-orb lv-orb--2"></div>
-      <div className="lv-orb lv-orb--3"></div>
-      {/* Linha diagonal decorativa */}
-      <div className="lv-linha-decor lv-linha-decor--1"></div>
-      <div className="lv-linha-decor lv-linha-decor--2"></div>
-    </div>
+    </EstruturaLogin>
   );
 }

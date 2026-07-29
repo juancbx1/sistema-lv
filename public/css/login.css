@@ -1,27 +1,51 @@
-/* ============================================================
-   login.css — Nova tela de login (React, tablet-first)
-   Criado em: 27/04/2026
-   Paleta: verde-escuro #213328 / #3D4B42, acento verde-claro #6ee7b7
-   ============================================================ */
-
-/* ── Reset básico ─────────────────────────────────────────── */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-body {
-  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  background: #0d1f14;
-  min-height: 100vh;
-  overflow-x: hidden;
+:root {
+  --lv-primaria: #3498db;
+  --lv-primaria-hover: #2980b9;
+  --lv-secundaria: #2c3e50;
+  --lv-texto: #333333;
+  --lv-texto-suave: #7f8c8d;
+  --lv-fundo: #f4f6f8;
+  --lv-branco: #ffffff;
+  --lv-borda: #dcdfe4;
+  --lv-perigo: #e74c3c;
 }
 
-/* ── Raiz ─────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  min-height: 100%;
+  background: var(--lv-fundo);
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  color: var(--lv-texto);
+  background: var(--lv-fundo);
+  font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
 .lv-root {
   min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  transition: opacity 0.4s ease;
+  background: var(--lv-fundo);
+  opacity: 1;
+  transition: opacity 0.35s ease;
 }
 
 .lv-root.lv-fadeout {
@@ -29,861 +53,849 @@ body {
   pointer-events: none;
 }
 
-/* ── Fundo animado ────────────────────────────────────────── */
-.lv-fundo {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  overflow: hidden;
-  background: linear-gradient(145deg, #0a1a10 0%, #0d1f14 40%, #0f2318 100%);
-}
-
-.lv-fundo-svg {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-
-/* Orbs de luz difusa */
-.lv-orb {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(80px);
-  opacity: 0.35;
-  animation: lv-orb-pulsar 8s ease-in-out infinite alternate;
-}
-
-.lv-orb--1 {
-  width: 500px;
-  height: 500px;
-  background: radial-gradient(circle, #1a4a2e, transparent 70%);
-  top: -120px;
-  left: -100px;
-  animation-delay: 0s;
-}
-
-.lv-orb--2 {
-  width: 400px;
-  height: 400px;
-  background: radial-gradient(circle, #213328, transparent 70%);
-  bottom: -80px;
-  right: -80px;
-  animation-delay: -3s;
-}
-
-.lv-orb--3 {
-  width: 300px;
-  height: 300px;
-  background: radial-gradient(circle, #0f3320, transparent 70%);
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  animation-delay: -6s;
-  opacity: 0.2;
-}
-
-@keyframes lv-orb-pulsar {
-  from { transform: scale(1); opacity: 0.35; }
-  to   { transform: scale(1.15); opacity: 0.45; }
-}
-
-/* Linhas diagonais decorativas (evocam fio de costura) */
-.lv-linha-decor {
-  position: absolute;
-  background: linear-gradient(90deg, transparent, rgba(110,231,183,0.06), transparent);
-  pointer-events: none;
-}
-
-.lv-linha-decor--1 {
-  width: 120%;
-  height: 1px;
-  top: 35%;
-  left: -10%;
-  transform: rotate(-8deg);
-  animation: lv-linha-mover 12s linear infinite;
-}
-
-.lv-linha-decor--2 {
-  width: 100%;
-  height: 1px;
-  top: 65%;
-  left: 0;
-  transform: rotate(5deg);
-  animation: lv-linha-mover 18s linear infinite reverse;
-  opacity: 0.6;
-}
-
-@keyframes lv-linha-mover {
-  from { background-position: -100% 0; }
-  to   { background-position: 200% 0; }
-}
-
-/* ── Layout de duas colunas (tablet+) ─────────────────────── */
-.lv-layout {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
+.lv-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 58fr) minmax(430px, 42fr);
   min-height: 100vh;
-  padding: 24px;
-  gap: 0;
+  overflow: hidden;
 }
 
-/* ── Coluna esquerda — identidade ─────────────────────────── */
-.lv-identidade {
-  display: flex; /* visível em todos os breakpoints */
-  flex-direction: column;
+/* Painel fotográfico */
+
+.lv-editorial {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  color: var(--lv-branco);
+  background:
+    var(--lv-secundaria)
+    url('/assets/login-atelier-sem-pessoas.jpg')
+    center center / cover no-repeat;
+  isolation: isolate;
+}
+
+.lv-editorial::after {
+  position: absolute;
+  z-index: 3;
+  top: -2%;
+  right: -64px;
+  width: 112px;
+  height: 104%;
+  border-left: 1px dashed rgba(44, 62, 80, 0.46);
+  border-radius: 52% 0 0 48%;
+  background: var(--lv-fundo);
+  content: '';
+  transform: rotate(1.2deg);
+}
+
+.lv-editorial-sombra {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(21, 37, 52, 0.3) 0%, rgba(21, 37, 52, 0.12) 36%, rgba(21, 37, 52, 0.8) 100%),
+    linear-gradient(90deg, rgba(21, 37, 52, 0.66) 0%, rgba(21, 37, 52, 0.13) 72%, rgba(21, 37, 52, 0.04) 100%);
+}
+
+.lv-editorial-topo,
+.lv-editorial-conteudo {
+  position: relative;
+  z-index: 2;
+}
+
+.lv-editorial-topo {
+  padding: clamp(34px, 4.2vw, 64px);
+}
+
+.lv-marca {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  padding: 16px 0 8px;
-  width: 100%;
-}
-
-.lv-identidade-inner {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-  text-align: center;
-}
-
-.lv-logo-mark {
-  width: 88px;
-  height: 88px;
-  animation: lv-logo-girar 20s linear infinite;
-}
-
-@keyframes lv-logo-girar {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
-}
-
-.lv-identidade-nome {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-}
-
-.lv-identidade-sistema {
-  font-size: 0.85rem;
-  font-weight: 500;
-  color: rgba(255,255,255,0.5);
-  letter-spacing: 0.15em;
+  gap: 14px;
+  color: var(--lv-branco);
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.075em;
   text-transform: uppercase;
 }
 
-.lv-identidade-empresa {
-  font-size: 1.9rem;
-  font-weight: 800;
-  color: #fff;
-  letter-spacing: -0.02em;
-  line-height: 1.1;
+.lv-marca-simbolo {
+  width: 50px;
+  height: 50px;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
 }
 
-.lv-identidade-tagline {
-  font-size: 0.9rem;
-  color: rgba(255,255,255,0.45);
-  margin-top: 4px;
+.lv-marca-fio {
+  opacity: 0.75;
+  stroke-width: 1.5;
 }
 
-.lv-identidade-badges {
+.lv-marca--escura {
+  color: var(--lv-secundaria);
+}
+
+.lv-marca--escura .lv-marca-simbolo {
+  color: var(--lv-primaria);
+}
+
+.lv-editorial-conteudo {
+  position: absolute;
+  right: 11%;
+  bottom: clamp(48px, 7.5vh, 92px);
+  left: clamp(34px, 4.2vw, 64px);
+  max-width: 670px;
+}
+
+.lv-editorial-sobretitulo {
+  margin: 0 0 22px;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: clamp(0.7rem, 0.75vw, 0.86rem);
+  font-weight: 600;
+  letter-spacing: 0.19em;
+  text-transform: uppercase;
+}
+
+.lv-editorial-sobretitulo span {
+  padding: 0 7px;
+  color: var(--lv-primaria);
+}
+
+.lv-editorial h1 {
+  max-width: 650px;
+  margin: 0;
+  color: var(--lv-branco);
+  font-size: clamp(2.2rem, 3.55vw, 4.15rem);
+  font-weight: 750;
+  letter-spacing: -0.045em;
+  line-height: 1.06;
+  text-wrap: balance;
+}
+
+.lv-editorial-texto {
+  max-width: 570px;
+  margin: 24px 0 0;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: clamp(0.95rem, 1.15vw, 1.22rem);
+  line-height: 1.55;
+  text-wrap: balance;
+}
+
+.lv-editorial-costura {
+  display: block;
+  width: min(520px, 82%);
+  height: auto;
+  margin-top: 28px;
+  fill: none;
+  opacity: 0.66;
+  stroke: rgba(255, 255, 255, 0.8);
+  stroke-dasharray: 5 7;
+  stroke-linecap: round;
+  stroke-width: 1.5;
+}
+
+/* Painel de acesso */
+
+.lv-acesso {
+  position: relative;
+  z-index: 5;
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: center;
-  margin-top: 8px;
-}
-
-.lv-badge {
-  padding: 4px 12px;
-  border: 1px solid rgba(110,231,183,0.25);
-  border-radius: 20px;
-  font-size: 0.72rem;
-  color: rgba(110,231,183,0.7);
-  letter-spacing: 0.05em;
-}
-
-/* ── Coluna direita — formulário ──────────────────────────── */
-.lv-form-wrap {
-  flex: 0 0 auto;
-  width: 100%;
-  max-width: 420px;
-}
-
-/* ── Card glassmorphism ───────────────────────────────────── */
-.lv-card {
-  background: rgba(255, 255, 255, 0.06);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 20px;
-  padding: 36px 32px;
-  box-shadow:
-    0 8px 32px rgba(0,0,0,0.4),
-    inset 0 1px 0 rgba(255,255,255,0.08);
-  animation: lv-card-entrar 0.5s ease-out;
-}
-
-@keyframes lv-card-entrar {
-  from { opacity: 0; transform: translateY(20px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-/* Header mobile — logo compacta */
-.lv-card-header-mobile {
-  display: flex;
+  min-width: 0;
+  min-height: 100vh;
   align-items: center;
   justify-content: center;
-  margin-bottom: 24px;
+  padding: 64px clamp(38px, 4.6vw, 82px) 80px;
+  background: var(--lv-fundo);
 }
 
-.lv-card-header-mobile-nome {
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: rgba(255,255,255,0.9);
-  letter-spacing: -0.01em;
+.lv-acesso-marca-mobile {
+  display: none;
 }
 
-/* Título e subtítulo do formulário */
-.lv-form-titulo {
-  font-size: 1.4rem;
-  font-weight: 700;
-  color: #fff;
-  margin-bottom: 4px;
+.lv-formulario-wrap,
+.lv-estado {
+  width: min(100%, 520px);
+  animation: lv-entrada 0.52s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-.lv-form-subtitulo {
-  font-size: 0.85rem;
-  color: rgba(255,255,255,0.45);
-  margin-bottom: 28px;
+@keyframes lv-entrada {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-/* ── Campos ───────────────────────────────────────────────── */
-.lv-field {
-  margin-bottom: 20px;
+.lv-formulario-cabecalho {
+  margin-bottom: 38px;
+  text-align: center;
 }
 
-.lv-label {
+.lv-fio-icone {
+  width: 64px;
+  height: 64px;
+  margin-bottom: 17px;
+  fill: none;
+  stroke: var(--lv-primaria);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.1;
+}
+
+.lv-formulario-cabecalho h2,
+.lv-estado h2 {
+  margin: 0;
+  color: var(--lv-secundaria);
+  font-size: clamp(1.75rem, 2.25vw, 2.4rem);
+  font-weight: 750;
+  letter-spacing: -0.035em;
+  line-height: 1.12;
+}
+
+.lv-formulario-cabecalho p,
+.lv-estado > p {
+  margin: 12px 0 0;
+  color: var(--lv-texto-suave);
+  font-size: 0.98rem;
+  line-height: 1.55;
+}
+
+.lv-formulario {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.lv-campo label {
   display: block;
-  font-size: 0.82rem;
-  font-weight: 500;
-  color: rgba(255,255,255,0.65);
-  margin-bottom: 7px;
-  letter-spacing: 0.02em;
+  margin: 0 0 9px;
+  color: var(--lv-secundaria);
+  font-size: 0.9rem;
+  font-weight: 650;
 }
 
 .lv-input-wrap {
   position: relative;
   display: flex;
+  height: 58px;
   align-items: center;
+  border: 1px solid var(--lv-borda);
+  border-radius: 14px;
+  background: var(--lv-branco);
+  box-shadow: 0 5px 18px rgba(44, 62, 80, 0.035);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
 
-.lv-input {
-  width: 100%;
-  height: 52px;
-  background: rgba(255,255,255,0.07);
-  border: 1.5px solid rgba(255,255,255,0.12);
-  border-radius: 12px;
-  color: #fff;
-  font-size: 0.95rem;
-  font-family: inherit;
-  transition: border-color 0.25s, background 0.25s, box-shadow 0.25s;
-  padding: 0 14px;
-}
-
-.lv-input--com-icone {
-  padding-left: 44px;
-}
-
-.lv-input--com-toggle {
-  padding-right: 48px;
-}
-
-.lv-input::placeholder {
-  color: rgba(255,255,255,0.3);
-}
-
-.lv-input:focus {
-  outline: none;
-  border-color: rgba(110,231,183,0.5);
-  background: rgba(255,255,255,0.1);
-  box-shadow: 0 0 0 3px rgba(110,231,183,0.12);
-}
-
-.lv-field--erro .lv-input {
-  border-color: rgba(252,165,165,0.6);
-}
-
-.lv-input-icone--esquerda {
-  position: absolute;
-  left: 14px;
-  color: rgba(255,255,255,0.35);
-  font-size: 0.9rem;
-  pointer-events: none;
-  z-index: 1;
-}
-
-.lv-toggle-senha {
-  position: absolute;
-  right: 12px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: rgba(255,255,255,0.4);
-  font-size: 0.9rem;
-  padding: 8px;
-  transition: color 0.2s;
-  line-height: 1;
-}
-
-.lv-toggle-senha:hover { color: rgba(255,255,255,0.75); }
-
-.lv-erro-msg {
-  display: block;
-  font-size: 0.78rem;
-  color: #fca5a5;
-  margin-top: 5px;
-}
-
-/* ── Microinteração "IA" ──────────────────────────────────── */
-.lv-ia-hint {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.75rem;
-  color: rgba(110,231,183,0.6);
-  margin-top: 5px;
-  opacity: 0;
-  transform: translateY(-4px);
-  transition: opacity 0.3s ease, transform 0.3s ease;
-  pointer-events: none;
-  height: 18px;
-}
-
-.lv-ia-hint--visivel {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-.lv-ia-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #6ee7b7;
-  animation: lv-dot-pulsar 1s ease-in-out infinite;
-  flex-shrink: 0;
-}
-
-@keyframes lv-dot-pulsar {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.5; transform: scale(0.7); }
-}
-
-/* ── Toggle switch "Manter conectado" ────────────────────── */
-.lv-manter-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-bottom: 20px;
-}
-
-.lv-toggle-switch {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  cursor: pointer;
-  user-select: none;
-  width: fit-content;
-}
-
-.lv-toggle-switch input[type="checkbox"] {
-  position: absolute;
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-
-.lv-toggle-track {
-  position: relative;
-  width: 40px;
-  height: 22px;
-  background: rgba(255,255,255,0.15);
-  border-radius: 11px;
-  border: 1.5px solid rgba(255,255,255,0.15);
-  transition: background 0.25s, border-color 0.25s;
-  flex-shrink: 0;
-}
-
-.lv-toggle-switch input:checked + .lv-toggle-track {
-  background: rgba(110,231,183,0.35);
-  border-color: rgba(110,231,183,0.5);
-}
-
-.lv-toggle-thumb {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 14px;
-  height: 14px;
-  background: rgba(255,255,255,0.6);
-  border-radius: 50%;
-  transition: transform 0.25s ease, background 0.25s;
-}
-
-.lv-toggle-switch input:checked + .lv-toggle-track .lv-toggle-thumb {
-  transform: translateX(18px);
-  background: #6ee7b7;
-}
-
-.lv-toggle-label {
-  font-size: 0.85rem;
-  color: rgba(255,255,255,0.7);
-  font-weight: 500;
-}
-
-.lv-manter-detalhe {
-  font-size: 0.75rem;
-  color: rgba(255,255,255,0.3);
-  margin-left: 50px;
-  min-height: 16px;
-  transition: color 0.2s;
-}
-
-/* ── Erro geral ───────────────────────────────────────────── */
-.lv-erro-geral {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: rgba(252,165,165,0.1);
-  border: 1px solid rgba(252,165,165,0.25);
-  border-radius: 10px;
-  color: #fca5a5;
-  font-size: 0.82rem;
-  padding: 10px 14px;
-  margin-bottom: 16px;
-}
-
-/* ── Botão entrar ─────────────────────────────────────────── */
-.lv-btn-entrar {
-  width: 100%;
-  height: 52px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  background: linear-gradient(135deg, #2d6a4f, #213328);
-  border: 1px solid rgba(110,231,183,0.2);
-  border-radius: 12px;
-  color: #fff;
-  font-size: 0.98rem;
-  font-weight: 600;
-  font-family: inherit;
-  cursor: pointer;
-  transition: transform 0.15s, box-shadow 0.2s, background 0.2s;
-  box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-  letter-spacing: 0.01em;
-  margin-top: 4px;
-}
-
-.lv-btn-entrar:hover {
-  background: linear-gradient(135deg, #388660, #2d5038);
-  box-shadow: 0 6px 20px rgba(0,0,0,0.4), 0 0 0 1px rgba(110,231,183,0.2);
+.lv-input-wrap:focus-within {
+  border-color: var(--lv-primaria);
+  box-shadow: 0 0 0 4px rgba(52, 152, 219, 0.12), 0 8px 24px rgba(44, 62, 80, 0.06);
   transform: translateY(-1px);
 }
 
-.lv-btn-entrar:active {
-  transform: translateY(0);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+.lv-input-wrap > i {
+  width: 52px;
+  flex: 0 0 52px;
+  color: var(--lv-texto-suave);
+  font-size: 1rem;
+  text-align: center;
+  transition: color 0.2s ease;
 }
 
-/* ── Tela de Loading ──────────────────────────────────────── */
-.lv-card--loading {
+.lv-input-wrap:focus-within > i {
+  color: var(--lv-primaria);
+}
+
+.lv-input-wrap input {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  outline: 0;
+  color: var(--lv-texto);
+  background: transparent;
+  font-size: 1rem;
+}
+
+.lv-input-wrap input::placeholder {
+  color: #9aa4aa;
+}
+
+.lv-mostrar-senha {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  flex: 0 0 52px;
+  place-items: center;
+  border: 0;
+  border-radius: 12px;
+  color: var(--lv-texto-suave);
+  background: transparent;
+  cursor: pointer;
+  transition: color 0.2s ease, background 0.2s ease;
+}
+
+.lv-mostrar-senha:hover,
+.lv-mostrar-senha:focus-visible {
+  outline: 0;
+  color: var(--lv-primaria);
+  background: rgba(52, 152, 219, 0.08);
+}
+
+.lv-campo--erro .lv-input-wrap {
+  border-color: var(--lv-perigo);
+  box-shadow: 0 0 0 3px rgba(231, 76, 60, 0.09);
+}
+
+.lv-campo-erro {
+  display: block;
+  margin-top: 7px;
+  color: #c0392b;
+  font-size: 0.8rem;
+}
+
+.lv-aviso {
   display: flex;
-  flex-direction: column;
+  min-height: 48px;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid;
+  border-radius: 12px;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.lv-aviso i {
+  margin-top: 2px;
+}
+
+.lv-aviso--erro {
+  border-color: #ffe2e5;
+  color: #b93b30;
+  background: #fff5f5;
+}
+
+.lv-aviso--neutro {
+  border-color: rgba(52, 152, 219, 0.2);
+  color: var(--lv-secundaria);
+  background: rgba(52, 152, 219, 0.07);
+}
+
+.lv-btn-entrar {
+  display: flex;
+  width: 100%;
+  min-height: 58px;
   align-items: center;
   justify-content: center;
-  gap: 32px;
-  min-height: 220px;
-  padding: 48px 40px;
+  gap: 18px;
+  margin-top: 3px;
+  border: 1px solid var(--lv-primaria);
+  border-radius: 14px;
+  color: var(--lv-branco);
+  background: var(--lv-primaria);
+  box-shadow: 0 10px 24px rgba(52, 152, 219, 0.23);
+  cursor: pointer;
+  font-size: 1.02rem;
+  font-weight: 700;
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.16s ease;
 }
 
-.lv-loading-spinner {
+.lv-btn-entrar:hover:not(:disabled),
+.lv-btn-entrar:focus-visible:not(:disabled) {
+  outline: 0;
+  border-color: var(--lv-primaria-hover);
+  background: var(--lv-primaria-hover);
+  box-shadow: 0 13px 28px rgba(41, 128, 185, 0.28);
+  transform: translateY(-1px);
+}
+
+.lv-btn-entrar:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.lv-btn-entrar:disabled {
+  border-color: var(--lv-borda);
+  color: var(--lv-texto-suave);
+  background: var(--lv-borda);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.lv-seguranca {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  margin-top: -2px;
+  color: var(--lv-texto-suave);
+  font-size: 0.82rem;
+}
+
+.lv-seguranca i {
+  color: var(--lv-primaria);
+}
+
+.lv-acesso-rodape {
+  position: absolute;
+  right: clamp(30px, 4vw, 66px);
+  bottom: 26px;
+  left: clamp(30px, 4vw, 66px);
+  color: var(--lv-texto-suave);
+  font-size: 0.72rem;
+  text-align: right;
+}
+
+.lv-acesso-rodape span {
+  padding: 0 4px;
+  color: var(--lv-primaria);
+}
+
+/* Estados após envio */
+
+.lv-estado {
+  text-align: center;
+}
+
+.lv-loading-simbolo {
   position: relative;
-  width: 60px;
-  height: 60px;
+  width: 78px;
+  height: 78px;
+  margin: 0 auto 28px;
 }
 
-.lv-spinner-ring {
+.lv-loading-simbolo span {
   position: absolute;
   inset: 0;
-  border: 2.5px solid transparent;
-  border-top-color: #6ee7b7;
+  border: 3px solid rgba(52, 152, 219, 0.13);
+  border-top-color: var(--lv-primaria);
   border-radius: 50%;
   animation: lv-girar 0.9s linear infinite;
 }
 
-.lv-spinner-ring--2 {
-  inset: 8px;
-  border-top-color: rgba(110,231,183,0.4);
-  animation-duration: 1.4s;
-  animation-direction: reverse;
+.lv-loading-simbolo i {
+  position: absolute;
+  inset: 21px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--lv-primaria);
+  background: rgba(52, 152, 219, 0.1);
+  font-size: 1rem;
 }
 
 @keyframes lv-girar {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
-.lv-loading-frases {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-width: 220px;
+.lv-loading-etapas {
+  display: grid;
+  max-width: 370px;
+  margin: 34px auto 0;
+  gap: 12px;
+  text-align: left;
 }
 
-.lv-loading-frase {
+.lv-loading-etapa {
   display: flex;
+  min-height: 48px;
   align-items: center;
-  gap: 10px;
+  gap: 13px;
+  padding: 9px 13px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  color: #a0a8ad;
   font-size: 0.88rem;
-  color: rgba(255,255,255,0.2);
-  transition: color 0.4s ease, transform 0.4s ease;
-  transform: translateX(-8px);
+  transition: 0.25s ease;
 }
 
-.lv-loading-frase--ativa {
-  color: rgba(255,255,255,0.9);
-  transform: translateX(0);
+.lv-loading-etapa > span {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid var(--lv-borda);
+  border-radius: 50%;
+  color: var(--lv-texto-suave);
+  background: var(--lv-branco);
+  font-size: 0.72rem;
+  font-weight: 700;
 }
 
-.lv-loading-frase--passada {
-  color: rgba(110,231,183,0.5);
-  transform: translateX(0);
+.lv-loading-etapa--ativa {
+  border-color: rgba(52, 152, 219, 0.18);
+  color: var(--lv-secundaria);
+  background: rgba(52, 152, 219, 0.07);
 }
 
-.lv-loading-frase-icone {
-  font-size: 1.1rem;
-  flex-shrink: 0;
+.lv-loading-etapa--ativa > span,
+.lv-loading-etapa--concluida > span {
+  border-color: var(--lv-primaria);
+  color: var(--lv-branco);
+  background: var(--lv-primaria);
 }
 
-/* ── Tela de Despedida ────────────────────────────────────── */
-.lv-card--despedida {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: 16px;
-  max-width: 420px;
-  padding: 48px 36px 36px;
+.lv-loading-etapa--concluida {
+  color: var(--lv-texto-suave);
 }
 
 .lv-despedida-icone {
-  width: 80px;
-  height: 80px;
-  animation: lv-despedida-entrar 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+  display: grid;
+  width: 76px;
+  height: 76px;
+  margin: 0 auto 22px;
+  place-items: center;
+  border: 1px solid rgba(52, 152, 219, 0.18);
+  border-radius: 50%;
+  color: var(--lv-primaria);
+  background: rgba(52, 152, 219, 0.08);
+  font-size: 1.35rem;
 }
 
-@keyframes lv-despedida-entrar {
-  from { transform: scale(0.5) rotate(-20deg); opacity: 0; }
-  to   { transform: scale(1) rotate(0deg); opacity: 1; }
+.lv-estado-sobretitulo {
+  margin-bottom: 9px !important;
+  color: var(--lv-primaria) !important;
+  font-size: 0.75rem !important;
+  font-weight: 750;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
 
-.lv-despedida-titulo {
-  font-size: 1.6rem;
-  font-weight: 800;
-  color: #fff;
-  line-height: 1.2;
+.lv-estado--despedida .lv-aviso {
+  max-width: 430px;
+  margin: 28px auto 0;
+  text-align: left;
 }
 
-.lv-despedida-mensagem {
-  font-size: 0.9rem;
-  color: rgba(255,255,255,0.65);
-  line-height: 1.6;
-}
-
-.lv-despedida-mensagem strong {
-  color: rgba(255,255,255,0.85);
-  font-weight: 600;
-}
-
-.lv-despedida-mensagem--sub {
-  font-size: 0.82rem;
-  color: rgba(255,255,255,0.45);
-}
-
-.lv-despedida-cooldown {
-  display: flex;
+.lv-btn-secundario {
+  display: inline-flex;
+  min-height: 48px;
   align-items: center;
-  gap: 8px;
-  background: rgba(251,191,36,0.1);
-  border: 1px solid rgba(251,191,36,0.2);
-  border-radius: 10px;
-  padding: 10px 16px;
-  font-size: 0.82rem;
-  color: rgba(251,191,36,0.8);
-  margin-top: 4px;
-  width: 100%;
   justify-content: center;
-}
-
-.lv-despedida-cooldown strong {
-  color: #fbbf24;
-  font-weight: 600;
-}
-
-.lv-despedida-cooldown-icone {
-  font-size: 1rem;
-}
-
-.lv-despedida-outra-conta {
-  background: none;
-  border: 1px solid rgba(255,255,255,0.15);
-  border-radius: 10px;
-  color: rgba(255,255,255,0.45);
-  font-size: 0.8rem;
-  font-family: inherit;
+  gap: 10px;
+  margin-top: 25px;
+  padding: 0 20px;
+  border: 1px solid var(--lv-borda);
+  border-radius: 12px;
+  color: var(--lv-secundaria);
+  background: var(--lv-branco);
   cursor: pointer;
-  padding: 8px 18px;
-  transition: color 0.2s, border-color 0.2s;
-  margin-top: 8px;
+  font-size: 0.86rem;
+  font-weight: 650;
+  transition: border-color 0.2s ease, color 0.2s ease, transform 0.16s ease;
 }
 
-.lv-despedida-outra-conta:hover {
-  color: rgba(255,255,255,0.75);
-  border-color: rgba(255,255,255,0.3);
+.lv-btn-secundario:hover,
+.lv-btn-secundario:focus-visible {
+  outline: 0;
+  border-color: var(--lv-primaria);
+  color: var(--lv-primaria-hover);
+  transform: translateY(-1px);
 }
 
-/* ── Aviso de cooldown inline (no formulário) ────────────── */
-.lv-cooldown-inline {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: rgba(251,191,36,0.1);
-  border: 1px solid rgba(251,191,36,0.25);
-  border-radius: 10px;
-  padding: 10px 14px;
-  font-size: 0.82rem;
-  color: rgba(251,191,36,0.85);
-  margin-bottom: 12px;
-  animation: lv-card-entrar 0.3s ease-out;
-}
+/* Tablet */
 
-.lv-cooldown-inline strong {
-  color: #fbbf24;
-  font-weight: 600;
-}
-
-.lv-cooldown-inline-icone {
-  font-size: 1rem;
-  flex-shrink: 0;
-}
-
-.lv-btn-entrar:disabled {
-  background: rgba(255,255,255,0.08);
-  border-color: rgba(255,255,255,0.08);
-  cursor: not-allowed;
-  transform: none;
-  box-shadow: none;
-  color: rgba(255,255,255,0.3);
-}
-
-/* ════════════════════════════════════════════════
-   BREAKPOINTS
-   ════════════════════════════════════════════════ */
-
-/* Mobile (<768px) — coluna única, identidade completa no topo */
-@media (max-width: 767px) {
-  .lv-layout {
-    flex-direction: column;
-    align-items: center;
-    padding: 32px 16px 40px;
-    gap: 24px;
-    min-height: 100vh;
-    justify-content: center;
+@media (min-width: 768px) and (max-width: 1100px) {
+  .lv-shell {
+    grid-template-columns: minmax(310px, 42fr) minmax(430px, 58fr);
   }
 
-  /* Identidade completa, centralizada, tamanhos levemente reduzidos */
-  .lv-identidade {
-    padding: 0;
-    width: 100%;
-    max-width: 400px;
+  .lv-editorial::after {
+    right: -78px;
   }
 
-  .lv-identidade-inner {
-    flex-direction: column;
-    gap: 12px;
-    text-align: center;
-    align-items: center;
+  .lv-editorial {
+    background-position: 46% center;
   }
 
-  .lv-logo-mark {
-    width: 72px;
-    height: 72px;
-    animation: lv-logo-girar 20s linear infinite; /* animação mantida */
+  .lv-editorial-topo {
+    padding: 34px 30px;
   }
 
-  .lv-identidade-sistema {
-    font-size: 0.75rem;
-  }
-
-  .lv-identidade-empresa {
-    font-size: 1.65rem;
-  }
-
-  .lv-identidade-tagline {
-    display: block;
+  .lv-marca {
+    gap: 10px;
     font-size: 0.82rem;
   }
 
-  .lv-identidade-badges {
+  .lv-marca-simbolo {
+    width: 42px;
+    height: 42px;
+  }
+
+  .lv-editorial-conteudo {
+    right: 12%;
+    bottom: 52px;
+    left: 30px;
+  }
+
+  .lv-editorial h1 {
+    font-size: clamp(2rem, 4.2vw, 3rem);
+  }
+
+  .lv-editorial-sobretitulo {
+    line-height: 1.7;
+  }
+
+  .lv-editorial-texto {
+    font-size: 0.93rem;
+  }
+
+  .lv-acesso {
+    padding-right: 42px;
+    padding-left: 52px;
+  }
+}
+
+/* Celular */
+
+@media (max-width: 767px) {
+  html,
+  body,
+  .lv-root {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .lv-shell {
+    --lv-mobile-hero: clamp(190px, 28svh, 270px);
     display: flex;
+    min-height: 100vh;
+    min-height: 100svh;
+    flex-direction: column;
+    overflow: hidden;
   }
 
-  .lv-badge {
-    font-size: 0.68rem;
-    padding: 3px 10px;
+  .lv-editorial {
+    height: var(--lv-mobile-hero);
+    min-height: var(--lv-mobile-hero);
+    flex: 0 0 var(--lv-mobile-hero);
+    background-position: 50% 52%;
   }
 
-  .lv-form-wrap {
-    width: 100%;
-    max-width: 400px;
-  }
-
-  .lv-card {
-    padding: 28px 24px;
-    border-radius: 16px;
-  }
-
-  /* Header dentro do card não é necessário — identidade já está acima */
-  .lv-card-header-mobile {
+  .lv-editorial::after {
     display: none;
   }
 
-  .lv-form-titulo {
-    font-size: 1.2rem;
+  .lv-editorial-sombra {
+    background: linear-gradient(180deg, rgba(21, 37, 52, 0.25), rgba(21, 37, 52, 0.78));
   }
 
-  .lv-input {
-    height: 48px;
-    font-size: 16px; /* evita zoom automático no iOS */
+  .lv-editorial-topo {
+    padding: 22px 22px;
   }
 
+  .lv-marca {
+    gap: 9px;
+    font-size: 0.75rem;
+  }
+
+  .lv-marca-simbolo {
+    width: 38px;
+    height: 38px;
+  }
+
+  .lv-editorial-conteudo {
+    right: 24px;
+    bottom: 64px;
+    left: 24px;
+  }
+
+  .lv-editorial-sobretitulo,
+  .lv-editorial-texto,
+  .lv-editorial-costura {
+    display: none;
+  }
+
+  .lv-editorial h1 {
+    max-width: 420px;
+    font-size: clamp(1.72rem, 8.2vw, 2.35rem);
+  }
+
+  .lv-acesso {
+    min-height: calc(100svh - var(--lv-mobile-hero));
+    flex: 1 0 auto;
+    align-items: center;
+    padding: clamp(24px, 4svh, 38px) 20px 52px;
+  }
+
+  .lv-acesso::before {
+    position: absolute;
+    z-index: 0;
+    top: -37px;
+    right: 0;
+    left: 0;
+    height: 54px;
+    border: 0;
+    border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+    background: var(--lv-fundo);
+    content: '';
+    pointer-events: none;
+  }
+
+  .lv-formulario-wrap,
+  .lv-estado {
+    position: relative;
+    z-index: 1;
+  }
+
+  .lv-acesso-rodape {
+    z-index: 1;
+  }
+
+  .lv-acesso-marca-mobile {
+    display: none;
+  }
+
+  .lv-formulario-wrap,
+  .lv-estado {
+    max-width: 500px;
+    margin: 0 auto;
+  }
+
+  .lv-formulario-cabecalho {
+    margin-bottom: 22px;
+  }
+
+  .lv-fio-icone {
+    width: 46px;
+    height: 46px;
+    margin-bottom: 9px;
+  }
+
+  .lv-formulario-cabecalho h2,
+  .lv-estado h2 {
+    font-size: 1.65rem;
+  }
+
+  .lv-formulario-cabecalho p,
+  .lv-estado > p {
+    font-size: 0.9rem;
+  }
+
+  .lv-formulario {
+    gap: 15px;
+  }
+
+  .lv-input-wrap,
+  .lv-btn-entrar {
+    min-height: 56px;
+  }
+
+  .lv-input-wrap input {
+    font-size: 16px;
+  }
+
+  .lv-acesso-rodape {
+    bottom: 16px;
+    text-align: center;
+  }
+}
+
+@media (max-width: 390px) {
+  .lv-editorial h1 {
+    font-size: 1.62rem;
+  }
+
+  .lv-acesso {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+}
+
+/* Celulares baixos, como iPhone SE: todo o formulário fica visível sem rolagem. */
+@media (max-width: 767px) and (max-height: 720px) {
+  .lv-shell {
+    --lv-mobile-hero: 150px;
+  }
+
+  .lv-editorial-topo {
+    padding: 12px 18px;
+  }
+
+  .lv-marca {
+    font-size: 0.68rem;
+  }
+
+  .lv-marca-simbolo {
+    width: 34px;
+    height: 34px;
+  }
+
+  .lv-editorial-conteudo {
+    right: 20px;
+    bottom: 48px;
+    left: 20px;
+  }
+
+  .lv-editorial h1 {
+    max-width: 340px;
+    font-size: 1.42rem;
+    line-height: 1.08;
+  }
+
+  .lv-acesso {
+    min-height: calc(100svh - var(--lv-mobile-hero));
+    padding-top: 18px;
+    padding-bottom: 40px;
+  }
+
+  .lv-fio-icone {
+    display: none;
+  }
+
+  .lv-formulario-cabecalho {
+    margin-bottom: 16px;
+  }
+
+  .lv-formulario-cabecalho h2,
+  .lv-estado h2 {
+    font-size: 1.42rem;
+  }
+
+  .lv-formulario-cabecalho p,
+  .lv-estado > p {
+    margin-top: 6px;
+    font-size: 0.82rem;
+  }
+
+  .lv-formulario {
+    gap: 11px;
+  }
+
+  .lv-campo label {
+    margin-bottom: 5px;
+    font-size: 0.82rem;
+  }
+
+  .lv-input-wrap,
   .lv-btn-entrar {
     height: 50px;
-    font-size: 1rem;
+    min-height: 50px;
   }
 
-  /* Despedida com respiro nas bordas */
-  .lv-card--despedida {
-    margin: 0 4px;
-    padding: 36px 24px 28px;
+  .lv-seguranca {
+    font-size: 0.75rem;
   }
 
-  .lv-despedida-titulo {
-    font-size: 1.35rem;
+  .lv-acesso-rodape {
+    bottom: 10px;
   }
 }
 
-/* Tablet (768px–1024px) — layout duas colunas, foco principal */
-@media (min-width: 768px) {
-  .lv-layout {
-    flex-direction: row;
-    padding: 40px;
-    gap: 24px;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .lv-identidade {
-    flex: 0 0 340px;
-    padding: 48px 40px;
-    width: auto;
-  }
-
-  .lv-identidade-inner {
-    flex-direction: column;
-    text-align: center;
-    gap: 16px;
-  }
-
-  .lv-logo-mark {
-    width: 88px;
-    height: 88px;
-    animation: lv-logo-girar 20s linear infinite; /* retoma rotação */
-  }
-
-  .lv-identidade-badges {
-    display: flex;
-  }
-
-  .lv-identidade-tagline {
-    display: block;
-  }
-
-  .lv-identidade-sistema {
-    font-size: 0.85rem;
-  }
-
-  .lv-identidade-empresa {
-    font-size: 1.9rem;
-  }
-
-  .lv-card-header-mobile {
-    display: none;
-  }
-
-  .lv-form-wrap {
-    max-width: 400px;
-    width: 100%;
-  }
-
-  .lv-card {
-    padding: 40px 36px;
-  }
-
-  .lv-form-titulo {
-    font-size: 1.5rem;
-  }
-
-  .lv-input {
-    height: 54px;
-    font-size: 1rem;
-  }
-
-  .lv-btn-entrar {
-    height: 54px;
-    font-size: 1rem;
-  }
-}
-
-/* Desktop (>1280px) — mais espaço, identidade maior */
-@media (min-width: 1280px) {
-  .lv-layout {
-    gap: 64px;
-  }
-
-  .lv-identidade {
-    flex: 0 0 380px;
-  }
-
-  .lv-logo-mark {
-    width: 100px;
-    height: 100px;
-  }
-
-  .lv-identidade-empresa {
-    font-size: 2.2rem;
-  }
-
-  .lv-form-wrap {
-    max-width: 440px;
-  }
-
-  .lv-card {
-    padding: 48px 44px;
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

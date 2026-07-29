@@ -12,7 +12,6 @@ export default function GOPessoasTab({
     escopo,
     onEscopo,
     onNovaPessoa,
-    onEditarPessoa,
     onEditarVinculo,
     onNovoVinculo,
     onEncerrarVinculo,
@@ -43,6 +42,39 @@ export default function GOPessoasTab({
                 : (escopo === 'global' || item.empresa_id === empresaAtivaId)
         )));
     const antigos = filtradas.filter((pessoa) => !ativos.includes(pessoa));
+    const empresaContextoId = empresaFocoId || (escopo === 'atual' ? empresaAtivaId : null);
+    const empresaContextoNome = empresas.find((item) => item.id === empresaContextoId)?.nome_fantasia;
+    const vinculosEncerradosDoContexto = antigos.flatMap((pessoa) =>
+        (pessoa.vinculos || []).filter((vinculo) =>
+            !vinculo.ativo
+            && (!empresaContextoId || vinculo.empresa_id === empresaContextoId)
+        )
+    );
+    const temExSocios = vinculosEncerradosDoContexto.some((vinculo) =>
+        (vinculo.tipos || []).some((tipoVinculo) => tipoVinculo === 'socio' || tipoVinculo === 'ex_socio')
+    );
+    const temExPrestadores = vinculosEncerradosDoContexto.some((vinculo) =>
+        (vinculo.tipos || []).includes('prestador_externo') || Boolean(vinculo.is_freelance)
+    );
+    const temExEmpregados = vinculosEncerradosDoContexto.some((vinculo) =>
+        !(vinculo.tipos || []).some((tipoVinculo) =>
+            tipoVinculo === 'socio'
+            || tipoVinculo === 'ex_socio'
+            || tipoVinculo === 'prestador_externo'
+        )
+        && !vinculo.is_freelance
+    );
+    const totalCategoriasAntigas = [temExSocios, temExPrestadores, temExEmpregados].filter(Boolean).length;
+    const categoriaAntigos = totalCategoriasAntigas > 1
+        ? 'Ex-integrantes'
+        : temExSocios
+            ? 'Ex-sócios'
+            : temExPrestadores
+                ? 'Ex-prestadores'
+                : 'Ex-empregados';
+    const rotuloAntigos = empresaContextoNome
+        ? `${categoriaAntigos} — ${empresaContextoNome}`
+        : `${categoriaAntigos} das empresas`;
 
     return (
         <>
@@ -80,15 +112,15 @@ export default function GOPessoasTab({
                         </div>
                         {ativos.length ? (
                             <div className="go-pessoas-grid">
-                                {ativos.map((pessoa) => <GOPessoaCard key={pessoa.id} pessoa={pessoa} empresaAtivaId={empresaAtivaId} onEditarPessoa={onEditarPessoa} onEditarVinculo={onEditarVinculo} onNovoVinculo={onNovoVinculo} onEncerrarVinculo={onEncerrarVinculo} />)}
+                                {ativos.map((pessoa) => <GOPessoaCard key={pessoa.id} pessoa={pessoa} empresaAtivaId={empresaAtivaId} onEditarVinculo={onEditarVinculo} onNovoVinculo={onNovoVinculo} onEncerrarVinculo={onEncerrarVinculo} />)}
                             </div>
                         ) : <div className="go-vazio"><i className="fas fa-users"></i><p>Nenhuma pessoa encontrada neste contexto.</p></div>}
                     </section>
                     {antigos.length > 0 && (
                         <details className="go-ex-membros gs-card">
-                            <summary><span><i className="fas fa-user-clock"></i> Sem vínculo ativo neste contexto</span><strong>{antigos.length}</strong></summary>
+                            <summary><span><i className="fas fa-user-clock"></i> {rotuloAntigos}</span><strong>{antigos.length}</strong></summary>
                             <div className="go-pessoas-grid">
-                                {antigos.map((pessoa) => <GOPessoaCard key={pessoa.id} pessoa={pessoa} empresaAtivaId={empresaAtivaId} onEditarPessoa={onEditarPessoa} onEditarVinculo={onEditarVinculo} onNovoVinculo={onNovoVinculo} onEncerrarVinculo={onEncerrarVinculo} />)}
+                                {antigos.map((pessoa) => <GOPessoaCard key={pessoa.id} pessoa={pessoa} empresaAtivaId={empresaAtivaId} onEditarVinculo={onEditarVinculo} onNovoVinculo={onNovoVinculo} onEncerrarVinculo={onEncerrarVinculo} />)}
                             </div>
                         </details>
                     )}

@@ -359,6 +359,7 @@ try {
     assert.equal(claimsLogin.empresa_id, empresaLegada.id);
     assert.equal(claimsLogin.vinculo_empresa_id, vinculoLogin.id);
     assert.deepEqual(claimsLogin.tipos, ['administrador']);
+    assert.ok(claimsLogin.exp - claimsLogin.iat >= 30 * 24 * 60 * 60 - 1);
     assert.equal(login.payload.empresaAtiva.codigo, 'lojas-variara');
 
     const loginLongo = await requisicao(baseUrl, '/login', {
@@ -517,7 +518,7 @@ try {
             loginEmiteJwtContextual: true,
             loginUsaTiposDoVinculo: true,
             loginMultiplasEmpresasUsaPrincipal: true,
-            manterConectadoPreservaTrintaDias: true,
+            loginSemprePreservaTrintaDias: true,
             usuarioSemEmpresaBloqueado: true,
             desligamentoDoVinculoPreservaDespedida: true,
             perfilMeContextual: true,

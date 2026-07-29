@@ -20,6 +20,19 @@
 
 export const changelog = [
     {
+        versao: '1.37.0',
+        data: '28/07/2026',
+        admin: [
+            'Tela de login completamente redesenhada, com nova identidade visual responsiva para computadores, tablets e celulares',
+            'Sessões agora permanecem válidas por 30 dias por padrão, inclusive após a troca da empresa ativa',
+            'Gestão Organizacional aprimorada com cards mais completos e edição unificada dos dados pessoais e do vínculo empresarial',
+            'Sócios, empregados e prestadores externos agora possuem campos, remunerações e encerramentos de vínculo adequados a cada relação',
+            'Novos vínculos podem copiar todas ou apenas algumas permissões de outra empresa, de forma totalmente opcional',
+            'Cadastro de empresas ganhou código interno automático e os indicadores de membros passaram a desconsiderar contas de teste e arquivadas',
+        ],
+        dashboard: [],
+    },
+    {
         versao: '1.36.0',
         data: '28/07/2026',
         admin: [

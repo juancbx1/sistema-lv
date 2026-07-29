@@ -6,7 +6,7 @@ import UIHeaderPagina from './UIHeaderPagina.jsx';
 import GOPessoasTab from './GOPessoasTab.jsx';
 import GOEmpresasTab from './GOEmpresasTab.jsx';
 import GOPessoaModal from './GOPessoaModal.jsx';
-import GOVinculoModal from './GOVinculoModal.jsx';
+import GOVinculoModal, { classificarVinculo } from './GOVinculoModal.jsx';
 import GOEmpresaModal from './GOEmpresaModal.jsx';
 import UIBloqueio from './UIBloqueio.jsx';
 
@@ -108,13 +108,30 @@ export default function GestaoOrganizacionalPage() {
         });
         setModalVinculo(null);
         await atualizarTudo();
-        mostrarMensagem('Vínculo salvo com sucesso.', 'sucesso', 2500);
+        mostrarMensagem(
+            vinculo ? 'Cadastro e vínculo salvos com sucesso.' : 'Novo vínculo criado com sucesso.',
+            'sucesso',
+            2500
+        );
     };
 
     const encerrarVinculo = async (pessoa, vinculo) => {
+        const { socio, prestador } = classificarVinculo(vinculo);
+        const dataDemissao = new Intl.DateTimeFormat('pt-BR', {
+            timeZone: 'America/Sao_Paulo',
+        }).format(new Date());
+        const mensagemConfirmacao = socio
+            ? `Registrar a saída de ${pessoa.nome} do quadro societário da ${vinculo.empresa_nome} em ${dataDemissao}? O vínculo será encerrado, mas os outros vínculos e o login serão preservados.`
+            : prestador
+                ? `Encerrar a prestação de serviços de ${pessoa.nome} para a ${vinculo.empresa_nome} em ${dataDemissao}? Os outros vínculos e o acesso global da pessoa serão preservados.`
+                : `Registrar a demissão de ${pessoa.nome} da ${vinculo.empresa_nome} em ${dataDemissao}? O vínculo será encerrado, mas os outros vínculos e o login serão preservados.`;
         const confirmou = await mostrarConfirmacao(
-            `Encerrar o vínculo de ${pessoa.nome} com ${vinculo.empresa_nome}? Os outros vínculos e o login serão preservados.`,
-            { tipo: 'perigo', textoConfirmar: 'Encerrar vínculo', textoCancelar: 'Cancelar' }
+            mensagemConfirmacao,
+            {
+                tipo: socio || prestador ? 'aviso' : 'perigo',
+                textoConfirmar: socio ? 'Registrar saída' : prestador ? 'Encerrar prestação' : 'Registrar demissão',
+                textoCancelar: 'Cancelar',
+            }
         );
         if (!confirmou) return;
         try {
@@ -123,7 +140,15 @@ export default function GestaoOrganizacionalPage() {
                 body: JSON.stringify({}),
             });
             await atualizarTudo();
-            mostrarMensagem('Vínculo encerrado sem afetar as outras empresas.', 'sucesso', 3000);
+            mostrarMensagem(
+                socio
+                    ? 'Saída societária registrada sem afetar os outros vínculos.'
+                    : prestador
+                        ? 'Prestação de serviços encerrada sem afetar os outros vínculos.'
+                        : 'Demissão registrada e vínculo encerrado sem afetar as outras empresas.',
+                'sucesso',
+                3000
+            );
         } catch (error) {
             mostrarMensagem(error.message, 'erro');
         }
@@ -143,17 +168,25 @@ export default function GestaoOrganizacionalPage() {
         }
     };
 
+    const empresaAtiva = empresas.find((item) => item.id === empresaAtivaId);
+
     return (
         <>
             <UIHeaderPagina titulo="Gestão Organizacional">
-                <span className="go-header-contexto"><i className="fas fa-building"></i> {empresas.find((item) => item.id === empresaAtivaId)?.nome_fantasia || 'Empresa ativa'}</span>
+                <span className="go-header-contexto">
+                    <i className="fas fa-building"></i>
+                    <span>
+                        <strong>{empresaAtiva?.nome_fantasia || 'Empresa ativa'}</strong>
+                        <code>{empresaAtiva?.codigo || 'carregando-contexto'}</code>
+                    </span>
+                </span>
             </UIHeaderPagina>
             <nav className="gs-tab-nav" aria-label="Áreas da gestão organizacional">
-                <button className={aba === 'pessoas' ? 'ativo' : ''} onClick={() => setAba('pessoas')}>
+                <button className={`gs-tab-btn${aba === 'pessoas' ? ' ativo' : ''}`} onClick={() => setAba('pessoas')}>
                     <i className="fas fa-users"></i> Pessoas e Acessos
                 </button>
                 <UIBloqueio permissao="visualizar-empresas">
-                    <button className={aba === 'empresas' ? 'ativo' : ''} onClick={() => setAba('empresas')}>
+                    <button className={`gs-tab-btn${aba === 'empresas' ? ' ativo' : ''}`} onClick={() => setAba('empresas')}>
                         <i className="fas fa-building"></i> Empresas
                     </button>
                 </UIBloqueio>
@@ -169,7 +202,6 @@ export default function GestaoOrganizacionalPage() {
                         escopo={escopo}
                         onEscopo={mudarEscopo}
                         onNovaPessoa={() => setModalPessoa({})}
-                        onEditarPessoa={setModalPessoa}
                         onEditarVinculo={(pessoa, vinculo) => setModalVinculo({ pessoa, vinculo })}
                         onNovoVinculo={(pessoa) => setModalVinculo({ pessoa, vinculo: null })}
                         onEncerrarVinculo={encerrarVinculo}

@@ -118,10 +118,10 @@ router.post('/', async (req, res) => {
       superadministrador: contexto.identidade.superadministrador,
     };
 
-    // Se o usuário escolheu "manter conectado", emitir token de longa duração (30 dias).
-    // Caso contrário, token curto de 8 horas (mais seguro para dispositivos compartilhados).
-    const { manterConectado } = req.body;
-    const expiresIn = manterConectado ? '30d' : '8h';
+    // A sessao persistente de 30 dias e o comportamento padrao do sistema.
+    // O campo legado "manterConectado" pode continuar sendo enviado por
+    // clientes antigos, mas nao deve reduzir a validade para 8 horas.
+    const expiresIn = '30d';
 
     const token = jwt.sign(
       payload,

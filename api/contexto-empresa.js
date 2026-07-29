@@ -488,9 +488,12 @@ function exigirContexto(req) {
 
 function emitirTokenParaContexto(tokenClaims, contexto) {
     const agora = Math.floor(Date.now() / 1000);
+    // Tokens sem exp pertencem a uma compatibilidade legada. A nova sessão
+    // contextual deve seguir a política atual de 30 dias, sem reintroduzir o
+    // antigo prazo de 8 horas durante a troca de empresa.
     const segundosRestantes = tokenClaims.exp
         ? Math.max(Number(tokenClaims.exp) - agora, 1)
-        : 8 * 60 * 60;
+        : 30 * 24 * 60 * 60;
     const {
         iat,
         exp,

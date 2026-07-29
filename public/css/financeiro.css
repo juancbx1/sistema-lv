@@ -3468,7 +3468,14 @@
 }
 
 .searchable-select-dropdown .dropdown-item {
+    display: block;
+    width: 100%;
     padding: 12px 15px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
     cursor: pointer;
     transition: background-color 0.2s;
 }
@@ -4736,6 +4743,15 @@ body { margin-left: 0; padding: 40px 40px 10px 40px;
     font-size: .7rem;
 }
 
+.fc-smart-card-rail > .gs-bloqueio-wrapper {
+    width: 100%;
+}
+
+.fc-smart-card-rail > .gs-bloqueio-wrapper .fc-launch-action,
+.fc-agenda-parcela-actions > .gs-bloqueio-wrapper .fc-launch-action {
+    width: 100%;
+}
+
 /* Info gerencial no fim do rail — empurra as ações principais para o topo */
 .fc-smart-card-rail .fc-launch-action-info {
     margin-top: auto;
@@ -5359,6 +5375,111 @@ body { margin-left: 0; padding: 40px 40px 10px 40px;
 
 .fc-expanded-item.compra .fc-expanded-item-top span { color: var(--gs-primaria); }
 
+/* Agenda: neutra quando em dia; vermelho reservado exclusivamente a atraso. */
+.fc-smart-card.agenda-neutro {
+    border-color: var(--gs-borda);
+}
+
+.fc-smart-card.agenda-neutro .card-borda-charme {
+    background: #94a3b8;
+}
+
+.fc-smart-card.agenda-neutro.is-atrasado {
+    border-color: color-mix(in srgb, var(--gs-perigo) 42%, var(--gs-borda));
+}
+
+.fc-smart-card.agenda-neutro.is-atrasado > .card-borda-charme {
+    background: var(--gs-perigo);
+}
+
+.fc-launch-operation.agenda-neutro,
+.fc-launch-amount.valor-agenda {
+    color: var(--gs-texto-secundario);
+}
+
+.fc-launch-amount.valor-atrasado {
+    color: var(--gs-perigo);
+}
+
+.fc-smart-card.agenda-neutro:not(.is-atrasado) .fc-launch-category-pill.lote {
+    background: var(--gs-fundo-alternativo);
+    color: var(--gs-texto-secundario);
+}
+
+.fc-launch-status.neutral {
+    color: var(--gs-texto-secundario);
+}
+
+.fc-launch-action.baixa {
+    border-color: color-mix(in srgb, var(--gs-primaria) 38%, var(--gs-borda));
+    color: var(--gs-primaria);
+}
+
+.fc-launch-action.baixa:hover:not(:disabled) {
+    border-color: var(--gs-primaria);
+    background: color-mix(in srgb, var(--gs-primaria) 8%, var(--gs-branco));
+}
+
+.fc-expanded-item.fc-agenda-parcela:not(.is-atrasado) {
+    border-color: var(--gs-borda);
+    background: var(--gs-fundo-alternativo);
+}
+
+.fc-expanded-item.fc-agenda-parcela:not(.is-atrasado) .card-borda-charme {
+    background: #94a3b8;
+}
+
+.fc-expanded-item-top .fc-agenda-parcela-badge {
+    color: var(--gs-perigo);
+}
+
+.fc-expanded-item-top .fc-agenda-parcela-badge.is-ok {
+    background: color-mix(in srgb, #94a3b8 12%, var(--gs-branco));
+    color: var(--gs-texto-secundario);
+}
+
+.fc-agenda-parcela-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.fc-agenda-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin-bottom: 14px;
+    padding: 12px 14px;
+    border: 1px solid var(--gs-borda);
+    border-radius: 12px;
+    background: var(--gs-fundo-alternativo);
+}
+
+.fc-agenda-toolbar > div {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.fc-agenda-toolbar span {
+    color: var(--gs-texto-secundario);
+    font-size: .78rem;
+}
+
+@media (max-width: 620px) {
+    .fc-agenda-toolbar {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .fc-agenda-toolbar .gs-bloqueio-wrapper,
+    .fc-agenda-toolbar .fc-btn {
+        width: 100%;
+    }
+}
+
 .fc-expanded-item > small { display: block; margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--gs-texto-secundario); font-size: .63rem; }
 
 .fc-expanded-item > b { display: block; margin-top: 10px; color: var(--gs-texto-principal); font-size: .8rem; font-weight: 600; }
@@ -5399,6 +5520,12 @@ body { margin-left: 0; padding: 40px 40px 10px 40px;
         flex: 1 1 calc(50% - 6px);
         min-width: 110px;
         justify-content: center;
+    }
+
+    .fc-smart-card-rail > .gs-bloqueio-wrapper {
+        width: auto;
+        flex: 1 1 calc(50% - 6px);
+        min-width: 110px;
     }
 
     .fc-smart-card-rail .fc-launch-action-info {

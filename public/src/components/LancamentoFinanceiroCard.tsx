@@ -184,8 +184,14 @@ export default function LancamentoFinanceiroCard({
       setInfoAberta(false);
       return;
     }
+    if (isExpanded) onToggleDetails(lancamento.id);
     setInfoAberta(true);
     if (!info) await buscarInfo();
+  };
+
+  const toggleDetalhes = () => {
+    if (infoAberta) setInfoAberta(false);
+    onToggleDetails(lancamento.id);
   };
 
   const statusAtual = info?.status_edicao || lancamento.status_edicao || 'OK';
@@ -276,17 +282,6 @@ export default function LancamentoFinanceiroCard({
         </div>
 
         <aside className="fc-smart-card-rail" aria-label="Ações do lançamento">
-          {isDetalhado && (
-            <button
-              type="button"
-              onClick={() => onToggleDetails(lancamento.id)}
-              className="fc-launch-action fc-launch-action-expand"
-              title={isExpanded ? 'Ocultar detalhes' : 'Ver detalhes'}
-              aria-expanded={isExpanded}
-            >
-              <i className={`fas ${isExpanded ? 'fa-chevron-up' : 'fa-chevron-down'}`} /> {isExpanded ? 'Ocultar' : 'Detalhes'}
-            </button>
-          )}
           {isEstorno ? (
             <button
               type="button"
@@ -340,6 +335,17 @@ export default function LancamentoFinanceiroCard({
             )}
             {infoAberta ? 'Fechar info' : 'Gerencial'}
           </button>
+          {isDetalhado && (
+            <button
+              type="button"
+              onClick={toggleDetalhes}
+              className="fc-launch-action fc-launch-action-expand"
+              title={isExpanded ? 'Ocultar detalhes' : 'Ver detalhes'}
+              aria-expanded={isExpanded}
+            >
+              <i className={`fas ${isExpanded ? 'fa-chevron-up' : 'fa-chevron-down'}`} /> {isExpanded ? 'Ocultar' : 'Detalhes'}
+            </button>
+          )}
         </aside>
       </div>
 

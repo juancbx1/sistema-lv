@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import type { FinanceiroAgendaItem } from '../utils/financeiro-types';
 import { rotuloDataAgenda } from '../utils/financeiro-data-label';
+import UIBloqueio from './UIBloqueio.jsx';
 
 interface Props {
   grupo: FinanceiroAgendaItem[];
@@ -8,10 +9,11 @@ interface Props {
   onToggle: () => void;
   onEdit: (item: FinanceiroAgendaItem) => void;
   onDelete: (id: string | number) => void;
+  onDeleteLote: (id: string | number) => void;
   onBaixa: (item: FinanceiroAgendaItem) => void;
   onEditLote: (idLote: string | number, descricaoAtual: string) => void;
   podeBaixar: boolean;
-  podeEditarExcluir: boolean;
+  podeEditar: boolean;
 }
 
 const formatCurrency = (value: unknown) =>
@@ -63,10 +65,11 @@ export default function FinanceiroAgendaCard({
   onToggle,
   onEdit,
   onDelete,
+  onDeleteLote,
   onBaixa,
   onEditLote,
   podeBaixar,
-  podeEditarExcluir,
+  podeEditar,
 }: Props) {
   const parcelas = useMemo(() => ordenarPorVencimento(grupo), [grupo]);
   const primeiro = parcelas[0];
@@ -109,13 +112,8 @@ export default function FinanceiroAgendaCard({
           ? 'A receber'
           : 'A pagar';
 
-  const bordaClasse = isReceber
-    ? 'receita'
-    : isRateio
-      ? 'rateio'
-      : 'despesa';
-
-  const valorClasse = isReceber ? 'valor-receita' : 'valor-despesa';
+  const bordaClasse = 'agenda-neutro';
+  const valorClasse = atrasado ? 'valor-atrasado' : 'valor-agenda';
   const idLabel = isLote ? `Lote #${primeiro.id_lote}` : `#${primeiro.id}`;
   const agendadoPor = primeiro.nome_usuario_agendamento || 'N/A';
   const dataAgenda = rotuloDataAgenda(primeiro, { isLote, qtdAtrasadas });
@@ -168,7 +166,7 @@ export default function FinanceiroAgendaCard({
                   <i /> {isLote && qtdAtrasadas > 1 ? `${qtdAtrasadas} vencidas` : 'vencido'}
                 </span>
               ) : (
-                <span className="fc-launch-status pending">
+                <span className="fc-launch-status neutral">
                   <i /> agendado
                 </span>
               )}
@@ -200,6 +198,66 @@ export default function FinanceiroAgendaCard({
         </div>
 
         <aside className="fc-smart-card-rail" aria-label="Ações do agendamento">
+          {isLote ? (
+            <>
+              <button
+                type="button"
+                onClick={() => onEditLote(primeiro.id_lote ?? primeiro.id, primeiro.descricao)}
+                className="fc-launch-action"
+                title="Editar descrição do lote"
+                disabled={!podeEditar}
+              >
+                <i className="fas fa-pencil-alt" /> Editar
+              </button>
+              <UIBloqueio
+                permissao="permite-excluir-agendamentos"
+                mensagem="Você não tem permissão para excluir lotes de agendamentos."
+              >
+                <button
+                  type="button"
+                  onClick={() => onDeleteLote(primeiro.id_lote ?? primeiro.id)}
+                  className="fc-launch-action danger"
+                  title="Excluir lote e parcelas pendentes"
+                >
+                  <i className="fas fa-trash" /> Excluir lote
+                </button>
+              </UIBloqueio>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => onEdit(primeiro)}
+                className="fc-launch-action"
+                title="Editar"
+                disabled={!podeEditar}
+              >
+                <i className="fas fa-pencil-alt" /> Editar
+              </button>
+              <UIBloqueio
+                permissao="permite-excluir-agendamentos"
+                mensagem="Você não tem permissão para excluir agendamentos."
+              >
+                <button
+                  type="button"
+                  onClick={() => onDelete(primeiro.id)}
+                  className="fc-launch-action danger"
+                  title="Excluir"
+                >
+                  <i className="fas fa-trash" /> Excluir
+                </button>
+              </UIBloqueio>
+              <button
+                type="button"
+                onClick={() => onBaixa(primeiro)}
+                className="fc-launch-action baixa"
+                title="Baixar / confirmar pagamento"
+                disabled={!podeBaixar}
+              >
+                <i className="fas fa-check" /> Baixar
+              </button>
+            </>
+          )}
           {podeExpandir && (
             <button
               type="button"
@@ -211,48 +269,6 @@ export default function FinanceiroAgendaCard({
               <i className={`fas ${isExpanded ? 'fa-chevron-up' : 'fa-chevron-down'}`} />{' '}
               {isExpanded ? 'Ocultar' : isLote ? 'Parcelas' : 'Detalhes'}
             </button>
-          )}
-
-          {isLote ? (
-            <button
-              type="button"
-              onClick={() => onEditLote(primeiro.id_lote ?? primeiro.id, primeiro.descricao)}
-              className="fc-launch-action"
-              title="Editar descrição do lote"
-              disabled={!podeEditarExcluir}
-            >
-              <i className="fas fa-pencil-alt" /> Editar
-            </button>
-          ) : (
-            <>
-              <button
-                type="button"
-                onClick={() => onEdit(primeiro)}
-                className="fc-launch-action"
-                title="Editar"
-                disabled={!podeEditarExcluir}
-              >
-                <i className="fas fa-pencil-alt" /> Editar
-              </button>
-              <button
-                type="button"
-                onClick={() => onDelete(primeiro.id)}
-                className="fc-launch-action danger"
-                title="Excluir"
-                disabled={!podeEditarExcluir}
-              >
-                <i className="fas fa-trash" /> Excluir
-              </button>
-              <button
-                type="button"
-                onClick={() => onBaixa(primeiro)}
-                className="fc-launch-action sucesso"
-                title="Baixar / confirmar pagamento"
-                disabled={!podeBaixar}
-              >
-                <i className="fas fa-check" /> Baixar
-              </button>
-            </>
           )}
         </aside>
       </div>
@@ -292,15 +308,30 @@ export default function FinanceiroAgendaCard({
                   <small>{item.nome_categoria || 'Sem categoria'}</small>
                   <div className="fc-agenda-parcela-foot">
                     <b>{formatCurrency(item.valor)}</b>
-                    <button
-                      type="button"
-                      className={`fc-launch-action ${parcelaAtrasada ? 'danger' : 'sucesso'}`}
-                      disabled={!podeBaixar}
-                      onClick={() => onBaixa(item)}
-                      title="Baixar parcela"
-                    >
-                      <i className="fas fa-check" /> Baixar
-                    </button>
+                    <div className="fc-agenda-parcela-actions">
+                      <UIBloqueio
+                        permissao="permite-excluir-agendamentos"
+                        mensagem="Você não tem permissão para excluir parcelas agendadas."
+                      >
+                        <button
+                          type="button"
+                          className="fc-launch-action danger"
+                          onClick={() => onDelete(item.id)}
+                          title="Excluir parcela"
+                        >
+                          <i className="fas fa-trash" /> Excluir
+                        </button>
+                      </UIBloqueio>
+                      <button
+                        type="button"
+                        className="fc-launch-action baixa"
+                        disabled={!podeBaixar}
+                        onClick={() => onBaixa(item)}
+                        title="Baixar parcela"
+                      >
+                        <i className="fas fa-check" /> Baixar
+                      </button>
+                    </div>
                   </div>
                 </div>
               );

@@ -39,8 +39,8 @@ const TOPICOS: GuiaTopico[] = [
         detalhe: 'No canto da tela de Financeiro, toque no botão flutuante de novo lançamento.',
       },
       {
-        titulo: '2. Aba “Simples”',
-        detalhe: 'Escolha se é DESPESA (saiu dinheiro) ou RECEITA (entrou dinheiro).',
+        titulo: '2. Informe o que aconteceu',
+        detalhe: 'No compositor, escolha Agora e depois Paguei ou Recebi. Mantenha a estrutura Valor único.',
       },
       {
         titulo: '3. Preencha os campos',
@@ -79,8 +79,8 @@ const TOPICOS: GuiaTopico[] = [
       'Nota ou compra com vários produtos/linhas: quantidade × valor unitário, com desconto opcional no total. Tudo sai da mesma conta e em geral do mesmo fornecedor.',
     passos: [
       {
-        titulo: '1. Novo lançamento → aba “Compra”',
-        detalhe: 'Informe data, conta, fornecedor (favorecido) e uma descrição geral da compra.',
+        titulo: '1. Novo lançamento → “Compra com itens”',
+        detalhe: 'Escolha Agora, Paguei e a estrutura Compra com itens. Informe data, conta, fornecedor e confira a descrição sugerida.',
       },
       {
         titulo: '2. Adicione as linhas',
@@ -122,8 +122,8 @@ const TOPICOS: GuiaTopico[] = [
       'Um gasto (ou valor) que precisa ser quebrado em várias categorias ou partes. Ex.: conta de energia dividida entre setores; um pagamento único com vários centros de custo.',
     passos: [
       {
-        titulo: '1. Novo lançamento → aba “Rateio”',
-        detalhe: 'Informe data, conta, descrição e, se fizer sentido, categoria geral e favorecido principal.',
+        titulo: '1. Novo lançamento → “Ratear valor”',
+        detalhe: 'Escolha Agora, Paguei e a estrutura Ratear valor. Informe o total, a conta, a descrição e o favorecido principal.',
       },
       {
         titulo: '2. Monte as partes',
@@ -361,15 +361,19 @@ const TOPICOS: GuiaTopico[] = [
       'Contas a pagar/receber programadas. Quando você dá baixa na Agenda, o sistema cria o lançamento real nesta lista de Lançamentos.',
     passos: [
       {
-        titulo: '1. Cadastre ou encontre o item na Agenda',
-        detalhe: 'Pode ser simples, compra, rateio ou parcela de lote — o tipo da baixa segue o que foi agendado.',
+        titulo: '1. Escolha “Agendar” no mesmo compositor',
+        detalhe: 'Você pode abrir pela Agenda ou por Lançamentos. Escolha Paguei ou Recebi e monte um valor único, uma compra ou um rateio.',
       },
       {
-        titulo: '2. Dê baixa no dia do pagamento/recebimento',
+        titulo: '2. Para parcelar, use “Valor único”',
+        detalhe: 'Ative Parcelamento, informe o total, o primeiro vencimento e a quantidade. O sistema gera as parcelas, que continuam editáveis.',
+      },
+      {
+        titulo: '3. Dê baixa no dia do pagamento/recebimento',
         detalhe: 'Confira conta e valor. A baixa gera o lançamento com descrição lembrando a conta agendada.',
       },
       {
-        titulo: '3. Se excluir o lançamento da baixa',
+        titulo: '4. Se excluir o lançamento da baixa',
         detalhe: 'A agenda volta a pendente. Você pode baixar de novo se o pagamento for verdadeiro.',
       },
     ],
@@ -383,7 +387,7 @@ const TOPICOS: GuiaTopico[] = [
         detalhe: 'O lançamento criado herda a conta da baixa — corrija antes de confirmar.',
       },
     ],
-    dica: 'Agenda = compromisso. Lançamento = dinheiro que de fato moveu. A baixa é a ponte entre os dois.',
+    dica: 'Agenda = compromisso. Lançamento = dinheiro que de fato moveu. Compra e rateio podem ser agendados; parcelamento pertence ao Valor único.',
   },
   {
     id: 'FILTROS',

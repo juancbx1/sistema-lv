@@ -20,6 +20,18 @@
 
 export const changelog = [
     {
+        versao: '1.39.0',
+        data: '29/07/2026',
+        admin: [
+            'Financeiro ganhou um novo compositor de lançamentos, com escolhas claras entre Paguei, Recebi e Transferi e o mesmo fluxo para lançamentos e agendamentos',
+            'Campos extensos de conta, categoria e favorecido ou pagador agora usam buscas inteligentes, sugestões pelo histórico e descrições automáticas editáveis',
+            'Compra detalhada, rateio, transferência, parcelamento, edição e baixa foram reorganizados com resumos de conferência mais claros e layout tablet-first',
+            'Agenda aprimorada com identificação visual de vencimentos, exclusão recuperável de lotes e parcelas e novo histórico protegido por permissões',
+            'Transferência entre empresas ganhou um caminho visual preparado e bloqueado para implementação futura, sem permitir movimentações entre organizações nesta versão',
+        ],
+        dashboard: [],
+    },
+    {
         versao: '1.38.0',
         versao_dashboard: '1.26.0',
         data: '29/07/2026',

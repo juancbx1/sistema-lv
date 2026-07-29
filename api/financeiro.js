@@ -455,7 +455,16 @@ async function registrarLog(dbClient, idUsuario, nomeUsuario, acao, dados = {}, 
                 detalhes = `Editou o agendamento #${dados.depois?.id || dados.antes?.id}. Valor: ${formatCurrency(dados.antes?.valor)} → ${formatCurrency(dados.depois?.valor)}.`;
                 break;
             case 'EXCLUSAO_AGENDAMENTO':
-                detalhes = `Excluiu o agendamento pendente #${dados.antes?.id} ("${descLanc(dados.antes)}") de ${formatCurrency(dados.antes?.valor)}.`;
+                detalhes = `Moveu o agendamento pendente #${dados.antes?.id} ("${descLanc(dados.antes)}") de ${formatCurrency(dados.antes?.valor)} para o histórico recuperável.`;
+                break;
+            case 'EXCLUSAO_LOTE_AGENDAMENTO':
+                detalhes = `Moveu o lote #${dados.antes?.id} ("${dados.antes?.descricao_lote || 'sem descrição'}") e ${dados.parcelas?.length || 0} parcela(s) pendente(s) para o histórico recuperável.`;
+                break;
+            case 'RECUPERACAO_AGENDAMENTO':
+                detalhes = `Recuperou o agendamento #${dados.depois?.id || dados.antes?.id} ("${descLanc(dados.depois || dados.antes)}") e o devolveu à Agenda.`;
+                break;
+            case 'RECUPERACAO_LOTE_AGENDAMENTO':
+                detalhes = `Recuperou o lote #${dados.antes?.id} ("${dados.antes?.descricao_lote || 'sem descrição'}") com ${dados.parcelas_recuperadas?.length || 0} parcela(s) pendente(s).`;
                 break;
             case 'EXCLUSAO_AGENDAMENTO_FORCADA':
                 detalhes = `Excluiu permanentemente o agendamento #${dados.antes?.id} ("${descLanc(dados.antes)}", status: ${dados.antes?.status || 'N/A'}) de ${formatCurrency(dados.antes?.valor)}.`;
@@ -710,6 +719,7 @@ router.get('/dashboard', async (req, res) => {
 
             FROM fc_contas_agendadas
             WHERE status = 'PENDENTE'
+              AND excluido_em IS NULL
               AND empresa_id = $1;
         `;
 
@@ -748,6 +758,7 @@ router.get('/header-status', async (req, res) => {
                 COALESCE(SUM(valor) FILTER (WHERE data_vencimento = CURRENT_DATE), 0) as hoje_total
             FROM fc_contas_agendadas
             WHERE status = 'PENDENTE'
+              AND excluido_em IS NULL
               AND tipo = 'A_PAGAR'
               AND empresa_id = $1;
         `;
@@ -964,6 +975,136 @@ router.get('/configuracoes', async (req, res) => {
 });
 
 // --- ROTAS PARA GERENCIAR CONTAS BANCÁRIAS ---
+// GET /api/financeiro/sugestoes-lancamento
+// Sugestões determinísticas baseadas somente no histórico da empresa ativa.
+router.get('/sugestoes-lancamento', async (req, res) => {
+    const tipo = String(req.query.tipo || '').toUpperCase();
+    const contatoId = Number(req.query.contato_id || 0) || null;
+    const categoriaId = Number(req.query.categoria_id || 0) || null;
+    const contaId = Number(req.query.conta_id || 0) || null;
+
+    if (tipo && !['DESPESA', 'RECEITA'].includes(tipo)) {
+        return res.status(400).json({ error: 'Tipo financeiro inválido.' });
+    }
+
+    let dbClient;
+    try {
+        dbClient = await pool.connect();
+        const filtros = [
+            'l.empresa_id = $1',
+            'l.excluido_em IS NULL',
+            'l.id_transferencia_vinculada IS NULL',
+        ];
+        const params = [req.empresaId];
+
+        if (tipo) {
+            params.push(tipo);
+            filtros.push(`l.tipo = $${params.length}`);
+        }
+        if (contatoId) {
+            params.push(contatoId);
+            filtros.push(`l.id_contato = $${params.length}`);
+        }
+        if (contaId) {
+            params.push(contaId);
+            filtros.push(`l.id_conta_bancaria = $${params.length}`);
+        }
+
+        const where = filtros.join(' AND ');
+        const [categoriasResult, descricoesResult, contatosResult] = await Promise.all([
+            dbClient.query(
+                `SELECT c.id,
+                        c.nome,
+                        g.nome AS nome_grupo,
+                        COUNT(*)::int AS frequencia,
+                        (SUM(COUNT(*)) OVER ())::int AS total_historico,
+                        MAX(l.data_transacao) AS ultima_utilizacao
+                   FROM fc_lancamentos l
+                   JOIN fc_categorias c
+                     ON c.id = l.id_categoria
+                    AND c.empresa_id = l.empresa_id
+                   LEFT JOIN fc_grupos_financeiros g
+                     ON g.id = c.id_grupo
+                    AND g.empresa_id = c.empresa_id
+                  WHERE ${where}
+                  GROUP BY c.id, c.nome, g.nome
+                  ORDER BY frequencia DESC, ultima_utilizacao DESC
+                  LIMIT 3`,
+                params
+            ),
+            dbClient.query(
+                `SELECT TRIM(l.descricao) AS texto,
+                        COUNT(*)::int AS frequencia,
+                        MAX(l.data_transacao) AS ultima_utilizacao
+                   FROM fc_lancamentos l
+                  WHERE ${where}
+                    AND NULLIF(TRIM(l.descricao), '') IS NOT NULL
+                    ${categoriaId ? `AND l.id_categoria = $${params.length + 1}` : ''}
+                  GROUP BY TRIM(l.descricao)
+                  ORDER BY frequencia DESC, ultima_utilizacao DESC
+                  LIMIT 3`,
+                categoriaId ? [...params, categoriaId] : params
+            ),
+            dbClient.query(
+                `SELECT ct.id,
+                        ct.nome,
+                        COUNT(*)::int AS frequencia,
+                        (SUM(COUNT(*)) OVER ())::int AS total_historico,
+                        MAX(l.data_transacao) AS ultima_utilizacao
+                   FROM fc_lancamentos l
+                   JOIN fc_contatos ct
+                     ON ct.id = l.id_contato
+                    AND ct.empresa_id = l.empresa_id
+                  WHERE ${where}
+                    ${categoriaId ? `AND l.id_categoria = $${params.length + 1}` : ''}
+                  GROUP BY ct.id, ct.nome
+                  ORDER BY frequencia DESC, ultima_utilizacao DESC
+                  LIMIT 3`,
+                categoriaId ? [...params, categoriaId] : params
+            ),
+        ]);
+
+        res.status(200).json({
+            categorias: (categoriaId ? [] : categoriasResult.rows).map((categoria) => ({
+                id: categoria.id,
+                nome: categoria.nome,
+                nome_grupo: categoria.nome_grupo,
+                frequencia: categoria.frequencia,
+                confianca: Number(categoria.total_historico) > 0
+                    ? Number((Number(categoria.frequencia) / Number(categoria.total_historico)).toFixed(2))
+                    : 0,
+                explicacao: contatoId
+                    ? `Usada em ${categoria.frequencia} lançamento(s) anteriores deste contato.`
+                    : `Usada em ${categoria.frequencia} lançamento(s) anteriores desta empresa.`,
+            })),
+            descricoes: descricoesResult.rows.map((descricao) => ({
+                texto: descricao.texto,
+                frequencia: descricao.frequencia,
+                origem: 'historico',
+            })),
+            contatos: contatosResult.rows.map((contato) => ({
+                id: contato.id,
+                nome: contato.nome,
+                frequencia: contato.frequencia,
+                confianca: Number(contato.total_historico) > 0
+                    ? Number((Number(contato.frequencia) / Number(contato.total_historico)).toFixed(2))
+                    : 0,
+                explicacao: categoriaId
+                    ? `Relacionado a ${contato.frequencia} lançamento(s) anteriores desta categoria.`
+                    : `Relacionado a ${contato.frequencia} lançamento(s) anteriores desta conta.`,
+            })),
+        });
+    } catch (error) {
+        console.error('[API /financeiro/sugestoes-lancamento] Erro:', error);
+        res.status(500).json({
+            error: 'Erro ao buscar sugestões do histórico financeiro.',
+            details: error.message,
+        });
+    } finally {
+        if (dbClient) dbClient.release();
+    }
+});
+
 router.post('/contas', async (req, res) => {
     if (!req.permissoesUsuario.includes('gerenciar-contas')) {
         return res.status(403).json({ error: 'Permissão negada para criar contas bancárias.' });
@@ -2789,7 +2930,7 @@ router.get('/contas-agendadas', async (req, res) => {
     try {
         dbClient = await pool.connect();
 
-        let whereClauses = ["ca.status = $1", "ca.empresa_id = $2"];
+        let whereClauses = ["ca.status = $1", "ca.empresa_id = $2", "ca.excluido_em IS NULL"];
         const queryParams = [status, req.empresaId];
         let paramIndex = 3;
 
@@ -2960,6 +3101,9 @@ router.put('/contas-agendadas/:id', async (req, res) => {
         if (agendamentoOriginal.status !== 'PENDENTE') {
             throw erroFinanceiro(404, 'Agendamento não encontrado ou já foi baixado.');
         }
+        if (agendamentoOriginal.excluido_em) {
+            throw erroFinanceiro(404, 'Agendamento excluído. Recupere-o pelo histórico antes de editar.');
+        }
         await exigirRecursoDaEmpresa(
             dbClient,
             'fc_categorias',
@@ -3039,6 +3183,9 @@ router.post('/contas-agendadas/:id/baixar', async (req, res) => {
             { nome: 'Conta agendada', forUpdate: true }
         );
         if (contaAgendada.status !== 'PENDENTE') throw new Error(`Esta conta já possui o status "${contaAgendada.status}".`);
+        if (contaAgendada.excluido_em) {
+            throw erroFinanceiro(404, 'Agendamento excluído. Recupere-o pelo histórico antes de dar baixa.');
+        }
         await exigirRecursoDaEmpresa(
             dbClient,
             'fc_contas_bancarias',
@@ -3047,28 +3194,107 @@ router.post('/contas-agendadas/:id/baixar', async (req, res) => {
             { nome: 'Conta bancária' }
         );
 
-        // 2. Cria o lançamento real na tabela fc_lancamentos
+        // 2. Cria o lançamento real. Agendamentos detalhados preservam seus
+        // itens na baixa; compras antigas usam quantidade 1 e o valor previsto
+        // como unitário porque a agenda ainda armazena somente valor_item.
         const tipoLancamento = contaAgendada.tipo === 'A_PAGAR' ? 'DESPESA' : 'RECEITA';
-        const lancamentoQuery = `
-            INSERT INTO fc_lancamentos (
-                id_conta_bancaria, id_categoria, tipo, valor, data_transacao,
-                descricao, id_contato, id_usuario_lancamento, empresa_id
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-            RETURNING id;
-        `;
-        const lancamentoRes = await dbClient.query(lancamentoQuery, [
-            id_conta_bancaria,
-            contaAgendada.id_categoria,
-            tipoLancamento,
-            contaAgendada.valor,
-            data_transacao,
-            `Baixa da conta agendada #${id}: ${contaAgendada.descricao}`,
-            contaAgendada.id_contato,
-            req.usuarioLogado.id,
-            req.empresaId
-        ]);
-        const novoLancamentoId = lancamentoRes.rows[0].id;
+        const descricaoBaixa = `Baixa da conta agendada #${id}: ${contaAgendada.descricao}`;
+        let novoLancamentoId;
+
+        if (contaAgendada.tipo_rateio) {
+            const itensAgendaRes = await dbClient.query(
+                `SELECT *
+                   FROM fc_contas_agendadas_itens
+                  WHERE id_conta_agendada_pai = $1
+                    AND empresa_id = $2
+                  ORDER BY id`,
+                [id, req.empresaId]
+            );
+            if (itensAgendaRes.rows.length === 0) {
+                throw new Error('O agendamento detalhado não possui itens para efetivar.');
+            }
+
+            const lancamentoRes = await dbClient.query(
+                `INSERT INTO fc_lancamentos (
+                    id_conta_bancaria, id_categoria, tipo, valor, data_transacao,
+                    descricao, id_contato, id_usuario_lancamento, tipo_rateio,
+                    valor_desconto, empresa_id
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0, $10)
+                RETURNING id`,
+                [
+                    id_conta_bancaria,
+                    contaAgendada.tipo_rateio === 'COMPRA' ? null : contaAgendada.id_categoria,
+                    tipoLancamento,
+                    contaAgendada.valor,
+                    data_transacao,
+                    descricaoBaixa,
+                    contaAgendada.id_contato,
+                    req.usuarioLogado.id,
+                    contaAgendada.tipo_rateio,
+                    req.empresaId,
+                ]
+            );
+            novoLancamentoId = lancamentoRes.rows[0].id;
+
+            for (const item of itensAgendaRes.rows) {
+                if (contaAgendada.tipo_rateio === 'COMPRA') {
+                    await dbClient.query(
+                        `INSERT INTO fc_lancamento_itens (
+                            id_lancamento_pai, id_categoria, descricao_item,
+                            quantidade, valor_unitario, valor_total_item,
+                            id_contato_item, empresa_id
+                        )
+                        VALUES ($1, $2, $3, 1, $4, $4, $5, $6)`,
+                        [
+                            novoLancamentoId,
+                            item.id_categoria,
+                            item.descricao_item,
+                            item.valor_item,
+                            item.id_contato_item || null,
+                            req.empresaId,
+                        ]
+                    );
+                } else {
+                    await dbClient.query(
+                        `INSERT INTO fc_lancamento_itens (
+                            id_lancamento_pai, id_categoria, descricao_item,
+                            valor_total_item, id_contato_item, empresa_id
+                        )
+                        VALUES ($1, $2, $3, $4, $5, $6)`,
+                        [
+                            novoLancamentoId,
+                            item.id_categoria,
+                            item.descricao_item,
+                            item.valor_item,
+                            item.id_contato_item || null,
+                            req.empresaId,
+                        ]
+                    );
+                }
+            }
+        } else {
+            const lancamentoRes = await dbClient.query(
+                `INSERT INTO fc_lancamentos (
+                    id_conta_bancaria, id_categoria, tipo, valor, data_transacao,
+                    descricao, id_contato, id_usuario_lancamento, empresa_id
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                RETURNING id`,
+                [
+                    id_conta_bancaria,
+                    contaAgendada.id_categoria,
+                    tipoLancamento,
+                    contaAgendada.valor,
+                    data_transacao,
+                    descricaoBaixa,
+                    contaAgendada.id_contato,
+                    req.usuarioLogado.id,
+                    req.empresaId,
+                ]
+            );
+            novoLancamentoId = lancamentoRes.rows[0].id;
+        }
 
         // 3. Atualiza a conta agendada com o status "PAGO" e o ID do lançamento
         const updateQuery = `
@@ -3317,7 +3543,7 @@ router.post('/contas-agendadas/detalhado', async (req, res) => {
     }
 });
 
-// DELETE /api/financeiro/contas-agendadas/:id - Excluir um agendamento
+// DELETE /api/financeiro/contas-agendadas/:id - Exclusão lógica recuperável
 router.delete('/contas-agendadas/:id', async (req, res) => {
     if (!req.permissoesUsuario.includes('lancar-transacao')) {
         return res.status(403).json({ error: 'Permissão negada para excluir agendamentos.' });
@@ -3328,31 +3554,33 @@ router.delete('/contas-agendadas/:id', async (req, res) => {
         dbClient = await pool.connect();
         await dbClient.query('BEGIN'); 
 
-        // 1. Busque o que será deletado
         const agendamentoRes = await dbClient.query(
             `SELECT *
                FROM fc_contas_agendadas
               WHERE id = $1
                 AND empresa_id = $2
-                AND status = 'PENDENTE'`,
+                AND status = 'PENDENTE'
+                AND excluido_em IS NULL
+              FOR UPDATE`,
             [id, req.empresaId]
         );
         
         if (agendamentoRes.rowCount === 0) {
-            // Se não encontrou, não precisa fazer rollback, só retorna o erro
-            return res.status(404).json({ error: 'Agendamento não encontrado ou já foi baixado.' });
+            throw erroFinanceiro(404, 'Agendamento não encontrado, já baixado ou já excluído.');
         }
         const agendamentoExcluido = agendamentoRes.rows[0];
 
-        // 2. Delete
         await dbClient.query(
-            `DELETE FROM fc_contas_agendadas
+            `UPDATE fc_contas_agendadas
+                SET excluido_em = NOW(),
+                    id_usuario_exclusao = $3,
+                    excluido_por_lote = FALSE,
+                    atualizado_em = NOW()
               WHERE id = $1
                 AND empresa_id = $2`,
-            [id, req.empresaId]
+            [id, req.empresaId, req.usuarioLogado.id]
         );
         
-        // 3. REGISTRE O LOG
         await registrarLog(
             dbClient,
             req.usuarioLogado.id,
@@ -3363,11 +3591,279 @@ router.delete('/contas-agendadas/:id', async (req, res) => {
         );
 
         await dbClient.query('COMMIT');
-        res.status(200).json({ message: 'Agendamento excluído com sucesso.' });
+        res.status(200).json({ message: 'Agendamento movido para o histórico. Ele poderá ser recuperado.' });
     } catch (error) {
         if (dbClient) await dbClient.query('ROLLBACK');
         console.error(`[API DELETE /contas-agendadas/${id}] Erro:`, error);
-        res.status(500).json({ error: 'Erro ao excluir agendamento.', details: error.message });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao excluir agendamento.',
+            details: error.statusCode ? undefined : error.message,
+        });
+    } finally {
+        if (dbClient) dbClient.release();
+    }
+});
+
+// DELETE /api/financeiro/lotes/:id - Exclusão lógica do lote e parcelas pendentes
+router.delete('/lotes/:id', async (req, res) => {
+    if (!req.permissoesUsuario.includes('lancar-transacao')) {
+        return res.status(403).json({ error: 'Permissão negada para excluir lotes de agendamento.' });
+    }
+    const { id } = req.params;
+    let dbClient;
+    try {
+        dbClient = await pool.connect();
+        await dbClient.query('BEGIN');
+
+        const loteRes = await dbClient.query(
+            `SELECT *
+               FROM fc_lotes_agendamento
+              WHERE id = $1
+                AND empresa_id = $2
+                AND excluido_em IS NULL
+              FOR UPDATE`,
+            [id, req.empresaId]
+        );
+        if (loteRes.rowCount === 0) {
+            throw erroFinanceiro(404, 'Lote não encontrado ou já excluído.');
+        }
+
+        const parcelasRes = await dbClient.query(
+            `UPDATE fc_contas_agendadas
+                SET excluido_em = NOW(),
+                    id_usuario_exclusao = $3,
+                    excluido_por_lote = TRUE,
+                    atualizado_em = NOW()
+              WHERE id_lote = $1
+                AND empresa_id = $2
+                AND status = 'PENDENTE'
+                AND excluido_em IS NULL
+          RETURNING *`,
+            [id, req.empresaId, req.usuarioLogado.id]
+        );
+        if (parcelasRes.rowCount === 0) {
+            throw erroFinanceiro(409, 'Este lote não possui parcelas pendentes disponíveis para excluir.');
+        }
+
+        await dbClient.query(
+            `UPDATE fc_lotes_agendamento
+                SET excluido_em = NOW(),
+                    id_usuario_exclusao = $3
+              WHERE id = $1
+                AND empresa_id = $2`,
+            [id, req.empresaId, req.usuarioLogado.id]
+        );
+
+        await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'EXCLUSAO_LOTE_AGENDAMENTO', {
+            antes: loteRes.rows[0],
+            parcelas: parcelasRes.rows,
+        }, req.empresaId);
+
+        await dbClient.query('COMMIT');
+        res.status(200).json({
+            message: `Lote movido para o histórico com ${parcelasRes.rowCount} parcela(s) pendente(s).`,
+        });
+    } catch (error) {
+        if (dbClient) await dbClient.query('ROLLBACK');
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao excluir lote de agendamento.',
+            details: error.statusCode ? undefined : error.message,
+        });
+    } finally {
+        if (dbClient) dbClient.release();
+    }
+});
+
+// GET /api/financeiro/agendamentos-excluidos - Histórico recuperável
+router.get('/agendamentos-excluidos', async (req, res) => {
+    if (!req.permissoesUsuario.includes('recuperar-agendamentos-deletados')) {
+        return res.status(403).json({ error: 'Permissão negada para consultar agendamentos excluídos.' });
+    }
+    let dbClient;
+    try {
+        dbClient = await pool.connect();
+        const [lotesRes, itensRes] = await Promise.all([
+            dbClient.query(
+                `SELECT l.id,
+                        l.descricao_lote AS descricao,
+                        l.valor_total AS valor,
+                        l.excluido_em,
+                        u.nome AS nome_usuario_exclusao,
+                        COUNT(ca.id)::int AS quantidade_parcelas,
+                        MIN(ca.data_vencimento) AS primeiro_vencimento,
+                        MAX(ca.data_vencimento) AS ultimo_vencimento
+                   FROM fc_lotes_agendamento l
+                   LEFT JOIN fc_contas_agendadas ca
+                     ON ca.id_lote = l.id
+                    AND ca.empresa_id = l.empresa_id
+                    AND ca.excluido_por_lote = TRUE
+                   LEFT JOIN usuarios u ON u.id = l.id_usuario_exclusao
+                  WHERE l.empresa_id = $1
+                    AND l.excluido_em IS NOT NULL
+                  GROUP BY l.id, l.descricao_lote, l.valor_total, l.excluido_em, u.nome
+                  ORDER BY l.excluido_em DESC`,
+                [req.empresaId]
+            ),
+            dbClient.query(
+                `SELECT ca.id,
+                        ca.id_lote,
+                        ca.descricao,
+                        ca.valor,
+                        ca.tipo,
+                        ca.data_vencimento,
+                        ca.excluido_em,
+                        u.nome AS nome_usuario_exclusao,
+                        cat.nome AS nome_categoria,
+                        contato.nome AS nome_favorecido
+                   FROM fc_contas_agendadas ca
+                   LEFT JOIN usuarios u ON u.id = ca.id_usuario_exclusao
+                   LEFT JOIN fc_categorias cat
+                     ON cat.id = ca.id_categoria
+                    AND cat.empresa_id = ca.empresa_id
+                   LEFT JOIN fc_contatos contato
+                     ON contato.id = ca.id_contato
+                    AND contato.empresa_id = ca.empresa_id
+                  WHERE ca.empresa_id = $1
+                    AND ca.excluido_em IS NOT NULL
+                    AND ca.excluido_por_lote = FALSE
+                  ORDER BY ca.excluido_em DESC`,
+                [req.empresaId]
+            ),
+        ]);
+
+        const registros = [
+            ...lotesRes.rows.map((item) => ({ ...item, tipo_registro: 'LOTE' })),
+            ...itensRes.rows.map((item) => ({ ...item, tipo_registro: 'AGENDAMENTO' })),
+        ].sort((a, b) => new Date(b.excluido_em).getTime() - new Date(a.excluido_em).getTime());
+
+        res.status(200).json({ registros });
+    } catch (error) {
+        res.status(500).json({
+            error: 'Erro ao carregar o histórico de agendamentos excluídos.',
+            details: error.message,
+        });
+    } finally {
+        if (dbClient) dbClient.release();
+    }
+});
+
+// POST /api/financeiro/contas-agendadas/:id/recuperar
+router.post('/contas-agendadas/:id/recuperar', async (req, res) => {
+    if (!req.permissoesUsuario.includes('recuperar-agendamentos-deletados')) {
+        return res.status(403).json({ error: 'Permissão negada para recuperar agendamentos.' });
+    }
+    const { id } = req.params;
+    let dbClient;
+    try {
+        dbClient = await pool.connect();
+        await dbClient.query('BEGIN');
+        const antesRes = await dbClient.query(
+            `SELECT ca.*,
+                    l.excluido_em AS lote_excluido_em
+               FROM fc_contas_agendadas ca
+               LEFT JOIN fc_lotes_agendamento l
+                 ON l.id = ca.id_lote
+                AND l.empresa_id = ca.empresa_id
+              WHERE ca.id = $1
+                AND ca.empresa_id = $2
+                AND ca.excluido_em IS NOT NULL
+              FOR UPDATE OF ca`,
+            [id, req.empresaId]
+        );
+        if (antesRes.rowCount === 0) {
+            throw erroFinanceiro(404, 'Agendamento excluído não encontrado.');
+        }
+        const antes = antesRes.rows[0];
+        if (antes.excluido_por_lote || antes.lote_excluido_em) {
+            throw erroFinanceiro(409, 'Esta parcela pertence a um lote excluído. Recupere o lote completo.');
+        }
+
+        const depoisRes = await dbClient.query(
+            `UPDATE fc_contas_agendadas
+                SET excluido_em = NULL,
+                    id_usuario_exclusao = NULL,
+                    excluido_por_lote = FALSE,
+                    atualizado_em = NOW()
+              WHERE id = $1
+                AND empresa_id = $2
+          RETURNING *`,
+            [id, req.empresaId]
+        );
+        await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'RECUPERACAO_AGENDAMENTO', {
+            antes,
+            depois: depoisRes.rows[0],
+        }, req.empresaId);
+        await dbClient.query('COMMIT');
+        res.status(200).json({ message: 'Agendamento recuperado e devolvido à Agenda.' });
+    } catch (error) {
+        if (dbClient) await dbClient.query('ROLLBACK');
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao recuperar agendamento.',
+            details: error.statusCode ? undefined : error.message,
+        });
+    } finally {
+        if (dbClient) dbClient.release();
+    }
+});
+
+// POST /api/financeiro/lotes/:id/recuperar
+router.post('/lotes/:id/recuperar', async (req, res) => {
+    if (!req.permissoesUsuario.includes('recuperar-agendamentos-deletados')) {
+        return res.status(403).json({ error: 'Permissão negada para recuperar lotes de agendamento.' });
+    }
+    const { id } = req.params;
+    let dbClient;
+    try {
+        dbClient = await pool.connect();
+        await dbClient.query('BEGIN');
+        const loteRes = await dbClient.query(
+            `SELECT *
+               FROM fc_lotes_agendamento
+              WHERE id = $1
+                AND empresa_id = $2
+                AND excluido_em IS NOT NULL
+              FOR UPDATE`,
+            [id, req.empresaId]
+        );
+        if (loteRes.rowCount === 0) {
+            throw erroFinanceiro(404, 'Lote excluído não encontrado.');
+        }
+
+        const parcelasRes = await dbClient.query(
+            `UPDATE fc_contas_agendadas
+                SET excluido_em = NULL,
+                    id_usuario_exclusao = NULL,
+                    excluido_por_lote = FALSE,
+                    atualizado_em = NOW()
+              WHERE id_lote = $1
+                AND empresa_id = $2
+                AND excluido_por_lote = TRUE
+          RETURNING id`,
+            [id, req.empresaId]
+        );
+        await dbClient.query(
+            `UPDATE fc_lotes_agendamento
+                SET excluido_em = NULL,
+                    id_usuario_exclusao = NULL
+              WHERE id = $1
+                AND empresa_id = $2`,
+            [id, req.empresaId]
+        );
+
+        await registrarLog(dbClient, req.usuarioLogado.id, req.usuarioLogado.nome, 'RECUPERACAO_LOTE_AGENDAMENTO', {
+            antes: loteRes.rows[0],
+            parcelas_recuperadas: parcelasRes.rows.map((item) => item.id),
+        }, req.empresaId);
+        await dbClient.query('COMMIT');
+        res.status(200).json({
+            message: `Lote recuperado com ${parcelasRes.rowCount} parcela(s) pendente(s).`,
+        });
+    } catch (error) {
+        if (dbClient) await dbClient.query('ROLLBACK');
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao recuperar lote de agendamento.',
+            details: error.statusCode ? undefined : error.message,
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -3402,6 +3898,9 @@ router.put('/contas-agendadas/detalhado/:id', async (req, res) => {
         );
         if (antes.status !== 'PENDENTE') {
             throw erroFinanceiro(404, 'Agendamento pendente não encontrado.');
+        }
+        if (antes.excluido_em) {
+            throw erroFinanceiro(404, 'Agendamento excluído. Recupere-o pelo histórico antes de editar.');
         }
         if (tipo_rateio !== 'COMPRA' && id_categoria) {
             await exigirRecursoDaEmpresa(
@@ -3599,6 +4098,7 @@ router.put('/lotes/:id/descricao', async (req, res) => {
               WHERE id_lote = $1
                 AND empresa_id = $2
                 AND status = 'PENDENTE'
+                AND excluido_em IS NULL
               ORDER BY data_vencimento ASC`,
             [idLote, req.empresaId]
         );

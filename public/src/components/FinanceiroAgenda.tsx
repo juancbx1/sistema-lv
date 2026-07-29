@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import UICarregando from './UICarregando.jsx';
 import FinanceiroAgendaCard from './FinanceiroAgendaCard.tsx';
+import FinanceiroAgendaHistoricoModal from './FinanceiroAgendaHistoricoModal.tsx';
+import UIBloqueio from './UIBloqueio.jsx';
 import { fetchFinanceiro } from '../utils/financeiro-api';
 import type { FinanceiroAgendaItem } from '../utils/financeiro-types';
-import { mostrarConfirmacao, mostrarPromptTexto } from '../../js/utils/popups.js';
+import { mostrarConfirmacao, mostrarMensagem, mostrarPromptTexto } from '../../js/utils/popups.js';
 import { useFinanceiro } from './FinanceiroContext';
 
 interface AgendaResponse { contasAgendadas: FinanceiroAgendaItem[][]; page: number; pages: number; }
@@ -30,7 +32,7 @@ function ordenarGruposPorVencimento(grupos: FinanceiroAgendaItem[][]) {
 }
 
 export default function FinanceiroAgenda() {
-  const { agendaFiltro, tokens, openAgendaModal, permissoes } = useFinanceiro();
+  const { agendaFiltro, tokens, openAgendaModal, permissoes, refresh } = useFinanceiro();
   const [grupos, setGrupos] = useState<FinanceiroAgendaItem[][]>([]);
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
@@ -38,8 +40,9 @@ export default function FinanceiroAgenda() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [historicoOpen, setHistoricoOpen] = useState(false);
   const podeBaixar = permissoes.includes('aprovar-pagamento');
-  const podeEditarExcluir = permissoes.includes('lancar-transacao');
+  const podeEditar = permissoes.includes('lancar-transacao');
 
   const carregar = useCallback(async (nextPage = 1, nextFiltro = filtroAtivo) => {
     setIsLoading(true);
@@ -68,7 +71,7 @@ export default function FinanceiroAgenda() {
 
   const excluir = async (id: string | number) => {
     const ok = await mostrarConfirmacao(
-      'Tem certeza que deseja excluir este agendamento?<br><br>Esta ação não pode ser desfeita.',
+      'Tem certeza que deseja excluir este agendamento?<br><br>Ele ficará disponível no Histórico da Agenda para recuperação.',
       {
         tipo: 'perigo',
         textoConfirmar: 'Excluir',
@@ -76,8 +79,36 @@ export default function FinanceiroAgenda() {
       },
     );
     if (!ok) return;
-    await fetchFinanceiro(`/contas-agendadas/${id}`, { method: 'DELETE' });
-    void carregar(page, filtroAtivo);
+    try {
+      await fetchFinanceiro(`/contas-agendadas/${id}`, { method: 'DELETE' });
+      mostrarMensagem('Agendamento movido para o histórico.', 'sucesso');
+      void carregar(page, filtroAtivo);
+      refresh('dashboard');
+      refresh('header');
+    } catch (err) {
+      mostrarMensagem(err instanceof Error ? err.message : 'Não foi possível excluir o agendamento.', 'erro');
+    }
+  };
+
+  const excluirLote = async (id: string | number) => {
+    const ok = await mostrarConfirmacao(
+      'Excluir este lote e todas as parcelas pendentes?<br><br>O lote ficará disponível no Histórico da Agenda para recuperação.',
+      {
+        tipo: 'perigo',
+        textoConfirmar: 'Excluir lote',
+        textoCancelar: 'Cancelar',
+      },
+    );
+    if (!ok) return;
+    try {
+      await fetchFinanceiro(`/lotes/${id}`, { method: 'DELETE' });
+      mostrarMensagem('Lote movido para o histórico.', 'sucesso');
+      void carregar(page, filtroAtivo);
+      refresh('dashboard');
+      refresh('header');
+    } catch (err) {
+      mostrarMensagem(err instanceof Error ? err.message : 'Não foi possível excluir o lote.', 'erro');
+    }
   };
 
   const editarLote = async (id: string | number, atual: string) => {
@@ -98,19 +129,24 @@ export default function FinanceiroAgenda() {
     void carregar(page, filtroAtivo);
   };
 
-  if (isLoading) return <UICarregando variante="bloco" tamanho="md" texto="Buscando contas agendadas..." />;
-  if (error) {
-    return (
-      <div>
-        <p style={{ color: 'red', textAlign: 'center', padding: '20px' }}>{error}</p>
-        <button type="button" className="fc-btn-atualizar" onClick={() => void carregar(page, filtroAtivo)}>Tentar novamente</button>
-      </div>
-    );
-  }
-  if (!grupos.length) return <p style={{ textAlign: 'center', padding: '20px' }}>Nenhuma conta pendente na agenda.</p>;
-
   return (
     <>
+      <div className="fc-agenda-toolbar">
+        <div>
+          <strong>Compromissos pendentes</strong>
+          <span>Exclusões podem ser consultadas e recuperadas pelo histórico.</span>
+        </div>
+        <UIBloqueio
+          permissao="recuperar-agendamentos-deletados"
+          mensagem="Você não tem permissão para consultar ou recuperar agendamentos excluídos."
+        >
+          <button type="button" className="fc-btn fc-btn-outline" onClick={() => setHistoricoOpen(true)}>
+            <i className="fas fa-clock-rotate-left" aria-hidden="true" />
+            Histórico
+          </button>
+        </UIBloqueio>
+      </div>
+
       {filtroAtivo && (
         <div className="fc-agenda-filtro-ativo">
           <span className="fc-launch-category-pill">Filtro: {filtroAtivo}</span>
@@ -127,32 +163,56 @@ export default function FinanceiroAgenda() {
         </div>
       )}
 
-      <div className="fc-agenda-lista">
-        {grupos.map((grupo) => {
-          const primeiro = grupo[0];
-          const chave = String(primeiro.id_lote ?? primeiro.id);
-          return (
-            <FinanceiroAgendaCard
-              key={chave}
-              grupo={grupo}
-              isExpanded={Boolean(expanded[chave])}
-              onToggle={() => setExpanded((current) => ({ ...current, [chave]: !current[chave] }))}
-              onEdit={(item) => openAgendaModal({ mode: 'agenda', item })}
-              onDelete={(id) => void excluir(id)}
-              onBaixa={(item) => openAgendaModal({ mode: 'baixa', item })}
-              onEditLote={(id, desc) => void editarLote(id, desc)}
-              podeBaixar={podeBaixar}
-              podeEditarExcluir={podeEditarExcluir}
-            />
-          );
-        })}
-      </div>
+      {isLoading ? (
+        <UICarregando variante="bloco" tamanho="md" texto="Buscando contas agendadas..." />
+      ) : error ? (
+        <div>
+          <p style={{ color: 'red', textAlign: 'center', padding: '20px' }}>{error}</p>
+          <button type="button" className="fc-btn-atualizar" onClick={() => void carregar(page, filtroAtivo)}>Tentar novamente</button>
+        </div>
+      ) : !grupos.length ? (
+        <p style={{ textAlign: 'center', padding: '20px' }}>Nenhuma conta pendente na agenda.</p>
+      ) : (
+        <>
+          <div className="fc-agenda-lista">
+            {grupos.map((grupo) => {
+              const primeiro = grupo[0];
+              const chave = String(primeiro.id_lote ?? primeiro.id);
+              return (
+                <FinanceiroAgendaCard
+                  key={chave}
+                  grupo={grupo}
+                  isExpanded={Boolean(expanded[chave])}
+                  onToggle={() => setExpanded((current) => ({ ...current, [chave]: !current[chave] }))}
+                  onEdit={(item) => openAgendaModal({ mode: 'agenda', item })}
+                  onDelete={(id) => void excluir(id)}
+                  onDeleteLote={(id) => void excluirLote(id)}
+                  onBaixa={(item) => openAgendaModal({ mode: 'baixa', item })}
+                  onEditLote={(id, desc) => void editarLote(id, desc)}
+                  podeBaixar={podeBaixar}
+                  podeEditar={podeEditar}
+                />
+              );
+            })}
+          </div>
 
-      <div className="fc-paginacao-container">
-        <button type="button" className="gs-paginacao-btn" disabled={page <= 1} onClick={() => void carregar(page - 1, filtroAtivo)}>Anterior</button>
-        <span className="gs-paginacao-info">Pág. {page} de {pages}</span>
-        <button type="button" className="gs-paginacao-btn" disabled={page >= pages} onClick={() => void carregar(page + 1, filtroAtivo)}>Próximo</button>
-      </div>
+          <div className="fc-paginacao-container">
+            <button type="button" className="gs-paginacao-btn" disabled={page <= 1} onClick={() => void carregar(page - 1, filtroAtivo)}>Anterior</button>
+            <span className="gs-paginacao-info">Pág. {page} de {pages}</span>
+            <button type="button" className="gs-paginacao-btn" disabled={page >= pages} onClick={() => void carregar(page + 1, filtroAtivo)}>Próximo</button>
+          </div>
+        </>
+      )}
+
+      <FinanceiroAgendaHistoricoModal
+        open={historicoOpen}
+        onClose={() => setHistoricoOpen(false)}
+        onRecovered={() => {
+          void carregar(1, filtroAtivo);
+          refresh('dashboard');
+          refresh('header');
+        }}
+      />
     </>
   );
 }

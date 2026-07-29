@@ -11,7 +11,7 @@ import FinanceiroAprovacoes from './FinanceiroAprovacoes';
 import FinanceiroNotificacoes from './FinanceiroNotificacoes';
 import FeedAtividades from './FeedAtividades';
 import RelatoriosView from './RelatoriosView';
-import ModalLancamento from './ModalLancamento';
+import FinanceiroCompositorModal from './FinanceiroCompositorModal';
 import FinanceiroAgendaModal from './FinanceiroAgendaModal';
 import FinanceiroTransferenciaModal from './FinanceiroTransferenciaModal';
 import FinanceiroEstornoModal from './FinanceiroEstornoModal';
@@ -23,7 +23,8 @@ function FinanceiroShell() {
   const {
     view, tab, setView, setTab, notificacoesAbertas, toggleNotificacoes, setNotificacoesAbertas,
     pageReady, openLancamentoModal, openAgendaModal, openTransferenciaModal,
-    lancamentoModal, closeLancamentoModal, refresh, config, reloadConfig, permissoes,
+    lancamentoModal, closeLancamentoModal, agendaModal, closeAgendaModal,
+    refresh, config, reloadConfig, permissoes,
   } = useFinanceiro();
 
   useEffect(() => {
@@ -181,11 +182,13 @@ function FinanceiroShell() {
         </button>
       </div>
 
-      <ModalLancamento
-        isOpen={lancamentoModal.open}
-        onClose={closeLancamentoModal}
+      <FinanceiroCompositorModal
+        isOpen={lancamentoModal.open || agendaModal?.mode === 'agenda'}
+        momentoInicial={agendaModal?.mode === 'agenda' ? 'agendar' : 'agora'}
+        onClose={agendaModal?.mode === 'agenda' ? closeAgendaModal : closeLancamentoModal}
         onSuccess={() => { refresh('lancamentos'); refresh('dashboard'); refresh('agenda'); refresh('header'); }}
-        lancamentoParaEditar={lancamentoModal.lancamento}
+        lancamento={lancamentoModal.lancamento}
+        agendamento={agendaModal?.mode === 'agenda' ? agendaModal.item ?? null : null}
         permissoes={permissoes}
         contas={config.contas}
         categorias={config.categorias}

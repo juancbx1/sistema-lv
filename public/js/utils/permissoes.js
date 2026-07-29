@@ -117,6 +117,7 @@ export const permissoesDisponiveis = [
     { id: 'exibir-informacao-gerencial', label: 'Ação: Ver informação gerencial nos cards de lançamento', categoria: 'Financeiro — Caixa e Lançamentos' },
     { id: 'permite-excluir-agendamentos', label: 'Ação: Pode excluir agendamentos (pelo ID)', categoria: 'Financeiro — Caixa e Lançamentos' },
     { id: 'acesso-relatorios-financeiros', label: 'Ação: Pode ver relatórios financeiros', categoria: 'Financeiro — Caixa e Lançamentos' },
+    { id: 'recuperar-agendamentos-deletados', label: 'Ação: Permite recuperar agendamentos deletados', categoria: 'Financeiro — Caixa e Lançamentos' },
 
 
     // --- FINANCEIRO E RELATÓRIOS ---

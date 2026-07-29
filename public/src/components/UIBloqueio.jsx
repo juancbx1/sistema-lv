@@ -43,10 +43,12 @@ import React, { useMemo } from 'react';
 import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio.js';
 
 /**
- * @param {string}      permissao  - ID da permissão necessária
- * @param {string}      [mensagem] - Mensagem customizada no popup (opcional)
- * @param {object}      [style]    - Estilos inline para o wrapper (ex: {{ flex: 1 }} quando o botão é flex item com flex:1)
- * @param {ReactNode}   children   - Elemento(s) filho(s) a envolver
+ * @param {{
+ *   permissao: string,
+ *   mensagem?: string,
+ *   style?: React.CSSProperties,
+ *   children: React.ReactNode
+ * }} props
  */
 export default function UIBloqueio({ permissao, mensagem, style, children }) {
     const bloqueado = useMemo(() => !temPermissao(permissao), [permissao]);

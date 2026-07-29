@@ -116,6 +116,8 @@ export interface FinanceiroAgendaItem {
   id_contato?: string | number | null;
   itens?: Array<{
     id?: string | number;
+    id_categoria?: string | number | null;
+    id_contato_item?: string | number | null;
     nome_contato_item?: string;
     nome_categoria?: string;
     descricao_item?: string;

@@ -16,7 +16,7 @@ O sistema está em transição planejada de empresa única para **multiempresas*
 
 `_planejamento/sistema-multiempresas.md`
 
-**Estado atual:** Fase 6 — migração integral do Financeiro para multiempresas.
+**Estado atual:** Fase 6 concluída e Fase 6.1 aprovada; preparação da Fase 7.
 A fundação multiempresa e a Gestão Organizacional já estão em produção. A
 migration de preparação do Financeiro foi executada e validada na Neon em
 28/07/2026; a API foi isolada e validada, e o teste transacional das constraints
@@ -25,7 +25,10 @@ de finalização foi executada e validada na Neon em 29/07/2026. A liberação
 controlada do Financeiro para Neila Confecções também foi executada e validada;
 o teste manual entre as duas empresas foi aprovado, com dados isolados e console
 sem erros. O código estrutural foi publicado no commit `5ef2096`, e a correção
-final do agente global aguarda publicação na release `1.38.0`.
+final do agente global foi publicada no commit `919de6d`, release `1.38.0`. O
+redesign da Fase 6.1, incluindo Agenda, parcelamento, soft delete e recuperação,
+foi aprovado integralmente em smoke autenticado em 29/07/2026 e aguarda a
+publicação de sua release.
 
 ### Decisões obrigatórias
 
@@ -42,6 +45,31 @@ final do agente global aguarda publicação na release `1.38.0`.
 - O plano executável da Fase 6, incluindo isolamento do Financeiro e redesign
   dos modais, fica em
   `_planejamento/financeiro-multiempresas-e-redesign-modais.md`.
+- O redesign dos modais foi executado como **Fase 6.1**, antes da Fase 7,
+  conforme `_planejamento/financeiro-fase-6.1-redesign-modais.md`. O novo
+  compositor começa pela intenção **Paguei / Recebi / Transferi**, mantém o
+  lançamento manual como fluxo principal, usa Favorecido para despesas e
+  Pagador para receitas, substitui selects extensos por buscas e prepara
+  componentes reutilizáveis pela futura importação/conciliação de extratos sem
+  implementar o importador nesta fase.
+- Lançamentos e Agenda reutilizam o mesmo `FinanceiroCompositorModal`: a aba
+  define apenas o estado inicial Agora/Agendar. Parcelamento é uma variação de
+  **Agendar + Valor único**, persistida como lote de agendamentos; compra e
+  rateio mantêm seus editores próprios e a baixa continua em confirmação
+  separada por transformar previsão em lançamento real.
+- Exclusões comuns de agendamentos e lotes são lógicas e recuperáveis. A
+  listagem, dashboard e header ignoram `excluido_em`; o Histórico da Agenda
+  permite restaurar registro individual ou lote mediante a permissão
+  `recuperar-agendamentos-deletados`. Uma parcela removida junto do lote usa
+  `excluido_por_lote = true` e só volta pela recuperação do lote. A migration é
+  `_planejamento/migration-financeiro-fase6.1-soft-delete-agendamentos.sql`.
+- Excluir lote, agendamento avulso ou parcela exige
+  `permite-excluir-agendamentos`. Sem essa permissão, a ação permanece visível
+  com o bloqueio universal `UIBloqueio`.
+- Na Fase 7 — Empregados, dashboard e pagamentos — a dashboard das costureiras
+  será a última frente funcional. Seu isolamento será concluído depois dos
+  domínios de vínculo, ponto e pagamentos, preservando espaço para um redesign
+  completo da experiência mobile.
 - Toda entidade empresarial deverá possuir vínculo explícito com `empresa_id`, direto ou garantido por uma entidade pai.
 - Toda consulta por ID, alteração ou exclusão empresarial deverá validar também `empresa_id`; filtrar apenas listagens não é suficiente.
 - O frontend nunca será a autoridade de isolamento. `empresa_id` não deve ser aceito cegamente do body.
@@ -99,8 +127,10 @@ final do agente global aguarda publicação na release `1.38.0`.
 | Fase 3 — login e sessão | Publicada e validada em produção |
 | Fase 4 — seletor universal | Publicada e validada em produção |
 | Fase 5 — Gestão Organizacional | Concluída, publicada e aprovada em produção |
-| Fase 6 — Financeiro como piloto | Concluída funcionalmente; correção final do agente global aguarda publicação |
-| Fase 7 em diante | Não iniciada |
+| Fase 6 — Financeiro como piloto | Concluída, publicada e aprovada nas duas empresas |
+| Fase 6.1 — Redesign dos modais do Financeiro | Concluída e aprovada localmente; aguarda publicação |
+| Fase 7 — Empregados, dashboard e pagamentos | Próxima; dashboard das costureiras será a última frente |
+| Fase 8 em diante | Não iniciada |
 
 Situação operacional:
 
@@ -123,11 +153,16 @@ Situação operacional:
   lançamentos, baixas, configurações, logs e relatórios funcionaram corretamente;
 - a troca entre as empresas foi aprovada nos dois sentidos, preservando os dados
   de cada contexto e sem erros no console;
+- o compositor único da Fase 6.1 foi aprovado para lançamento simples, compra,
+  rateio, transferência, agendamento, parcelamento, edição e baixa;
+- a migration de soft delete da Agenda foi executada e validada com cinco
+  colunas, três índices e `aprovado: true`; exclusão, histórico, recuperação,
+  cores por vencimento e permissões foram aprovados em smoke manual;
 - o agente global de encerramento de OP fazia uma chamada bloqueada e gerava
   `403` no console da empresa secundária;
 - `public/src/main-agentes-globais.jsx` foi ajustado localmente para não iniciar
   polling de OP em empresa secundária enquanto esse módulo não for migrado;
-  a correção foi aprovada manualmente e aguarda publicação;
+  a correção foi aprovada e publicada no commit `919de6d`;
 - o backend possui contexto universal, troca de empresa, JWT
   contextual, `/usuarios/me` contextual e impersonação por empresa;
 - o menu compartilhado possui seletor no PC, tablet e celular;

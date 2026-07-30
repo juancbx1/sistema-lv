@@ -95,14 +95,25 @@ function AgentesGlobais() {
 
         const handleVisible   = () => { if (document.visibilityState === 'visible') buscarOps(); };
         const handleOpEncerrada = () => buscarOps();
+        const handleEmpresaAlterada = () => {
+            try {
+                const permissoes = JSON.parse(localStorage.getItem('permissoes') || '[]');
+                setTemPermissaoAgente(permissoes.includes('usar-agente-encerrador'));
+            } catch {
+                setTemPermissaoAgente(false);
+            }
+            buscarOps();
+        };
 
         document.addEventListener('visibilitychange', handleVisible);
         window.addEventListener('op-encerrada', handleOpEncerrada);
+        window.addEventListener('lv:empresa-contexto-alterado', handleEmpresaAlterada);
 
         return () => {
             clearInterval(interval);
             document.removeEventListener('visibilitychange', handleVisible);
             window.removeEventListener('op-encerrada', handleOpEncerrada);
+            window.removeEventListener('lv:empresa-contexto-alterado', handleEmpresaAlterada);
         };
     }, [buscarOps]);
 

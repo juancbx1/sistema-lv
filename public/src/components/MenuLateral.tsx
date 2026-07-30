@@ -6,6 +6,7 @@ import useMenuPreferencias from '../hooks/useMenuPreferencias';
 import {
   MENU_FAVORITOS_PADRAO,
   MENU_ITENS,
+  itemMenuEstaAtivo,
 } from '../utils/menu-catalogo';
 import MenuConfirmacao from './MenuConfirmacao';
 import MenuEmpresaAtiva from './MenuEmpresaAtiva';
@@ -126,6 +127,13 @@ export default function MenuLateral() {
     });
   }, [contexto, usuario]);
 
+  const moduloAtualIndisponivel = useMemo(() => {
+    if (!contexto || contexto.empresaAtiva.eh_legada) return false;
+    const itemAtual = MENU_ITENS.find((item) => itemMenuEstaAtivo(item));
+    if (!itemAtual?.modulo) return false;
+    return !new Set(contexto.modulosHabilitados || []).has(itemAtual.modulo);
+  }, [contexto]);
+
   const favoritosBase = useMemo(
     () =>
       preferencias.personalizado
@@ -183,7 +191,10 @@ export default function MenuLateral() {
     salvarOrdemVisivel(proximos);
   };
 
-  const erro = erroContexto || erroPreferencias;
+  const erroModuloAtual = moduloAtualIndisponivel
+    ? 'Este módulo ainda não está disponível para a empresa ativa.'
+    : null;
+  const erro = erroModuloAtual || erroContexto || erroPreferencias;
   const novidadesNaoLidas = contarNovidadesNaoLidas(
     preferencias.changelogVersaoLida,
   );
@@ -225,16 +236,18 @@ export default function MenuLateral() {
           <div className="ml-inline-alert" role="alert">
             <i className="fa-solid fa-circle-exclamation" aria-hidden="true" />
             <span>{erro}</span>
-            <button
-              type="button"
-              aria-label="Fechar aviso"
-              onClick={() => {
-                setErroContexto(null);
-                setErroPreferencias(null);
-              }}
-            >
-              <i className="fa-solid fa-xmark" aria-hidden="true" />
-            </button>
+            {!erroModuloAtual && (
+              <button
+                type="button"
+                aria-label="Fechar aviso"
+                onClick={() => {
+                  setErroContexto(null);
+                  setErroPreferencias(null);
+                }}
+              >
+                <i className="fa-solid fa-xmark" aria-hidden="true" />
+              </button>
+            )}
           </div>
         )}
 
@@ -331,7 +344,10 @@ export default function MenuLateral() {
         empresaAtiva={contexto.empresaAtiva}
         trocandoPara={trocandoPara}
         onClose={() => setSeletorEmpresaAberto(false)}
-        onSelect={(empresa) => void trocarEmpresa(empresa)}
+        onSelect={(empresa) => {
+          setSeletorEmpresaAberto(false);
+          void trocarEmpresa(empresa);
+        }}
       />
 
       <PerfilAvatarStudio

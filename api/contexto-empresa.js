@@ -58,6 +58,8 @@ const ROTAS_PUBLICAS_SEM_CONTEXTO = [
 
 const ROTAS_SEM_BLOQUEIO_MODULO = [
     '/contexto-empresa',
+    '/preferencias-menu',
+    '/avatares',
 ];
 
 const ROTAS_USUARIO_SEM_BLOQUEIO_MODULO = [

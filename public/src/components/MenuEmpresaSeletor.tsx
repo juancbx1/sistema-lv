@@ -55,7 +55,7 @@ export default function MenuEmpresaSeletor({
             <span className="ml-dialog-kicker">Contexto de trabalho</span>
             <h2 id="ml-company-dialog-title">Escolher empresa</h2>
             <p id="ml-company-dialog-description">
-              O sistema será recarregado no contexto selecionado.
+              O sistema atualizará os dados para o contexto selecionado.
             </p>
           </div>
           <button

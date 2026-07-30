@@ -20,10 +20,6 @@ body {
     margin-left: var(--ml-width) !important;
 }
 
-html.ml-transition-bootstrap #root {
-    visibility: hidden;
-}
-
 #menu-lateral-container,
 #menu-lateral-container * {
     box-sizing: border-box;
@@ -1324,14 +1320,6 @@ html.ml-transition-bootstrap #root {
     font-family: var(--ml-font);
     isolation: isolate;
     animation: ml-transition-enter 240ms ease both;
-}
-
-.ml-transition-bootstrap-overlay {
-    z-index: 11999;
-}
-
-.ml-transition-bootstrap-overlay[hidden] {
-    display: none;
 }
 
 .ml-transition-overlay.is-concluindo {

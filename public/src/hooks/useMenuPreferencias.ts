@@ -48,6 +48,7 @@ export default function useMenuPreferencias(
 
     async function carregar() {
       setCarregando(true);
+      setErro(null);
       try {
         const response = await fetch('/api/preferencias-menu', {
           headers: { Authorization: `Bearer ${token}` },
@@ -79,6 +80,7 @@ export default function useMenuPreferencias(
               : changelogLocal),
           persistenciaDisponivel,
         });
+        setErro(null);
       } catch (error) {
         if (!ativo) return;
         setErro(error instanceof Error ? error.message : 'Preferências indisponíveis.');

@@ -20,6 +20,15 @@
 
 export const changelog = [
     {
+        versao: '1.40.3',
+        data: '29/07/2026',
+        admin: [
+            'A troca de empresa no Financeiro agora atualiza token, contexto e dados no mesmo documento, eliminando o intervalo sem pintura causado pelo recarregamento da página',
+            'O seletor fecha ao confirmar a troca; preferências universais continuam disponíveis em todas as empresas, enquanto páginas de módulos não liberados exibem o bloqueio correspondente',
+        ],
+        dashboard: [],
+    },
+    {
         versao: '1.40.2',
         data: '29/07/2026',
         admin: [

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import UIHeaderPagina from './UIHeaderPagina.jsx';
 import UICarregando from './UICarregando.jsx';
 import { verificarAutenticacao } from '../../js/utils/auth.js';
@@ -20,14 +20,6 @@ import FinanceiroConfiguracaoModal from './FinanceiroConfiguracaoModal';
 import FinanceiroConcessionariaModal from './FinanceiroConcessionariaModal';
 import type { FinanceiroTab, FinanceiroView } from '../utils/financeiro-types';
 
-function existeTransicaoEmpresaPendente() {
-  try {
-    return Boolean(sessionStorage.getItem('lv_transicao_empresa'));
-  } catch {
-    return false;
-  }
-}
-
 function FinanceiroShell() {
   const {
     view, tab, setView, setTab, notificacoesAbertas, toggleNotificacoes, setNotificacoesAbertas,
@@ -35,8 +27,6 @@ function FinanceiroShell() {
     lancamentoModal, closeLancamentoModal, agendaModal, closeAgendaModal,
     refresh, config, reloadConfig, permissoes,
   } = useFinanceiro();
-  const transicaoEmpresaPendente = existeTransicaoEmpresaPendente();
-
   useEffect(() => {
     let ativo = true;
     void verificarAutenticacao('admin/financeiro.html', ['acesso-financeiro'])
@@ -48,6 +38,10 @@ function FinanceiroShell() {
   useEffect(() => {
     void reloadConfig().catch(() => undefined);
   }, [reloadConfig]);
+
+  useEffect(() => {
+    if (pageReady) window.dispatchEvent(new Event('lv:financeiro-pronto'));
+  }, [pageReady]);
 
   const isMain = view === 'main';
   const showFabLancamentos = isMain && tab === 'lancamentos';
@@ -67,7 +61,7 @@ function FinanceiroShell() {
 
   return (
     <>
-      {!pageReady && !transicaoEmpresaPendente && (
+      {!pageReady && (
         <UICarregando
           variante="pagina"
           tamanho="lg"
@@ -214,8 +208,16 @@ function FinanceiroShell() {
 }
 
 export default function FinanceiroPage() {
+  const [contextoVersao, setContextoVersao] = useState(0);
+
+  useEffect(() => {
+    const atualizarContexto = () => setContextoVersao((versao) => versao + 1);
+    window.addEventListener('lv:empresa-contexto-alterado', atualizarContexto);
+    return () => window.removeEventListener('lv:empresa-contexto-alterado', atualizarContexto);
+  }, []);
+
   return (
-    <FinanceiroProvider>
+    <FinanceiroProvider key={contextoVersao}>
       <FinanceiroShell />
     </FinanceiroProvider>
   );

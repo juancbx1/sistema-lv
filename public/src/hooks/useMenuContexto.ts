@@ -13,6 +13,24 @@ import type {
 
 const CHAVE_TRANSICAO_EMPRESA = 'lv_transicao_empresa';
 const DURACAO_MINIMA_TRANSICAO_MS = 1250;
+const TEMPO_LIMITE_FINANCEIRO_MS = 15000;
+
+function paginaFinanceiroAtiva() {
+  return window.location.pathname.endsWith('/admin/financeiro.html');
+}
+
+function aguardarFinanceiroPronto() {
+  return new Promise<void>((resolve) => {
+    let timer = 0;
+    const concluir = () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('lv:financeiro-pronto', concluir);
+      resolve();
+    };
+    timer = window.setTimeout(concluir, TEMPO_LIMITE_FINANCEIRO_MS);
+    window.addEventListener('lv:financeiro-pronto', concluir, { once: true });
+  });
+}
 
 function lerTransicaoPendente(): MenuTransicaoEmpresaEstado | null {
   try {
@@ -90,11 +108,13 @@ export default function useMenuContexto() {
     if (contexto.empresaAtiva.id !== transicaoEmpresa.destino.id) {
       sessionStorage.removeItem(CHAVE_TRANSICAO_EMPRESA);
       setTransicaoEmpresa(null);
+      setTrocandoPara(null);
       return;
     }
     const timer = window.setTimeout(() => {
       sessionStorage.removeItem(CHAVE_TRANSICAO_EMPRESA);
       setTransicaoEmpresa(null);
+      setTrocandoPara(null);
     }, 1450);
     return () => window.clearTimeout(timer);
   }, [carregando, contexto, transicaoEmpresa]);
@@ -172,6 +192,7 @@ export default function useMenuContexto() {
         destino: empresa,
         fase: 'processando',
       });
+      let tokenAtualizado = false;
       try {
         const response = await fetch('/api/contexto-empresa/trocar', {
           method: 'POST',
@@ -188,6 +209,8 @@ export default function useMenuContexto() {
 
         limparCachesDaEmpresaAnterior();
         sessao.storage.setItem(sessao.tokenKey, resultado.token);
+        sessao.token = resultado.token;
+        tokenAtualizado = true;
         salvarContextoEmpresaLocal(
           { empresa_ativa: resultado.empresaAtiva },
           sessao.storage,
@@ -197,10 +220,6 @@ export default function useMenuContexto() {
           origem: contexto.empresaAtiva,
           destino: resultado.empresaAtiva || empresa,
         };
-        sessionStorage.setItem(
-          CHAVE_TRANSICAO_EMPRESA,
-          JSON.stringify(transicaoPersistida),
-        );
         setTransicaoEmpresa({
           ...transicaoPersistida,
           fase: 'recarregando',
@@ -211,9 +230,56 @@ export default function useMenuContexto() {
           180,
           DURACAO_MINIMA_TRANSICAO_MS - tempoDecorrido,
         );
+
+        if (paginaFinanceiroAtiva()) {
+          const headers = { Authorization: `Bearer ${resultado.token}` };
+          const [usuarioResponse, contextoResponse] = await Promise.all([
+            fetch('/api/usuarios/me', { headers }),
+            fetch('/api/contexto-empresa', { headers }),
+          ]);
+          if (!usuarioResponse.ok || !contextoResponse.ok) {
+            throw new Error('Não foi possível preparar o novo ambiente financeiro.');
+          }
+
+          const usuarioAtualizado = (await usuarioResponse.json()) as MenuUsuario;
+          const contextoAtualizado = (await contextoResponse.json()) as MenuContextoEmpresa;
+          setUsuario(usuarioAtualizado);
+          setContexto(contextoAtualizado);
+          localStorage.setItem(
+            'permissoes',
+            JSON.stringify(usuarioAtualizado.permissoes || []),
+          );
+          salvarContextoEmpresaLocal(
+            { empresa_ativa: contextoAtualizado.empresaAtiva },
+            sessao.storage,
+          );
+
+          const financeiroPronto = aguardarFinanceiroPronto();
+          window.dispatchEvent(new CustomEvent('lv:empresa-contexto-alterado', {
+            detail: { empresaId: contextoAtualizado.empresaAtiva.id },
+          }));
+          await Promise.all([
+            financeiroPronto,
+            new Promise((resolve) => window.setTimeout(resolve, esperaRestante)),
+          ]);
+          setTransicaoEmpresa({
+            ...transicaoPersistida,
+            fase: 'concluindo',
+          });
+          return;
+        }
+
+        sessionStorage.setItem(
+          CHAVE_TRANSICAO_EMPRESA,
+          JSON.stringify(transicaoPersistida),
+        );
         await new Promise((resolve) => window.setTimeout(resolve, esperaRestante));
         window.location.reload();
       } catch (error) {
+        if (tokenAtualizado) {
+          window.location.reload();
+          return;
+        }
         sessionStorage.removeItem(CHAVE_TRANSICAO_EMPRESA);
         setTransicaoEmpresa(null);
         setErro(error instanceof Error ? error.message : 'Erro ao trocar a empresa.');

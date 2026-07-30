@@ -20,6 +20,22 @@
 
 export const changelog = [
     {
+        versao: '1.40.0',
+        versao_dashboard: '1.27.0',
+        data: '29/07/2026',
+        admin: [
+            'Menu lateral totalmente redesenhado em React e TypeScript, com navegação tablet-first, acessível e preparada para múltiplas empresas',
+            'Áreas favoritas agora podem ser adicionadas, removidas e reorganizadas, com preferências independentes por usuário e empresa',
+            'Empresa ativa ganhou mais destaque, seletor responsivo e uma nova animação de contexto durante a troca entre organizações',
+            'Novidades do sistema ganharam destaque no rodapé do menu, com contador de itens não lidos e histórico de versões',
+            'Novo estúdio de foto compartilhado pelo painel administrativo e pela Dashboard, com recorte, zoom, rotação, compressão e prévias antes do envio',
+            'Carregamentos do sistema receberam uma nova identidade visual contextual, usando as iniciais e a cor da empresa ativa',
+        ],
+        dashboard: [
+            'Sua foto de perfil ganhou um novo estúdio: agora você pode recortar, reposicionar, ampliar e conferir a imagem antes de salvar',
+        ],
+    },
+    {
         versao: '1.39.0',
         data: '29/07/2026',
         admin: [

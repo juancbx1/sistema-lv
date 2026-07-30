@@ -45,6 +45,7 @@ import auditLogRouter from './api/audit-log.js';
 import gerenciarProducaoRouter from './api/gerenciar-producao.js';
 import contextoEmpresaRouter, { middlewareContextoEmpresa } from './api/contexto-empresa.js';
 import gestaoOrganizacionalRouter from './api/gestao-organizacional.js';
+import preferenciasMenuRouter from './api/preferencias-menu.js';
 
 
 const app = express();
@@ -101,6 +102,7 @@ app.use('/api/login', loginRouter);
 app.use('/api', middlewareContextoEmpresa);
 app.use('/api/contexto-empresa', contextoEmpresaRouter);
 app.use('/api/gestao-organizacional', gestaoOrganizacionalRouter);
+app.use('/api/preferencias-menu', preferenciasMenuRouter);
 app.use('/api/usuarios', usuariosRouter);
 app.use('/api/cortes', cortesRouter);
 app.use('/api/producoes', producoesRouter);

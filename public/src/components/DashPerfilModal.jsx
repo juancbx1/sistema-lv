@@ -1,16 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { fetchAPI } from '/js/utils/api-utils.js';
-import { mostrarMensagem, mostrarConfirmacao } from '/js/utils/popups.js';
 import imgDefaultAvatar from '../assets/default-avatar.png';
-import DSUploader from './DSUploader.jsx';
+import PerfilAvatarStudio from './PerfilAvatarStudio.tsx';
 import DashPerfilStreak from './DashPerfilStreak.jsx';
 import DashPerfilConquistas from './DashPerfilConquistas.jsx';
 import DashPerfilMelhorDia from './DashPerfilMelhorDia.jsx';
 import DashPerfilGincanasCiclo from './DashPerfilGincanasCiclo.jsx';
 
 export default function DashPerfilModal({ usuarioAtual, dadosAcumulados, onClose, aoAtualizarAvatar }) {
-    const [avatares, setAvatares] = useState([]);
-    const [loading, setLoading] = useState(false);
+    const [avatarStudioAberto, setAvatarStudioAberto] = useState(false);
     const [streak, setStreak] = useState(null);
     const [loadingStreak, setLoadingStreak] = useState(true);
     const [conquistas, setConquistas] = useState(null);
@@ -45,8 +43,6 @@ export default function DashPerfilModal({ usuarioAtual, dadosAcumulados, onClose
     }, [dadosAcumulados]);
 
     useEffect(() => {
-        carregarGaleria();
-
         fetchAPI('/api/dashboard/streak')
             .then(d => setStreak(d))
             .catch(() => setStreak({ diasSeguidos: 0, badgeAtual: null, proximoBadge: null, diasParaBadge: null }))
@@ -63,69 +59,6 @@ export default function DashPerfilModal({ usuarioAtual, dadosAcumulados, onClose
             .catch(() => setRankingPosicao(null))
             .finally(() => setLoadingRanking(false));
     }, []);
-
-    const carregarGaleria = async () => {
-        setLoading(true);
-        try {
-            const dados = await fetchAPI('/api/avatares');
-            setAvatares(dados);
-        } catch (error) {
-            console.error(error);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handleUpload = async (file) => {
-        setLoading(true);
-        const formData = new FormData();
-        formData.append('foto', file);
-        try {
-            const token = localStorage.getItem('token');
-            const res = await fetch('/api/avatares/upload', {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` },
-                body: formData,
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Erro no upload');
-            await carregarGaleria();
-            mostrarMensagem('Foto adicionada com sucesso!', 'sucesso');
-        } catch (error) {
-            mostrarMensagem(`Erro: ${error.message}`, 'erro');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handleSelecionar = async (id) => {
-        setLoading(true);
-        try {
-            await fetchAPI(`/api/avatares/definir-ativo/${id}`, { method: 'PUT' });
-            aoAtualizarAvatar();
-            mostrarMensagem('Foto de perfil atualizada!', 'sucesso');
-            onClose();
-        } catch (error) {
-            mostrarMensagem(error.message, 'erro');
-            setLoading(false);
-        }
-    };
-
-    const handleExcluir = async (id) => {
-        const confirmado = await mostrarConfirmacao('Tem certeza que deseja excluir esta foto?');
-        if (!confirmado) return;
-        setLoading(true);
-        try {
-            await fetchAPI(`/api/avatares/${id}`, { method: 'DELETE' });
-            await carregarGaleria();
-            aoAtualizarAvatar();
-            mostrarMensagem('Foto excluída.', 'info');
-        } catch (error) {
-            mostrarMensagem(error.message, 'erro');
-        } finally {
-            setLoading(false);
-        }
-    };
 
     return (
         <div className="ds-popup-overlay ativo" onClick={onClose} style={{ zIndex: 1300 }}>
@@ -178,28 +111,27 @@ export default function DashPerfilModal({ usuarioAtual, dadosAcumulados, onClose
 
                 {/* CORPO */}
                 <div className="perfil-body">
-                    {/* Galeria de avatares */}
+                    {/* Estúdio de avatar compartilhado */}
                     <div className="perfil-secao">
-                        <div className="perfil-secao-titulo">📷 Minha Galeria</div>
-                        {loading && avatares.length === 0 ? (
-                            <div className="ds-spinner" style={{ margin: '12px auto' }} />
-                        ) : (
-                            <DSUploader
-                                variant="dropzone"
-                                maxFiles={3}
-                                accept="image/*"
-                                value={avatares}
-                                onUpload={handleUpload}
-                                onRemove={handleExcluir}
-                                onSelect={handleSelecionar}
-                                label={null}
-                                hint="Toque para escolher da galeria ou câmera"
-                                chips={['JPG / PNG', 'Máx. 5 MB', 'Até 3 fotos']}
-                            />
-                        )}
-                        <p style={{ fontSize: '0.72rem', color: '#999', marginTop: 8, textAlign: 'center' }}>
-                            Toque em uma foto para definir como perfil.
-                        </p>
+                        <div className="perfil-secao-titulo">📷 Minha foto</div>
+                        <button
+                            type="button"
+                            className="dsu-dropzone"
+                            onClick={() => setAvatarStudioAberto(true)}
+                        >
+                            <div className="dsu-icon">
+                                <i className="fas fa-wand-magic-sparkles" />
+                            </div>
+                            <div className="dsu-label">Abrir estúdio de foto</div>
+                            <div className="dsu-hint">
+                                Recorte, reposicione e veja a prévia antes de salvar
+                            </div>
+                            <div className="dsu-chips">
+                                <span className="dsu-chip">Galeria</span>
+                                <span className="dsu-chip">Câmera</span>
+                                <span className="dsu-chip">Até 3 fotos</span>
+                            </div>
+                        </button>
                     </div>
 
                     {/* Streak */}
@@ -230,6 +162,13 @@ export default function DashPerfilModal({ usuarioAtual, dadosAcumulados, onClose
                 </div>
 
             </div>
+            <PerfilAvatarStudio
+                isOpen={avatarStudioAberto}
+                token={localStorage.getItem('token')}
+                nomeUsuario={nomeUsuario}
+                onClose={() => setAvatarStudioAberto(false)}
+                onAvatarChanged={() => aoAtualizarAvatar()}
+            />
         </div>
     );
 }

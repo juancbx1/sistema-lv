@@ -38,7 +38,6 @@ const MODULOS_POR_PREFIXO = [
     ['/gestao-organizacional', 'gestao-organizacional'],
     ['/usuarios', 'gestao-organizacional'],
     ['/perfis', 'gestao-organizacional'],
-    ['/avatares', 'gestao-organizacional'],
     ['/cortes', 'cortes'],
     ['/estoque', 'estoque'],
     ['/kits', 'produtos'],
@@ -480,6 +479,29 @@ async function listarEmpresasDisponiveis(dbClient, usuarioId, superadministrador
     return result.rows;
 }
 
+async function listarModulosHabilitados(dbClient, empresa) {
+    const result = await dbClient.query(
+        empresa.eh_legada
+            ? `
+                SELECT codigo
+                FROM modulos_sistema
+                ORDER BY codigo
+            `
+            : `
+                SELECT ms.codigo
+                FROM modulos_sistema ms
+                JOIN empresas_modulos em
+                  ON em.modulo_codigo = ms.codigo
+                 AND em.empresa_id = $1
+                 AND em.habilitado
+                WHERE ms.multiempresa_pronto
+                ORDER BY ms.codigo
+            `,
+        empresa.eh_legada ? [] : [empresa.id]
+    );
+    return result.rows.map((row) => row.codigo);
+}
+
 function exigirContexto(req) {
     if (!req.usuarioTokenClaims || !req.empresaId) {
         throw erroHttp(401, 'AUTENTICACAO_OBRIGATORIA', 'Autenticação obrigatória.');
@@ -532,6 +554,10 @@ router.get('/', async (req, res) => {
             req.usuarioLogado.id,
             req.superadministrador
         );
+        const modulosHabilitados = await listarModulosHabilitados(
+            dbClient,
+            req.empresaAtiva
+        );
 
         res.status(200).json({
             empresaAtiva: req.empresaAtiva,
@@ -539,6 +565,7 @@ router.get('/', async (req, res) => {
             superadministrador: req.superadministrador,
             tokenLegado: req.contextoEmpresaTokenLegado,
             empresas,
+            modulosHabilitados,
         });
     } catch (error) {
         res.status(error.statusCode || 500).json({

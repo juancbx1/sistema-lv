@@ -1,5 +1,5 @@
 // public/src/main-agentes-globais.jsx
-// Entry point dos agentes globais — montado em todas as páginas admin via carregar-menu-lateral.js.
+// Entry point dos agentes globais — carregado uma única vez pelo menu administrativo.
 // Gerencia o polling centralizado e passa dados para OPAgenteEncerrador e OPAgenteInterceptor.
 
 import React, { useState, useEffect, useCallback } from 'react';

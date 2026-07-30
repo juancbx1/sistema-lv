@@ -68,8 +68,6 @@ function FinanceiroShell() {
           texto="Preparando o ambiente financeiro..."
         />
       )}
-      <div className="hamburger-menu"><i className="fas fa-bars" /><i className="fas fa-times" /></div>
-
       <UIHeaderPagina titulo="Financeiro">
         {headerButtons.map((button) => {
           const active = view === button.view;

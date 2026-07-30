@@ -38,7 +38,11 @@ publicação de sua release.
 - A tela pública de login deve ser neutra quanto às empresas: não exibe nomes,
   seletores ou mensagens que revelem a existência de outras organizações. A
   empresa ativa e qualquer troca de contexto aparecem somente após autenticação.
-- A empresa ativa será validada no backend e transportada no JWT; a troca de empresa emitirá novo token e recarregará a página.
+- A empresa ativa será validada no backend e transportada no JWT. Por padrão, a
+  troca de empresa emite novo token e recarrega a página. No Financeiro, a troca
+  atualiza token, contexto, permissões e providers no mesmo documento, mantendo
+  a transição visual ativa até a página sinalizar que o novo contexto está
+  pronto; essa exceção evita o intervalo sem pintura causado pela navegação.
 - O seletor universal ficará no menu lateral no PC e próximo ao hamburger no tablet/celular.
 - A página Usuários Cadastrados será evoluída para **Gestão Organizacional**, com abas **Pessoas e Acessos** e **Empresas**.
 - O Financeiro será o primeiro módulo de negócio migrado integralmente.
@@ -476,44 +480,50 @@ A **única exceção** é quando a aba tem sub-seções visualmente independente
 ## Status das Áreas
 
 Tabela de controle para evitar retrabalho. Atualizar sempre que uma etapa for concluída.
+A coluna **Troca contínua** indica se a página já elimina o intervalo vazio entre
+“Mudando para…” e “Ambiente pronto” durante a troca de empresa.
 
-| Área | Arquivo CSS | React 100% | TypeScript | CSS Limpo | Usa gs-card | Observações |
-|---|---|---|---|---|---|---|
-| Login / Index | `login.css` | ✅ | ❌ | ✅ | N/A | Redesign aprovado e aplicado em 2026-07-28. React 100%, tablet-first, painel editorial de confecção sem pessoas e formulário claro com a paleta oficial. Login público neutro quanto às empresas. Token persistente de 30 dias; demitidos → tela de despedida + cooldown crescente. |
+| Área | Arquivo CSS | React 100% | TypeScript | CSS Limpo | Usa gs-card | Troca contínua | Observações |
+|---|---|---|---|---|---|---|---|
+| Login / Index | `login.css` | ✅ | ❌ | ✅ | N/A | N/A | Redesign aprovado e aplicado em 2026-07-28. React 100%, tablet-first, painel editorial de confecção sem pessoas e formulário claro com a paleta oficial. Login público neutro quanto às empresas. Token persistente de 30 dias; demitidos → tela de despedida + cooldown crescente. |
 
-| Ordens de Produção | `ordens-de-producao.css` | ✅ | ❌ | ✅ | ✅ (via alias) | Referência de qualidade. |
+| Ordens de Produção | `ordens-de-producao.css` | ✅ | ❌ | ✅ | ✅ (via alias) | ❓ | Referência de qualidade. |
 
-| Calendário da Empresa | `calendario.css` | ✅ | ❌ | ✅ | ✅ | Página nova — estrutura padrão aplicada |
+| Calendário da Empresa | `calendario.css` | ✅ | ❌ | ✅ | ✅ | ❓ | Página nova — estrutura padrão aplicada |
 
-| Central de Alertas | `config-alertas.css` | ✅ | ❌ | ❌ | ✅ | Redesenhada em 2026-05-16 com 2 abas: Alertas Gerais + Avisos Popups. `ConfigAlertasGerais.jsx` + `AvisosPopupAdmin.jsx` + `AvisosPopupModal.jsx`. Avisos Popup v1.0 completo (DB + API + UI). Permissão: `gerenciar-avisos-popup` em `permissoes.js`. |
+| Central de Alertas | `config-alertas.css` | ✅ | ❌ | ❌ | ✅ | ❓ | Redesenhada em 2026-05-16 com 2 abas: Alertas Gerais + Avisos Popups. `ConfigAlertasGerais.jsx` + `AvisosPopupAdmin.jsx` + `AvisosPopupModal.jsx`. Avisos Popup v1.0 completo (DB + API + UI). Permissão: `gerenciar-avisos-popup` em `permissoes.js`. |
 
-| Centro de Incentivos | `incentivos.css` | ✅ | ❌ | ✅ | ✅ | v5.1 concluído (2026-05-23). Todas as abas 100% React: Gincanas, Metas e Comissões, Pontos por Atividade, Pagamentos. Arquivos legados deletados (`ponto-por-processo.html/js/css`). Hook tiktik (`api/arremates.js`) deferido para v4.x — sem data. Testes de gincana corrida/equipe/produto_especifico/semanal pendentes de validação manual. |
+| Centro de Incentivos | `incentivos.css` | ✅ | ❌ | ✅ | ✅ | ❓ | v5.1 concluído (2026-05-23). Todas as abas 100% React: Gincanas, Metas e Comissões, Pontos por Atividade, Pagamentos. Arquivos legados deletados (`ponto-por-processo.html/js/css`). Hook tiktik (`api/arremates.js`) deferido para v4.x — sem data. Testes de gincana corrida/equipe/produto_especifico/semanal pendentes de validação manual. |
 
-| Central de Pagamentos | `central-de-pagamentos.css` | ✅ | ✅ | ✅ | ✅ | Concluída em 2026-07-11. Migração integral do código específico para React + TypeScript/TSX, com shell visual padrão (`main.gs-card`, `UIHeaderPagina`, `gs-tab-nav`, `gs-conteudo-pagina`) alinhado à referência de Ordens de Produção. `npm run typecheck` e `npm run build` aprovados. Dependências JS compartilhadas ficam para a migração global futura das páginas. |
+| Central de Pagamentos | `central-de-pagamentos.css` | ✅ | ✅ | ✅ | ✅ | ❓ | Concluída em 2026-07-11. Migração integral do código específico para React + TypeScript/TSX, com shell visual padrão (`main.gs-card`, `UIHeaderPagina`, `gs-tab-nav`, `gs-conteudo-pagina`) alinhado à referência de Ordens de Produção. `npm run typecheck` e `npm run build` aprovados. Dependências JS compartilhadas ficam para a migração global futura das páginas. |
 
-| Dashboard Funcionário | `dashboard.css` | ✅ | ❌ | ❌ | ❌ | Mobile-first, estrutura diferente. `DashFabGincana.jsx` (2026-05-20) substitui `DashGincanaCard` inline — gincanas agora em FAB + bottom sheet. Redesign completo 2026-05-24: `DashHeader` com dock (4 botões + divider), tipo+ciclo e avatar clicável; `DSUploader.jsx` (novo componente de upload compartilhado — variantes dropzone/avatar/inline); `DashPerfilModal` redesenhado com hero gradiente escuro, galeria DSUploader, streak de produção, conquistas do ciclo, melhor dia, gincanas vencidas; `DashPagamentosModal` com wallet topo dark + saldos lado a lado (Comissões / Premiações); `DashRankingCard` com mini pódio e estado campeã dourado. APIs novas: `GET /api/dashboard/streak`, `GET /api/dashboard/conquistas-ciclo`. |
+| Dashboard Funcionário | `dashboard.css` | ✅ | ❌ | ❌ | ❌ | ❓ | Mobile-first, estrutura diferente. `DashFabGincana.jsx` (2026-05-20) substitui `DashGincanaCard` inline — gincanas agora em FAB + bottom sheet. Redesign completo 2026-05-24: `DashHeader` com dock (4 botões + divider), tipo+ciclo e avatar clicável; `DSUploader.jsx` (novo componente de upload compartilhado — variantes dropzone/avatar/inline); `DashPerfilModal` redesenhado com hero gradiente escuro, galeria DSUploader, streak de produção, conquistas do ciclo, melhor dia, gincanas vencidas; `DashPagamentosModal` com wallet topo dark + saldos lado a lado (Comissões / Premiações); `DashRankingCard` com mini pódio e estado campeã dourado. APIs novas: `GET /api/dashboard/streak`, `GET /api/dashboard/conquistas-ciclo`. |
 
-| Arremates | `arremates.css` | ✅ | ❌ | ❌ | ✅ | v1.0 (2026-05-04) + v2.0 (2026-05-05) + v3.0 Items 1-4 (2026-05-13/14) concluídos. v3.0: `PontoHelpers.js` e `UILinhaDoTempoDia.jsx` extraídos como compartilhados; `ArremateStatusCard` reescrito com layout `cracha-tiktik` idêntico ao OPStatusCard (cronômetro interval-aware, bottom sheets, tolerância S3, liberar intervalo); `ArreMatePainelAtividades` refatorado com estrutura `oa-*` idêntica ao OPPainelAtividades (ALMOCO/PAUSA no grid principal, inativos completos, todos os handlers de ponto). CSS: 4657 → 5850 linhas. v3.0 implementação 100% concluída (Items 1–5). Aguarda verificação manual em browser. Deletar manualmente: `ArremateToast.jsx` e `ArremateAcoesLote.jsx`. Ver `_planejamento/arremates-redesign.md`. |
+| Arremates | `arremates.css` | ✅ | ❌ | ❌ | ✅ | ❓ | v1.0 (2026-05-04) + v2.0 (2026-05-05) + v3.0 Items 1-4 (2026-05-13/14) concluídos. v3.0: `PontoHelpers.js` e `UILinhaDoTempoDia.jsx` extraídos como compartilhados; `ArremateStatusCard` reescrito com layout `cracha-tiktik` idêntico ao OPStatusCard (cronômetro interval-aware, bottom sheets, tolerância S3, liberar intervalo); `ArreMatePainelAtividades` refatorado com estrutura `oa-*` idêntica ao OPPainelAtividades (ALMOCO/PAUSA no grid principal, inativos completos, todos os handlers de ponto). CSS: 4657 → 5850 linhas. v3.0 implementação 100% concluída (Items 1–5). Aguarda verificação manual em browser. Deletar manualmente: `ArremateToast.jsx` e `ArremateAcoesLote.jsx`. Ver `_planejamento/arremates-redesign.md`. |
 
-| Embalagem de Produtos | `embalagem-de-produtos.css` | ❓ | ❓ | ❌ | ❌ | Verificar migração React |
+| Embalagem de Produtos | `embalagem-de-produtos.css` | ❓ | ❓ | ❌ | ❌ | ❓ | Verificar migração React |
 
-| Estoque | `estoque.css` | ❓ | ❓ | ❌ | ❌ | Verificar migração React |
+| Estoque | `estoque.css` | ❓ | ❓ | ❌ | ❌ | ❓ | Verificar migração React |
 
-| Financeiro | `financeiro.css` | ✅ | ✅ | ✅ | ✅ | Migração React+TS **encerrada** (2026-07-27). Árvore única (`main-financeiro.tsx` + `FinanceiroPage` + `FinanceiroContext`), sem multi-root/bridges/legado. CSS limpo. Typecheck/build OK; validação manual das abas OK. **Novas features liberadas.** Plano: `_planejamento/migrando-financeiro-para-typescript.md`. |
+| Financeiro | `financeiro.css` | ✅ | ✅ | ✅ | ✅ | ✅ | Migração React+TS **encerrada** (2026-07-27). Árvore única (`main-financeiro.tsx` + `FinanceiroPage` + `FinanceiroContext`), sem multi-root/bridges/legado. Troca empresarial sem reload concluída na `1.40.3`: atualiza token/contexto no mesmo documento, remonta apenas o `FinanceiroProvider` e mantém a transição até `lv:financeiro-pronto`. CSS limpo. Typecheck/build OK; validação manual das abas OK. **Novas features liberadas.** Plano: `_planejamento/migrando-financeiro-para-typescript.md`. |
 
-| Gerenciar Permissões | `permissoes-usuarios.css` | ✅ | ❌ | ✅ | ✅ | Concluída 2026-05-23. Duas abas: Permissões + Auditoria. Prefixo `Permissoes*`. Editor: lista plana com search bar (substituiu acordeão) — filtra permissões em tempo real; exclui ex-membros e prestadores da lista de usuários. Auditoria: paginação clássica 12/pág com `gs-paginacao-*`; dropdown de usuários busca tabela `usuarios` (não só audit_log). Infraestrutura: `api/audit.js` + `api/audit-log.js` + tabela `audit_log`. JS legado `admin-permissoes-usuarios.js` deletado. |
+| Gerenciar Permissões | `permissoes-usuarios.css` | ✅ | ❌ | ✅ | ✅ | ❓ | Concluída 2026-05-23. Duas abas: Permissões + Auditoria. Prefixo `Permissoes*`. Editor: lista plana com search bar (substituiu acordeão) — filtra permissões em tempo real; exclui ex-membros e prestadores da lista de usuários. Auditoria: paginação clássica 12/pág com `gs-paginacao-*`; dropdown de usuários busca tabela `usuarios` (não só audit_log). Infraestrutura: `api/audit.js` + `api/audit-log.js` + tabela `audit_log`. JS legado `admin-permissoes-usuarios.js` deletado. |
 
-| Gestão Organizacional | `gestao-organizacional.css` | ✅ | ❌ | ✅ | ✅ | Fase 5 concluída e aprovada em produção em 2026-07-28. Prefixo `GO*`. Identidade e vínculo editados juntos, múltiplas empresas, encerramento contextual para empregados, sócios e prestadores, cópia opcional de permissões entre vínculos e URL antiga compatível. Código da empresa automático/imutável; administradores com acesso total derivado do tipo. Blocos pós-publicação 1–5 implementados localmente; aguardam validação manual. |
+| Gestão Organizacional | `gestao-organizacional.css` | ✅ | ❌ | ✅ | ✅ | ❓ | Fase 5 concluída e aprovada em produção em 2026-07-28. Prefixo `GO*`. Identidade e vínculo editados juntos, múltiplas empresas, encerramento contextual para empregados, sócios e prestadores, cópia opcional de permissões entre vínculos e URL antiga compatível. Código da empresa automático/imutável; administradores com acesso total derivado do tipo. Blocos pós-publicação 1–5 implementados localmente; aguardam validação manual. |
 
-| Home / Admin | `home.css` | ✅ | ❌ | ❌ | ❌ | |
+| Home / Admin | `home.css` | ✅ | ❌ | ❌ | ❌ | ❓ | |
 
-| Gerenciar Produção | `gerenciar-producao.css` | ✅ | ❌ | ✅ | ✅ | Concluída 2026-05-27. Prefixo `GP*`. Carregamento automático últimos 3 dias ao abrir. Fluxo duplo de exclusão: direta (`excluir-registro-producao-direto`) ou solicitação com aprovação (`excluir-registro-producao`). Painel de Aprovações com fila pendentes + histórico paginado + filtros. Permissões: `excluir-registro-producao`, `excluir-registro-producao-direto`, `ver-painel-aprovacoes-producao`, `aprovar-exclusao-producao`. Tabela `producoes_solicitacoes_exclusao` com snapshot JSONB e lock FOR UPDATE. Migration: `_planejamento/migration-gerenciar-producao-solicitacoes.sql`. API: `api/gerenciar-producao.js`. |
+| Gerenciar Produção | `gerenciar-producao.css` | ✅ | ❌ | ✅ | ✅ | ❓ | Concluída 2026-05-27. Prefixo `GP*`. Carregamento automático últimos 3 dias ao abrir. Fluxo duplo de exclusão: direta (`excluir-registro-producao-direto`) ou solicitação com aprovação (`excluir-registro-producao`). Painel de Aprovações com fila pendentes + histórico paginado + filtros. Permissões: `excluir-registro-producao`, `excluir-registro-producao-direto`, `ver-painel-aprovacoes-producao`, `aprovar-exclusao-producao`. Tabela `producoes_solicitacoes_exclusao` com snapshot JSONB e lock FOR UPDATE. Migration: `_planejamento/migration-gerenciar-producao-solicitacoes.sql`. API: `api/gerenciar-producao.js`. |
 
-| Produção Geral | `producao-geral.css` | ✅ | ❌ | ✅ | ✅ | v1.0 + v2.0 + v3.0 implementados (2026-04-26). Prefixo `PG*`, recharts, filtros client-side, PGMetaTimeline, banner histórico, Pontos Extras |
+| Produção Geral | `producao-geral.css` | ✅ | ❌ | ✅ | ✅ | ❓ | v1.0 + v2.0 + v3.0 implementados (2026-04-26). Prefixo `PG*`, recharts, filtros client-side, PGMetaTimeline, banner histórico, Pontos Extras |
 
 > Status de TypeScript: ✅ migrado para TypeScript | ⚠️ parcial/em transição | ❌ ainda não migrado | ❓ não verificado.
 
 > ✅ Concluído | ⚠️ TS = em transição para TypeScript | ❌ Pendente | ❓ Não verificado — checar antes de trabalhar na área
+
+> Troca contínua: ✅ sem intervalo vazio | ❌ bug confirmado | ❓ ainda não
+> validado. Não marcar ✅ apenas porque o ambiente local foi rápido; validar com
+> latência semelhante à produção.
 
 ---
 
@@ -734,7 +744,44 @@ if (carregando) return <UICarregando variante="pagina" />;
 
 **Para trocar o visual:** editar apenas as classes CSS `.ui-cg-*` em `global-style.css`. A lógica do componente não muda — assim toda a UI atualiza de uma vez.
 
-**Visual:** spinner de dois arcos (azul + roxo, mesmos tons do UIAgenteIA) girando sobre trilha cinza. Letras "LV" em gradiente no centro, com pulso suave. Fundo transparente (herda do container).
+**Visual aprovado em 2026-07-29:** núcleo operacional com marca central, órbitas,
+nós e indicadores sequenciais, todos visíveis desde o primeiro frame. A marca
+usa as iniciais e a `cor_identificacao` da empresa ativa já persistida pelo
+contexto universal, com contraste calculado automaticamente; na ausência de
+contexto usa `LV` e a cor primária como fallback. A variante `pagina` usa fundo
+imersivo e mensagem padrão; `bloco` preserva fundo transparente; `inline` usa
+três pontos compactos. O componente respeita `prefers-reduced-motion` e sua API
+pública permanece inalterada.
+
+**Regra de percepção imediata:** estrutura, módulos e marca devem estar visíveis
+desde o primeiro frame. Animações do `UICarregando` não podem começar com
+conteúdo central em `opacity: 0`, pois a maioria dos carregamentos termina em
+aproximadamente dois segundos.
+
+### Transição universal entre empresas
+
+**Arquivos:** `MenuTransicaoEmpresa.tsx`, `useMenuContexto.ts` e
+`menu-lateral.css`.
+
+Ao trocar a empresa ativa, o sistema deve exibir a transição de contexto
+aprovada, mostrando somente a empresa de origem e a empresa de destino. A
+animação começa antes da chamada à API, permanece durante a emissão do novo JWT
+e termina depois do reload com a confirmação do novo ambiente. O estado
+necessário para atravessar a recarga usa `sessionStorage` e deve ser removido ao
+concluir ou falhar. Não usar porcentagem falsa de progresso. A experiência deve
+continuar acessível com `role="status"`, `aria-live` e movimento reduzido.
+
+**Débito conhecido — intervalo vazio na troca:** páginas que ainda dependem de
+`window.location.reload()` podem revelar apenas o fundo do documento entre a
+fase “Mudando para…” e a retomada “Ambiente pronto”, sobretudo com a latência de
+produção. O Financeiro não usa mais reload e é a implementação de referência:
+`useMenuContexto` atualiza token, usuário, contexto e permissões no documento
+atual, dispara `lv:empresa-contexto-alterado`; `FinanceiroPage` remonta somente o
+provider empresarial; e a transição permanece até `lv:financeiro-pronto`.
+Ao corrigir outra página, ela precisa recarregar integralmente os próprios dados
+no novo contexto e emitir um sinal real de prontidão antes de ser marcada como
+✅ na coluna **Troca contínua**. Não resolver apenas com atraso artificial,
+spinner intermediário ou ocultação por CSS.
 
 ---
 

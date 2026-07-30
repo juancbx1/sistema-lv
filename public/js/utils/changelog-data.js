@@ -20,6 +20,14 @@
 
 export const changelog = [
     {
+        versao: '1.40.4',
+        data: '29/07/2026',
+        admin: [
+            'Corrigido o botão do menu no Financeiro após trocar de empresa: o hamburger permanece funcional e não é mais substituído por um ícone de fechar',
+        ],
+        dashboard: [],
+    },
+    {
         versao: '1.40.3',
         data: '29/07/2026',
         admin: [

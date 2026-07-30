@@ -10,11 +10,20 @@
     <link rel="stylesheet" href="/css/financeiro-compositor.css">
     <link rel="stylesheet" href="/css/popups.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css">
+    <script>
+        try {
+            if (sessionStorage.getItem('lv_transicao_empresa')) {
+                document.documentElement.classList.add('ml-transition-bootstrap');
+            }
+        } catch {
+            // O carregamento normal continua caso o storage esteja indisponível.
+        }
+    </script>
 </head>
 <body>
     <main id="root" class="gs-card"></main>
 
-    <script type="module" src="/src/main-financeiro.tsx"></script>
     <script src="/src/main-menu-lateral.tsx" type="module"></script>
+    <script type="module" src="/src/main-financeiro.tsx"></script>
 </body>
 </html>

@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import type {
   MenuEmpresa,
@@ -48,6 +49,15 @@ function MarcaEmpresa({
 }
 
 export default function MenuTransicaoEmpresa({ transicao }: Props) {
+  const ativa = Boolean(transicao);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('ml-transition-bootstrap', ativa);
+    return () => {
+      if (ativa) document.documentElement.classList.remove('ml-transition-bootstrap');
+    };
+  }, [ativa]);
+
   if (!transicao) return null;
 
   const concluindo = transicao.fase === 'concluindo';

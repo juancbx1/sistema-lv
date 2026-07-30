@@ -20,6 +20,15 @@
 
 export const changelog = [
     {
+        versao: '1.40.1',
+        data: '29/07/2026',
+        admin: [
+            'Carregamento inicial do Financeiro agora usa a identidade visual padrão do sistema, sem o spinner legado',
+            'Troca de empresa no Financeiro ganhou uma transição contínua, sem spinner intermediário ou exibição prematura da interface',
+        ],
+        dashboard: [],
+    },
+    {
         versao: '1.40.0',
         versao_dashboard: '1.27.0',
         data: '29/07/2026',

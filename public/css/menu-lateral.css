@@ -20,6 +20,10 @@ body {
     margin-left: var(--ml-width) !important;
 }
 
+html.ml-transition-bootstrap #root {
+    visibility: hidden;
+}
+
 #menu-lateral-container,
 #menu-lateral-container * {
     box-sizing: border-box;

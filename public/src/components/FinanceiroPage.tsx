@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import UIHeaderPagina from './UIHeaderPagina.jsx';
+import UICarregando from './UICarregando.jsx';
 import { verificarAutenticacao } from '../../js/utils/auth.js';
 import { FinanceiroProvider, useFinanceiro } from './FinanceiroContext';
 import FinanceiroHeader from './FinanceiroHeader';
@@ -19,6 +20,14 @@ import FinanceiroConfiguracaoModal from './FinanceiroConfiguracaoModal';
 import FinanceiroConcessionariaModal from './FinanceiroConcessionariaModal';
 import type { FinanceiroTab, FinanceiroView } from '../utils/financeiro-types';
 
+function existeTransicaoEmpresaPendente() {
+  try {
+    return Boolean(sessionStorage.getItem('lv_transicao_empresa'));
+  } catch {
+    return false;
+  }
+}
+
 function FinanceiroShell() {
   const {
     view, tab, setView, setTab, notificacoesAbertas, toggleNotificacoes, setNotificacoesAbertas,
@@ -26,6 +35,7 @@ function FinanceiroShell() {
     lancamentoModal, closeLancamentoModal, agendaModal, closeAgendaModal,
     refresh, config, reloadConfig, permissoes,
   } = useFinanceiro();
+  const transicaoEmpresaPendente = existeTransicaoEmpresaPendente();
 
   useEffect(() => {
     let ativo = true;
@@ -38,10 +48,6 @@ function FinanceiroShell() {
   useEffect(() => {
     void reloadConfig().catch(() => undefined);
   }, [reloadConfig]);
-
-  useEffect(() => {
-    if (pageReady) document.getElementById('carregamentoGlobal')?.classList.remove('visivel');
-  }, [pageReady]);
 
   const isMain = view === 'main';
   const showFabLancamentos = isMain && tab === 'lancamentos';
@@ -61,9 +67,13 @@ function FinanceiroShell() {
 
   return (
     <>
-      <div id="carregamentoGlobal" className={`gs-carregamento-global-container${pageReady ? '' : ' visivel'}`}>
-        <div className="gs-spinner-global" />
-      </div>
+      {!pageReady && !transicaoEmpresaPendente && (
+        <UICarregando
+          variante="pagina"
+          tamanho="lg"
+          texto="Preparando o ambiente financeiro..."
+        />
+      )}
       <div className="hamburger-menu"><i className="fas fa-bars" /><i className="fas fa-times" /></div>
 
       <UIHeaderPagina titulo="Financeiro">

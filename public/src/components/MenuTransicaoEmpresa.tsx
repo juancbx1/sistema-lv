@@ -52,6 +52,7 @@ export default function MenuTransicaoEmpresa({ transicao }: Props) {
   const ativa = Boolean(transicao);
 
   useEffect(() => {
+    document.getElementById('ml-transition-bootstrap-overlay')?.remove();
     document.documentElement.classList.toggle('ml-transition-bootstrap', ativa);
     return () => {
       if (ativa) document.documentElement.classList.remove('ml-transition-bootstrap');

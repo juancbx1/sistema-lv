@@ -20,6 +20,14 @@
 
 export const changelog = [
     {
+        versao: '1.40.2',
+        data: '29/07/2026',
+        admin: [
+            'A troca de empresa no Financeiro agora mantém a animação visível continuamente até o novo ambiente ficar pronto, sem intervalo vazio',
+        ],
+        dashboard: [],
+    },
+    {
         versao: '1.40.1',
         data: '29/07/2026',
         admin: [

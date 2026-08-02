@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { fetchAPI } from '/js/utils/api-utils';
 import DashTabelaPontosModal from './DashTabelaPontosRedesign';
 import PaginacaoWrapper from './OPPaginacaoWrapper';
+import UICarregando from './UICarregando.jsx';
 
 const TIME_ZONE = 'America/Sao_Paulo';
 const ITENS_POR_PAGINA = 8;
@@ -278,7 +279,7 @@ export default function DashAtividadesRecentesRedesign() {
 
             <div className="ds-atividades-redesign-lista">
                 {loading ? (
-                    <div className="ds-atividades-redesign-vazio"><div className="ds-spinner" /></div>
+                    <UICarregando variante="bloco" />
                 ) : itensParaExibir.length === 0 ? (
                     <div className="ds-atividades-redesign-vazio">
                         <i className="fas fa-calendar-check" aria-hidden="true" />

@@ -13,6 +13,7 @@ import DashFabGincana from './components/DashFabGincana';
 import DashAvisoPopup from './components/DashAvisoPopup';
 import DashStatusAtualModal from './components/DashStatusAtualModal';
 import DashCadeiaNaoMigrada from './components/DashCadeiaNaoMigrada';
+import UICarregando from './components/UICarregando.jsx';
 
 function dataHojeFormatada() {
     return new Intl.DateTimeFormat('pt-BR', {
@@ -137,11 +138,7 @@ export default function MainDashboard() {
     }, []);
 
     if (loading) {
-        return (
-            <div className="ds-spinner-container" style={{height: '100vh'}}>
-                <div className="ds-spinner"></div>
-            </div>
-        );
+        return <UICarregando variante="pagina" />;
     }
 
     if (dashboardBloqueada) return <DashCadeiaNaoMigrada />;

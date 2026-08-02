@@ -1538,7 +1538,7 @@ Revisar índices compostos, conforme cada consulta:
 - [x] Fase 4 — Seletor universal
 - [x] Fase 5 — Gestão Organizacional
 - [x] Fase 6 — Financeiro como piloto
-- [ ] Fase 7 — Empregados, dashboard e pagamentos
+- [x] Fase 7 — Empregados, dashboard e pagamentos
 - [ ] Fase 8 — OPs e cadeia produtiva
 - [ ] Fase 9 — Demais módulos
 - [ ] Fase 10 — Permissões por empresa
@@ -1549,15 +1549,16 @@ Revisar índices compostos, conforme cada consulta:
 
 ## Estado atual
 
-**Fase em andamento:** encerramento operacional da Fase 7; a Fase 8 não faz parte
-do escopo deste ciclo.
+**Fase em andamento:** Fase 8 — OPs e cadeia produtiva. Ela não faz parte do
+escopo deste ciclo.
 
-**Checkpoint atual:** Fases 0–6.1 concluídas e aprovadas. A dashboard da Fase 7
-foi redesenhada e aprovada localmente; a preparação estrutural da Fase 7 foi
-executada e validada na Neon.
+**Checkpoint atual:** Fases 0–7 concluídas e aprovadas dentro do escopo atual.
+A dashboard da Fase 7 foi publicada e aprovada em smoke autenticado; a
+preparação estrutural foi executada e validada na Neon.
 
-**Próxima frente funcional:** publicar seletivamente o código da Fase 7, fazer o
-smoke autenticado final e concluir a liberação controlada dos módulos aprovados.
+**Próxima frente funcional:** Fase 8, quando for retomada pelo usuário, para
+migrar a cadeia produtiva e permitir a futura liberação da dashboard completa
+em empresas secundárias.
 
 **Situação operacional:** o sistema publicado possui infraestrutura
 multiempresa e o Financeiro foi liberado para Lojas Variara e Neila Confecções;

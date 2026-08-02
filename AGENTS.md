@@ -16,7 +16,7 @@ O sistema está em transição planejada de empresa única para **multiempresas*
 
 `_planejamento/sistema-multiempresas.md`
 
-**Estado atual:** Fases 6 e 6.1 concluídas; Fase 7 em encerramento operacional.
+**Estado atual:** Fases 6, 6.1 e 7 concluídas no escopo aprovado; Fase 8 não iniciada.
 A fundação multiempresa e a Gestão Organizacional já estão em produção. A
 migration de preparação do Financeiro foi executada e validada na Neon em
 28/07/2026; a API foi isolada e validada, e o teste transacional das constraints
@@ -37,9 +37,9 @@ pontos extras, configurações de pontos, gincanas, premiações, avisos popup e
 calendário foi implementado e aprovado em HTTP na restauração local em
 01/08/2026. O limite transitório da dashboard foi aprovado por 6 cenários HTTP,
 mantendo a dashboard legada disponível e a cadeia fechada na secundária. O
-redesign completo da dashboard foi aprovado localmente, e a preparação da Fase 7
-foi registrada na Neon com `aprovado: true`; publicação e smoke autenticado
-final ainda estão pendentes.
+redesign completo da dashboard foi publicado e aprovado pelo usuário em smoke
+autenticado de produção. A cadeia produtiva permanece bloqueada para empresas
+secundárias porque sua migração pertence à Fase 8.
 
 ### Decisões obrigatórias
 
@@ -151,7 +151,7 @@ final ainda estão pendentes.
 | Fase 5 — Gestão Organizacional | Concluída, publicada e aprovada em produção |
 | Fase 6 — Financeiro como piloto | Concluída, publicada e aprovada nas duas empresas |
 | Fase 6.1 — Redesign dos modais do Financeiro | Concluída, publicada e aprovada em produção na release 1.39.0 |
-| Fase 7 — Empregados, dashboard e pagamentos | Dashboard concluída localmente; preparação estrutural executada e validada na Neon; publicação e smoke final pendentes |
+| Fase 7 — Empregados, dashboard e pagamentos | Concluída, publicada e aprovada em produção no escopo atual; produção e arremates permanecem na Fase 8 |
 | Fase 8 em diante | Não iniciada |
 
 Situação operacional:
@@ -1273,19 +1273,18 @@ Para gincanas do tipo `meta` que já estão `encerrada` ou `encerrada_semana`, o
 
 ---
 
-## HANDOFF DA FASE 7 — 01/08/2026
+## FECHAMENTO DA FASE 7 — 01/08/2026
 
-A Fase 7 foi implementada e aprovada na restauração local. A preparação
-estrutural também foi executada e validada na Neon; o banco local usado nos
-testes foi `sistema_lv_fase7` em `127.0.0.1:55437`, com a API local em `3017`.
-Ainda não houve commit, push ou deploy dessa frente.
+A Fase 7 foi implementada, publicada e aprovada em smoke autenticado de
+produção. A preparação estrutural também foi executada e validada na Neon; o
+banco local usado nos testes foi `sistema_lv_fase7` em `127.0.0.1:55437`, com a
+API local em `3017`.
 
 Suítes HTTP aprovadas: pagamentos (17 cenários), ponto/sessões (15),
 incentivos (7), avisos/calendário (2) e limite da dashboard (6). Typecheck,
 build, auditorias estáticas e `git diff --check` também foram aprovados.
 
-O próximo passo é publicar seletivamente a Fase 7 e realizar o smoke autenticado
-final. Produção e arremates permanecem bloqueados para empresas secundárias com
+Produção e arremates permanecem bloqueados para empresas secundárias com
 `CADEIA_PRODUTIVA_NAO_MIGRADA`; não remover os guards de `/api/producao` e
 `/api/arremates` nem o bloqueio `DashCadeiaNaoMigrada`.
 

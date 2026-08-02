@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import ReactDOM from 'react-dom';
 import { fetchAPI } from '/js/utils/api-utils';
+import UICarregando from './UICarregando.jsx';
 
 function formatarPontos(valor) {
     return Number(valor || 0).toLocaleString('pt-BR', {
@@ -79,13 +80,7 @@ export default function DashTabelaPontosRedesign({ onClose }) {
 
                 <div className="ds-tabela-pontos-conteudo">
                     {loading ? (
-                        <div className="ds-tabela-pontos-carregando" aria-label="Carregando tabela de pontos">
-                            <div className="ds-tabela-pontos-spinner" aria-hidden="true">
-                                <i className="fas fa-star" />
-                            </div>
-                            <strong>Montando sua tabela...</strong>
-                            <span>Buscando os valores de cada etapa.</span>
-                        </div>
+                        <UICarregando variante="bloco" texto="Montando sua tabela..." />
                     ) : produtos.length === 0 ? (
                         <div className="ds-tabela-pontos-vazio">
                             <span className="ds-tabela-pontos-vazio-icone" aria-hidden="true">

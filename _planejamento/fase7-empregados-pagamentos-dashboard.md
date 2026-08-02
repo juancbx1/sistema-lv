@@ -1,6 +1,6 @@
 # Fase 7 — Empregados, pagamentos e dashboard
 
-**Status:** em andamento — fundação, pagamentos, ponto e sessões aprovados na restauração local
+**Status:** concluída no escopo aprovado — preparação, pagamentos, ponto, sessões e dashboard publicados e aprovados
 **Dependência:** Fases 6 e 6.1 concluídas
 **Decisão de ordem:** a dashboard das costureiras será a última frente funcional
 
@@ -578,3 +578,18 @@ Assim, neste ciclo a dashboard está concluída para a empresa legada, mas a
 dashboard completa da empresa secundária permanece deliberadamente bloqueada.
 Liberá-la integralmente exigiria executar a Fase 8, que está fora do escopo
 aprovado.
+
+## Encerramento operacional da Fase 7 — 01/08/2026
+
+A Fase 7 foi encerrada dentro do escopo aprovado. A preparação estrutural foi
+executada e validada na Neon; pagamentos, ponto, sessões, incentivos, avisos,
+calendário e os contratos de dashboard foram isolados por empresa e aprovados
+nas validações previstas. A dashboard da empresa legada recebeu o redesign
+mobile-first completo, incluindo menu lateral, ranking, projeção de ciclo,
+atividades recentes, tabela de pontos e status operacional.
+
+A publicação final desta frente inclui também a substituição dos spinners do
+redesign pelo componente padrão `UICarregando`. O smoke autenticado em produção
+foi aprovado pelo usuário. Produção e arremates continuam deliberadamente
+bloqueados para empresas secundárias por `CADEIA_PRODUTIVA_NAO_MIGRADA`; sua
+migração pertence à Fase 8 e não faz parte deste ciclo.

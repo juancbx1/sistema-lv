@@ -651,10 +651,11 @@ async function handleAcaoManualStatus(tiktik, novoStatus, mensagemConfirmacao, m
     }
 
     try {
-        const payload = { status: novoStatus }; // <<< Criamos o payload
-        await fetchFromAPI(`/usuarios/${tiktik.id}/status`, {
-            method: 'PUT',
-            body: JSON.stringify(payload) // <<< Enviamos o payload
+        const ehFalta = novoStatus === STATUS.FALTOU;
+        const payload = ehFalta ? { funcionario_id: tiktik.id } : { status: novoStatus };
+        await fetchFromAPI(ehFalta ? '/ponto/falta' : `/usuarios/${tiktik.id}/status`, {
+            method: ehFalta ? 'POST' : 'PUT',
+            body: JSON.stringify(payload)
         });
         
         mostrarMensagem(mensagemSucesso, 'sucesso', 2000);

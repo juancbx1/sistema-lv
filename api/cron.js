@@ -3,6 +3,8 @@ import 'dotenv/config';
 import pkg from 'pg';
 const { Pool } = pkg;
 import express from 'express';
+import { dataLocalSaoPaulo } from './jornada.js';
+import { reconciliarJornadaFuncionario } from './ponto-motor.js';
 
 const router = express.Router();
 const pool = new Pool({ connectionString: process.env.POSTGRES_URL });
@@ -69,6 +71,8 @@ router.get('/arquivar-concluidas', async (req, res) => {
 //  - Só processa funcionários ativos (ativo=true) dos tipos costureira/tiktik
 //  - Pula FALTOU e ALOCADO_EXTERNO (supervisor marcou ausência)
 //  - Só processa se é dia de trabalho para o funcionário (dias_trabalho)
+//  - Não processa DSR, feriado ou trabalho extra: esses dias usam blocos
+//    especiais de tarefas e não a jornada ordinária
 //  - Só processa se há evidência de atividade hoje (sessão ou status PRODUZINDO/ALMOCO/PAUSA)
 //  - Grava sempre os horários AGENDADOS (não NOW()) para precisão histórica
 //  - COALESCE: nunca sobrescreve entradas já existentes
@@ -82,6 +86,82 @@ router.get('/registrar-intervalos', async (req, res) => {
     try {
         dbClient = await pool.connect();
         const empresaId = await obterEmpresaLegadaId(dbClient);
+
+        // Ativa o motor somente quando a fundação empresarial e o livro de
+        // eventos estiverem presentes. Antes da migration, o caminho legado
+        // continua disponível para evitar publicação parcial.
+        const motorSchema = await dbClient.query(`
+            SELECT
+                to_regclass('public.ponto_eventos') IS NOT NULL AS possui_eventos,
+                to_regclass('public.ponto_transicoes_pendentes') IS NOT NULL AS possui_transicoes,
+                EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND table_name = 'ponto_diario'
+                      AND column_name = 'empresa_id'
+                ) AS ponto_empresarial,
+                EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND table_name = 'calendario_empresa'
+                      AND column_name = 'empresa_id'
+                ) AS calendario_empresarial
+        `);
+
+        const motorAtivo = Object.values(motorSchema.rows[0] || {}).every(Boolean);
+        if (motorAtivo) {
+            const agora = new Date();
+            const dataHojeSP = dataLocalSaoPaulo(agora);
+            const funcionariosResult = await dbClient.query(`
+                SELECT u.id, u.nome
+                FROM usuarios u
+                JOIN usuarios_empresas ue
+                  ON ue.usuario_id = u.id
+                 AND ue.empresa_id = $1
+                 AND ue.ativo
+                WHERE ue.tipos && ARRAY['costureira','tiktik']::text[]
+                ORDER BY u.id
+            `, [empresaId]);
+
+            const resultados = [];
+            for (const funcionario of funcionariosResult.rows) {
+                try {
+                    await dbClient.query('BEGIN');
+                    const resultado = await reconciliarJornadaFuncionario(dbClient, {
+                        empresaId,
+                        funcionarioId: funcionario.id,
+                        dataJornada: dataHojeSP,
+                        agora,
+                    });
+                    await dbClient.query('COMMIT');
+                    resultados.push({
+                        funcionario_id: funcionario.id,
+                        nome: funcionario.nome,
+                        ...resultado,
+                    });
+                } catch (error) {
+                    await dbClient.query('ROLLBACK').catch(() => undefined);
+                    resultados.push({
+                        funcionario_id: funcionario.id,
+                        nome: funcionario.nome,
+                        aplicado: false,
+                        erro: error.message,
+                    });
+                }
+            }
+
+            const eventos = resultados.flatMap((resultado) => resultado.eventos || []);
+            const erros = resultados.filter((resultado) => resultado.erro);
+            console.log(`[CRON] motor de jornada ${dataHojeSP} — ${eventos.length} eventos, ${erros.length} erros`);
+            return res.status(erros.length > 0 ? 207 : 200).json({
+                success: erros.length === 0,
+                motor: 'ponto-eventos-v1',
+                data_jornada: dataHojeSP,
+                total_eventos: eventos.length,
+                erros: erros.length,
+                resultados,
+            });
+        }
 
         // Hora atual em São Paulo
         const agora = new Date();
@@ -114,19 +194,14 @@ router.get('/registrar-intervalos', async (req, res) => {
             return res.status(200).json({ success: true, ignorado: true, hora_sp: agoraSP, motivo: 'fora_do_horario' });
         }
 
-        // Guarda de feriado: não registra intervalos em dias de feriado/folga da empresa.
-        // Exceção: se houver um 'trabalho_extra' cadastrado na mesma data, opera normalmente.
+        // Guarda de calendário: nenhum DSR, feriado, folga ou trabalho extra
+        // recebe intervalo ordinário. O fluxo especial de trabalho nesses dias
+        // é conduzido por blocos manuais de tarefas.
         const { rows: feriadoRows } = await dbClient.query(`
             SELECT 1 FROM calendario_empresa
             WHERE data = $1::date
               AND empresa_id = $2
-              AND tipo IN ('feriado_nacional', 'feriado_regional', 'folga_empresa')
-              AND NOT EXISTS (
-                  SELECT 1 FROM calendario_empresa c2
-                  WHERE c2.data = $1::date
-                    AND c2.empresa_id = $2
-                    AND c2.tipo = 'trabalho_extra'
-              )
+              AND tipo IN ('feriado_nacional', 'feriado_regional', 'folga_empresa', 'trabalho_extra')
             LIMIT 1
         `, [dataHojeSP, empresaId]);
 
@@ -165,7 +240,7 @@ router.get('/registrar-intervalos', async (req, res) => {
                 ON pd.funcionario_id = u.id
                AND pd.data = $1
                AND pd.empresa_id = ue.empresa_id
-            WHERE ue.tipos && ARRAY['costureira','tiktik']::varchar[]
+            WHERE ue.tipos && ARRAY['costureira','tiktik']::text[]
               AND ue.status_atual NOT IN ('FALTOU','ALOCADO_EXTERNO')
         `, [dataHojeSP, empresaId]);
 

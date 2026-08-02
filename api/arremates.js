@@ -6,6 +6,13 @@ import jwt from 'jsonwebtoken';
 import express from 'express';
 import { getPermissoesCompletasUsuarioDB, atualizarStatusUsuarioDB } from './usuarios.js';
 import { registrarAuditoria } from './audit.js';
+import { dataLocalSaoPaulo } from './jornada.js';
+import {
+    pontoEventosDisponivel,
+    ORIGENS_PONTO,
+    registrarEventoTarefa,
+    TIPOS_EVENTO_TAREFA,
+} from './ponto-eventos.js';
 
 // --- INÍCIO DA CORREÇÃO DE FUSO HORÁRIO ---
 types.setTypeParser(1114, str => str);
@@ -992,6 +999,7 @@ router.post('/sessoes/iniciar', async (req, res) => {
 
         dbClient = await pool.connect();
         await dbClient.query('BEGIN');
+        const eventosPontoAtivos = await pontoEventosDisponivel(dbClient);
 
         // --- INÍCIO DA NOVA LÓGICA DE BLOQUEIO DE USUÁRIO ---
         const userStatusResult = await dbClient.query(
@@ -1087,6 +1095,34 @@ router.post('/sessoes/iniciar', async (req, res) => {
         const sessaoParams = [usuario_tiktik_id, produto_id, variante, qtdEntregueNum, op_numero_ref, op_edit_id_ref, JSON.stringify(dados_ops)];
         const sessaoResult = await dbClient.query(sessaoQuery, sessaoParams);
         const novaSessaoId = sessaoResult.rows[0].id;
+
+        if (eventosPontoAtivos) {
+            const eventoBase = {
+                empresaId: req.empresaId,
+                funcionarioId: usuario_tiktik_id,
+                dataJornada: dataLocalSaoPaulo(),
+                tarefaTipo: 'ARREMATE',
+                tarefaId: novaSessaoId,
+                origem: ORIGENS_PONTO.SUPERVISOR,
+                autorId: req.usuarioLogado.id,
+                autorNome: req.usuarioLogado.nome || req.usuarioLogado.nome_usuario,
+                payload: {
+                    produto_id,
+                    variante: variante || null,
+                    quantidade: qtdEntregueNum,
+                    op_numero: op_numero_ref,
+                    dados_ops,
+                },
+            };
+            await registrarEventoTarefa(dbClient, {
+                ...eventoBase,
+                tipoEvento: TIPOS_EVENTO_TAREFA.ATRIBUIDA,
+            });
+            await registrarEventoTarefa(dbClient, {
+                ...eventoBase,
+                tipoEvento: TIPOS_EVENTO_TAREFA.INICIADA,
+            });
+        }
         
         // --- INÍCIO DA LÓGICA DE ATUALIZAÇÃO DE STATUS ---
         await dbClient.query(
@@ -1127,6 +1163,8 @@ router.post('/sessoes/finalizar', async (req, res) => {
     try {
         dbClient = await pool.connect();
         await dbClient.query('BEGIN');
+
+        const eventosPontoAtivos = await pontoEventosDisponivel(dbClient);
 
         const idsParaFinalizar = detalhes_finalizacao.map(d => d.id_sessao);
 
@@ -1225,6 +1263,25 @@ router.post('/sessoes/finalizar', async (req, res) => {
                 `UPDATE sessoes_trabalho_arremate SET data_fim = $1, status = 'FINALIZADA', quantidade_finalizada = $2, tempo_pausado_segundos = $3 WHERE id = $4`,
                 [dataFim, qtdFinalizadaNestaSessao, tempoPausaSegundos, sessaoCorrespondente.id]
             );
+
+            if (eventosPontoAtivos) {
+                await registrarEventoTarefa(dbClient, {
+                    empresaId: req.empresaId,
+                    funcionarioId: sessaoCorrespondente.usuario_tiktik_id,
+                    dataJornada: dataLocalSaoPaulo(dataFim),
+                    tipoEvento: TIPOS_EVENTO_TAREFA.FINALIZADA,
+                    tarefaTipo: 'ARREMATE',
+                    tarefaId: sessaoCorrespondente.id,
+                    idempotencyKey: `tarefa:ARREMATE:${sessaoCorrespondente.id}:finalizada`,
+                    origem: ORIGENS_PONTO.SUPERVISOR,
+                    autorId: req.usuarioLogado.id,
+                    autorNome: req.usuarioLogado.nome || req.usuarioLogado.nome_usuario,
+                    payload: {
+                        quantidade_atribuida: sessaoCorrespondente.quantidade_entregue,
+                        quantidade_finalizada: Number(qtdFinalizadaNestaSessao),
+                    },
+                });
+            }
         }
 
         const outraSessaoAtivaResult = await dbClient.query(
@@ -1331,6 +1388,28 @@ router.post('/sessoes/cancelar', async (req, res) => {
             `UPDATE sessoes_trabalho_arremate SET status = 'CANCELADA', data_fim = NOW() WHERE id = ANY($1::int[])`,
             [idsParaCancelar]
         );
+
+        if (await pontoEventosDisponivel(dbClient)) {
+            for (const sessao of sessoesResult.rows) {
+                await registrarEventoTarefa(dbClient, {
+                    empresaId: req.empresaId,
+                    funcionarioId: sessao.usuario_tiktik_id,
+                    dataJornada: dataLocalSaoPaulo(),
+                    tipoEvento: TIPOS_EVENTO_TAREFA.CANCELADA,
+                    tarefaTipo: 'ARREMATE',
+                    tarefaId: sessao.id,
+                    idempotencyKey: `tarefa:ARREMATE:${sessao.id}:cancelada`,
+                    origem: ORIGENS_PONTO.SUPERVISOR,
+                    autorId: usuarioLogado.id,
+                    autorNome: usuarioLogado.nome || usuarioLogado.nome_usuario,
+                    motivo: req.body.motivo || 'Cancelamento manual da tarefa',
+                    payload: {
+                        sessao_status_anterior: sessao.status,
+                        motivo: req.body.motivo || null,
+                    },
+                });
+            }
+        }
 
         if (updateResult.rowCount === 0) {
             await dbClient.query('ROLLBACK');

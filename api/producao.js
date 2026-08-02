@@ -6,6 +6,13 @@ import jwt from 'jsonwebtoken';
 import express from 'express';
 import { getPermissoesCompletasUsuarioDB, determinarStatusFinalServidor } from './usuarios.js';
 import { obterEmpresaIdDoContexto } from './contexto-empresa.js';
+import { diaSemanaLocal, diasTrabalhoNormalizados, dataLocalSaoPaulo } from './jornada.js';
+import {
+    pontoEventosDisponivel,
+    ORIGENS_PONTO,
+    registrarEventoTarefa,
+    TIPOS_EVENTO_TAREFA,
+} from './ponto-eventos.js';
 
 const router = express.Router();
 const pool = new Pool({
@@ -236,7 +243,7 @@ router.get('/status-funcionarios', async (req, res) => {
         const result = await dbClient.query(query, [req.empresaId]);
 
         // Busca ponto_diario e sessoes_hoje em paralelo (bulk — sem N+1)
-        const [pontoDiarioResult, sessoesHojeResult, feriadoHojeResult] = await Promise.all([
+        const [pontoDiarioResult, sessoesHojeResult, feriadoHojeResult, calendarioHojeResult] = await Promise.all([
             dbClient.query(
                 `SELECT funcionario_id, horario_real_s1, horario_real_e2,
                         horario_real_s2, horario_real_e3, horario_real_s3,
@@ -293,9 +300,20 @@ router.get('/status-funcionarios', async (req, res) => {
                   )
                 LIMIT 1
             `, [req.empresaId]),
+            dbClient.query(`
+                SELECT
+                    COALESCE(BOOL_OR(tipo IN ('feriado_nacional', 'feriado_regional', 'folga_empresa')), FALSE) AS possui_dia_nao_ordinario,
+                    COALESCE(BOOL_OR(tipo = 'trabalho_extra'), FALSE) AS possui_trabalho_extra
+                FROM calendario_empresa
+                WHERE data = (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
+                  AND empresa_id = $1
+            `, [req.empresaId]),
         ]);
+        const dataHojeSP = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
         const pontoDiarioMap  = new Map(pontoDiarioResult.rows.map(p => [p.funcionario_id, p]));
         const sessoesHojeMap  = new Map(sessoesHojeResult.rows.map(r => [r.funcionario_id, r.sessoes || []]));
+        const calendarioHoje = calendarioHojeResult.rows[0] || {};
+        const diaSemanaHoje = diaSemanaLocal(dataHojeSP);
 
         // ─────────────────────────────────────────────────────────────────────
         // BUG-15b — Rede de segurança pós-E2/E3
@@ -310,15 +328,24 @@ router.get('/status-funcionarios', async (req, res) => {
         const agoraSP = new Date().toLocaleTimeString('en-GB', {
             timeZone: 'America/Sao_Paulo', hour12: false, hour: '2-digit', minute: '2-digit'
         });
-        const dataHojeSP = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
         const agoraMin = hhmmParaMin(agoraSP);
         const safetyNetInserts = [];
         const n5 = (t) => t ? String(t).substring(0, 5) : null;
+        const motorPontoAtivo = await pontoEventosDisponivel(dbClient);
 
+        if (!motorPontoAtivo) {
         for (const row of result.rows) {
             // Pula status explícitos de ausência — se o supervisor marcou,
             // o empregado não estava lá pra ir no almoço.
             if (row.status_atual === 'FALTOU' || row.status_atual === 'ALOCADO_EXTERNO') continue;
+
+            // O safety-net só pode existir em jornada ordinária. DSR, feriado,
+            // trabalho extra e dias desmarcados usam o fluxo especial de blocos.
+            const diasTrabalho = diasTrabalhoNormalizados(row.dias_trabalho);
+            const diaMarcado = diaSemanaHoje !== null && diasTrabalho[diaSemanaHoje] === true;
+            const diaComCalendarioEspecial = calendarioHoje.possui_dia_nao_ordinario === true
+                || calendarioHoje.possui_trabalho_extra === true;
+            if (!diaMarcado || diaComCalendarioEspecial) continue;
 
             // Só aplica safety net se há evidência de atividade hoje
             // (sessão finalizada/ativa). Senão, não há razão para gravar ponto.
@@ -401,6 +428,8 @@ router.get('/status-funcionarios', async (req, res) => {
                     console.log(`[SAFETY-NET] Pausa fallback func ${row.id} (${row.nome}): ${s2}→${e3} (agendado)`);
                 }
             }
+        }
+
         }
 
         if (safetyNetInserts.length > 0) {
@@ -870,6 +899,26 @@ router.put('/sessoes/cancelar', async (req, res) => {
                 AND empresa_id = $2`,
             [id_sessao, req.empresaId]
         );
+
+        if (await pontoEventosDisponivel(dbClient)) {
+            await registrarEventoTarefa(dbClient, {
+                empresaId: req.empresaId,
+                funcionarioId: sessao.funcionario_id,
+                dataJornada: dataLocalSaoPaulo(),
+                tipoEvento: TIPOS_EVENTO_TAREFA.CANCELADA,
+                tarefaTipo: 'PRODUCAO',
+                tarefaId: sessao.id,
+                idempotencyKey: `tarefa:PRODUCAO:${sessao.id}:cancelada`,
+                origem: ORIGENS_PONTO.SUPERVISOR,
+                autorId: usuarioLogado.id,
+                autorNome: usuarioLogado.nome || usuarioLogado.nome_usuario,
+                motivo: req.body.motivo || 'Cancelamento manual da tarefa',
+                payload: {
+                    sessao_status_anterior: sessao.status,
+                    motivo: req.body.motivo || null,
+                },
+            });
+        }
 
         // Verifica se há outras sessões em andamento para este funcionário
         const restantesResult = await dbClient.query(

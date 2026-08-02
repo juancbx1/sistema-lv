@@ -9,6 +9,13 @@ import { getPermissoesCompletasUsuarioDB } from './usuarios.js';
 import { verificarGincanasAposProducao } from './gincanas.js';
 import { registrarAuditoria } from './audit.js';
 import { obterEmpresaIdDoContexto } from './contexto-empresa.js';
+import { carregarContextoJornada, ehDiaOrdinario, dataLocalSaoPaulo } from './jornada.js';
+import {
+    pontoEventosDisponivel,
+    ORIGENS_PONTO,
+    registrarEventoTarefa,
+    TIPOS_EVENTO_TAREFA,
+} from './ponto-eventos.js';
 
 
 
@@ -20,6 +27,7 @@ const pool = new Pool({
 const SECRET_KEY = process.env.JWT_SECRET;
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Compatibilidade pré-migration — detecção legada de intervalo.
 // BUG-15b — Tolerância máxima de atraso para detecção automática de intervalo.
 // Se a tarefa for finalizada além de (S1/S2 + TOLERANCIA), o sistema NÃO registra
 // mais o almoço/pausa automaticamente — a rede de segurança em
@@ -58,6 +66,23 @@ async function detectarIntervaloAoFinalizar(
     horaAtualSP
 ) {
     const n = (t) => t ? String(t).substring(0, 5) : null;
+
+    // Com o livro append-only ativo, a finalização de uma tarefa não decide
+    // jornada nem cria intervalo. O cron reconcilia S1/S2/E2/E3 pelo horário
+    // planejado dentro do motor transacional.
+    if (await pontoEventosDisponivel(dbClient)) return 'LIVRE';
+
+    // Finalização de tarefa não pode inventar intervalo em DSR, feriado,
+    // trabalho extra ou depois que a jornada foi cancelada por falta.
+    const contextoJornada = await carregarContextoJornada(
+        dbClient,
+        funcionarioId,
+        empresaId,
+        dataHojeSP
+    );
+    if (!ehDiaOrdinario(contextoJornada) || contextoJornada.falta_ativa) {
+        return 'LIVRE';
+    }
 
     const s1Agendado = n(horarios.horario_saida_1);
     const s2Agendado = n(horarios.horario_saida_2);
@@ -305,6 +330,7 @@ router.post('/', async (req, res) => {
     try {
         dbClient = await pool.connect();
         await dbClient.query('BEGIN');
+        const eventosPontoAtivos = await pontoEventosDisponivel(dbClient);
 
         let { funcionario_id, opNumero, produto_id, variante, processo, quantidade, funcionario } = req.body;
 
@@ -356,6 +382,34 @@ router.post('/', async (req, res) => {
         ]);
         const novaSessaoId = sessaoResult.rows[0].id;
 
+        if (eventosPontoAtivos) {
+            const eventoBase = {
+                empresaId: req.empresaId,
+                funcionarioId: funcionario_id,
+                dataJornada: dataLocalSaoPaulo(),
+                tarefaTipo: 'PRODUCAO',
+                tarefaId: novaSessaoId,
+                origem: ORIGENS_PONTO.SUPERVISOR,
+                autorId: usuarioLogado.id,
+                autorNome: usuarioLogado.nome || usuarioLogado.nome_usuario,
+                payload: {
+                    op_numero: opNumero,
+                    produto_id,
+                    variante: variante || null,
+                    processo,
+                    quantidade: Number(quantidade),
+                },
+            };
+            await registrarEventoTarefa(dbClient, {
+                ...eventoBase,
+                tipoEvento: TIPOS_EVENTO_TAREFA.ATRIBUIDA,
+            });
+            await registrarEventoTarefa(dbClient, {
+                ...eventoBase,
+                tipoEvento: TIPOS_EVENTO_TAREFA.INICIADA,
+            });
+        }
+
         // Atualiza status do usuário
         await dbClient.query(
             `UPDATE usuarios_empresas
@@ -401,6 +455,7 @@ router.post('/lote', async (req, res) => {
 
         dbClient = await pool.connect();
         await dbClient.query('BEGIN');
+        const eventosPontoAtivos = await pontoEventosDisponivel(dbClient);
 
         // 1. Verifica se usuário já está ocupado (opcional, mas bom manter a regra)
         const userStatusResult = await dbClient.query(
@@ -438,6 +493,35 @@ router.post('/lote', async (req, res) => {
                 req.empresaId,
             ]);
             idsSessoesCriadas.push(sessaoResult.rows[0].id);
+
+            if (eventosPontoAtivos) {
+                const eventoBase = {
+                    empresaId: req.empresaId,
+                    funcionarioId: funcionario_id,
+                    dataJornada: dataLocalSaoPaulo(),
+                    tarefaTipo: 'PRODUCAO',
+                    tarefaId: sessaoResult.rows[0].id,
+                    origem: ORIGENS_PONTO.SUPERVISOR,
+                    autorId: usuarioLogado.id,
+                    autorNome: usuarioLogado.nome || usuarioLogado.nome_usuario,
+                    payload: {
+                        op_numero: opNumero,
+                        produto_id,
+                        variante: variante || null,
+                        processo,
+                        quantidade: Number(quantidade),
+                        lote: true,
+                    },
+                };
+                await registrarEventoTarefa(dbClient, {
+                    ...eventoBase,
+                    tipoEvento: TIPOS_EVENTO_TAREFA.ATRIBUIDA,
+                });
+                await registrarEventoTarefa(dbClient, {
+                    ...eventoBase,
+                    tipoEvento: TIPOS_EVENTO_TAREFA.INICIADA,
+                });
+            }
         }
 
         // 3. Atualiza status do usuário
@@ -898,6 +982,7 @@ router.put('/finalizar', async (req, res) => {
     try {
         dbClient = await pool.connect();
         await dbClient.query('BEGIN');
+        const eventosPontoAtivos = await pontoEventosDisponivel(dbClient);
         
         // 1. Busca a sessão e trava
         const sessaoResult = await dbClient.query(
@@ -1133,6 +1218,26 @@ router.put('/finalizar', async (req, res) => {
                 req.empresaId,
             ]
         );
+
+        if (eventosPontoAtivos) {
+            await registrarEventoTarefa(dbClient, {
+                empresaId: req.empresaId,
+                funcionarioId: sessao.funcionario_id,
+                dataJornada: dataHojeSP,
+                tipoEvento: TIPOS_EVENTO_TAREFA.FINALIZADA,
+                tarefaTipo: 'PRODUCAO',
+                tarefaId: sessao.id,
+                idempotencyKey: `tarefa:PRODUCAO:${sessao.id}:finalizada`,
+                origem: ORIGENS_PONTO.SUPERVISOR,
+                autorId: usuarioLogado.id,
+                autorNome: usuarioLogado.nome || usuarioLogado.nome_usuario,
+                payload: {
+                    quantidade_atribuida: sessao.quantidade_atribuida,
+                    quantidade_finalizada: Number(quantidade_finalizada),
+                    pausa_manual_ms: Math.max(0, parseInt(pausa_manual_ms) || 0),
+                },
+            });
+        }
 
         // Reinicia o cronômetro da próxima tarefa na fila (se houver)
         await dbClient.query(`

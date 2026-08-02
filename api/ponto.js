@@ -1,7 +1,7 @@
 // api/ponto.js
 // API de Ponto Dinâmico — exceções manuais e liberação antecipada para intervalos.
-// As entradas automáticas (almoço/pausa detectados ao finalizar tarefa) são feitas
-// diretamente em api/producoes.js via detectarIntervaloAoFinalizar().
+// Com o livro de eventos ativo, as transições ordinárias são decididas pelo
+// motor; as rotas abaixo registram somente confirmações e exceções auditadas.
 
 import 'dotenv/config';
 import pkg from 'pg';
@@ -10,6 +10,21 @@ import jwt from 'jsonwebtoken';
 import express from 'express';
 import { registrarAuditoria } from './audit.js';
 import { obterEmpresaIdDoContexto } from './contexto-empresa.js';
+import {
+    carregarContextoJornada,
+    exigirTransicaoOrdinaria,
+    dataLocalSaoPaulo,
+    horaLocalSaoPaulo,
+} from './jornada.js';
+import {
+    pontoEventosDisponivel,
+    ORIGENS_PONTO,
+    registrarEventoPonto,
+    registrarEventoTarefa,
+    TIPOS_EVENTO_PONTO,
+    TIPOS_EVENTO_TAREFA,
+} from './ponto-eventos.js';
+import { confirmarSaidaIntervaloPendente } from './ponto-motor.js';
 
 const router = express.Router();
 const pool = new Pool({ connectionString: process.env.POSTGRES_URL });
@@ -44,6 +59,238 @@ router.use(async (req, res, next) => {
 });
 
 /**
+ * POST /api/ponto/falta
+ * Registra a falta explícita do empregado e cancela as sessões de produção
+ * ainda em andamento. A projeção preserva os horários já existentes; o novo
+ * motor de eventos será adicionado sem apagar esse histórico.
+ */
+router.post('/falta', async (req, res) => {
+    const { funcionario_id, motivo } = req.body;
+    const supervisor = req.usuarioLogado?.nome || 'Supervisor';
+
+    if (!funcionario_id) {
+        return res.status(400).json({ error: 'funcionario_id é obrigatório.' });
+    }
+
+    let dbClient;
+    try {
+        dbClient = await pool.connect();
+        await dbClient.query('BEGIN');
+        const eventosPontoAtivos = await pontoEventosDisponivel(dbClient);
+        await exigirVinculoAtivo(dbClient, funcionario_id, req.empresaId);
+
+        const dataHojeSP = dataLocalSaoPaulo();
+        const contexto = await carregarContextoJornada(
+            dbClient,
+            funcionario_id,
+            req.empresaId,
+            dataHojeSP
+        );
+        if (contexto.falta_ativa) {
+            await dbClient.query('COMMIT');
+            return res.status(200).json({ message: 'A falta já estava registrada hoje.', ja_registrada: true });
+        }
+        exigirTransicaoOrdinaria(contexto, 'o registro de falta');
+
+        const sessoesCanceladas = await dbClient.query(
+            `UPDATE sessoes_trabalho_producao
+             SET status = 'CANCELADA', data_fim = COALESCE(data_fim, NOW())
+             WHERE funcionario_id = $1
+               AND empresa_id = $2
+               AND status = 'EM_ANDAMENTO'
+             RETURNING id`,
+            [funcionario_id, req.empresaId]
+        );
+
+        // A tabela legada de arremates ainda não possui empresa_id. Só a
+        // tocamos no contexto da empresa legada, que é o único contexto em que
+        // a cadeia de arremates está habilitada.
+        let sessoesArremateCanceladas = { rows: [] };
+        if (req.empresaAtiva?.eh_legada === true) {
+            sessoesArremateCanceladas = await dbClient.query(
+                `UPDATE sessoes_trabalho_arremate
+                 SET status = 'CANCELADA', data_fim = COALESCE(data_fim, NOW())
+                 WHERE usuario_tiktik_id = $1
+                   AND status = 'EM_ANDAMENTO'
+                 RETURNING id`,
+                [funcionario_id]
+            );
+        }
+
+        await dbClient.query(
+            `INSERT INTO ponto_diario
+                (funcionario_id, data, tipo_excecao, motivo_excecao, registrado_por, empresa_id)
+             VALUES ($1, $2, 'FALTA', $3, $4, $5)
+             ON CONFLICT (empresa_id, funcionario_id, data) DO UPDATE SET
+                 tipo_excecao = 'FALTA',
+                 motivo_excecao = EXCLUDED.motivo_excecao,
+                 registrado_por = EXCLUDED.registrado_por,
+                 updated_at = NOW()`,
+            [funcionario_id, dataHojeSP, motivo || null, supervisor, req.empresaId]
+        );
+
+        await dbClient.query(
+            `UPDATE usuarios_empresas
+             SET status_atual = 'FALTOU',
+                 status_data_modificacao = (NOW() AT TIME ZONE 'America/Sao_Paulo'),
+                 id_sessao_trabalho_atual = NULL,
+                 atualizado_em = NOW()
+             WHERE usuario_id = $1
+               AND empresa_id = $2
+               AND ativo`,
+            [funcionario_id, req.empresaId]
+        );
+
+        if (eventosPontoAtivos) {
+            const autorId = req.usuarioLogado?.id || null;
+            const autorNome = req.usuarioLogado?.nome || supervisor;
+            const compromissosCancelados = await dbClient.query(
+                `UPDATE ponto_transicoes_pendentes
+                    SET status = 'CANCELADA',
+                        autor_resolucao_id = $1,
+                        autor_resolucao_nome = $2,
+                        motivo_resolucao = COALESCE($3, 'Falta registrada'),
+                        atualizado_em = NOW()
+                  WHERE empresa_id = $4
+                    AND funcionario_id = $5
+                    AND data_jornada = $6::date
+                    AND status = 'PENDENTE'
+                RETURNING id, tipo_intervalo, horario_saida_planejado, horario_retorno_planejado`,
+                [
+                    autorId,
+                    autorNome,
+                    motivo || 'Falta registrada',
+                    req.empresaId,
+                    funcionario_id,
+                    dataHojeSP,
+                ]
+            );
+            const sessoesProducaoIds = sessoesCanceladas.rows.map((row) => row.id);
+            const sessoesArremateIds = sessoesArremateCanceladas.rows.map((row) => row.id);
+            const compromissosIds = compromissosCancelados.rows.map((row) => row.id);
+
+            await registrarEventoPonto(dbClient, {
+                empresaId: req.empresaId,
+                funcionarioId: funcionario_id,
+                dataJornada: dataHojeSP,
+                tipoEvento: TIPOS_EVENTO_PONTO.FALTA_REGISTRADA,
+                idempotencyKey: `falta:${dataHojeSP}:${funcionario_id}`,
+                origem: ORIGENS_PONTO.SUPERVISOR,
+                autorId,
+                autorNome,
+                motivo: motivo || null,
+                payload: {
+                    sessoes_producao_canceladas: sessoesProducaoIds,
+                    sessoes_arremate_canceladas: sessoesArremateIds,
+                    transicoes_canceladas: compromissosIds,
+                },
+            });
+
+            for (const transicao of compromissosCancelados.rows) {
+                await registrarEventoPonto(dbClient, {
+                    empresaId: req.empresaId,
+                    funcionarioId: funcionario_id,
+                    dataJornada: dataHojeSP,
+                    tipoEvento: TIPOS_EVENTO_PONTO.COMPROMISSO_CANCELADO,
+                    idempotencyKey: `falta:${dataHojeSP}:${funcionario_id}:transicao:${transicao.id}`,
+                    origem: ORIGENS_PONTO.SUPERVISOR,
+                    transicaoTipo: transicao.tipo_intervalo,
+                    transicaoId: transicao.id,
+                    horarioPlanejado: transicao.horario_saida_planejado,
+                    autorId,
+                    autorNome,
+                    motivo: motivo || 'Falta registrada',
+                    payload: {
+                        causa: `falta:${dataHojeSP}:${funcionario_id}`,
+                        horario_retorno_planejado: transicao.horario_retorno_planejado,
+                    },
+                });
+            }
+
+            for (const sessaoId of sessoesProducaoIds) {
+                await registrarEventoPonto(dbClient, {
+                    empresaId: req.empresaId,
+                    funcionarioId: funcionario_id,
+                    dataJornada: dataHojeSP,
+                    tipoEvento: TIPOS_EVENTO_PONTO.COMPROMISSO_CANCELADO,
+                    idempotencyKey: `falta:${dataHojeSP}:${funcionario_id}:sessao-producao:${sessaoId}`,
+                    origem: ORIGENS_PONTO.SUPERVISOR,
+                    autorId,
+                    autorNome,
+                    motivo: motivo || 'Falta registrada',
+                    payload: {
+                        causa: `falta:${dataHojeSP}:${funcionario_id}`,
+                        tipo_compromisso: 'SESSAO_PRODUCAO',
+                        sessao_id: sessaoId,
+                    },
+                });
+                await registrarEventoTarefa(dbClient, {
+                    empresaId: req.empresaId,
+                    funcionarioId: funcionario_id,
+                    dataJornada: dataHojeSP,
+                    tipoEvento: TIPOS_EVENTO_TAREFA.CANCELADA,
+                    tarefaTipo: 'PRODUCAO',
+                    tarefaId: sessaoId,
+                    idempotencyKey: `tarefa:PRODUCAO:${sessaoId}:cancelada:falta:${dataHojeSP}`,
+                    origem: ORIGENS_PONTO.SUPERVISOR,
+                    autorId,
+                    autorNome,
+                    motivo: motivo || 'Falta registrada',
+                    payload: {
+                        causa: `falta:${dataHojeSP}:${funcionario_id}`,
+                        sessao_id: sessaoId,
+                    },
+                });
+            }
+
+            for (const sessaoId of sessoesArremateIds) {
+                await registrarEventoTarefa(dbClient, {
+                    empresaId: req.empresaId,
+                    funcionarioId: funcionario_id,
+                    dataJornada: dataHojeSP,
+                    tipoEvento: TIPOS_EVENTO_TAREFA.CANCELADA,
+                    tarefaTipo: 'ARREMATE',
+                    tarefaId: sessaoId,
+                    idempotencyKey: `tarefa:ARREMATE:${sessaoId}:cancelada:falta:${dataHojeSP}`,
+                    origem: ORIGENS_PONTO.SUPERVISOR,
+                    autorId,
+                    autorNome,
+                    motivo: motivo || 'Falta registrada',
+                    payload: {
+                        causa: `falta:${dataHojeSP}:${funcionario_id}`,
+                        sessao_id: sessaoId,
+                    },
+                });
+            }
+        }
+
+        await dbClient.query('COMMIT');
+
+        const sessoesCanceladasIds = [
+            ...sessoesCanceladas.rows.map(row => row.id),
+            ...sessoesArremateCanceladas.rows.map(row => row.id),
+        ];
+
+        registrarAuditoria(null, req.usuarioLogado, 'ponto.falta_registrada', 'funcionario', funcionario_id, {
+            data_jornada: dataHojeSP,
+            motivo: motivo || null,
+            sessoes_canceladas: sessoesCanceladasIds,
+        });
+
+        res.status(200).json({
+            message: 'Falta registrada e compromissos ativos cancelados.',
+            sessoes_canceladas: sessoesCanceladasIds,
+        });
+    } catch (error) {
+        if (dbClient) await dbClient.query('ROLLBACK');
+        console.error('[API POST /ponto/falta] Erro:', error);
+        res.status(error.statusCode || 500).json({ error: error.message, codigo: error.codigo });
+    } finally {
+        if (dbClient) dbClient.release();
+    }
+});
+
+/**
  * POST /api/ponto/excecao
  * Registra uma exceção manual: chegada atrasada ou saída antecipada.
  *
@@ -51,7 +298,7 @@ router.use(async (req, res, next) => {
  *   funcionario_id: number,
  *   tipo_excecao: 'ATRASO' | 'SAIDA_ANTECIPADA',
  *   horario: 'HH:MM',   // para ATRASO = hora real de chegada; para SAIDA_ANTECIPADA = hora atual (enviada pelo frontend)
- *   motivo: string       // texto livre do supervisor (opcional)
+ *   motivo: string       // texto livre do supervisor (obrigatório)
  * }
  */
 router.post('/excecao', async (req, res) => {
@@ -63,6 +310,9 @@ router.post('/excecao', async (req, res) => {
     }
     if (!['ATRASO', 'SAIDA_ANTECIPADA'].includes(tipo_excecao)) {
         return res.status(400).json({ error: 'tipo_excecao deve ser ATRASO ou SAIDA_ANTECIPADA.' });
+    }
+    if (!String(motivo || '').trim()) {
+        return res.status(400).json({ error: 'O motivo é obrigatório para registrar uma exceção.' });
     }
     if (tipo_excecao === 'ATRASO' && !horario) {
         return res.status(400).json({ error: 'Para ATRASO, o campo horario é obrigatório.' });
@@ -80,7 +330,14 @@ router.post('/excecao', async (req, res) => {
         await dbClient.query('BEGIN');
         await exigirVinculoAtivo(dbClient, funcionario_id, req.empresaId);
 
-        const dataHojeSP = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+        const dataHojeSP = dataLocalSaoPaulo();
+        const contexto = await carregarContextoJornada(
+            dbClient,
+            funcionario_id,
+            req.empresaId,
+            dataHojeSP
+        );
+        exigirTransicaoOrdinaria(contexto, `a exceção ${tipo_excecao}`);
         const campoHorario = tipo_excecao === 'ATRASO' ? 'horario_real_e1' : 'horario_real_s3';
 
         await dbClient.query(
@@ -110,6 +367,7 @@ router.post('/excecao', async (req, res) => {
         );
 
         // Saída antecipada: força status FORA_DO_HORARIO e cancela sessão ativa
+        let sessoesCanceladas = { rows: [] };
         if (tipo_excecao === 'SAIDA_ANTECIPADA') {
             await dbClient.query(
                 `UPDATE usuarios_empresas
@@ -121,14 +379,61 @@ router.post('/excecao', async (req, res) => {
                    AND ativo`,
                 [funcionario_id, req.empresaId]
             );
-            await dbClient.query(
+            sessoesCanceladas = await dbClient.query(
                 `UPDATE sessoes_trabalho_producao
                  SET status = 'CANCELADA', data_fim = NOW()
                  WHERE funcionario_id = $1
                    AND empresa_id = $2
-                   AND status = 'EM_ANDAMENTO'`,
+                   AND status = 'EM_ANDAMENTO'
+                 RETURNING id`,
                 [funcionario_id, req.empresaId]
             );
+        }
+
+        if (await pontoEventosDisponivel(dbClient)) {
+            const autorId = req.usuarioLogado?.id || null;
+            const autorNome = req.usuarioLogado?.nome || supervisor;
+            await registrarEventoPonto(dbClient, {
+                empresaId: req.empresaId,
+                funcionarioId: funcionario_id,
+                dataJornada: dataHojeSP,
+                tipoEvento: TIPOS_EVENTO_PONTO.EXCECAO_MANUAL,
+                idempotencyKey: `excecao:${dataHojeSP}:${funcionario_id}:${tipo_excecao}`,
+                origem: ORIGENS_PONTO.SUPERVISOR,
+                horarioPlanejado: tipo_excecao === 'ATRASO'
+                    ? contexto.horario_entrada_1
+                    : contexto.horario_saida_1,
+                horarioEfetivo: horarioFinal,
+                autorId,
+                autorNome,
+                motivo: motivo || null,
+                payload: {
+                    tipo_excecao,
+                    campo_horario: campoHorario,
+                    horario_informado: horario,
+                    sessoes_canceladas: sessoesCanceladas.rows.map((row) => row.id),
+                },
+            });
+
+            for (const sessao of sessoesCanceladas.rows) {
+                await registrarEventoTarefa(dbClient, {
+                    empresaId: req.empresaId,
+                    funcionarioId: funcionario_id,
+                    dataJornada: dataHojeSP,
+                    tipoEvento: TIPOS_EVENTO_TAREFA.CANCELADA,
+                    tarefaTipo: 'PRODUCAO',
+                    tarefaId: sessao.id,
+                    idempotencyKey: `tarefa:PRODUCAO:${sessao.id}:cancelada:excecao:${dataHojeSP}`,
+                    origem: ORIGENS_PONTO.SUPERVISOR,
+                    autorId,
+                    autorNome,
+                    motivo: motivo || 'Saída antecipada registrada',
+                    payload: {
+                        causa: `excecao:${dataHojeSP}:${funcionario_id}:SAIDA_ANTECIPADA`,
+                        tipo_excecao,
+                    },
+                });
+            }
         }
 
         await dbClient.query('COMMIT');
@@ -163,34 +468,42 @@ router.post('/liberar-intervalo', async (req, res) => {
         dbClient = await pool.connect();
         await dbClient.query('BEGIN');
 
-        const agora = new Date();
-        const horaAtualSP = agora.toLocaleTimeString('en-GB', {
-            timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit'
-        });
-        const dataHojeSP = agora.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
-
-        // Busca horários E verifica se está PRODUZINDO (tem sessão ativa)
-        // v1.8: se PRODUZINDO, só grava ponto_diario — não toca status nem sessão
-        const horRes = await dbClient.query(
-            `SELECT
-                horario_saida_1,
-                horario_entrada_2,
-                horario_saida_2,
-                horario_entrada_3,
-                id_sessao_trabalho_atual
-             FROM usuarios_empresas
-             WHERE usuario_id = $1
-               AND empresa_id = $2
-               AND ativo`,
-            [funcionario_id, req.empresaId]
-        );
-        if (horRes.rows.length === 0) {
-            const error = new Error('Funcionário não encontrado na empresa ativa.');
-            error.statusCode = 404;
-            throw error;
+        if (await pontoEventosDisponivel(dbClient)) {
+            const agora = new Date();
+            const dataHojeSP = dataLocalSaoPaulo(agora);
+            const confirmacao = await confirmarSaidaIntervaloPendente(dbClient, {
+                empresaId: req.empresaId,
+                funcionarioId: funcionario_id,
+                dataJornada: dataHojeSP,
+                tipoIntervalo: tipo,
+                agora,
+                autorId: req.usuarioLogado?.id || null,
+                autorNome: supervisor,
+            });
+            await dbClient.query('COMMIT');
+            return res.status(200).json({
+                message: `Saída para ${tipo} confirmada pelo motor de jornada.`,
+                retorno_previsto: String(confirmacao.horario_retorno_planejado).substring(0, 5),
+                motor: 'ponto-eventos-v1',
+                ja_resolvida: confirmacao.ja_resolvida || false,
+            });
         }
-        const horarios = horRes.rows[0] || {};
-        const isProduzindo = !!horarios.id_sessao_trabalho_atual;
+
+        const agora = new Date();
+        const horaAtualSP = horaLocalSaoPaulo(agora);
+        const dataHojeSP = dataLocalSaoPaulo(agora);
+        const contexto = await carregarContextoJornada(
+            dbClient,
+            funcionario_id,
+            req.empresaId,
+            dataHojeSP
+        );
+        exigirTransicaoOrdinaria(contexto, `a saída para ${tipo}`);
+
+        // Busca horários e verifica se está PRODUZINDO (tem sessão ativa).
+        // v1.8: se PRODUZINDO, só grava ponto_diario — não toca status nem sessão.
+        const horarios = contexto;
+        const isProduzindo = !!contexto.id_sessao_trabalho_atual;
         const n = (t) => t ? String(t).substring(0, 5) : null;
 
         let campoSaida, campoRetorno, horarioRetorno, novoStatus;
@@ -348,7 +661,9 @@ router.post('/desfazer-saida', async (req, res) => {
         );
 
         if (!pontoRes.rows.length) {
-            return res.status(400).json({ error: 'Nenhuma saída antecipada ativa registrada hoje para este funcionário.' });
+            const error = new Error('Nenhuma saída antecipada ativa registrada hoje para este funcionário.');
+            error.statusCode = 400;
+            throw error;
         }
 
         // Marca como desfeita — NÃO remove horario_real_s3 (preservar para auditoria)
@@ -379,6 +694,24 @@ router.post('/desfazer-saida', async (req, res) => {
                AND ativo`,
             [funcionario_id, req.empresaId]
         );
+
+        if (await pontoEventosDisponivel(dbClient)) {
+            await registrarEventoPonto(dbClient, {
+                empresaId: req.empresaId,
+                funcionarioId: funcionario_id,
+                dataJornada: dataHojeSP,
+                tipoEvento: TIPOS_EVENTO_PONTO.CORRECAO_MANUAL,
+                idempotencyKey: `correcao:${dataHojeSP}:${funcionario_id}:saida-antecipada`,
+                origem: ORIGENS_PONTO.SUPERVISOR,
+                autorId: req.usuarioLogado?.id || null,
+                autorNome: req.usuarioLogado?.nome || supervisor,
+                motivo: motivo || 'Saída antecipada desfeita',
+                payload: {
+                    acao: 'DESFAZER_SAIDA_ANTECIPADA',
+                    horario_anterior: pontoRes.rows[0].horario_real_s3,
+                },
+            });
+        }
 
         await dbClient.query('COMMIT');
         res.status(200).json({ message: `Saída antecipada desfeita para funcionário ${funcionario_id}.` });
@@ -448,21 +781,30 @@ router.post('/desfazer-liberacao', async (req, res) => {
  * Body: { funcionario_id: number, tipo: 'ALMOCO' | 'PAUSA' }
  */
 router.post('/retomar-trabalho', async (req, res) => {
-    const { funcionario_id, tipo } = req.body;
+    const { funcionario_id, tipo, motivo } = req.body;
 
     if (!funcionario_id || !['ALMOCO', 'PAUSA'].includes(tipo)) {
         return res.status(400).json({ error: 'Campos obrigatórios: funcionario_id, tipo (ALMOCO|PAUSA).' });
+    }
+    if (!String(motivo || '').trim()) {
+        return res.status(400).json({ error: 'O motivo é obrigatório para registrar um retorno excepcional.' });
     }
 
     let dbClient;
     try {
         dbClient = await pool.connect();
+        await dbClient.query('BEGIN');
 
         const agora = new Date();
-        const horaAtualSP = agora.toLocaleTimeString('en-GB', {
-            timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit'
-        });
-        const dataHojeSP = agora.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+        const horaAtualSP = horaLocalSaoPaulo(agora);
+        const dataHojeSP = dataLocalSaoPaulo(agora);
+        const contexto = await carregarContextoJornada(
+            dbClient,
+            funcionario_id,
+            req.empresaId,
+            dataHojeSP
+        );
+        exigirTransicaoOrdinaria(contexto, `o retorno antecipado de ${tipo}`);
         const campoRetorno = tipo === 'ALMOCO' ? 'horario_real_e2' : 'horario_real_e3';
         const campoRetornoPrevisto = tipo === 'ALMOCO' ? 'horario_real_e2' : 'horario_real_e3';
 
@@ -483,15 +825,15 @@ router.post('/retomar-trabalho', async (req, res) => {
             [funcionario_id, dataHojeSP, req.empresaId]
         );
         if (dadosRes.rows.length === 0) {
-            return res.status(404).json({
-                error: 'Funcionário não encontrado na empresa ativa.',
-            });
+            const error = new Error('Funcionário não encontrado na empresa ativa.');
+            error.statusCode = 404;
+            throw error;
         }
         const dados = dadosRes.rows[0];
         const funcNome = dados.nome || `ID ${funcionario_id}`;
 
         // Atualiza o campo de retorno para "agora" → frontend descongela o contador
-        await dbClient.query(
+        const pontoAtualizado = await dbClient.query(
             `UPDATE ponto_diario
              SET ${campoRetorno} = $1, updated_at = NOW()
              WHERE funcionario_id = $2
@@ -499,6 +841,9 @@ router.post('/retomar-trabalho', async (req, res) => {
                AND empresa_id = $4`,
             [horaAtualSP, funcionario_id, dataHojeSP, req.empresaId]
         );
+        if (pontoAtualizado.rowCount === 0) {
+            throw new Error('Nenhum registro de ponto do dia foi encontrado para registrar o retorno.');
+        }
 
         // Auditoria: calcula desvio em relação ao retorno previsto (e2/e3 programado no cadastro)
         const horarioPrevisto = dados.retorno_previsto_db
@@ -511,6 +856,29 @@ router.post('/retomar-trabalho', async (req, res) => {
             desvioMin = (ah * 60 + am) - (ph * 60 + pm); // positivo = atrasado
         }
 
+        if (await pontoEventosDisponivel(dbClient)) {
+            await registrarEventoPonto(dbClient, {
+                empresaId: req.empresaId,
+                funcionarioId: funcionario_id,
+                dataJornada: dataHojeSP,
+                tipoEvento: TIPOS_EVENTO_PONTO.RETORNO_MANUAL,
+                idempotencyKey: `retorno-manual:${dataHojeSP}:${funcionario_id}:${tipo}`,
+                origem: ORIGENS_PONTO.SUPERVISOR,
+                transicaoTipo: tipo,
+                horarioPlanejado: horarioPrevisto,
+                horarioEfetivo: horaAtualSP,
+                autorId: req.usuarioLogado?.id || null,
+                autorNome: req.usuarioLogado?.nome || 'Supervisor',
+                motivo,
+                payload: {
+                    tipo_intervalo: tipo,
+                    retorno_previsto: horarioPrevisto,
+                    retorno_real: horaAtualSP,
+                    desvio_min: desvioMin,
+                },
+            });
+        }
+
         registrarAuditoria(null, req.usuarioLogado, 'ponto.trabalho_retomado', 'funcionario', funcionario_id, {
             funcionario_nome: funcNome,
             tipo_intervalo: tipo,
@@ -520,11 +888,13 @@ router.post('/retomar-trabalho', async (req, res) => {
             status: desvioMin === null ? 'sem_horario' : desvioMin > 1 ? 'atrasado' : desvioMin < -1 ? 'adiantado' : 'no_horario',
         });
 
+        await dbClient.query('COMMIT');
         res.status(200).json({ message: `Retomada registrada para ${tipo}.`, horario_retorno: horaAtualSP });
 
     } catch (error) {
+        if (dbClient) await dbClient.query('ROLLBACK');
         console.error('[API POST /ponto/retomar-trabalho] Erro:', error);
-        res.status(500).json({ error: error.message });
+        res.status(error.statusCode || 500).json({ error: error.message });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -548,13 +918,23 @@ router.post('/desfazer-retomada', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        await dbClient.query('BEGIN');
         await exigirVinculoAtivo(dbClient, funcionario_id, req.empresaId);
 
         const dataHojeSP = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
         const campoRetorno = tipo === 'ALMOCO' ? 'horario_real_e2' : 'horario_real_e3';
 
+        const retornoAnteriorResult = await dbClient.query(
+            `SELECT ${campoRetorno} AS horario_retorno
+             FROM ponto_diario
+             WHERE funcionario_id = $1
+               AND data = $2
+               AND empresa_id = $3`,
+            [funcionario_id, dataHojeSP, req.empresaId]
+        );
+
         // Reseta o campo para NULL → contador recongelará via calcularTempoEfetivo
-        await dbClient.query(
+        const retornoDesfeito = await dbClient.query(
             `UPDATE ponto_diario
              SET ${campoRetorno} = NULL, updated_at = NOW()
              WHERE funcionario_id = $1
@@ -562,10 +942,35 @@ router.post('/desfazer-retomada', async (req, res) => {
                AND empresa_id = $3`,
             [funcionario_id, dataHojeSP, req.empresaId]
         );
+        if (retornoDesfeito.rowCount === 0) {
+            throw new Error('Nenhum registro de ponto do dia foi encontrado para desfazer o retorno.');
+        }
 
+        if (await pontoEventosDisponivel(dbClient)) {
+            await registrarEventoPonto(dbClient, {
+                empresaId: req.empresaId,
+                funcionarioId: funcionario_id,
+                dataJornada: dataHojeSP,
+                tipoEvento: TIPOS_EVENTO_PONTO.CORRECAO_MANUAL,
+                idempotencyKey: `correcao:${dataHojeSP}:${funcionario_id}:retorno:${tipo}`,
+                origem: ORIGENS_PONTO.SUPERVISOR,
+                transicaoTipo: tipo,
+                horarioEfetivo: retornoAnteriorResult.rows[0]?.horario_retorno || null,
+                autorId: req.usuarioLogado?.id || null,
+                autorNome: req.usuarioLogado?.nome || 'Supervisor',
+                payload: {
+                    acao: 'DESFAZER_RETORNO_MANUAL',
+                    tipo_intervalo: tipo,
+                    horario_anterior: retornoAnteriorResult.rows[0]?.horario_retorno || null,
+                },
+            });
+        }
+
+        await dbClient.query('COMMIT');
         res.status(200).json({ message: 'Retomada desfeita — intervalo restaurado.' });
 
     } catch (error) {
+        if (dbClient) await dbClient.query('ROLLBACK');
         console.error('[API POST /ponto/desfazer-retomada] Erro:', error);
         res.status(error.statusCode || 500).json({ error: error.message });
     } finally {

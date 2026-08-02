@@ -3,10 +3,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import OPStatusCard from './OPStatusCard.jsx';
-import UICarregando from './UICarregando.jsx';
+import UICarregando from './UICarregando';
 import { mostrarMensagem, mostrarConfirmacao, mostrarPromptNumerico, mostrarPromptTexto, mostrarPromptHorario } from '/js/utils/popups.js';
 import OPAtribuicaoModal from './OPAtribuicaoModal.jsx';
-import UIBloqueio from './UIBloqueio.jsx';
+import UIBloqueio from './UIBloqueio';
 import OPPontoPopup from './OPPontoPopup.jsx';
 
 export default function OPPainelAtividades() {
@@ -137,25 +137,19 @@ export default function OPPainelAtividades() {
     // --- v1.8: TIMER 60s — DETECÇÃO DE CRUZAMENTO S1/S2 ---
     // Verifica a cada 60s se algum funcionário passou do horário de almoço (S1)
     // ou pausa (S2). Quando detectado: grava ponto_diario + exibe popup de alerta + toca bip.
-    const liberarIntervaloSilencioso = useCallback(async (funcionarioId, tipo) => {
-        try {
-            const token = localStorage.getItem('token');
-            await fetch('/api/ponto/liberar-intervalo', {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ funcionario_id: funcionarioId, tipo }),
-            });
-            // Não precisa tratar resposta — o próximo poll do buscarDadosPainel sincroniza o estado.
-        } catch (e) { /* silencioso — poll regular vai recuperar */ }
-    }, []);
-
     useEffect(() => {
         const checarIntervalos = () => {
+            // A tela apenas alerta; nunca deve iniciar intervalo em feriado,
+            // DSR ou dia desmarcado na jornada.
+            if (infoFeriado) return;
+
             const agora   = new Date();
             const agoraSP = agora.toLocaleTimeString('en-GB', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
             const dataSP  = agora.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
             const [ah, am] = agoraSP.split(':').map(Number);
             const agoraMin = ah * 60 + am;
+            const [ano, mes, dia] = dataSP.split('-').map(Number);
+            const diaSemanaHoje = String(new Date(Date.UTC(ano, mes - 1, dia, 12)).getUTCDay());
             const n = (t) => t ? String(t).substring(0, 5) : null;
 
             const novosAlmoco = [];
@@ -164,6 +158,8 @@ export default function OPPainelAtividades() {
             for (const func of funcionarios) {
                 // Só verifica funcionários que estão ativos (produzindo ou disponíveis)
                 if (!['PRODUZINDO', 'LIVRE', 'LIVRE_MANUAL'].includes(func.status_atual)) continue;
+                const diasTrabalho = func.dias_trabalho || { '0': false, '1': true, '2': true, '3': true, '4': true, '5': true, '6': false };
+                if (diasTrabalho[diaSemanaHoje] !== true) continue;
 
                 const s1 = n(func.horario_saida_1);
                 const s2 = n(func.horario_saida_2);
@@ -175,7 +171,7 @@ export default function OPPainelAtividades() {
                     if (agoraMin >= s1h * 60 + s1m && !alertadosRef.current.has(chave)) {
                         alertadosRef.current.add(chave);
                         novosAlmoco.push(func.nome.split(' ')[0]);
-                        liberarIntervaloSilencioso(func.id, 'ALMOCO');
+                        // O backend/cron abre e resolve a transição; a tela apenas alerta.
                     }
                 }
 
@@ -186,7 +182,7 @@ export default function OPPainelAtividades() {
                     if (agoraMin >= s2h * 60 + s2m && !alertadosRef.current.has(chave)) {
                         alertadosRef.current.add(chave);
                         novosPausa.push(func.nome.split(' ')[0]);
-                        liberarIntervaloSilencioso(func.id, 'PAUSA');
+                        // O backend/cron abre e resolve a transição; a tela apenas alerta.
                     }
                 }
             }
@@ -201,7 +197,7 @@ export default function OPPainelAtividades() {
 
         const id = setInterval(checarIntervalos, 60000);
         return () => clearInterval(id);
-    }, [funcionarios, liberarIntervaloSilencioso, tocarBeep, buscarDadosPainel]);
+    }, [funcionarios, infoFeriado, tocarBeep, buscarDadosPainel]);
 
     // --- v1.8: COUNTDOWN DO POPUP "DESFAZER LIBERAÇÃO" ---
     useEffect(() => {
@@ -276,11 +272,20 @@ export default function OPPainelAtividades() {
                     const token = localStorage.getItem('token');
 
                     if (isProduzindo) {
+                        const motivoRetorno = await mostrarPromptTexto('Motivo do retorno excepcional (obrigatório):', {
+                            placeholder: 'Ex: retorno antecipado autorizado, ajuste operacional...',
+                            tipo: 'aviso',
+                            textoConfirmar: 'Registrar retorno'
+                        });
+                        if (!String(motivoRetorno || '').trim()) {
+                            mostrarMensagem('Informe um motivo para registrar o retorno.', 'aviso');
+                            return;
+                        }
                         // Caso PRODUZINDO: descongela contador via ponto_diario (não toca status/sessão)
                         const res = await fetch('/api/ponto/retomar-trabalho', {
                             method: 'POST',
                             headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ funcionario_id: funcionario.id, tipo: tipoIntervalo }),
+                            body: JSON.stringify({ funcionario_id: funcionario.id, tipo: tipoIntervalo, motivo: motivoRetorno.trim() }),
                         });
                         if (!res.ok) throw new Error((await res.json()).error || 'Erro ao retomar trabalho');
                         // Sem atualização otimista de status — o buscarDadosPainel atualizará o ponto_hoje
@@ -356,10 +361,13 @@ export default function OPPainelAtividades() {
         if(!confirmado) return;
         try {
             const token = localStorage.getItem('token');
-            const res = await fetch(`/api/usuarios/${funcionario.id}/status`, {
-                method: 'PUT',
+            const ehFalta = acao === 'FALTOU';
+            const res = await fetch(ehFalta ? '/api/ponto/falta' : `/api/usuarios/${funcionario.id}/status`, {
+                method: ehFalta ? 'POST' : 'PUT',
                 headers: {'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json'},
-                body: JSON.stringify({ status: acao })
+                body: JSON.stringify(ehFalta
+                    ? { funcionario_id: funcionario.id }
+                    : { status: acao })
             });
             if (!res.ok) throw new Error((await res.json()).error || 'Erro ao atualizar status');
             const msg = acao === 'LIVRE_MANUAL'
@@ -420,18 +428,9 @@ export default function OPPainelAtividades() {
         let horario, motivo = '';
 
         if (tipoExcecao === 'SAIDA_ANTECIPADA') {
-            // 1. Confirmar a ação (único ponto de cancelamento — motivo não é ponto de cancelamento)
+            // 1. Confirmar a ação
             const confirmado = await mostrarConfirmacao('Confirmar saída antecipada?', 'aviso');
             if (!confirmado) return;
-            // 2. Pedir motivo opcional — mas se o supervisor fechar/cancelar, prossegue sem motivo.
-            // BUG-25: null no prompt de motivo cancelava a ação inteira → supervisor tentava 4-5x
-            // no tablet. Agora null = "sem motivo", prossegue normalmente.
-            const motivoDigitado = await mostrarPromptTexto('Motivo da saída (opcional):', {
-                placeholder: 'Ex: consulta médica, problema pessoal... (pode deixar em branco)',
-                tipo: 'aviso',
-                textoConfirmar: 'Registrar saída'
-            });
-            motivo = motivoDigitado ?? ''; // null (fechou sem preencher) = sem motivo — prossegue
             // BUG-13: horário real será calculado no servidor; enviamos string vazia
             horario = '';
 
@@ -454,6 +453,18 @@ export default function OPPainelAtividades() {
         } else {
             return;
         }
+
+        const motivoDigitado = await mostrarPromptTexto('Motivo da exceção (obrigatório):', {
+            placeholder: 'Ex: consulta médica, problema pessoal, atraso autorizado...',
+            tipo: 'aviso',
+            textoConfirmar: 'Registrar exceção'
+        });
+        if (!String(motivoDigitado || '').trim()) {
+            buscarDadosPainel();
+            mostrarMensagem('Informe um motivo para registrar a exceção.', 'aviso');
+            return;
+        }
+        motivo = motivoDigitado.trim();
 
         try {
             const token = localStorage.getItem('token');

@@ -57,11 +57,9 @@ secundárias porque sua migração pertence à Fase 8.
 - O seletor universal ficará no menu lateral no PC e próximo ao hamburger no tablet/celular.
 - A página Usuários Cadastrados será evoluída para **Gestão Organizacional**, com abas **Pessoas e Acessos** e **Empresas**.
 - O Financeiro será o primeiro módulo de negócio migrado integralmente.
-- O plano executável da Fase 6, incluindo isolamento do Financeiro e redesign
-  dos modais, fica em
-  `_planejamento/financeiro-multiempresas-e-redesign-modais.md`.
-- O redesign dos modais foi executado como **Fase 6.1**, antes da Fase 7,
-  conforme `_planejamento/financeiro-fase-6.1-redesign-modais.md`. O novo
+- O isolamento do Financeiro e o redesign dos modais da Fase 6 foram concluídos
+  e permanecem registrados no histórico do projeto e no plano mestre.
+- O redesign dos modais foi executado como **Fase 6.1**, antes da Fase 7. O novo
   compositor começa pela intenção **Paguei / Recebi / Transferi**, mantém o
   lançamento manual como fluxo principal, usa Favorecido para despesas e
   Pagador para receitas, substitui selects extensos por buscas e prepara
@@ -138,6 +136,70 @@ secundárias porque sua migração pertence à Fase 8.
 - Alterações multiempresa devem ser publicadas em commits seletivos, com revisão
   do diff e validação antes do push. O procedimento fica em
   `_planejamento/multiempresas-controle-de-arquivos.md`.
+
+### Jornada e controle de ponto — decisões aprovadas em 2026-08-01
+
+- A jornada de trabalho por vínculo, incluindo dias, entrada, almoço, pausa e
+  saída, deve ser a fonte de verdade do controle de ponto e será estabilizada
+  antes da migração multiempresa da cadeia de produção.
+- Dia não trabalhado, DSR ou feriado não gera transições ordinárias automáticas.
+  Trabalho nesses dias ocorre somente pelo fluxo especial já adotado de blocos
+  manuais de tarefas atribuídas; ao terminar um bloco, o empregado volta a
+  disponível/ocioso e pode receber outro.
+- A entrada ordinária E1 é automática. Falta não é inferida por ausência de
+  tarefa: o empregado permanece disponível até o supervisor registrar
+  explicitamente a falta, que pode ser lançada em qualquer momento do dia.
+- No horário planejado de almoço ou pausa, o backend deve criar uma transição
+  pendente. O supervisor tem 30 segundos para confirmar ou registrar uma
+  exceção; sem resposta, o backend aplica o horário planejado, mesmo sem tela
+  aberta, registrando origem, horário planejado e horário de processamento.
+- Antecipação ou atraso de saída/retorno exige exceção explícita, motivo e
+  auditoria. Correções de transições automáticas serão protegidas pela
+  permissão provisória `corrigir-transicoes-ponto`.
+- Ao registrar falta, os compromissos restantes do dia são cancelados para o
+  vínculo. Eventos anteriores, como E1, não são apagados: permanecem no
+  histórico e são invalidados por causalidade.
+- O controle será evoluído para eventos de domínio append-only com
+  `ponto_diario` e status do vínculo como projeções rápidas. O motor deve ser a
+  única autoridade de transições ordinárias; React, polling, cron, produção e
+  arremates não podem manter regras concorrentes.
+- O plano executável dessa frente fica em
+  `_planejamento/plano-op-reorganizacao-ponto-jornada-e-redesign.md`.
+- A fundação do motor foi implementada em `api/ponto-eventos.js` e
+  `api/ponto-motor.js`; a migration `_planejamento/migration-ponto-eventos-transicoes.sql`
+  foi ensaiada na restauração local isolada e executada/validada na Neon em
+  2026-08-02. `ponto_eventos` é append-only; `ponto_diario` e o
+  status do vínculo permanecem projeções durante a transição. O cron tem
+  ativação condicionada à presença do schema, o polling React não cria mais
+  intervalos silenciosamente e a confirmação manual opera somente uma
+  transição pendente dentro da janela de 30 segundos.
+- A política aprovada para esta etapa é que o cron aplique o fallback no
+  primeiro ciclo após `vence_em`, preservando o horário planejado e registrando
+  o atraso de processamento; não será criado worker adicional agora.
+- O livro de eventos também registra `TAREFA_ATRIBUIDA`, `TAREFA_INICIADA`,
+  `TAREFA_FINALIZADA` e `TAREFA_CANCELADA`, com `idempotency_key`, empresa,
+  vínculo, origem, autor, motivo e payload. Os fluxos de produção e arremate
+  emitem esses fatos na mesma transação que cria, finaliza ou cancela a sessão;
+  a falta emite cancelamento causal para sessões ativas.
+- A falta, o cron, a atribuição, o cancelamento de produção, as exceções de
+  atraso, o retorno manual e a correção de retorno foram aprovados em HTTP no
+  clone local. A validação ampliada também aprovou falta antes da jornada sem
+  E1, DSR/folga sem eventos, fallback com confirmação tardia idempotente,
+  motivo obrigatório para exceção e concorrência de supervisores.
+- A migration de eventos/transições foi executada na Neon em 2026-08-02. A
+  validação pós-migration confirmou registro em `sistema_migrations`, tabelas
+  vazias, constraints, índices, trigger append-only e rollback de ensaio sem
+  deixar fixtures. O código compatível ainda não foi publicado.
+- A migração do frontend para TypeScript está em andamento por fases (ver
+  seção “Migração progressiva para TypeScript”). Em 2026-08-02 foram concluídas
+  e revisadas as fases de UI compartilhados, Calendário, Gestão Organizacional,
+  Central de Alertas, Centro de Incentivos, Dashboard das empregadas (todos
+  os componentes `Dash*`) e Home administrativa.
+  Ordens de Produção iniciou a migração incremental com `main-op.tsx`,
+  `op-types.ts`, filtros, paginação, linha de etapa e
+  `OPGerenciamentoTela.tsx`; `main-op.jsx` permanece como fallback local até o
+  staging seletivo. A conversão não pode alterar a lógica de jornada/ponto já
+  validada. A migração de `api/*.js` fica fora do escopo inicial.
 
 ### Estado executivo em 2026-07-29
 
@@ -507,19 +569,19 @@ A coluna **Troca contínua** indica se a página já elimina o intervalo vazio e
 |---|---|---|---|---|---|---|---|
 | Login / Index | `login.css` | ✅ | ❌ | ✅ | N/A | N/A | Redesign aprovado e aplicado em 2026-07-28. React 100%, tablet-first, painel editorial de confecção sem pessoas e formulário claro com a paleta oficial. Login público neutro quanto às empresas. Token persistente de 30 dias; demitidos → tela de despedida + cooldown crescente. |
 
-| Ordens de Produção | `ordens-de-producao.css` | ✅ | ❌ | ✅ | ✅ (via alias) | ❓ | Referência de qualidade. |
+| Ordens de Produção | `ordens-de-producao.css` | ✅ | ⚠️ | ✅ | ✅ (via alias) | ❓ | Referência de qualidade. `main-op.tsx`, contratos mínimos, filtros, paginação, linha de etapa e `OPGerenciamentoTela.tsx` concluídos localmente; filhos de ponto ainda em JSX. |
 
-| Calendário da Empresa | `calendario.css` | ✅ | ❌ | ✅ | ✅ | ❓ | Página nova — estrutura padrão aplicada |
+| Calendário da Empresa | `calendario.css` | ✅ | ✅ | ✅ | ✅ | ❓ | Migrado para TypeScript em 02/08/2026 (`main-calendario.tsx` + `CalendarioCompleto.tsx` + `calendario-types.ts`). Typecheck ok. |
 
-| Central de Alertas | `config-alertas.css` | ✅ | ❌ | ❌ | ✅ | ❓ | Redesenhada em 2026-05-16 com 2 abas: Alertas Gerais + Avisos Popups. `ConfigAlertasGerais.jsx` + `AvisosPopupAdmin.jsx` + `AvisosPopupModal.jsx`. Avisos Popup v1.0 completo (DB + API + UI). Permissão: `gerenciar-avisos-popup` em `permissoes.js`. |
+| Central de Alertas | `config-alertas.css` | ✅ | ✅ | ❌ | ✅ | ❓ | Redesenhada em 2026-05-16 com 2 abas: Alertas Gerais + Avisos Popups. Migrada para TypeScript em 02/08/2026 (`main-config-alertas.tsx` + `ConfigAlertasPage` + `ConfigAlertasGerais` + árvore `AvisosPopup*` + `alertas-types.ts`). Typecheck ok. `AlertasFAB` permanece em JSX (FAB compartilhado). Permissão: `configurar-alertas` / `gerenciar-avisos-popup`. |
 
-| Centro de Incentivos | `incentivos.css` | ✅ | ❌ | ✅ | ✅ | ❓ | v5.1 concluído (2026-05-23). Todas as abas 100% React: Gincanas, Metas e Comissões, Pontos por Atividade, Pagamentos. Arquivos legados deletados (`ponto-por-processo.html/js/css`). Hook tiktik (`api/arremates.js`) deferido para v4.x — sem data. Testes de gincana corrida/equipe/produto_especifico/semanal pendentes de validação manual. |
+| Centro de Incentivos | `incentivos.css` | ✅ | ✅ | ✅ | ✅ | ❓ | v5.1 concluído (2026-05-23). Migrado para TypeScript em 02/08/2026 (`main-incentivos.tsx` + árvore `Incen*` + `incentivos-types.ts`). Typecheck/build ok. Abas: Gincanas, Metas e Comissões, Pontos por Atividade, Pagamentos. Gincanas na dashboard migradas na Fase 6 (`DashGincana*` / `DashFabGincana`). |
 
-| Central de Pagamentos | `central-de-pagamentos.css` | ✅ | ✅ | ✅ | ✅ | ❓ | React+TS desde 11/07/2026; **endurecimento TypeScript** em 01/08/2026 (tipos de domínio em `cpag-types.ts`, cliente único `fetchCpag`, sem `any`/`fetch` cru na árvore CPAG, payloads tipados). Shell padrão (`main.gs-card`, `UIHeaderPagina`, `gs-tab-nav`). Plano: `_planejamento/central-de-pagamentos-typescript.md`. Typecheck/build ok. Troca contínua multiempresa ainda `?`. |
+| Central de Pagamentos | `central-de-pagamentos.css` | ✅ | ✅ | ✅ | ✅ | ❓ | React+TS desde 11/07/2026; **endurecimento TypeScript** em 01/08/2026 (tipos de domínio em `cpag-types.ts`, cliente único `fetchCpag`, sem `any`/`fetch` cru na árvore CPAG, payloads tipados). Shell padrão (`main.gs-card`, `UIHeaderPagina`, `gs-tab-nav`). Typecheck/build ok. Troca contínua multiempresa ainda `?`. |
 
-| Dashboard Funcionário | `dashboard.css` | ✅ | ❌ | ❌ | ❌ | ❓ | Mobile-first, estrutura diferente. `DashFabGincana.jsx` (2026-05-20) substitui `DashGincanaCard` inline — gincanas agora em FAB + bottom sheet. Redesign completo 2026-05-24: `DashHeader` com dock (4 botões + divider), tipo+ciclo e avatar clicável; `DSUploader.jsx` (novo componente de upload compartilhado — variantes dropzone/avatar/inline); `DashPerfilModal` redesenhado com hero gradiente escuro, galeria DSUploader, streak de produção, conquistas do ciclo, melhor dia, gincanas vencidas; `DashPagamentosModal` com wallet topo dark + saldos lado a lado (Comissões / Premiações); `DashRankingCard` com mini pódio e estado campeã dourado. APIs novas: `GET /api/dashboard/streak`, `GET /api/dashboard/conquistas-ciclo`. |
+| Dashboard Funcionário | `dashboard.css` | ✅ | ✅ | ❌ | ❌ | ❓ | Mobile-first. Migrada para TypeScript em 02/08/2026 (`index-dashboard.tsx` + `main-dashboard.tsx` + 27 componentes `Dash*` + `dashboard-types.ts`). Typecheck/build ok. Inclui gincanas (FAB/card), perfil, pagamentos, ranking, status ao vivo, avisos popup e bloqueio `DashCadeiaNaoMigrada`. |
 
-| Arremates | `arremates.css` | ✅ | ❌ | ❌ | ✅ | ❓ | v1.0 (2026-05-04) + v2.0 (2026-05-05) + v3.0 Items 1-4 (2026-05-13/14) concluídos. v3.0: `PontoHelpers.js` e `UILinhaDoTempoDia.jsx` extraídos como compartilhados; `ArremateStatusCard` reescrito com layout `cracha-tiktik` idêntico ao OPStatusCard (cronômetro interval-aware, bottom sheets, tolerância S3, liberar intervalo); `ArreMatePainelAtividades` refatorado com estrutura `oa-*` idêntica ao OPPainelAtividades (ALMOCO/PAUSA no grid principal, inativos completos, todos os handlers de ponto). CSS: 4657 → 5850 linhas. v3.0 implementação 100% concluída (Items 1–5). Aguarda verificação manual em browser. Deletar manualmente: `ArremateToast.jsx` e `ArremateAcoesLote.jsx`. Ver `_planejamento/arremates-redesign.md`. |
+| Arremates | `arremates.css` | ✅ | ❌ | ❌ | ✅ | ❓ | v1.0 (2026-05-04) + v2.0 (2026-05-05) + v3.0 Items 1-4 (2026-05-13/14) concluídos. v3.0: `PontoHelpers.js` e `UILinhaDoTempoDia.tsx` (compartilhado tipado) extraídos; `ArremateStatusCard` reescrito com layout `cracha-tiktik` idêntico ao OPStatusCard (cronômetro interval-aware, bottom sheets, tolerância S3, liberar intervalo); `ArreMatePainelAtividades` refatorado com estrutura `oa-*` idêntica ao OPPainelAtividades (ALMOCO/PAUSA no grid principal, inativos completos, todos os handlers de ponto). CSS: 4657 → 5850 linhas. v3.0 implementação 100% concluída (Items 1–5). Aguarda verificação manual em browser. Deletar manualmente: `ArremateToast.jsx` e `ArremateAcoesLote.jsx`. Ver `_planejamento/arremates-redesign.md`. |
 
 | Embalagem de Produtos | `embalagem-de-produtos.css` | ❓ | ❓ | ❌ | ❌ | ❓ | Verificar migração React |
 
@@ -529,9 +591,9 @@ A coluna **Troca contínua** indica se a página já elimina o intervalo vazio e
 
 | Gerenciar Permissões | `permissoes-usuarios.css` | ✅ | ❌ | ✅ | ✅ | ❓ | Concluída 2026-05-23. Duas abas: Permissões + Auditoria. Prefixo `Permissoes*`. Editor: lista plana com search bar (substituiu acordeão) — filtra permissões em tempo real; exclui ex-membros e prestadores da lista de usuários. Auditoria: paginação clássica 12/pág com `gs-paginacao-*`; dropdown de usuários busca tabela `usuarios` (não só audit_log). Infraestrutura: `api/audit.js` + `api/audit-log.js` + tabela `audit_log`. JS legado `admin-permissoes-usuarios.js` deletado. |
 
-| Gestão Organizacional | `gestao-organizacional.css` | ✅ | ❌ | ✅ | ✅ | ❓ | Fase 5 concluída e aprovada em produção em 2026-07-28. Prefixo `GO*`. Identidade e vínculo editados juntos, múltiplas empresas, encerramento contextual para empregados, sócios e prestadores, cópia opcional de permissões entre vínculos e URL antiga compatível. Código da empresa automático/imutável; administradores com acesso total derivado do tipo. Blocos pós-publicação 1–5 implementados localmente; aguardam validação manual. |
+| Gestão Organizacional | `gestao-organizacional.css` | ✅ | ✅ | ✅ | ✅ | ❓ | Fase 5 concluída e aprovada em produção em 2026-07-28. Prefixo `GO*`. Migrado para TypeScript em 02/08/2026 (`main-gestao-organizacional.tsx` + árvore `GO*`/`GestaoOrganizacionalPage` + `go-types.ts`). Typecheck ok. Identidade e vínculo editados juntos, múltiplas empresas, encerramento contextual, cópia opcional de permissões e URL antiga compatível. |
 
-| Home / Admin | `home.css` | ✅ | ❌ | ❌ | ❌ | ❓ | |
+| Home / Admin | `home.css` | ✅ | ✅ | ❌ | ❌ | ❓ | Migrada para TypeScript em 02/08/2026 (`main-home.tsx` + `HOMEHeader` / `HOMENews` / `HOMEQuickActions` + `home-types.ts`). Typecheck ok. `AlertasFAB` permanece em JSX. |
 
 | Gerenciar Produção | `gerenciar-producao.css` | ✅ | ❌ | ✅ | ✅ | ❓ | Concluída 2026-05-27. Prefixo `GP*`. Carregamento automático últimos 3 dias ao abrir. Fluxo duplo de exclusão: direta (`excluir-registro-producao-direto`) ou solicitação com aprovação (`excluir-registro-producao`). Painel de Aprovações com fila pendentes + histórico paginado + filtros. Permissões: `excluir-registro-producao`, `excluir-registro-producao-direto`, `ver-painel-aprovacoes-producao`, `aprovar-exclusao-producao`. Tabela `producoes_solicitacoes_exclusao` com snapshot JSONB e lock FOR UPDATE. Migration: `_planejamento/migration-gerenciar-producao-solicitacoes.sql`. API: `api/gerenciar-producao.js`. |
 
@@ -1239,7 +1301,168 @@ Para gincanas do tipo `meta` que já estão `encerrada` ou `encerrada_semana`, o
 - A página `public/admin/financeiro.html` é integralmente React + TypeScript: `main-financeiro.tsx` + `FinanceiroPage` + `FinanceiroContext`.
 - Sem `admin-financeiro.js`, sem multi-root e sem bridges `window`/`CustomEvent` para comunicação interna da página.
 - **Migração encerrada em 2026-07-27** (validação manual OK; CSS limpo). **Novas features liberadas.**
-- Features novas devem continuar em `.ts`/`.tsx` na árvore única. Plano histórico: `_planejamento/migrando-financeiro-para-typescript.md`.
+- Features novas devem continuar em `.ts`/`.tsx` na árvore única.
+
+### Migração progressiva para TypeScript (em andamento — 2026-08-02)
+
+Objetivo: migrar o frontend React de JSX/JS para TypeScript por fases, sem
+alterar comportamento de negócio. Validação mínima de cada fase: `npm run
+typecheck` (`tsc --noEmit`). Sem commit/push automático (regra do projeto).
+
+#### Já estavam em TypeScript (antes desta frente)
+
+| Domínio | Entry / raiz | Tipos / utils |
+|---|---|---|
+| Financeiro | `main-financeiro.tsx` + `FinanceiroPage` + `FinanceiroContext` | `financeiro-api.ts`, `financeiro-types.ts` |
+| Central de Pagamentos | `main-cpag.tsx` + árvore `CPAG*` | `cpag-api.ts`, `cpag-types.ts`, `cpag-auth.ts`, etc. |
+| Menu Lateral (compartilhado) | `main-menu-lateral.tsx` + `Menu*` | `menu-types.ts`, `menu-catalogo.ts`, `useMenuContexto.ts` |
+
+#### Fases 1–7 concluídas e revisadas em 2026-08-02
+
+Ordem executada: (1) UI compartilhados → (2) Calendário → (3) Gestão
+Organizacional → (4) Central de Alertas → (5) Centro de Incentivos →
+(6) Dashboard das empregadas (+ todos os `Dash*`) → (7) Home admin.
+Revisão: typecheck ok; HTMLs das páginas migradas apontam para entry `.tsx`.
+
+**Fase 1 — UI compartilhados**
+
+| Arquivo | Notas |
+|---|---|
+| `UIHeaderPagina.tsx` | Header padrão de página admin |
+| `UICarregando.tsx` | Spinner universal (variantes bloco/página/inline + marca da empresa) |
+| `UIBloqueio.tsx` | Wrapper de bloqueio por permissão |
+| `UIFeedbackNotFound.tsx` | Estado vazio / sem resultados |
+| `UIPaginacao.tsx` | Ponte para `window.renderizarPaginacao` (tipado em `vite-env.d.ts`) |
+| `UIFiltrosAtivos.tsx` | Pílulas de filtros ativos |
+| `UIAgenteIA.tsx` | Avatar + `BotaoIA` + `LoaderIA` |
+| `UIBuscaInteligente.tsx` | Busca com debounce/histórico + `filtrarListaInteligente` / `normalizarTexto` |
+| `UILinhaDoTempoDia.tsx` | Timeline de jornada (OP/Arremates) |
+| `DSUploader.tsx` | Upload de imagem (dropzone/avatar/inline) |
+| `utils/bloqueio.ts` | `temPermissao`, `mostrarPopupSemPermissao` |
+| `utils/searchHelpers.ts` | `normalizeText`, histórico de buscas |
+
+Já estavam em TS nesta família: `UIAutocompleteAPI`, `UIBadge`, `UILogItem`,
+`UINaoEncontradoBusca`, `UISearchableSelect`, `PerfilAvatarStudio`.
+
+Imports de consumidores atualizados para o módulo sem extensão `.jsx` (ex.:
+`from './UICarregando'`). Os `.jsx`/`.js` equivalentes foram removidos.
+
+**Fase 2 — Calendário da Empresa**
+
+| Arquivo | Notas |
+|---|---|
+| `main-calendario.tsx` | Entry + ErrorBoundary + auth |
+| `CalendarioCompleto.tsx` | FullCalendar, modais, CRUD de eventos |
+| `utils/calendario-types.ts` | Tipos de evento, form, JWT, day modal, etc. |
+| `admin/calendario.html` | Script: `/src/main-calendario.tsx` |
+
+**Fase 3 — Gestão Organizacional**
+
+| Arquivo | Notas |
+|---|---|
+| `main-gestao-organizacional.tsx` | Entry (StrictMode) |
+| `GestaoOrganizacionalPage.tsx` | Shell, abas, orquestração de modais |
+| `GOPessoasTab.tsx` / `GOEmpresasTab.tsx` | Abas |
+| `GOPessoaCard.tsx` / `GOEmpresaCard.tsx` | Cards |
+| `GOPessoaModal.tsx` / `GOEmpresaModal.tsx` | Modais de cadastro/edição |
+| `GOVinculoModal.tsx` | Vínculo + `GOVinculoCampos`, `classificarVinculo`, `VINCULO_INICIAL`, `JORNADA_INICIAL`, `TIPOS_VINCULO` |
+| `GOIdentidadeCampos.tsx` | Identidade global + `IDENTIDADE_INICIAL` |
+| `utils/go-types.ts` | Tipos de pessoa, empresa, vínculo, escopo, forms |
+| `admin/gestao-organizacional.html` | Script: `/src/main-gestao-organizacional.tsx` |
+| `admin/usuarios-cadastrados.html` | URL legada compatível — mesmo entry `.tsx` |
+
+**Fase 4 — Central de Alertas**
+
+| Arquivo | Notas |
+|---|---|
+| `main-config-alertas.tsx` | Entry + auth (`configurar-alertas`) |
+| `pages/ConfigAlertas/ConfigAlertasPage.tsx` | Shell com abas Alertas Gerais / Avisos Popups |
+| `pages/ConfigAlertas/AlertaCard.tsx` | Card de configuração por tipo de alerta |
+| `pages/ConfigAlertas/DiasTrabalhoCard.tsx` | Calendário de operação (dias da semana) |
+| `pages/ConfigAlertas/HorariosCard.tsx` | Expediente + janela de polling |
+| `ConfigAlertasGerais.tsx` | Aba Alertas Gerais (load/save configs) |
+| `AvisosPopupAdmin.tsx` | Aba Avisos: modelos / ativos / arquivados |
+| `AvisosPopupModal.tsx` | Criar/editar/duplicar/usar-template + preview |
+| `AvisosPopupGaleria.tsx` | Galeria de imagens no Vercel Blob |
+| `AvisosPopupViewersModal.tsx` | Quem visualizou / não visualizou |
+| `utils/alertas-types.ts` | Tipos de alertas, avisos, galeria e viewers |
+| `admin/config-alertas.html` | Script: `/src/main-config-alertas.tsx` |
+
+Fora do escopo desta fase (permanece JSX): `AlertasFAB.jsx` — FAB compartilhado
+por várias páginas admin, não é a árvore da Central de Alertas.
+
+**Fase 5 — Centro de Incentivos**
+
+| Arquivo | Notas |
+|---|---|
+| `main-incentivos.tsx` | Entry + auth + shell de abas + botão Nova Gincana |
+| `IncenGincanasTab.tsx` | Lista/filtros de gincanas + integração com modal/ranking |
+| `IncenGincanaCard.tsx` | Card com fase, badges e ações |
+| `IncenGincanaModal.tsx` | Wizard de criação/edição (3 passos) |
+| `IncenGincanaRankingModal.tsx` | Ranking + status de pagamento |
+| `IncenMetasTab.tsx` | Metas e comissões |
+| `IncenPontosTab.tsx` | Pontos por atividade |
+| `IncenPagamentosTab.tsx` | Fila e histórico de premiações |
+| `utils/incentivos-types.ts` | Tipos de gincana, metas, pontos e pagamentos |
+| `admin/incentivos.html` | Script: `/src/main-incentivos.tsx` |
+
+Fora do escopo da Fase 5 (APIs): `api/gincanas*.js` permanecem em JS.
+
+**Fase 6 — Dashboard das empregadas (+ todos os `Dash*`)**
+
+| Arquivo | Notas |
+|---|---|
+| `index-dashboard.tsx` | Entry React no `#root-dashboard` |
+| `main-dashboard.tsx` | Shell: menu, foco, projeção, atividades, modais, avisos |
+| `DashMenuLateral.tsx` | Menu + ranking + empresa + versão |
+| `DashFocoHoje.tsx` / `DashProjecaoCiclo*.tsx` | Meta do dia e projeção do ciclo |
+| `DashAtividades*`.tsx / `DashTabelaPontos*`.tsx | Timeline e tabela de pontos |
+| `DashStatusAtualModal.tsx` / `DashStatusAtualFab.tsx` | Status ao vivo |
+| `DashFabGincana.tsx` / `DashGincanaCard.tsx` | Gincanas na dashboard |
+| `DashPagamentosModal.tsx` / `DashCofreModal.tsx` | Carteira e cofre |
+| `DashPerfil*`.tsx | Perfil, streak, conquistas, gincanas do ciclo |
+| `DashRankingMenu.tsx` / `DashRankingCard.tsx` | Ranking anônimo |
+| `DashAvisoPopup.tsx` / `DashCadeiaNaoMigrada.tsx` | Avisos e bloqueio multiempresa |
+| `DashDesempenhoModal.tsx` / `DashTabelaCiclo.tsx` | Desempenho do ciclo |
+| `DashHeader.tsx` / `DashVersionFooter.tsx` | Header legado + rodapé de versão |
+| `utils/dashboard-types.ts` | Tipos de desempenho, meta, status, gincana, etc. |
+| `dashboard/dashboard.html` | Script: `/src/index-dashboard.tsx` |
+
+**Fase 7 — Home administrativa**
+
+| Arquivo | Notas |
+|---|---|
+| `main-home.tsx` | Entry + auth + montagem no `#home-react-root` |
+| `HOMEHeader.tsx` | Saudação por horário + data por extenso |
+| `HOMENews.tsx` | Card de novidades |
+| `HOMEQuickActions.tsx` | Atalhos filtrados por permissão |
+| `utils/home-types.ts` | Usuário, auth e ações rápidas |
+| `admin/home.html` | Script: `/src/main-home.tsx` |
+
+Fora do escopo desta fase (permanece JSX): `AlertasFAB.jsx` — FAB compartilhado.
+
+#### Entry points React em TypeScript (estado atual)
+
+Em TS: `main-financeiro`, `main-cpag`, `main-menu-lateral`, `main-calendario`,
+`main-gestao-organizacional`, `main-config-alertas`, `main-incentivos`,
+`index-dashboard` / `main-dashboard`, `main-home`.
+
+Ainda em JSX: login, OP, arremates, embalagem, estoque, permissões, produção
+geral, gerenciar produção, usuários legado (`main-usuarios`), agentes globais.
+`AlertasFAB` continua em JSX (FAB admin compartilhado).
+
+#### Regras desta migração
+
+- Preferir tipagem de domínio em `public/src/utils/*-types.ts` (padrão já usado
+  por Financeiro/CPAG/Menu).
+- Componentes continuam em `public/src/components/` sem subpastas (exceção
+  legada: `pages/ConfigAlertas/*` já existia antes da migração TS e foi tipado
+  no lugar — não criar novas subpastas de componentes).
+- Comportamento de negócio não muda na migração JSX→TSX; só tipagem e
+  extensões de arquivo.
+- `npm run typecheck` deve permanecer verde após cada fase.
+- Próximas fases serão definidas pelo usuário (candidatos naturais: Login,
+  Permissões, Embalagem, GP/PG, Arremates/OP, Estoque ainda parcial em React).
 
 ### Decisão arquitetural — redesign do Menu Lateral em React + TypeScript
 
@@ -1259,8 +1482,8 @@ Para gincanas do tipo `meta` que já estão `encerrada` ou `encerrada_semana`, o
   Gestão Organizacional na empresa ativa.
 - Busca universal, histórico de páginas recentes, modo compacto e ações rápidas
   foram descartados deste escopo.
-- Plano executável:
-  `_planejamento/menu-lateral-typescript-redesign.md`.
+- O redesign foi concluído; a migration de preferências permanece separada e
+  ainda não executada.
 - Estado local: implementação concluída, `typecheck`, build e smoke visual
   responsivo aprovados; migration de preferências e smoke autenticado ainda
   pendentes.
@@ -1465,3 +1688,50 @@ validados e liberados com isolamento empresarial; somente depois o modulo
 e `DashCadeiaNaoMigrada` deve permanecer visivel. Neste ciclo, a dashboard esta
 concluida para a empresa legada, mas nao sera liberada integralmente para a
 empresa secundaria porque a Fase 8 esta fora do escopo.
+
+### Estado da trilha TypeScript de Ordens de Producao em 2026-08-02
+
+- A migracao incremental de OP esta em andamento e nao altera a logica de
+  jornada, ponto, agentes globais ou APIs.
+- `main-op.tsx`, `op-types.ts`, `OPFiltros.tsx`, `OPPaginacaoWrapper.tsx`,
+  `OPEtapaRow.tsx`, `OPGerenciamentoTela.tsx` e `OPCortesTela.tsx` foram
+  validados localmente com `npm run typecheck` e `npm run build`.
+- Na aba de Cortes, os componentes filhos continuam em JSX e sao consumidos
+  por fronteiras tipadas temporarias; a smoke manual dessa aba ainda deve ser
+  repetida antes da aprovacao funcional da fatia.
+- Os arquivos JSX antigos permanecem como fallback local. Nenhum staging,
+  commit, push ou deploy deve ser feito enquanto houver alteracoes paralelas no
+  workspace.
+
+- Quinta fatia concluida localmente: `OPExternoTela.tsx` tipa a aba de producao
+  externa, incluindo selecao, confirmacao, unificacao, historico e desfazer.
+  `OPTelaSelecaoEtapa.jsx` permanece em JSX por enquanto. Typecheck e build
+  passaram; falta apenas repetir o smoke manual da aba antes da aprovacao.
+
+- Sexta fatia concluida localmente: `OPTelaSelecaoEtapa.tsx` tipa a fila de
+  tarefas externas, filtros, sugestao, selecao multipla, paginacao e
+  unificacao. A aba externa agora consome a versao TSX. Typecheck e build
+  passaram; falta o smoke manual da selecao de tarefas externas.
+
+- Setima fatia iniciada: `OPModalTempos.tsx` tipa o modal de TPP e `main-op.tsx`
+  passou a carrega-lo. O build passou, mas o typecheck global foi bloqueado por
+  dezenas de erros em componentes `Dash*` de outra migracao paralela. Nenhum
+  erro foi apontado nos arquivos OP desta fatia. Pausar novas fatias ate o gate
+  global de TypeScript voltar a ficar verde.
+
+- Oitava fatia local: `BotaoBuscaFunil.tsx` tipa o FAB/drawer de demandas,
+  polling e callback de inicio de producao; `main-op.tsx` passou a carrega-lo.
+  Build passou. O typecheck global continua bloqueado pelos erros `Dash*` e o
+  smoke manual do FAB ainda esta pendente.
+
+- Nona fatia local: `OPCriarModal.tsx` tipa os modos de criacao por demanda e
+  por corte existente, incluindo cenarios de estoque, vinculo de demanda,
+  split/expansao e salvamento. `main-op.tsx` e `OPCortesTela.tsx` passaram a
+  carrega-lo. Typecheck e build voltaram a passar; smoke dos cenarios do modal
+  ainda esta pendente.
+
+- Decima fatia local: `BotaoBuscaPainelDemandas.tsx` tipa a casca do Painel de
+  Demandas, incluindo carregamento, diagnostico, filtros, busca, secoes,
+  refresh parcial e fronteiras dos modais/cards/agente JSX. `BotaoBuscaFunil.tsx`
+  passou a consumir a versao TSX. Typecheck e build passaram; smoke do FAB,
+  drawer, filtros, historico e inicio de producao ainda esta pendente.

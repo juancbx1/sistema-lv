@@ -1,7 +1,7 @@
 // public/src/components/OPFiltros.jsx
 
 import React, { useState, useCallback } from 'react'; // Adicione useCallback
-import UIBuscaInteligente from './UIBuscaInteligente.jsx';
+import UIBuscaInteligente from './UIBuscaInteligente';
 
 const statusOptions = [
   { id: 'todas', label: 'Todas Ativas' },

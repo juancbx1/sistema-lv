@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import { verificarAutenticacao } from '/js/utils/auth.js';
-import UICarregando from './components/UICarregando.jsx';
+import UICarregando from './components/UICarregando';
 import GPPage from './components/GPPage.jsx';
 
 function App() {

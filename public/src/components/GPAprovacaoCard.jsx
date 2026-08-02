@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { temPermissao } from '../utils/bloqueio.js';
+import { temPermissao } from '../utils/bloqueio';
 import GPDecidirModal from './GPDecidirModal.jsx';
 
 function formatarDataHora(isoString) {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import UIHeaderPagina from './UIHeaderPagina.jsx';
+import UIHeaderPagina from './UIHeaderPagina';
 import PGFiltrosPeriodo from './PGFiltrosPeriodo.jsx';
 import PGKpiBar from './PGKpiBar.jsx';
 import PGEquipeCard from './PGEquipeCard.jsx';

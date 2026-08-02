@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import UICarregando from './UICarregando.jsx';
+import UICarregando from './UICarregando';
 import GPAprovacaoCard from './GPAprovacaoCard.jsx';
 
 const LIMIT = 10;

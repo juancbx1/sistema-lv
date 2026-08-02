@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent, type MouseEvent } from 'react';
-import { normalizeText } from '../utils/searchHelpers.js';
+import { normalizeText } from '../utils/searchHelpers';
 
 export interface SearchableOption { value: string | number; label: string; }
 interface Props {

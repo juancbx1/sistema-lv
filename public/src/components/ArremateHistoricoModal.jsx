@@ -3,8 +3,8 @@
 // Substitui o modal gerado dinamicamente pelo admin-arremates.js
 
 import React, { useState, useEffect, useRef } from 'react';
-import UICarregando from './UICarregando.jsx';
-import UIPaginacao from './UIPaginacao.jsx';
+import UICarregando from './UICarregando';
+import UIPaginacao from './UIPaginacao';
 import { mostrarConfirmacao, mostrarMensagem } from '/js/utils/popups.js';
 
 // --- Configuração por tipo de lançamento ---

@@ -4,8 +4,8 @@
 import React, { useState, useCallback, Fragment } from 'react';
 import { mostrarMensagem, mostrarConfirmacao } from '/js/utils/popups.js';
 import OPTelaSelecaoEtapa from './OPTelaSelecaoEtapa.jsx';
-import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio.js';
-import UIBloqueio from './UIBloqueio.jsx';
+import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio';
+import UIBloqueio from './UIBloqueio';
 
 const fmtHora = (iso) => {
     if (!iso) return '--:--';

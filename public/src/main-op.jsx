@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom/client';
 
-import UIHeaderPagina from './components/UIHeaderPagina.jsx';
+import UIHeaderPagina from './components/UIHeaderPagina';
 import OPPainelAtividades from './components/OPPainelAtividades.jsx';
 import OPGerenciamentoTela from './components/OPGerenciamentoTela.jsx';
 import OPCortesTela from './components/OPCortesTela.jsx';
@@ -12,7 +12,7 @@ import OPCriarModal from './components/OPCriarModal.jsx';
 import OPExternoTela from './components/OPExternoTela.jsx';
 import BotaoBuscaFunil from './components/BotaoBuscaFunil.jsx';
 import AlertasFAB from './components/AlertasFAB.jsx';
-import UIBloqueio from './components/UIBloqueio.jsx';
+import UIBloqueio from './components/UIBloqueio';
 
 import { verificarAutenticacao } from '/js/utils/auth.js';
 

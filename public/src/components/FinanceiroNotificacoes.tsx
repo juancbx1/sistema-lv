@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import UICarregando from './UICarregando.jsx';
+import UICarregando from './UICarregando';
 import { fetchFinanceiro } from '../utils/financeiro-api';
 import { useFinanceiro } from './FinanceiroContext';
 

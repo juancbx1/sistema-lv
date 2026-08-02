@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { mostrarMensagem } from '/js/utils/popups.js';
 import { renderizarPaginacao } from '/js/utils/Paginacao.js';
-import UICarregando from './UICarregando.jsx';
+import UICarregando from './UICarregando';
 
 const RECENTES_KEY = 'demanda_recentes';
 

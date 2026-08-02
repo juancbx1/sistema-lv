@@ -4,12 +4,12 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { OPCard } from './OPCard.jsx';
 import OPEtapasModal from './OPEtapasModal.jsx';
 import OPModalLote from './OPModalLote.jsx';
-import OPFiltros from './OPFiltros.jsx';
-import OPPaginacaoWrapper from './OPPaginacaoWrapper.jsx';
+import OPFiltros from './OPFiltros.tsx';
+import OPPaginacaoWrapper from './OPPaginacaoWrapper.tsx';
 import OPCentralEncerramento from './OPCentralEncerramento.jsx';
 import { obterProdutos as obterProdutosDoStorage } from '/js/utils/storage.js';
 import { mostrarConfirmacao, mostrarToast } from '/js/utils/popups.js';
-import UICarregando from './UICarregando.jsx';
+import UICarregando from './UICarregando';
 
 export default function OPGerenciamentoTela({ opsPendentesGlobal, onRefreshContadores, permissoes = [] }) {
     const [ops, setOps] = useState([]);

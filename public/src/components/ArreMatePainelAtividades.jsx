@@ -7,7 +7,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import ArremateStatusCard from './ArremateStatusCard.jsx';
 import ArremateAtribuicaoModal from './ArremateAtribuicaoModal.jsx';
-import UICarregando from './UICarregando.jsx';
+import UICarregando from './UICarregando';
 import { mostrarMensagem, mostrarConfirmacao, mostrarPromptNumerico, mostrarPromptFinalizarLote, mostrarPromptTexto, mostrarPromptHorario } from '/js/utils/popups.js';
 
 export default function ArreMatePainelAtividades({ permissoes = [] }) {
@@ -140,24 +140,19 @@ export default function ArreMatePainelAtividades({ permissoes = [] }) {
     }, []);
 
     // --- v1.8: DETECÇÃO DE CRUZAMENTO S1/S2 ---
-    const liberarIntervaloSilencioso = useCallback(async (tiktikId, tipo) => {
-        try {
-            const token = localStorage.getItem('token');
-            await fetch('/api/ponto/liberar-intervalo', {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ funcionario_id: tiktikId, tipo }),
-            });
-        } catch (e) {}
-    }, []);
-
     useEffect(() => {
         const checarIntervalos = () => {
+            // A tela apenas alerta; nunca deve iniciar intervalo em feriado,
+            // DSR ou dia desmarcado na jornada.
+            if (infoFeriado) return;
+
             const agora = new Date();
             const agoraSP = agora.toLocaleTimeString('en-GB', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
             const dataSP = agora.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
             const [ah, am] = agoraSP.split(':').map(Number);
             const agoraMin = ah * 60 + am;
+            const [ano, mes, dia] = dataSP.split('-').map(Number);
+            const diaSemanaHoje = String(new Date(Date.UTC(ano, mes - 1, dia, 12)).getUTCDay());
             const n = (t) => t ? String(t).substring(0, 5) : null;
 
             const novosAlmoco = [];
@@ -165,6 +160,8 @@ export default function ArreMatePainelAtividades({ permissoes = [] }) {
 
             for (const tiktik of tiktiks) {
                 if (!['PRODUZINDO', 'LIVRE', 'LIVRE_MANUAL'].includes(tiktik.status_atual)) continue;
+                const diasTrabalho = tiktik.dias_trabalho || { '0': false, '1': true, '2': true, '3': true, '4': true, '5': true, '6': false };
+                if (diasTrabalho[diaSemanaHoje] !== true) continue;
 
                 const s1 = n(tiktik.horario_saida_1);
                 const s2 = n(tiktik.horario_saida_2);
@@ -175,7 +172,7 @@ export default function ArreMatePainelAtividades({ permissoes = [] }) {
                     if (agoraMin >= s1h * 60 + s1m && !alertadosRef.current.has(chave)) {
                         alertadosRef.current.add(chave);
                         novosAlmoco.push(tiktik.nome.split(' ')[0]);
-                        liberarIntervaloSilencioso(tiktik.id, 'ALMOCO');
+                        // O backend/cron abre e resolve a transição; a tela apenas alerta.
                     }
                 }
 
@@ -185,7 +182,7 @@ export default function ArreMatePainelAtividades({ permissoes = [] }) {
                     if (agoraMin >= s2h * 60 + s2m && !alertadosRef.current.has(chave)) {
                         alertadosRef.current.add(chave);
                         novosPausa.push(tiktik.nome.split(' ')[0]);
-                        liberarIntervaloSilencioso(tiktik.id, 'PAUSA');
+                        // O backend/cron abre e resolve a transição; a tela apenas alerta.
                     }
                 }
             }
@@ -199,7 +196,7 @@ export default function ArreMatePainelAtividades({ permissoes = [] }) {
 
         const id = setInterval(checarIntervalos, 60000);
         return () => clearInterval(id);
-    }, [tiktiks, liberarIntervaloSilencioso, tocarBeep, buscarDadosPainel]);
+    }, [tiktiks, infoFeriado, tocarBeep, buscarDadosPainel]);
 
     // --- v1.8: COUNTDOWN DO POPUP "DESFAZER" ---
     useEffect(() => {
@@ -323,10 +320,13 @@ export default function ArreMatePainelAtividades({ permissoes = [] }) {
         if (!confirmado) return;
         try {
             const token = localStorage.getItem('token');
-            const res = await fetch(`/api/usuarios/${tiktik.id}/status`, {
-                method: 'PUT',
+            const ehFalta = acao === 'FALTOU';
+            const res = await fetch(ehFalta ? '/api/ponto/falta' : `/api/usuarios/${tiktik.id}/status`, {
+                method: ehFalta ? 'POST' : 'PUT',
                 headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status: acao })
+                body: JSON.stringify(ehFalta
+                    ? { funcionario_id: tiktik.id }
+                    : { status: acao })
             });
             if (!res.ok) throw new Error((await res.json()).error || 'Erro ao atualizar status');
             const msg = acao === 'LIVRE_MANUAL' ? 'Tiktik liberada para trabalho.' : 'Status atualizado!';
@@ -343,12 +343,6 @@ export default function ArreMatePainelAtividades({ permissoes = [] }) {
         if (tipoExcecao === 'SAIDA_ANTECIPADA') {
             const confirmado = await mostrarConfirmacao('Confirmar saída antecipada?', 'aviso');
             if (!confirmado) return;
-            const motivoDigitado = await mostrarPromptTexto('Motivo da saída (opcional):', {
-                placeholder: 'Ex: consulta médica, problema pessoal... (pode deixar em branco)',
-                tipo: 'aviso',
-                textoConfirmar: 'Registrar saída'
-            });
-            motivo = motivoDigitado ?? '';
             horario = '';
             // Atualização otimista
             const horaOtimistaSP = new Date().toLocaleTimeString('en-GB', {
@@ -369,6 +363,18 @@ export default function ArreMatePainelAtividades({ permissoes = [] }) {
         } else {
             return;
         }
+
+        const motivoDigitado = await mostrarPromptTexto('Motivo da exceção (obrigatório):', {
+            placeholder: 'Ex: consulta médica, problema pessoal, atraso autorizado...',
+            tipo: 'aviso',
+            textoConfirmar: 'Registrar exceção'
+        });
+        if (!String(motivoDigitado || '').trim()) {
+            buscarDadosPainel();
+            mostrarMensagem('Informe um motivo para registrar a exceção.', 'aviso');
+            return;
+        }
+        motivo = motivoDigitado.trim();
 
         try {
             const token = localStorage.getItem('token');
@@ -418,10 +424,19 @@ export default function ArreMatePainelAtividades({ permissoes = [] }) {
             const token = localStorage.getItem('token');
 
             if (isProduzindo) {
+                const motivoRetorno = await mostrarPromptTexto('Motivo do retorno excepcional (obrigatório):', {
+                    placeholder: 'Ex: retorno antecipado autorizado, ajuste operacional...',
+                    tipo: 'aviso',
+                    textoConfirmar: 'Registrar retorno'
+                });
+                if (!String(motivoRetorno || '').trim()) {
+                    mostrarMensagem('Informe um motivo para registrar o retorno.', 'aviso');
+                    return;
+                }
                 const res = await fetch('/api/ponto/retomar-trabalho', {
                     method: 'POST',
                     headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ funcionario_id: tiktik.id, tipo: tipoIntervalo }),
+                    body: JSON.stringify({ funcionario_id: tiktik.id, tipo: tipoIntervalo, motivo: motivoRetorno.trim() }),
                 });
                 if (!res.ok) throw new Error((await res.json()).error || 'Erro ao retomar trabalho');
             } else {

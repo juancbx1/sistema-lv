@@ -1,7 +1,16 @@
 /* ============================================================
    CALENDÁRIO DA EMPRESA
-   Estrutura: UIHeaderPagina > gs-conteudo-pagina > gs-card
+   Estrutura: main.gs-card > UIHeaderPagina > gs-conteudo-pagina > gs-card
    ============================================================ */
+
+/* Tablet — padding do body para criar respiro em torno do main.gs-card
+   (padrão obrigatório de todas as páginas com gs-card; ver AGENTS.md).
+   O global-style remove o margin-left no tablet, mas não adiciona o padding. */
+@media (max-width: 1024px) {
+    body {
+        padding: 40px 40px 10px 40px;
+    }
+}
 
 .cal-legenda {
     display: flex;
@@ -425,6 +434,15 @@
 }
 
 @media (max-width: 600px) {
+    body {
+        padding: 76px 12px 12px;
+    }
+
+    main.gs-card {
+        margin: 0;
+        padding: 16px;
+    }
+
     .cal-wrapper { padding: 8px; }
     .cal-form-acoes { flex-wrap: wrap; }
 }

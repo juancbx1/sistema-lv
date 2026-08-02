@@ -1,5 +1,5 @@
 import React from 'react';
-import UIBloqueio from './UIBloqueio.jsx';
+import UIBloqueio from './UIBloqueio';
 import { formatarDataDisplay, formatarMoeda } from '/js/utils/formataDtHr.js';
 import { mostrarConfirmacao, mostrarMensagem } from '/js/utils/popups.js';
 import { fetchAPI } from '/js/utils/api-utils.js';

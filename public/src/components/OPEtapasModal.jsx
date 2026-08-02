@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { obterProdutos as obterProdutosDoStorage } from '/js/utils/storage.js';
 import { mostrarMensagem, mostrarConfirmacao } from '/js/utils/popups.js';
-import UIBloqueio from './UIBloqueio.jsx';
+import UIBloqueio from './UIBloqueio';
 
 async function fetchAPI(url, options = {}) {
     const token = localStorage.getItem('token');

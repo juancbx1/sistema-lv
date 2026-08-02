@@ -6,8 +6,8 @@ import BotaoBuscaModalAddDemanda from './BotaoBuscaModalAddDemanda.jsx';
 import PainelDemandaCard from './BotaoBuscaPipelineProducao.jsx';
 import BotaoBuscaModalConcluidas from './BotaoBuscaModalConcluidas.jsx';
 import { calcularStatusDemanda, STATUS_META } from '/src/utils/demandaStatus.js';
-import { LoaderIA } from './UIAgenteIA.jsx';
-import UICarregando from './UICarregando.jsx';
+import { LoaderIA } from './UIAgenteIA';
+import UICarregando from './UICarregando';
 import PDAgenteDemandas from './PDAgenteDemandas.jsx';
 
 const normalizarTexto = (t) =>

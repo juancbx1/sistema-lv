@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import Select, { components, type NoticeProps, type StylesConfig } from 'react-select';
 import { formatarMoeda } from '../utils/cpag-format';
 import { mostrarConfirmacao, mostrarToast } from '../utils/cpag-feedback';
-import UIFeedbackNotFound from './UIFeedbackNotFound.jsx';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import { fetchCpag } from '../utils/cpag-api';
 import type {
   CpagContaFinanceira,

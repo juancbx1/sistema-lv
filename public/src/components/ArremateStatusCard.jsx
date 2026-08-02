@@ -16,7 +16,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { calcularTempoEfetivo, formatarHora, formatarTempo } from '../utils/PontoHelpers.js';
-import UILinhaDoTempoDia from './UILinhaDoTempoDia.jsx';
+import UILinhaDoTempoDia from './UILinhaDoTempoDia';
 
 // ── Ritmo (ms / tpa em segundos) ─────────────────────────────────────────────
 const calcularRitmo = (ms, tpa, quantidade) => {

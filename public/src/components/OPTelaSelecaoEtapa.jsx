@@ -2,11 +2,11 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { obterProdutos as obterProdutosDoStorage } from '/js/utils/storage.js';
-import UIFeedbackNotFound from './UIFeedbackNotFound.jsx';
-import UICarregando from './UICarregando.jsx';
-import OPPaginacaoWrapper from './OPPaginacaoWrapper.jsx';
-import UIBuscaInteligente, { filtrarListaInteligente } from './UIBuscaInteligente.jsx';
-import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio.js';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
+import UICarregando from './UICarregando';
+import OPPaginacaoWrapper from './OPPaginacaoWrapper.tsx';
+import UIBuscaInteligente, { filtrarListaInteligente } from './UIBuscaInteligente';
+import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio';
 
 function OPEtapaCard({ etapa, onToggle, stepLabel, isFinal, imagemUrl, selecionado, grupoInfo, unificacaoAtiva, onToggleUnificacao }) {
     const bordaClasse = etapa.processo.toLowerCase() === 'corte'

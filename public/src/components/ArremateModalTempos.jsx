@@ -1,7 +1,7 @@
 // public/src/components/ArremateModalTempos.jsx
 
 import React, { useState, useEffect, useMemo } from 'react';
-import UICarregando from './UICarregando.jsx';
+import UICarregando from './UICarregando';
 import { mostrarMensagem } from '/js/utils/popups.js';
 
 async function fetchApi(endpoint, options = {}) {

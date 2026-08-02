@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import UIHeaderPagina from './UIHeaderPagina.jsx';
-import UICarregando from './UICarregando.jsx';
+import UIHeaderPagina from './UIHeaderPagina';
+import UICarregando from './UICarregando';
 import { verificarAutenticacao } from '../../js/utils/auth.js';
 import { FinanceiroProvider, useFinanceiro } from './FinanceiroContext';
 import FinanceiroHeader from './FinanceiroHeader';

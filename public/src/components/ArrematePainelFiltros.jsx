@@ -1,7 +1,7 @@
 // public/src/components/ArrematePainelFiltros.jsx
 
 import React, { useState, useEffect, useRef } from 'react';
-import { getBuscasRecentes, addBuscaRecente, removeBuscaRecente } from '../utils/ArremateSearchHelpers.js';
+import { getBuscasRecentes, addBuscaRecente, removeBuscaRecente } from '../utils/ArremateSearchHelpers';
 import ArremateFiltrosAtivos from './ArremateFiltrosAtivos.jsx';
 
 // ==========================================================================

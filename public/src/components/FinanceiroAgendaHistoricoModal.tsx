@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import FinanceiroModalShell from './FinanceiroModalShell';
-import UICarregando from './UICarregando.jsx';
+import UICarregando from './UICarregando';
 import { fetchFinanceiro } from '../utils/financeiro-api';
 import { mostrarConfirmacao, mostrarMensagem } from '../../js/utils/popups.js';
 

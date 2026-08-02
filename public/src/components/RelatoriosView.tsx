@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
-import UICarregando from './UICarregando.jsx';
+import UICarregando from './UICarregando';
 import { fetchFinanceiro } from '../utils/financeiro-api';
 
 interface DadosDRE { totalReceitas: number; totalDespesas: number; resultado: number; }

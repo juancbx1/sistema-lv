@@ -2,10 +2,18 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import LancamentoFinanceiroCard from './LancamentoFinanceiroCard.tsx';
 import FiltrosLancamentos from './FiltrosLancamentos.tsx';
 import FinanceiroGuiaLancamentos from './FinanceiroGuiaLancamentos.tsx';
+import FinanceiroImportarExtratoModal from './FinanceiroImportarExtratoModal';
+import FinanceiroImportacaoRevisao from './FinanceiroImportacaoRevisao';
+import FinanceiroAClassificarAlerta from './FinanceiroAClassificarAlerta';
 import UINaoEncontradoBusca from './UINaoEncontradoBusca.tsx';
-import UICarregando from './UICarregando.jsx';
+import UICarregando from './UICarregando';
+import UIBloqueio from './UIBloqueio';
 import { fetchFinanceiro } from '../utils/financeiro-api';
-import type { FinanceiroFilters, FinanceiroLancamento } from '../utils/financeiro-types';
+import type {
+  FinanceiroFilters,
+  FinanceiroImportacaoDetalhe,
+  FinanceiroLancamento,
+} from '../utils/financeiro-types';
 import { mostrarConfirmacao, mostrarPromptTexto } from '../../js/utils/popups.js';
 import { useFinanceiro } from './FinanceiroContext';
 
@@ -29,7 +37,7 @@ const getInitialFilters = (resetCompleto = false): FinanceiroFilters => {
 };
 
 export default function LancamentosView() {
-  const { config, tokens, openLancamentoModal, openEstornoModal, refresh } = useFinanceiro();
+  const { config, tokens, openLancamentoModal, openEstornoModal, refresh, reloadConfig } = useFinanceiro();
   const [lancamentos, setLancamentos] = useState<FinanceiroLancamento[]>([]);
   const [paginacao, setPaginacao] = useState({ currentPage: 1, totalPages: 1 });
   const [isLoading, setIsLoading] = useState(true);
@@ -37,6 +45,8 @@ export default function LancamentosView() {
   const [filtros, setFiltros] = useState<FinanceiroFilters>(getInitialFilters());
   const [expandedCards, setExpandedCards] = useState<Array<string | number>>([]);
   const [guiaAberto, setGuiaAberto] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importDetalhe, setImportDetalhe] = useState<FinanceiroImportacaoDetalhe | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const filtrosRef = useRef(filtros);
   const pageRef = useRef(paginacao.currentPage);
@@ -114,20 +124,63 @@ export default function LancamentosView() {
     refresh('dashboard');
   };
 
+  if (importDetalhe) {
+    return (
+      <FinanceiroImportacaoRevisao
+        detalhe={importDetalhe}
+        categorias={config.categorias}
+        onClose={() => {
+          setImportDetalhe(null);
+          refresh('lancamentos');
+          refresh('dashboard');
+          refresh('header');
+          void reloadConfig().catch(() => undefined);
+        }}
+        onAtualizado={setImportDetalhe}
+        onAprovado={() => {
+          setImportDetalhe(null);
+          refresh('lancamentos');
+          refresh('dashboard');
+          refresh('header');
+          void reloadConfig().catch(() => undefined);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="fc-section-container">
       <header className="fc-table-header">
         <h2 className="fc-section-title" style={{ border: 0, margin: 0 }}>Histórico de Lançamentos</h2>
-        <button
-          type="button"
-          className="fc-btn-atualizar"
-          onClick={() => void fetchData(paginacao.currentPage, filtros)}
-          title="Atualizar lista de lançamentos"
-          disabled={isLoading}
-        >
-          <i className={`fas fa-sync-alt ${isLoading ? 'fa-spin' : ''}`} /> Atualizar
-        </button>
+        <div className="fc-table-header-actions">
+          <UIBloqueio
+            permissao="importar-extrato"
+            mensagem="Você não tem permissão para importar extratos bancários."
+          >
+            <button
+              type="button"
+              className="fc-btn-atualizar fc-btn-importar-extrato"
+              onClick={() => setImportModalOpen(true)}
+              title="Importar extrato bancário (OFX, CSV, XLSX ou PDF)"
+            >
+              <i className="fas fa-file-import" /> Importar extrato
+            </button>
+          </UIBloqueio>
+          <button
+            type="button"
+            className="fc-btn-atualizar"
+            onClick={() => void fetchData(paginacao.currentPage, filtros)}
+            title="Atualizar lista de lançamentos"
+            disabled={isLoading}
+          >
+            <i className={`fas fa-sync-alt ${isLoading ? 'fa-spin' : ''}`} /> Atualizar
+          </button>
+        </div>
       </header>
+
+      <FinanceiroAClassificarAlerta
+        onReclassificar={(lanc) => openLancamentoModal(lanc)}
+      />
 
       {guiaAberto && <FinanceiroGuiaLancamentos onClose={() => setGuiaAberto(false)} />}
 
@@ -204,6 +257,17 @@ export default function LancamentosView() {
           </button>
         </div>
       )}
+
+      <FinanceiroImportarExtratoModal
+        isOpen={importModalOpen}
+        contas={config.contas}
+        onClose={() => setImportModalOpen(false)}
+        onImported={(detalhe) => {
+          setImportModalOpen(false);
+          setImportDetalhe(detalhe);
+          void reloadConfig().catch(() => undefined);
+        }}
+      />
     </div>
   );
 }

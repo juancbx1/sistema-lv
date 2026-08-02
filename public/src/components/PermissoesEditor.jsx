@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import UICarregando from './UICarregando.jsx';
+import UICarregando from './UICarregando';
 import PermissoesAcordiao from './PermissoesAcordiao.jsx';
 import { permissoesPorTipo } from '../../js/utils/permissoes.js';
 

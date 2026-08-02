@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import UILogItem, { HISTORICO_ACAO_GRUPOS, HISTORICO_ACAO_OPCOES } from './UILogItem.tsx';
-import UICarregando from './UICarregando.jsx';
+import UICarregando from './UICarregando';
 import UISearchableSelect from './UISearchableSelect.tsx';
 import { fetchFinanceiro } from '../utils/financeiro-api';
 import { useFinanceiro } from './FinanceiroContext';

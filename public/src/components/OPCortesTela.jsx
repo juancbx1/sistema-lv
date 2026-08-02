@@ -7,13 +7,13 @@ import OPRegistroCorte from './OPRegistroCorte.jsx';
 import OPCorteEstoqueCard from './OPCorteEstoqueCard.jsx';
 import OPFormulario from './OPFormulario.jsx';
 import OPCriarModal from './OPCriarModal.jsx';
-import OPPaginacaoWrapper from './OPPaginacaoWrapper.jsx';
+import OPPaginacaoWrapper from './OPPaginacaoWrapper.tsx';
 import OPCortesRadar from './OPCortesRadar.jsx';
 import OPCortesAgente from './OPCortesAgente.jsx';
 import OPQuickLogModal from './OPQuickLogModal.jsx';
 import { obterProdutos as obterProdutosDoStorage } from '/js/utils/storage.js';
 import { mostrarMensagem, mostrarConfirmacao } from '/js/utils/popups.js';
-import UICarregando from './UICarregando.jsx';
+import UICarregando from './UICarregando';
 
 async function fetchCortesEmEstoque() {
     const token = localStorage.getItem('token');

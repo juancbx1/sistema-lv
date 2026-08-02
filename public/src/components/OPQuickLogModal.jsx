@@ -3,8 +3,8 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { mostrarMensagem } from '/js/utils/popups.js';
-import UIBloqueio from './UIBloqueio.jsx';
-import UIFeedbackNotFound from './UIFeedbackNotFound.jsx';
+import UIBloqueio from './UIBloqueio';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 
 function normalizarTexto(str) {
     return (str || '')

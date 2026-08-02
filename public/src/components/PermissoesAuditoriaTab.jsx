@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Select from 'react-select';
-import UICarregando from './UICarregando.jsx';
+import UICarregando from './UICarregando';
 
 const LIMIT = 12;
 

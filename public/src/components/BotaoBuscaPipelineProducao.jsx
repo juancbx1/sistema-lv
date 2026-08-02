@@ -3,7 +3,7 @@
 import React from 'react';
 import { mostrarConfirmacao } from '/js/utils/popups.js';
 import { calcularStatusDemanda, STATUS_META } from '/src/utils/demandaStatus.js';
-import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio.js';
+import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio';
 
 export default function PainelDemandaCard({ item, onDelete, permissoes, onRefresh, onIniciarProducao }) {
     const totalPedido  = item.demanda_total              || 0;

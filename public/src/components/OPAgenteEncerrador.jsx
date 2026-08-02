@@ -6,7 +6,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import ReactDOM from 'react-dom';
 import UIAgenteIA from './UIAgenteIA';
 import OPModalLote from './OPModalLote';
-import { mostrarPopupSemPermissao } from '../utils/bloqueio.js';
+import { mostrarPopupSemPermissao } from '../utils/bloqueio';
 
 // ── Helpers de snooze ─────────────────────────────────────────────────────────
 const SNOOZE_ATE_KEY   = 'agente_enc_snooze_ate';

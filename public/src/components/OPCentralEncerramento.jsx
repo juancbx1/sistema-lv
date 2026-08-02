@@ -7,7 +7,7 @@ import UIAgenteIA from './UIAgenteIA';
 import useTypewriter from '../hooks/useTypewriter';
 import useContador from '../hooks/useContador.js';
 import OPAgenteFaseScan from './OPAgenteFaseScan.jsx';
-import UIBloqueio from './UIBloqueio.jsx';
+import UIBloqueio from './UIBloqueio';
 
 // ── Frases de repouso ─────────────────────────────────────────────────────────
 

@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { mostrarMensagem } from '/js/utils/popups.js';
 import { obterProdutos } from '/js/utils/storage.js';
-import UICarregando from './UICarregando.jsx';
+import UICarregando from './UICarregando';
 
 // ── Helpers de API ──────────────────────────────────────────
 

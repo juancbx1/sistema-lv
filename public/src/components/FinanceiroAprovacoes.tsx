@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
-import UICarregando from './UICarregando.jsx';
-import UIFeedbackNotFound from './UIFeedbackNotFound.jsx';
+import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import { fetchFinanceiro } from '../utils/financeiro-api';
 import { useFinanceiro } from './FinanceiroContext';
 import { mostrarConfirmacao } from '../../js/utils/popups.js';

@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { mostrarMensagem } from '/js/utils/popups.js';
 import { obterProdutos as obterProdutosDoStorage } from '/js/utils/storage.js';
-import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio.js';
+import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio';
 
 /**
  * Calcula se atribuir `qtd` peças deste item vai ultrapassar o horário de saída (S3).

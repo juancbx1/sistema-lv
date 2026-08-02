@@ -1,8 +1,8 @@
 // public/src/components/OPCorteEstoqueCard.jsx
 
 import React from 'react';
-import UIBloqueio from './UIBloqueio.jsx';
-import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio.js';
+import UIBloqueio from './UIBloqueio';
+import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio';
 
 function formatarData(dataISO) {
     if (!dataISO) return 'N/A';

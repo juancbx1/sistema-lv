@@ -13,7 +13,7 @@
 //   carregando          — boolean enquanto o pai busca dados
 
 import React, { useMemo } from 'react';
-import UIAgenteIA from './UIAgenteIA.jsx';
+import UIAgenteIA from './UIAgenteIA';
 import useTypewriter from '../hooks/useTypewriter.js';
 
 // ── Substitui {nome} nas frases ───────────────────────────────────────────────

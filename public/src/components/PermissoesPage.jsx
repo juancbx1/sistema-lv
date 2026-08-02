@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import UIHeaderPagina from './UIHeaderPagina.jsx';
+import UIHeaderPagina from './UIHeaderPagina';
 import PermissoesEditor from './PermissoesEditor.jsx';
 import PermissoesAuditoriaTab from './PermissoesAuditoriaTab.jsx';
 

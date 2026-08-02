@@ -4,9 +4,9 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import PainelFiltros from './ArrematePainelFiltros.jsx';
 import { ArremateCard } from './ArremateCard.jsx';
-import UIPaginacao from './UIPaginacao.jsx';
-import UICarregando from './UICarregando.jsx';
-import UIFeedbackNotFound from './UIFeedbackNotFound.jsx';
+import UIPaginacao from './UIPaginacao';
+import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import { mostrarMensagem } from '/js/utils/popups.js';
 import { getImagemVariacao } from '../utils/ArremateProdutoHelpers.js';
 

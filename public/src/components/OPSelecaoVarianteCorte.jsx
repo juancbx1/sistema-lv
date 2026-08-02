@@ -1,8 +1,8 @@
 // public/src/components/OPSelecaoVarianteCorte.jsx
 
 import React, { useState, useMemo } from 'react';
-import UIBuscaInteligente, { filtrarListaInteligente, normalizarTexto } from './UIBuscaInteligente.jsx';
-import UIFeedbackNotFound from './UIFeedbackNotFound.jsx';
+import UIBuscaInteligente, { filtrarListaInteligente, normalizarTexto } from './UIBuscaInteligente';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 
 export default function OPSelecaoVarianteCorte({ produto, onVarianteSelect }) {
   const [termoFiltrado, setTermoFiltrado] = useState('');

@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import UICarregando from './UICarregando.jsx';
+import UICarregando from './UICarregando';
 import GPCard from './GPCard.jsx';
 import GPEditarModal from './GPEditarModal.jsx';
 import GPExcluirModal from './GPExcluirModal.jsx';
 import GPSolicitarExclusaoModal from './GPSolicitarExclusaoModal.jsx';
-import { temPermissao } from '../utils/bloqueio.js';
+import { temPermissao } from '../utils/bloqueio';
 
 const LIMIT = 15;
 

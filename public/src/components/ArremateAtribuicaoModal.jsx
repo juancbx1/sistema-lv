@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Tooltip } from 'react-tooltip';
-import { BotaoIA } from './UIAgenteIA.jsx';
+import { BotaoIA } from './UIAgenteIA';
 
 import ArremateTelaSelecaoProduto from './ArremateTelaSelecaoProduto.jsx';
 import ArremateTelaConfirmacaoQtd from './ArremateTelaConfirmacaoQtd.jsx';

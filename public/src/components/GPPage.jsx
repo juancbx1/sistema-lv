@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import UIHeaderPagina from './UIHeaderPagina.jsx';
-import UIBloqueio from './UIBloqueio.jsx';
+import UIHeaderPagina from './UIHeaderPagina';
+import UIBloqueio from './UIBloqueio';
 import GPRegistrosTab from './GPRegistrosTab.jsx';
 import GPAprovacoesTab from './GPAprovacoesTab.jsx';
-import { temPermissao } from '../utils/bloqueio.js';
+import { temPermissao } from '../utils/bloqueio';
 
 function fetchAuth(url) {
     const token = localStorage.getItem('token');

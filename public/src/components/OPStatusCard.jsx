@@ -3,8 +3,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { calcularTempoEfetivo, formatarHora, formatarTempo } from '../utils/PontoHelpers.js';
-import UILinhaDoTempoDia from './UILinhaDoTempoDia.jsx';
-import UIBloqueio from './UIBloqueio.jsx';
+import UILinhaDoTempoDia from './UILinhaDoTempoDia';
+import UIBloqueio from './UIBloqueio';
 
 const getRoleInfo = (tipos = []) => {
     if (tipos.includes('tiktik'))   return { label: 'TikTik',    icon: 'fa-cut',         classe: 'cracha-tiktik' };
@@ -37,7 +37,7 @@ const calcularRitmo = (ms, tpp, quantidade) => {
 };
 
 // ── MELHORIA-06: Linha do Tempo do Dia (componente compartilhado) ───────────
-// Importado de UILinhaDoTempoDia.jsx — não editar aqui.
+// Importado de UILinhaDoTempoDia — não editar aqui.
 // ────────────────────────────────────────────────────────────────────────────
 
 export default function OPStatusCard({ funcionario, tpp, onAtribuirTarefa, onAcaoManual, onFinalizarTarefa, onCancelarTarefa, onExcecao, onLiberarIntervalo, onLiberarParaTrabalho }) {

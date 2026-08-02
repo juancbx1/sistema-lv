@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Select from 'react-select';
-import UIBloqueio from './UIBloqueio.jsx';
+import UIBloqueio from './UIBloqueio';
 import { formatarDataParaInput, formatarHora, formatarDataDisplay } from '/js/utils/formataDtHr.js';
 import { mostrarMensagem } from '/js/utils/popups.js';
 import { fetchAPI } from '/js/utils/api-utils.js';

@@ -3,7 +3,7 @@
 
 import React, { useState } from 'react';
 import { mostrarMensagem } from '/js/utils/popups.js';
-import UIBloqueio from './UIBloqueio.jsx';
+import UIBloqueio from './UIBloqueio';
 
 async function fetchAPI(url, options = {}) {
     const token = localStorage.getItem('token');

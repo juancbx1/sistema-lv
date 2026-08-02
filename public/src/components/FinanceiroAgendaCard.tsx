@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import type { FinanceiroAgendaItem } from '../utils/financeiro-types';
 import { rotuloDataAgenda } from '../utils/financeiro-data-label';
-import UIBloqueio from './UIBloqueio.jsx';
+import UIBloqueio from './UIBloqueio';
 
 interface Props {
   grupo: FinanceiroAgendaItem[];

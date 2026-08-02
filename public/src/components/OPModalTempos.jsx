@@ -4,8 +4,8 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { mostrarMensagem } from '/js/utils/popups.js';
-import UIBuscaInteligente from './UIBuscaInteligente.jsx';
-import UICarregando from './UICarregando.jsx';
+import UIBuscaInteligente from './UIBuscaInteligente';
+import UICarregando from './UICarregando';
 
 async function fetchApiWithToken(endpoint, options = {}) {
     const token = localStorage.getItem('token');

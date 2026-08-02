@@ -4,7 +4,7 @@ import { formatarMoeda } from '../utils/cpag-format';
 import { mostrarConfirmacao, mostrarToast } from '../utils/cpag-feedback';
 import { fetchCpag } from '../utils/cpag-api';
 import UIFeedbackNotFound from './UIFeedbackNotFound';
-import UICarregando from './UICarregando.jsx';
+import UICarregando from './UICarregando';
 import CPAGMultiDatePicker from './CPAGMultiDatePicker.tsx';
 import CPAGModalHistoricoVT from './CPAGModalHistoricoVT.tsx';
 import CPAGGerenciadorRecibosVT from './CPAGGerenciadorRecibosVT.tsx';

@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 
-import UIHeaderPagina from './components/UIHeaderPagina.jsx';
+import UIHeaderPagina from './components/UIHeaderPagina';
 import ArreMatePainelAtividades from './components/ArreMatePainelAtividades.jsx';
 import ArremateExternoTela from './components/ArremateExternoTela.jsx';
 import AtribuicaoModal from './components/ArremateAtribuicaoModal.jsx';

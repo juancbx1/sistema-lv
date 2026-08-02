@@ -3,7 +3,7 @@ import LancamentoDetalhes from './LancamentoDetalhes.tsx';
 import { fetchFinanceiro } from '../utils/financeiro-api';
 import type { FinanceiroLancamento } from '../utils/financeiro-types';
 import { textoDataLancamento, rotuloDataLancamento } from '../utils/financeiro-data-label';
-import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio.js';
+import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio';
 
 interface Props {
   lancamento: FinanceiroLancamento;

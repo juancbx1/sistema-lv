@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import EmbalagemFiltrosAtivos from './EmbalagemFiltrosAtivos.jsx'; // Usaremos este componente em breve
-import { getBuscasRecentes, addBuscaRecente, removeBuscaRecente } from '/src/utils/EmbalagemSearchHelpers.js';
+import { getBuscasRecentes, addBuscaRecente, removeBuscaRecente } from '/src/utils/EmbalagemSearchHelpers';
 import EmbalagemLegendaStatus from './EmbalagemLegendaStatus.jsx'
 
 // Sub-componente para cada seção de filtro (reutilizável)

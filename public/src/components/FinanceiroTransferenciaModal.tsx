@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { fetchFinanceiro } from '../utils/financeiro-api';
 import type { FinanceiroCategoria, FinanceiroConta } from '../utils/financeiro-types';
 import { useFinanceiro } from './FinanceiroContext';
-import UICarregando from './UICarregando.jsx';
+import UICarregando from './UICarregando';
 import FinanceiroModalShell, { FinanceiroResumoOperacao } from './FinanceiroModalShell';
 import UISearchableSelect, { type SearchableOption } from './UISearchableSelect.tsx';
 

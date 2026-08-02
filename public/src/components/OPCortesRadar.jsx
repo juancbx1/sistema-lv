@@ -2,7 +2,7 @@
 // Pulso do Setor de Cortes — métricas em tempo real
 
 import React, { useState, useEffect, useCallback } from 'react';
-import UIBloqueio from './UIBloqueio.jsx';
+import UIBloqueio from './UIBloqueio';
 
 function calcTempoDesde(data) {
     if (!data) return null;

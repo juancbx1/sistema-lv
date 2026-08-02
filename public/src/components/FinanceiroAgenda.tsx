@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import UICarregando from './UICarregando.jsx';
+import UICarregando from './UICarregando';
 import FinanceiroAgendaCard from './FinanceiroAgendaCard.tsx';
 import FinanceiroAgendaHistoricoModal from './FinanceiroAgendaHistoricoModal.tsx';
-import UIBloqueio from './UIBloqueio.jsx';
+import UIBloqueio from './UIBloqueio';
 import { fetchFinanceiro } from '../utils/financeiro-api';
 import type { FinanceiroAgendaItem } from '../utils/financeiro-types';
 import { mostrarConfirmacao, mostrarMensagem, mostrarPromptTexto } from '../../js/utils/popups.js';

@@ -1,7 +1,7 @@
 // public/src/components/OPCard.jsx
 
 import React from 'react';
-import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio.js';
+import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio';
 
 function isParcial(op) {
     if (!op.etapas || op.etapas.length === 0) return false;

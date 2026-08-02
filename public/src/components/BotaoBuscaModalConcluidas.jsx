@@ -10,8 +10,8 @@
 //   - Leitura somente — o gerente consulta o histórico de dias anteriores
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import UIFeedbackNotFound from './UIFeedbackNotFound.jsx';
-import OPPaginacaoWrapper from './OPPaginacaoWrapper.jsx';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
+import OPPaginacaoWrapper from './OPPaginacaoWrapper.tsx';
 import { mostrarMensagem } from '/js/utils/popups.js';
 import { calcularStatusDemanda, STATUS_META } from '/src/utils/demandaStatus.js';
 

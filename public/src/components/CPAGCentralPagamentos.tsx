@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import CPAGTabs from './CPAGTabs';
-import UIHeaderPagina from './UIHeaderPagina.jsx';
+import UIHeaderPagina from './UIHeaderPagina';
 import CPAGComissao from './CPAGComissao';
 import CPAGBonus from './CPAGBonus';
 import CPAGPassagem from './CPAGPassagem';
 import CPAGSalario from './CPAGSalario';
 import CPAGBeneficios from './CPAGBeneficios';
-import UICarregando from './UICarregando.jsx';
+import UICarregando from './UICarregando';
 import { fetchCpag } from '../utils/cpag-api';
 import type {
   CpagConfiguracoesFinanceiras,

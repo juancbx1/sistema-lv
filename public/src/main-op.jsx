@@ -13,6 +13,7 @@ import OPExternoTela from './components/OPExternoTela.jsx';
 import BotaoBuscaFunil from './components/BotaoBuscaFunil.jsx';
 import AlertasFAB from './components/AlertasFAB.jsx';
 import UIBloqueio from './components/UIBloqueio';
+import UICarregando from './components/UICarregando';
 
 import { verificarAutenticacao } from '/js/utils/auth.js';
 
@@ -149,7 +150,7 @@ function App() {
     };
   }, [estaAutenticado, verificarOpsProntas]);
 
-   if (verificandoAuth) return null;
+   if (verificandoAuth) return <UICarregando variante="pagina" texto="Carregando Ordens de Produção..." />;
    if (!estaAutenticado) return null;
 
    return (
@@ -248,6 +249,9 @@ function App() {
 }
 
 const container = document.getElementById('root');
+// O CSS global mantém páginas protegidas invisíveis até a autenticação.
+// Liberamos a pintura para que o UICarregando apareça durante essa verificação.
+document.body.classList.add('autenticado');
 if (container) {
   const root = ReactDOM.createRoot(container);
   root.render(<App />);

@@ -13,6 +13,7 @@ import OPCriarModal from './components/OPCriarModal.tsx';
 import BotaoBuscaFunil from './components/BotaoBuscaFunil.tsx';
 import AlertasFAB from './components/AlertasFAB.jsx';
 import UIBloqueio from './components/UIBloqueio';
+import UICarregando from './components/UICarregando';
 
 // @ts-expect-error módulo JS legado sem declaração TypeScript
 import { verificarAutenticacao } from '/js/utils/auth.js';
@@ -155,7 +156,11 @@ function App() {
     };
   }, [estaAutenticado, verificarOpsProntas]);
 
-  if (verificandoAuth || !estaAutenticado) return null;
+  if (verificandoAuth) {
+    return <UICarregando variante="pagina" texto="Carregando Ordens de Produção..." />;
+  }
+
+  if (!estaAutenticado) return null;
 
   return (
     <ErrorBoundary>
@@ -228,4 +233,7 @@ function App() {
 }
 
 const container = document.getElementById('root');
+// O CSS global mantém páginas protegidas invisíveis até a autenticação.
+// Liberamos a pintura para que o UICarregando apareça durante essa verificação.
+document.body.classList.add('autenticado');
 if (container) createRoot(container).render(<App />);

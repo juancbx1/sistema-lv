@@ -6,6 +6,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { mostrarMensagem } from '/js/utils/popups.js';
 import UIBuscaInteligente from './UIBuscaInteligente';
 import UICarregando from './UICarregando';
+import imagemPlaceholder from '../../img/placeholder-image.png';
 
 async function fetchApiWithToken(endpoint, options = {}) {
     const token = localStorage.getItem('token');
@@ -43,10 +44,10 @@ function TPPProdutoCard({ produto, tempos, onTempoChange }) {
 
             <div className="tpp-produto-header">
                 <img
-                    src={produto.imagem || '/img/placeholder-image.png'}
+                    src={produto.imagem || imagemPlaceholder}
                     alt={produto.nome}
                     className="tpp-produto-img"
-                    onError={e => { e.target.src = '/img/placeholder-image.png'; }}
+                    onError={e => { e.currentTarget.onerror = null; e.currentTarget.src = imagemPlaceholder; }}
                 />
                 <div className="tpp-produto-info">
                     <h4 className="tpp-produto-nome">{produto.nome}</h4>

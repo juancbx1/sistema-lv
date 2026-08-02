@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState, type SyntheticEvent } from 'react';
 import { mostrarMensagem } from '/js/utils/popups.js';
 import UIBuscaInteligente from './UIBuscaInteligente';
 import UICarregando from './UICarregando';
+import imagemPlaceholder from '../../img/placeholder-image.png';
 
 interface TppEtapaConfig {
   processo?: string | null;
@@ -82,11 +83,12 @@ function TPPProdutoCard({ produto, tempos, onTempoChange }: TppProdutoCardProps)
 
       <div className="tpp-produto-header">
         <img
-          src={produto.imagem || '/img/placeholder-image.png'}
+          src={produto.imagem || imagemPlaceholder}
           alt={produto.nome}
           className="tpp-produto-img"
           onError={(event: SyntheticEvent<HTMLImageElement>) => {
-            event.currentTarget.src = '/img/placeholder-image.png';
+            event.currentTarget.onerror = null;
+            event.currentTarget.src = imagemPlaceholder;
           }}
         />
         <div className="tpp-produto-info">

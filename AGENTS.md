@@ -1735,3 +1735,91 @@ empresa secundaria porque a Fase 8 esta fora do escopo.
   refresh parcial e fronteiras dos modais/cards/agente JSX. `BotaoBuscaFunil.tsx`
   passou a consumir a versao TSX. Typecheck e build passaram; smoke do FAB,
   drawer, filtros, historico e inicio de producao ainda esta pendente.
+
+- Validacao da decima fatia: em 2026-08-02, o usuario confirmou que o Painel de
+  Demandas abriu, carregou e funcionou corretamente. A migracao continua local,
+  sem staging, commit, push ou deploy.
+
+- Estrategia aprovada em 2026-08-02: TypeScript pode avancar em paralelo com o
+  plano de jornada, ponto e redesign. Cada bloco deve tipar componentes nao
+  criticos sem alterar comportamento; componentes ligados a estados de ponto,
+  sessoes, producao ou arremates ficam condicionados a validacao do backend.
+  A trilha TS nao bloqueia a retomada do motor de jornada nem sua publicacao
+  seletiva quando o worktree permitir separar o diff.
+
+- Decima primeira fatia local: `BotaoBuscaPipelineProducao.tsx` tipa o card do
+  pipeline de demandas, incluindo saldos, corte, exclusao, inicio de OP e
+  navegacao para arremate/embalagem. O painel passou a consumir o card TSX.
+  Typecheck e build passaram; smoke visual dos CTAs e badges ainda pendente.
+
+- Decima segunda fatia local: `BotaoBuscaModalConcluidas.tsx` tipa o historico
+  de demandas, incluindo abas, subabas, agrupamento, paginacao, carregamento
+  sob demanda e arquivamento em lote. `BotaoBuscaPainelDemandas.tsx` passou a
+  consumir o modal TSX. Typecheck e build passaram; smoke manual do historico
+  ainda pendente.
+
+- Decima terceira fatia local: `BotaoBuscaModalAddDemanda.tsx` tipa o modal de
+  nova demanda, incluindo busca, recentes, duplicidade, prioridade, quantidade,
+  modo Express, carrinho e criacao individual/em lote. O painel passou a
+  consumir o modal TSX. Typecheck e build passaram; smoke manual ainda pendente.
+
+- Decima quarta fatia local: `PDAgenteDemandas.tsx` tipa o agente do Painel de
+  Demandas, incluindo frases por estado, typewriter, refresh e filtro de
+  urgentes. O painel passou a consumir o agente TSX. Typecheck e build
+  passaram; smoke manual dos estados do agente ainda pendente.
+
+- Decima quinta fatia local: `OPCard.tsx` tipa o card resumido da aba de
+  Gerenciamento, incluindo status visual, radar, data, quantidade,
+  cancelamento com permissao e tiras de encerramento completo/parcial.
+  `OPGerenciamentoTela.tsx` passou a consumir o card TSX e o contrato de OP
+  recebeu os campos opcionais correspondentes. Typecheck e build passaram;
+  smoke manual dos cards e do cancelamento ainda pendente.
+
+- Decima sexta fatia local: `OPSelecaoProdutoCorte.tsx` tipa a vitrine de
+  produtos da aba de Cortes, incluindo imagem, fallback, nome e selecao.
+  `OPCortesTela.tsx` passou a consumir a vitrine TSX. A fatia nao altera
+  gravacao de cortes, ponto ou sessoes. Typecheck e build passaram; o smoke
+  manual da vitrine ainda esta pendente.
+
+- Decima setima fatia local: `OPSelecaoVarianteCorte.tsx` tipa a selecao de
+  variante, cor e tamanho, incluindo busca inteligente, historico, fallback e
+  escolha da variacao completa. `OPCortesTela.tsx` passou a consumir a versao
+  TSX. A fatia nao grava corte nem altera ponto ou sessoes. Typecheck e build
+  passaram; o smoke manual da selecao ainda esta pendente.
+
+- Validacao da decima setima fatia: em 2026-08-02, o usuario aprovou o smoke
+  da selecao de variantes, incluindo busca, tamanhos e confirmacao.
+
+- Decima oitava fatia local, em bloco maior: `OPRegistroCorte.tsx`,
+  `OPCorteEstoqueCard.tsx`, `OPFormulario.tsx` e `OPCortesRadar.tsx` foram
+  migrados e `OPCortesTela.tsx` passou a consumi-los. O comportamento de
+  registro, estoque, Gerar OP, split, radar, permissoes e callbacks foi
+  preservado. Typecheck e build passaram; smoke manual do nucleo de Cortes
+  ainda pendente. Restam para a proxima fatia maior o agente de planejamento e
+  `OPQuickLogModal`.
+
+- Validacao da decima oitava fatia: em 2026-08-02, o usuario aprovou todos os
+  cenarios do nucleo operacional de Cortes, incluindo registro, estoque,
+  exclusao, Gerar OP, split, radar e carregamento/erro.
+
+- Decima nona fatia local, fechamento de Cortes: `OPCortesAgente.tsx` e
+  `OPQuickLogModal.tsx` foram migrados em conjunto e `OPCortesTela.tsx` passou
+  a consumi-los. Foram preservados agente, scan, memoria, typewriter,
+  preenchimento, lancamento normal, Express, fila, resultado e endpoints.
+  Typecheck e build passaram; smoke manual final do agente e QuickLog ainda
+  pendente. A arvore principal da aba de Cortes agora esta integralmente em
+  TSX, sem alterar ponto ou sessoes.
+
+- Validacao da decima nona fatia: em 2026-08-02, o usuario aprovou o smoke
+  final do bloco de Cortes, incluindo agente, plano, Cortar, QuickLog normal,
+  preenchimento pelo agente e Express.
+
+- Retomada do ponto/jornada: a trilha TS da pagina de OP foi encerrada no
+  escopo atual. O gate local de pre-publicacao do motor verificou com
+  `node --check` `api/jornada.js`, `api/ponto-eventos.js`,
+  `api/ponto-motor.js`, `api/ponto.js`, `api/cron.js`, `api/producao.js`,
+  `api/producoes.js` e `api/arremates.js`; `git diff --check`, typecheck e
+  build tambem passaram. Nenhum commit, push ou deploy foi feito.
+  O proximo passo e separar o diff seletivo do ponto, criar seu commit proprio
+  e aguardar autorizacao explicita para publicar e executar o smoke autenticado,
+  mantendo a cadeia produtiva bloqueada para empresas secundarias.

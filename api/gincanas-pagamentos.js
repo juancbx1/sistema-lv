@@ -27,10 +27,11 @@ router.use((req, res, next) => {
 // Prêmios pendentes de pagamento — agrupados por semana (padrão: semana atual)
 // ---------------------------------------------------------------------------
 router.get('/fila', async (req, res) => {
+    const empresaId = req.empresaId;
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id, empresaId);
         if (!permissoes.includes('gerenciar-gincanas')) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
@@ -62,10 +63,11 @@ router.get('/fila', async (req, res) => {
                 g.tipo_premiacao
              FROM gincanas_premios_ganhos gpg
              JOIN usuarios u ON u.id = gpg.usuario_id
-             JOIN gincanas g ON g.id = gpg.gincana_id
-             WHERE gpg.pago_em IS NULL
+             JOIN gincanas g ON g.id = gpg.gincana_id AND g.empresa_id = gpg.empresa_id
+             WHERE gpg.empresa_id = $1
+               AND gpg.pago_em IS NULL
              ORDER BY gpg.ganho_em ASC`,
-            []
+            [empresaId]
         );
 
         // Separar semana atual vs anteriores pendentes
@@ -95,10 +97,11 @@ router.get('/fila', async (req, res) => {
 // Prêmios já pagos, paginados por semana
 // ---------------------------------------------------------------------------
 router.get('/historico', async (req, res) => {
+    const empresaId = req.empresaId;
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id, empresaId);
         if (!permissoes.includes('gerenciar-gincanas')) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
@@ -120,12 +123,13 @@ router.get('/historico', async (req, res) => {
                 pg_user.nome AS pago_por_nome
              FROM gincanas_premios_ganhos gpg
              JOIN usuarios u ON u.id = gpg.usuario_id
-             JOIN gincanas g ON g.id = gpg.gincana_id
+             JOIN gincanas g ON g.id = gpg.gincana_id AND g.empresa_id = gpg.empresa_id
              LEFT JOIN usuarios pg_user ON pg_user.id = gpg.pago_por
-             WHERE gpg.pago_em IS NOT NULL
+             WHERE gpg.empresa_id = $1
+               AND gpg.pago_em IS NOT NULL
              ORDER BY gpg.pago_em DESC
              LIMIT 200`,
-            []
+            [empresaId]
         );
 
         res.json(result.rows);
@@ -142,10 +146,11 @@ router.get('/historico', async (req, res) => {
 // Paga todos os prêmios pendentes da fila (ou de uma semana específica)
 // ---------------------------------------------------------------------------
 router.post('/pagar-lote', async (req, res) => {
+    const empresaId = req.empresaId;
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id, empresaId);
         if (!permissoes.includes('gerenciar-gincanas')) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
@@ -154,17 +159,38 @@ router.post('/pagar-lote', async (req, res) => {
 
         let query, params;
         if (Array.isArray(ids) && ids.length > 0) {
+            const idsNormalizados = [...new Set(ids.map(Number))];
+            if (idsNormalizados.some(id => !Number.isInteger(id) || id <= 0)) {
+                return res.status(400).json({ error: 'A lista de prêmios contém IDs inválidos.' });
+            }
+
+            // Valida todos os IDs antes da mutação. Assim, uma lista montada
+            // em outro contexto empresarial não vira uma baixa parcial.
+            const idsEmpresa = await dbClient.query(
+                `SELECT id
+                 FROM gincanas_premios_ganhos
+                 WHERE id = ANY($1::int[])
+                   AND empresa_id = $2`,
+                [idsNormalizados, empresaId]
+            );
+            if (idsEmpresa.rows.length !== idsNormalizados.length) {
+                return res.status(404).json({ error: 'Um ou mais prêmios não pertencem à empresa ativa.' });
+            }
+
             query = `UPDATE gincanas_premios_ganhos
                      SET pago_em = NOW(), pago_por = $1
-                     WHERE id = ANY($2) AND pago_em IS NULL
-                     RETURNING id`;
-            params = [req.usuarioLogado.id, ids];
+                      WHERE id = ANY($2)
+                        AND empresa_id = $3
+                        AND pago_em IS NULL
+                      RETURNING id`;
+            params = [req.usuarioLogado.id, idsNormalizados, empresaId];
         } else {
             query = `UPDATE gincanas_premios_ganhos
                      SET pago_em = NOW(), pago_por = $1
-                     WHERE pago_em IS NULL
-                     RETURNING id`;
-            params = [req.usuarioLogado.id];
+                      WHERE empresa_id = $2
+                        AND pago_em IS NULL
+                      RETURNING id`;
+            params = [req.usuarioLogado.id, empresaId];
         }
 
         const result = await dbClient.query(query, params);
@@ -182,10 +208,11 @@ router.post('/pagar-lote', async (req, res) => {
 // Paga um prêmio individualmente (antecipação)
 // ---------------------------------------------------------------------------
 router.post('/:id/pagar', async (req, res) => {
+    const empresaId = req.empresaId;
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id, empresaId);
         if (!permissoes.includes('gerenciar-gincanas')) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
@@ -193,9 +220,11 @@ router.post('/:id/pagar', async (req, res) => {
         const result = await dbClient.query(
             `UPDATE gincanas_premios_ganhos
              SET pago_em = NOW(), pago_por = $1
-             WHERE id = $2 AND pago_em IS NULL
+             WHERE id = $2
+               AND empresa_id = $3
+               AND pago_em IS NULL
              RETURNING *`,
-            [req.usuarioLogado.id, req.params.id]
+            [req.usuarioLogado.id, req.params.id, empresaId]
         );
 
         if (!result.rows.length) {
@@ -216,6 +245,7 @@ router.post('/:id/pagar', async (req, res) => {
 // Premiações da funcionária logada (para o "bolso de premiações" na dashboard)
 // ---------------------------------------------------------------------------
 router.get('/meus-premios', async (req, res) => {
+    const empresaId = req.empresaId;
     let dbClient;
     try {
         dbClient = await pool.connect();
@@ -232,11 +262,12 @@ router.get('/meus-premios', async (req, res) => {
                 g.nome AS gincana_nome,
                 g.banner_emoji
              FROM gincanas_premios_ganhos gpg
-             JOIN gincanas g ON g.id = gpg.gincana_id
+             JOIN gincanas g ON g.id = gpg.gincana_id AND g.empresa_id = gpg.empresa_id
              WHERE gpg.usuario_id = $1
+               AND gpg.empresa_id = $2
              ORDER BY gpg.ganho_em DESC
              LIMIT 50`,
-            [req.usuarioLogado.id]
+            [req.usuarioLogado.id, empresaId]
         );
 
         const pendentes = result.rows.filter(r => !r.pago_em);

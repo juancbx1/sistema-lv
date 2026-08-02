@@ -29,6 +29,7 @@ router.use(async (req, res, next) => {
 // A rota principal que busca as metas
 
 router.get('/', async (req, res) => {
+    const empresaId = req.empresaId;
     
     // 1. Cria a data de hoje, mas já formata como uma string no fuso horário do Brasil
     const hojeNoBrasil = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
@@ -44,18 +45,22 @@ router.get('/', async (req, res) => {
         // Com a coluna no banco sendo do tipo DATE, esta query simples é a mais correta e performática
         const versaoQuery = `
             SELECT id FROM metas_versoes
-            WHERE data_inicio_vigencia <= $1
+            WHERE empresa_id = $1
+              AND data_inicio_vigencia <= $2
             ORDER BY data_inicio_vigencia DESC
             LIMIT 1;
         `;
         
-        const versaoResult = await dbClient.query(versaoQuery, [dataRefFormatada]);
+        const versaoResult = await dbClient.query(versaoQuery, [empresaId, dataRefFormatada]);
         
         if (versaoResult.rows.length > 0) {
         } else {
             console.error("4. ERRO CRÍTICO: A query NÃO encontrou nenhuma versão válida para a data de hoje!");
             // Vamos rodar uma query de debug para ver todas as versões
-            const debugQuery = await dbClient.query("SELECT id, nome_versao, data_inicio_vigencia, TO_CHAR(data_inicio_vigencia, 'YYYY-MM-DD') as data_formatada FROM metas_versoes");
+            await dbClient.query(
+                "SELECT id, nome_versao, data_inicio_vigencia, TO_CHAR(data_inicio_vigencia, 'YYYY-MM-DD') as data_formatada FROM metas_versoes WHERE empresa_id = $1",
+                [empresaId]
+            );
         }
 
         if (versaoResult.rows.length === 0) {
@@ -66,10 +71,11 @@ router.get('/', async (req, res) => {
         const regrasQuery = `
             SELECT tipo_usuario, nivel, pontos_meta, valor_comissao AS valor, descricao_meta AS descricao, condicoes
             FROM metas_regras
-            WHERE id_versao = $1
+            WHERE empresa_id = $1
+              AND id_versao = $2
             ORDER BY tipo_usuario, nivel, pontos_meta ASC;
         `;
-        const regrasResult = await dbClient.query(regrasQuery, [idVersaoCorreta]);
+        const regrasResult = await dbClient.query(regrasQuery, [empresaId, idVersaoCorreta]);
         const regras = regrasResult.rows;
 
         const metasConfigFormatado = {};
@@ -100,10 +106,14 @@ router.get('/', async (req, res) => {
 
 // Rota para LISTAR todas as versões de metas
 router.get('/versoes', async (req, res) => {
+    const empresaId = req.empresaId;
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const result = await dbClient.query('SELECT * FROM metas_versoes ORDER BY data_inicio_vigencia DESC');
+        const result = await dbClient.query(
+            'SELECT * FROM metas_versoes WHERE empresa_id = $1 ORDER BY data_inicio_vigencia DESC',
+            [empresaId]
+        );
         res.status(200).json(result.rows);
     } catch (error) {
         console.error('[API /api/metas/versoes] Erro:', error.message);
@@ -115,6 +125,7 @@ router.get('/versoes', async (req, res) => {
 
 // Rota para CRIAR uma nova versão de meta e CLONAR as regras da versão anterior
 router.post('/versoes', async (req, res) => {
+    const empresaId = req.empresaId;
     const { nome_versao, data_inicio_vigencia, id_versao_origem_clone } = req.body;
     
     // Validação
@@ -127,19 +138,29 @@ router.post('/versoes', async (req, res) => {
         dbClient = await pool.connect();
         await dbClient.query('BEGIN'); // Inicia a transação
 
+        const origemResult = await dbClient.query(
+            'SELECT id FROM metas_versoes WHERE id = $1 AND empresa_id = $2',
+            [id_versao_origem_clone, empresaId]
+        );
+        if (!origemResult.rows.length) {
+            await dbClient.query('ROLLBACK');
+            return res.status(404).json({ error: 'Versão de origem não encontrada na empresa ativa.' });
+        }
+
         // 1. Cria a nova versão
-        const novaVersaoQuery = 'INSERT INTO metas_versoes (nome_versao, data_inicio_vigencia) VALUES ($1, $2) RETURNING id';
-        const novaVersaoResult = await dbClient.query(novaVersaoQuery, [nome_versao, data_inicio_vigencia]);
+        const novaVersaoQuery = 'INSERT INTO metas_versoes (empresa_id, nome_versao, data_inicio_vigencia) VALUES ($1, $2, $3) RETURNING id';
+        const novaVersaoResult = await dbClient.query(novaVersaoQuery, [empresaId, nome_versao, data_inicio_vigencia]);
         const novoIdVersao = novaVersaoResult.rows[0].id;
 
         // 2. Clona as regras da versão de origem para a nova versão
         const cloneRegrasQuery = `
-            INSERT INTO metas_regras (id_versao, tipo_usuario, nivel, pontos_meta, valor_comissao, descricao_meta, condicoes)
-            SELECT $1, tipo_usuario, nivel, pontos_meta, valor_comissao, descricao_meta, condicoes
+            INSERT INTO metas_regras (empresa_id, id_versao, tipo_usuario, nivel, pontos_meta, valor_comissao, descricao_meta, condicoes)
+            SELECT $1, $2, tipo_usuario, nivel, pontos_meta, valor_comissao, descricao_meta, condicoes
             FROM metas_regras
-            WHERE id_versao = $2;
+            WHERE empresa_id = $1
+              AND id_versao = $3;
         `;
-        await dbClient.query(cloneRegrasQuery, [novoIdVersao, id_versao_origem_clone]);
+        await dbClient.query(cloneRegrasQuery, [empresaId, novoIdVersao, id_versao_origem_clone]);
         
         await dbClient.query('COMMIT'); // Finaliza a transação com sucesso
         res.status(201).json({ message: 'Nova versão criada e regras clonadas com sucesso!', id_nova_versao: novoIdVersao });
@@ -155,16 +176,18 @@ router.post('/versoes', async (req, res) => {
 
 // Rota para buscar TODAS as regras de UMA versão específica
 router.get('/regras/:id_versao', async (req, res) => {
+    const empresaId = req.empresaId;
     const { id_versao } = req.params;
     let dbClient;
     try {
         dbClient = await pool.connect();
         const query = `
             SELECT * FROM metas_regras 
-            WHERE id_versao = $1 
+            WHERE empresa_id = $1
+              AND id_versao = $2
             ORDER BY tipo_usuario, nivel, pontos_meta ASC
         `;
-        const result = await dbClient.query(query, [id_versao]);
+        const result = await dbClient.query(query, [empresaId, id_versao]);
         res.status(200).json(result.rows);
     } catch (error) {
         console.error(`[API /api/metas/regras/${id_versao}] Erro:`, error.message);
@@ -176,6 +199,7 @@ router.get('/regras/:id_versao', async (req, res) => {
 
 // Rota para ATUALIZAR uma regra específica
 router.put('/regras/:id_regra', async (req, res) => {
+    const empresaId = req.empresaId;
     const { id_regra } = req.params;
     const { pontos_meta, valor_comissao, descricao_meta, condicoes } = req.body;
     
@@ -196,6 +220,7 @@ router.put('/regras/:id_regra', async (req, res) => {
                 condicoes = $4,
                 data_atualizacao = NOW()
             WHERE id = $5
+              AND empresa_id = $6
             RETURNING *;
         `;
         
@@ -203,7 +228,7 @@ router.put('/regras/:id_regra', async (req, res) => {
                                         ? JSON.stringify(condicoes) 
                                         : null;
        
-        const result = await dbClient.query(query, [pontos_meta, valor_comissao, descricao_meta, condicoesParaSalvar, id_regra]);
+        const result = await dbClient.query(query, [pontos_meta, valor_comissao, descricao_meta, condicoesParaSalvar, id_regra, empresaId]);
         
         if (result.rowCount === 0) {
             return res.status(404).json({ error: 'Regra não encontrada.' });
@@ -219,6 +244,7 @@ router.put('/regras/:id_regra', async (req, res) => {
 
 // Rota para CRIAR uma nova regra em uma versão
 router.post('/regras', async (req, res) => {
+    const empresaId = req.empresaId;
     const { id_versao, tipo_usuario, nivel, pontos_meta, valor_comissao, descricao_meta } = req.body;
     
     if (!id_versao || !tipo_usuario || !nivel || !pontos_meta || !valor_comissao || !descricao_meta) {
@@ -228,12 +254,19 @@ router.post('/regras', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        const versaoResult = await dbClient.query(
+            'SELECT id FROM metas_versoes WHERE id = $1 AND empresa_id = $2',
+            [id_versao, empresaId]
+        );
+        if (!versaoResult.rows.length) {
+            return res.status(404).json({ error: 'Versão de metas não encontrada na empresa ativa.' });
+        }
         const query = `
-            INSERT INTO metas_regras (id_versao, tipo_usuario, nivel, pontos_meta, valor_comissao, descricao_meta)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO metas_regras (empresa_id, id_versao, tipo_usuario, nivel, pontos_meta, valor_comissao, descricao_meta)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING *;
         `;
-        const result = await dbClient.query(query, [id_versao, tipo_usuario, nivel, pontos_meta, valor_comissao, descricao_meta]);
+        const result = await dbClient.query(query, [empresaId, id_versao, tipo_usuario, nivel, pontos_meta, valor_comissao, descricao_meta]);
         res.status(201).json(result.rows[0]);
     } catch (error) {
         console.error('[API /api/metas/regras POST] Erro:', error.message);
@@ -246,13 +279,14 @@ router.post('/regras', async (req, res) => {
 
 // Rota para DELETAR uma regra
 router.delete('/regras/:id_regra', async (req, res) => {
+    const empresaId = req.empresaId;
     const { id_regra } = req.params;
     let dbClient;
     try {
         dbClient = await pool.connect();
         const result = await dbClient.query(
-            'DELETE FROM metas_regras WHERE id = $1 RETURNING id',
-            [id_regra]
+            'DELETE FROM metas_regras WHERE id = $1 AND empresa_id = $2 RETURNING id',
+            [id_regra, empresaId]
         );
         if (result.rowCount === 0) {
             return res.status(404).json({ error: 'Regra não encontrada.' });

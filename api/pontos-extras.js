@@ -26,6 +26,7 @@ router.use(async (req, res, next) => {
 // POST / — Lançar pontos extras
 // ==========================================================================
 router.post('/', async (req, res) => {
+    const empresaId = req.empresaId;
     let dbClient;
     try {
         const { funcionario_id, pontos, motivo, data_referencia } = req.body;
@@ -42,16 +43,24 @@ router.post('/', async (req, res) => {
         dbClient = await pool.connect();
 
         const funcResult = await dbClient.query(
-            'SELECT id, nome FROM usuarios WHERE id = $1 AND data_admissao IS NOT NULL AND data_demissao IS NULL',
-            [funcionario_id]
+            `SELECT u.id, u.nome
+             FROM usuarios u
+             JOIN usuarios_empresas ue
+               ON ue.usuario_id = u.id
+              AND ue.empresa_id = $2
+              AND ue.ativo
+             WHERE u.id = $1
+               AND ue.data_admissao IS NOT NULL
+               AND ue.data_demissao IS NULL`,
+            [funcionario_id, empresaId]
         );
         if (!funcResult.rows.length) return res.status(404).json({ error: 'Funcionário não encontrado ou inativo.' });
 
         const result = await dbClient.query(`
-            INSERT INTO pontos_extras (funcionario_id, supervisor_id, pontos, motivo, data_referencia)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO pontos_extras (empresa_id, funcionario_id, supervisor_id, pontos, motivo, data_referencia)
+            VALUES ($1, $2, $3, $4, $5, $6)
             RETURNING *
-        `, [funcionario_id, supervisor_id, Number(pontos), motivo.trim(), data_referencia]);
+        `, [empresaId, funcionario_id, supervisor_id, Number(pontos), motivo.trim(), data_referencia]);
 
         res.status(201).json(result.rows[0]);
 
@@ -67,6 +76,7 @@ router.post('/', async (req, res) => {
 // GET /historico — Histórico de lançamentos de uma data
 // ==========================================================================
 router.get('/historico', async (req, res) => {
+    const empresaId = req.empresaId;
     let dbClient;
     try {
         const data = req.query.data || new Date().toLocaleDateString('sv', { timeZone: 'America/Sao_Paulo' });
@@ -91,9 +101,10 @@ router.get('/historico', async (req, res) => {
             JOIN usuarios uf ON uf.id = pe.funcionario_id
             JOIN usuarios us ON us.id = pe.supervisor_id
             LEFT JOIN usuarios uc ON uc.id = pe.cancelado_por
-            WHERE pe.data_referencia = $1
+            WHERE pe.empresa_id = $1
+              AND pe.data_referencia = $2
             ORDER BY pe.data_lancamento DESC
-        `, [data]);
+        `, [empresaId, data]);
 
         res.json(rows);
 
@@ -109,11 +120,12 @@ router.get('/historico', async (req, res) => {
 // PATCH /:id/cancelar — Soft-delete com audit trail
 // ==========================================================================
 router.patch('/:id/cancelar', async (req, res) => {
+    const empresaId = req.empresaId;
     let dbClient;
     try {
         dbClient = await pool.connect();
 
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id, empresaId);
         if (!permissoes.includes('cancelar-pontos-extras')) {
             return res.status(403).json({
                 error: 'Você não tem permissão para cancelar pontos extras. Solicite ao gerente.'
@@ -131,9 +143,11 @@ router.patch('/:id/cancelar', async (req, res) => {
                 cancelado_por = $1,
                 data_cancelamento = NOW(),
                 motivo_cancelamento = $2
-            WHERE id = $3 AND cancelado = FALSE
+            WHERE id = $3
+              AND empresa_id = $4
+              AND cancelado = FALSE
             RETURNING *
-        `, [req.usuarioLogado.id, motivo_cancelamento.trim(), req.params.id]);
+        `, [req.usuarioLogado.id, motivo_cancelamento.trim(), req.params.id, empresaId]);
 
         if (!result.rows.length) {
             return res.status(404).json({ error: 'Lançamento não encontrado ou já cancelado.' });

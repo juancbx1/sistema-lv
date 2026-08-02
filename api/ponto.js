@@ -9,10 +9,26 @@ const { Pool } = pkg;
 import jwt from 'jsonwebtoken';
 import express from 'express';
 import { registrarAuditoria } from './audit.js';
+import { obterEmpresaIdDoContexto } from './contexto-empresa.js';
 
 const router = express.Router();
 const pool = new Pool({ connectionString: process.env.POSTGRES_URL });
 const SECRET_KEY = process.env.JWT_SECRET;
+
+async function exigirVinculoAtivo(dbClient, usuarioId, empresaId) {
+    const result = await dbClient.query(`
+        SELECT 1
+        FROM usuarios_empresas
+        WHERE usuario_id = $1
+          AND empresa_id = $2
+          AND ativo = TRUE
+    `, [usuarioId, empresaId]);
+    if (result.rowCount === 0) {
+        const error = new Error('Funcionário não encontrado na empresa ativa.');
+        error.statusCode = 404;
+        throw error;
+    }
+}
 
 // Middleware de autenticação (padrão do projeto)
 router.use(async (req, res, next) => {
@@ -20,6 +36,7 @@ router.use(async (req, res, next) => {
         const token = req.headers.authorization?.split(' ')[1];
         if (!token) throw new Error('Token não fornecido');
         req.usuarioLogado = jwt.verify(token, SECRET_KEY);
+        req.empresaId = obterEmpresaIdDoContexto(req);
         next();
     } catch (error) {
         res.status(401).json({ error: 'Token inválido ou expirado' });
@@ -61,37 +78,56 @@ router.post('/excecao', async (req, res) => {
     try {
         dbClient = await pool.connect();
         await dbClient.query('BEGIN');
+        await exigirVinculoAtivo(dbClient, funcionario_id, req.empresaId);
 
         const dataHojeSP = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
         const campoHorario = tipo_excecao === 'ATRASO' ? 'horario_real_e1' : 'horario_real_s3';
 
         await dbClient.query(
-            `INSERT INTO ponto_diario (funcionario_id, data, ${campoHorario}, tipo_excecao, motivo_excecao, registrado_por)
-             VALUES ($1, $2, $3, $4, $5, $6)
-             ON CONFLICT (funcionario_id, data) DO UPDATE SET
+            `INSERT INTO ponto_diario
+                (funcionario_id, data, ${campoHorario}, tipo_excecao,
+                 motivo_excecao, registrado_por, empresa_id)
+             SELECT $1, $2, $3, $4, $5, $6, $7
+             FROM usuarios_empresas
+             WHERE usuario_id = $1
+               AND empresa_id = $7
+               AND ativo
+             ON CONFLICT (empresa_id, funcionario_id, data) DO UPDATE SET
                  ${campoHorario}    = EXCLUDED.${campoHorario},
                  tipo_excecao      = EXCLUDED.tipo_excecao,
                  motivo_excecao    = EXCLUDED.motivo_excecao,
                  registrado_por    = EXCLUDED.registrado_por,
                  updated_at        = NOW()`,
-            [funcionario_id, dataHojeSP, horarioFinal, tipo_excecao, motivo || null, supervisor]
+            [
+                funcionario_id,
+                dataHojeSP,
+                horarioFinal,
+                tipo_excecao,
+                motivo || null,
+                supervisor,
+                req.empresaId,
+            ]
         );
 
         // Saída antecipada: força status FORA_DO_HORARIO e cancela sessão ativa
         if (tipo_excecao === 'SAIDA_ANTECIPADA') {
             await dbClient.query(
-                `UPDATE usuarios
+                `UPDATE usuarios_empresas
                  SET status_atual = 'FORA_DO_HORARIO',
                      status_data_modificacao = (NOW() AT TIME ZONE 'America/Sao_Paulo'),
                      id_sessao_trabalho_atual = NULL
-                 WHERE id = $1`,
-                [funcionario_id]
+                 WHERE usuario_id = $1
+                   AND empresa_id = $2
+                   AND ativo`,
+                [funcionario_id, req.empresaId]
             );
             await dbClient.query(
                 `UPDATE sessoes_trabalho_producao
                  SET status = 'CANCELADA', data_fim = NOW()
-                 WHERE funcionario_id = $1 AND status = 'EM_ANDAMENTO'`,
-                [funcionario_id]
+                 WHERE funcionario_id = $1
+                   AND empresa_id = $2
+                   AND status = 'EM_ANDAMENTO'`,
+                [funcionario_id, req.empresaId]
             );
         }
 
@@ -101,7 +137,7 @@ router.post('/excecao', async (req, res) => {
     } catch (error) {
         if (dbClient) await dbClient.query('ROLLBACK');
         console.error('[API POST /ponto/excecao] Erro:', error);
-        res.status(500).json({ error: error.message });
+        res.status(error.statusCode || 500).json({ error: error.message });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -136,10 +172,23 @@ router.post('/liberar-intervalo', async (req, res) => {
         // Busca horários E verifica se está PRODUZINDO (tem sessão ativa)
         // v1.8: se PRODUZINDO, só grava ponto_diario — não toca status nem sessão
         const horRes = await dbClient.query(
-            `SELECT horario_saida_1, horario_entrada_2, horario_saida_2, horario_entrada_3,
-                    id_sessao_trabalho_atual FROM usuarios WHERE id = $1`,
-            [funcionario_id]
+            `SELECT
+                horario_saida_1,
+                horario_entrada_2,
+                horario_saida_2,
+                horario_entrada_3,
+                id_sessao_trabalho_atual
+             FROM usuarios_empresas
+             WHERE usuario_id = $1
+               AND empresa_id = $2
+               AND ativo`,
+            [funcionario_id, req.empresaId]
         );
+        if (horRes.rows.length === 0) {
+            const error = new Error('Funcionário não encontrado na empresa ativa.');
+            error.statusCode = 404;
+            throw error;
+        }
         const horarios = horRes.rows[0] || {};
         const isProduzindo = !!horarios.id_sessao_trabalho_atual;
         const n = (t) => t ? String(t).substring(0, 5) : null;
@@ -188,14 +237,23 @@ router.post('/liberar-intervalo', async (req, res) => {
         // Ação manual do supervisor (botão "Liberar") chega sempre ANTES de S1/S2,
         // portanto neste momento o campo ainda é NULL — o COALESCE não interfere.
         await dbClient.query(
-            `INSERT INTO ponto_diario (funcionario_id, data, ${campoSaida}, ${campoRetorno}, registrado_por)
-             VALUES ($1, $2, $3, $4, $5)
-             ON CONFLICT (funcionario_id, data) DO UPDATE SET
+            `INSERT INTO ponto_diario
+                (funcionario_id, data, ${campoSaida}, ${campoRetorno},
+                 registrado_por, empresa_id)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             ON CONFLICT (empresa_id, funcionario_id, data) DO UPDATE SET
                  ${campoSaida}   = COALESCE(ponto_diario.${campoSaida},   EXCLUDED.${campoSaida}),
                  ${campoRetorno} = COALESCE(ponto_diario.${campoRetorno}, EXCLUDED.${campoRetorno}),
                  registrado_por  = COALESCE(ponto_diario.registrado_por,  EXCLUDED.registrado_por),
                  updated_at      = NOW()`,
-            [funcionario_id, dataHojeSP, horaAtualSP, horarioRetorno, supervisor]
+            [
+                funcionario_id,
+                dataHojeSP,
+                horaAtualSP,
+                horarioRetorno,
+                supervisor,
+                req.empresaId,
+            ]
         );
 
         // v1.8: se PRODUZINDO, não altera status nem sessão.
@@ -203,12 +261,14 @@ router.post('/liberar-intervalo', async (req, res) => {
         // Se LIVRE, atualiza status para ALMOCO/PAUSA normalmente.
         if (!isProduzindo) {
             await dbClient.query(
-                `UPDATE usuarios
+                `UPDATE usuarios_empresas
                  SET status_atual = $1,
                      status_data_modificacao = (NOW() AT TIME ZONE 'America/Sao_Paulo'),
                      id_sessao_trabalho_atual = NULL
-                 WHERE id = $2`,
-                [novoStatus, funcionario_id]
+                 WHERE usuario_id = $2
+                   AND empresa_id = $3
+                   AND ativo`,
+                [novoStatus, funcionario_id, req.empresaId]
             );
         }
 
@@ -247,7 +307,7 @@ router.post('/liberar-intervalo', async (req, res) => {
     } catch (error) {
         if (dbClient) await dbClient.query('ROLLBACK');
         console.error('[API POST /ponto/liberar-intervalo] Erro:', error);
-        res.status(500).json({ error: error.message });
+        res.status(error.statusCode || 500).json({ error: error.message });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -272,14 +332,19 @@ router.post('/desfazer-saida', async (req, res) => {
     try {
         dbClient = await pool.connect();
         await dbClient.query('BEGIN');
+        await exigirVinculoAtivo(dbClient, funcionario_id, req.empresaId);
 
         const dataHojeSP = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
 
         // Verifica se existe saída antecipada hoje (não desfeita)
         const pontoRes = await dbClient.query(
             `SELECT id, horario_real_s3 FROM ponto_diario
-             WHERE funcionario_id = $1 AND data = $2 AND horario_real_s3 IS NOT NULL AND (saida_desfeita IS NULL OR saida_desfeita = FALSE)`,
-            [funcionario_id, dataHojeSP]
+             WHERE funcionario_id = $1
+               AND data = $2
+               AND empresa_id = $3
+               AND horario_real_s3 IS NOT NULL
+               AND (saida_desfeita IS NULL OR saida_desfeita = FALSE)`,
+            [funcionario_id, dataHojeSP, req.empresaId]
         );
 
         if (!pontoRes.rows.length) {
@@ -293,17 +358,26 @@ router.post('/desfazer-saida', async (req, res) => {
                 saida_desfeita_em  = NOW(),
                 saida_desfeita_por = $1,
                 updated_at         = NOW()
-             WHERE funcionario_id = $2 AND data = $3`,
-            [supervisor + (motivo ? ` — ${motivo}` : ''), funcionario_id, dataHojeSP]
+             WHERE funcionario_id = $2
+               AND data = $3
+               AND empresa_id = $4`,
+            [
+                supervisor + (motivo ? ` — ${motivo}` : ''),
+                funcionario_id,
+                dataHojeSP,
+                req.empresaId,
+            ]
         );
 
         // Volta status do funcionário para LIVRE
-        await dbClient.query(
-            `UPDATE usuarios
+        const result = await dbClient.query(
+            `UPDATE usuarios_empresas
              SET status_atual = 'LIVRE',
                  status_data_modificacao = (NOW() AT TIME ZONE 'America/Sao_Paulo')
-             WHERE id = $1`,
-            [funcionario_id]
+             WHERE usuario_id = $1
+               AND empresa_id = $2
+               AND ativo`,
+            [funcionario_id, req.empresaId]
         );
 
         await dbClient.query('COMMIT');
@@ -312,7 +386,7 @@ router.post('/desfazer-saida', async (req, res) => {
     } catch (error) {
         if (dbClient) await dbClient.query('ROLLBACK');
         console.error('[API POST /ponto/desfazer-saida] Erro:', error);
-        res.status(500).json({ error: error.message });
+        res.status(error.statusCode || 500).json({ error: error.message });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -335,20 +409,28 @@ router.post('/desfazer-liberacao', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        await exigirVinculoAtivo(dbClient, funcionario_id, req.empresaId);
         // Reseta status para 'LIVRE' (sem LIVRE_MANUAL com data).
         // O cálculo automático em determinarStatusFinalServidor usará o ponto_diario
         // para detectar que ainda estamos na janela de almoço/pausa → retorna ALMOCO/PAUSA.
-        await dbClient.query(
-            `UPDATE usuarios
+        const result = await dbClient.query(
+            `UPDATE usuarios_empresas
              SET status_atual = 'LIVRE',
                  status_data_modificacao = (NOW() AT TIME ZONE 'America/Sao_Paulo')
-             WHERE id = $1`,
-            [funcionario_id]
+             WHERE usuario_id = $1
+               AND empresa_id = $2
+               AND ativo`,
+            [funcionario_id, req.empresaId]
         );
+        if (result.rowCount === 0) {
+            return res.status(404).json({
+                error: 'Funcionário não encontrado na empresa ativa.',
+            });
+        }
         res.status(200).json({ message: 'Liberação desfeita — intervalo restaurado.' });
     } catch (error) {
         console.error('[API POST /ponto/desfazer-liberacao] Erro:', error);
-        res.status(500).json({ error: error.message });
+        res.status(error.statusCode || 500).json({ error: error.message });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -386,22 +468,36 @@ router.post('/retomar-trabalho', async (req, res) => {
 
         // Busca retorno previsto (e2/e3 já gravado) e horário agendado para calcular desvio
         const dadosRes = await dbClient.query(
-            `SELECT u.nome, u.horario_entrada_2, u.horario_entrada_3,
+            `SELECT u.nome, ue.horario_entrada_2, ue.horario_entrada_3,
                     p.${campoRetornoPrevisto} AS retorno_previsto_db
              FROM usuarios u
-             LEFT JOIN ponto_diario p ON p.funcionario_id = u.id AND p.data = $2
+             JOIN usuarios_empresas ue
+               ON ue.usuario_id = u.id
+              AND ue.empresa_id = $3
+              AND ue.ativo
+             LEFT JOIN ponto_diario p
+               ON p.funcionario_id = u.id
+              AND p.data = $2
+              AND p.empresa_id = ue.empresa_id
              WHERE u.id = $1`,
-            [funcionario_id, dataHojeSP]
+            [funcionario_id, dataHojeSP, req.empresaId]
         );
-        const dados = dadosRes.rows[0] || {};
+        if (dadosRes.rows.length === 0) {
+            return res.status(404).json({
+                error: 'Funcionário não encontrado na empresa ativa.',
+            });
+        }
+        const dados = dadosRes.rows[0];
         const funcNome = dados.nome || `ID ${funcionario_id}`;
 
         // Atualiza o campo de retorno para "agora" → frontend descongela o contador
         await dbClient.query(
             `UPDATE ponto_diario
              SET ${campoRetorno} = $1, updated_at = NOW()
-             WHERE funcionario_id = $2 AND data = $3`,
-            [horaAtualSP, funcionario_id, dataHojeSP]
+             WHERE funcionario_id = $2
+               AND data = $3
+               AND empresa_id = $4`,
+            [horaAtualSP, funcionario_id, dataHojeSP, req.empresaId]
         );
 
         // Auditoria: calcula desvio em relação ao retorno previsto (e2/e3 programado no cadastro)
@@ -452,6 +548,7 @@ router.post('/desfazer-retomada', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        await exigirVinculoAtivo(dbClient, funcionario_id, req.empresaId);
 
         const dataHojeSP = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
         const campoRetorno = tipo === 'ALMOCO' ? 'horario_real_e2' : 'horario_real_e3';
@@ -460,15 +557,17 @@ router.post('/desfazer-retomada', async (req, res) => {
         await dbClient.query(
             `UPDATE ponto_diario
              SET ${campoRetorno} = NULL, updated_at = NOW()
-             WHERE funcionario_id = $1 AND data = $2`,
-            [funcionario_id, dataHojeSP]
+             WHERE funcionario_id = $1
+               AND data = $2
+               AND empresa_id = $3`,
+            [funcionario_id, dataHojeSP, req.empresaId]
         );
 
         res.status(200).json({ message: 'Retomada desfeita — intervalo restaurado.' });
 
     } catch (error) {
         console.error('[API POST /ponto/desfazer-retomada] Erro:', error);
-        res.status(500).json({ error: error.message });
+        res.status(error.statusCode || 500).json({ error: error.message });
     } finally {
         if (dbClient) dbClient.release();
     }

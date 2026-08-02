@@ -16,7 +16,7 @@ O sistema está em transição planejada de empresa única para **multiempresas*
 
 `_planejamento/sistema-multiempresas.md`
 
-**Estado atual:** Fase 6 concluída e Fase 6.1 aprovada; preparação da Fase 7.
+**Estado atual:** Fases 6 e 6.1 concluídas; Fase 7 em encerramento operacional.
 A fundação multiempresa e a Gestão Organizacional já estão em produção. A
 migration de preparação do Financeiro foi executada e validada na Neon em
 28/07/2026; a API foi isolada e validada, e o teste transacional das constraints
@@ -27,8 +27,19 @@ o teste manual entre as duas empresas foi aprovado, com dados isolados e console
 sem erros. O código estrutural foi publicado no commit `5ef2096`, e a correção
 final do agente global foi publicada no commit `919de6d`, release `1.38.0`. O
 redesign da Fase 6.1, incluindo Agenda, parcelamento, soft delete e recuperação,
-foi aprovado integralmente em smoke autenticado em 29/07/2026 e aguarda a
-publicação de sua release.
+foi aprovado integralmente em smoke autenticado em 29/07/2026 e publicado no
+commit `9625034`, release `1.39.0`.
+Na Fase 7, a preparação estrutural do banco foi executada e validada na Neon, a
+API de pagamentos foi aprovada por 17 cenários HTTP autenticados e a migração
+coordenada de ponto, sessões e estado operacional foi aprovada por 15 cenários
+HTTP autenticados em 30/07/2026. O código do bloco de metas, banco de pontos,
+pontos extras, configurações de pontos, gincanas, premiações, avisos popup e
+calendário foi implementado e aprovado em HTTP na restauração local em
+01/08/2026. O limite transitório da dashboard foi aprovado por 6 cenários HTTP,
+mantendo a dashboard legada disponível e a cadeia fechada na secundária. O
+redesign completo da dashboard foi aprovado localmente, e a preparação da Fase 7
+foi registrada na Neon com `aprovado: true`; publicação e smoke autenticado
+final ainda estão pendentes.
 
 ### Decisões obrigatórias
 
@@ -74,6 +85,13 @@ publicação de sua release.
   será a última frente funcional. Seu isolamento será concluído depois dos
   domínios de vínculo, ponto e pagamentos, preservando espaço para um redesign
   completo da experiência mobile.
+- Enquanto produção e arremates permanecerem na Fase 8, respostas com
+  `CADEIA_PRODUTIVA_NAO_MIGRADA` na dashboard secundária devem renderizar o
+  bloqueio neutro `DashCadeiaNaoMigrada`, sem tentar pintar dados legados.
+- Enquanto produção e arremates permanecerem na Fase 8, os próprios routers
+  `/api/producao` e `/api/arremates` devem falhar fechados para empresas
+  secundárias com `CADEIA_PRODUTIVA_NAO_MIGRADA`, mesmo que um flag de módulo
+  seja habilitado temporariamente para teste.
 - Toda entidade empresarial deverá possuir vínculo explícito com `empresa_id`, direto ou garantido por uma entidade pai.
 - Toda consulta por ID, alteração ou exclusão empresarial deverá validar também `empresa_id`; filtrar apenas listagens não é suficiente.
 - O frontend nunca será a autoridade de isolamento. `empresa_id` não deve ser aceito cegamente do body.
@@ -132,8 +150,8 @@ publicação de sua release.
 | Fase 4 — seletor universal | Publicada e validada em produção |
 | Fase 5 — Gestão Organizacional | Concluída, publicada e aprovada em produção |
 | Fase 6 — Financeiro como piloto | Concluída, publicada e aprovada nas duas empresas |
-| Fase 6.1 — Redesign dos modais do Financeiro | Concluída e aprovada localmente; aguarda publicação |
-| Fase 7 — Empregados, dashboard e pagamentos | Próxima; dashboard das costureiras será a última frente |
+| Fase 6.1 — Redesign dos modais do Financeiro | Concluída, publicada e aprovada em produção na release 1.39.0 |
+| Fase 7 — Empregados, dashboard e pagamentos | Dashboard concluída localmente; preparação estrutural executada e validada na Neon; publicação e smoke final pendentes |
 | Fase 8 em diante | Não iniciada |
 
 Situação operacional:
@@ -162,6 +180,8 @@ Situação operacional:
 - a migration de soft delete da Agenda foi executada e validada com cinco
   colunas, três índices e `aprovado: true`; exclusão, histórico, recuperação,
   cores por vencimento e permissões foram aprovados em smoke manual;
+- a release `1.39.0`, commit `9625034`, foi aprovada no smoke de produção sem
+  erros no Financeiro;
 - o agente global de encerramento de OP fazia uma chamada bloqueada e gerava
   `403` no console da empresa secundária;
 - `public/src/main-agentes-globais.jsx` foi ajustado localmente para não iniciar
@@ -365,7 +385,7 @@ O desenvolvimento é organizado por **áreas** (cada área = uma página do sist
 <body>
     <div class="hamburger-menu">...</div>
     <main id="root" class="gs-card"></main>  <!-- gs-card SEMPRE no main -->
-    <script src="/js/carregar-menu-lateral.js" type="module"></script>
+    <script src="/src/main-menu-lateral.tsx" type="module"></script>
     <script src="/src/main-nomepagina.jsx" type="module"></script>
 </body>
 ```
@@ -495,7 +515,7 @@ A coluna **Troca contínua** indica se a página já elimina o intervalo vazio e
 
 | Centro de Incentivos | `incentivos.css` | ✅ | ❌ | ✅ | ✅ | ❓ | v5.1 concluído (2026-05-23). Todas as abas 100% React: Gincanas, Metas e Comissões, Pontos por Atividade, Pagamentos. Arquivos legados deletados (`ponto-por-processo.html/js/css`). Hook tiktik (`api/arremates.js`) deferido para v4.x — sem data. Testes de gincana corrida/equipe/produto_especifico/semanal pendentes de validação manual. |
 
-| Central de Pagamentos | `central-de-pagamentos.css` | ✅ | ✅ | ✅ | ✅ | ❓ | Concluída em 2026-07-11. Migração integral do código específico para React + TypeScript/TSX, com shell visual padrão (`main.gs-card`, `UIHeaderPagina`, `gs-tab-nav`, `gs-conteudo-pagina`) alinhado à referência de Ordens de Produção. `npm run typecheck` e `npm run build` aprovados. Dependências JS compartilhadas ficam para a migração global futura das páginas. |
+| Central de Pagamentos | `central-de-pagamentos.css` | ✅ | ✅ | ✅ | ✅ | ❓ | React+TS desde 11/07/2026; **endurecimento TypeScript** em 01/08/2026 (tipos de domínio em `cpag-types.ts`, cliente único `fetchCpag`, sem `any`/`fetch` cru na árvore CPAG, payloads tipados). Shell padrão (`main.gs-card`, `UIHeaderPagina`, `gs-tab-nav`). Plano: `_planejamento/central-de-pagamentos-typescript.md`. Typecheck/build ok. Troca contínua multiempresa ainda `?`. |
 
 | Dashboard Funcionário | `dashboard.css` | ✅ | ❌ | ❌ | ❌ | ❓ | Mobile-first, estrutura diferente. `DashFabGincana.jsx` (2026-05-20) substitui `DashGincanaCard` inline — gincanas agora em FAB + bottom sheet. Redesign completo 2026-05-24: `DashHeader` com dock (4 botões + divider), tipo+ciclo e avatar clicável; `DSUploader.jsx` (novo componente de upload compartilhado — variantes dropzone/avatar/inline); `DashPerfilModal` redesenhado com hero gradiente escuro, galeria DSUploader, streak de produção, conquistas do ciclo, melhor dia, gincanas vencidas; `DashPagamentosModal` com wallet topo dark + saldos lado a lado (Comissões / Premiações); `DashRankingCard` com mini pódio e estado campeã dourado. APIs novas: `GET /api/dashboard/streak`, `GET /api/dashboard/conquistas-ciclo`. |
 
@@ -1221,10 +1241,228 @@ Para gincanas do tipo `meta` que já estão `encerrada` ou `encerrada_semana`, o
 - **Migração encerrada em 2026-07-27** (validação manual OK; CSS limpo). **Novas features liberadas.**
 - Features novas devem continuar em `.ts`/`.tsx` na árvore única. Plano histórico: `_planejamento/migrando-financeiro-para-typescript.md`.
 
+### Decisão arquitetural — redesign do Menu Lateral em React + TypeScript
+
+- O menu administrativo compartilhado foi migrado integralmente para React +
+  TypeScript e recebeu o redesign visual aprovado em 29/07/2026.
+- Páginas consumidoras em JavaScript ou JSX não precisam ser migradas: o menu
+  usa uma raiz React independente e preserva os contratos globais existentes.
+- O menu não exibirá tipo, função ou vínculo do usuário.
+- O seletor de empresa ativa continuará universal no PC e junto ao hamburger no
+  tablet/celular, com maior destaque e sem transformar o frontend em autoridade
+  do contexto empresarial.
+- O rodapé não exibirá “Lojas Variara”; o changelog e a versão do sistema
+  receberão destaque.
+- Favoritos de áreas são ordenáveis e persistidos por usuário e empresa.
+- O novo `PerfilAvatarStudio` é compartilhado pelo menu e pela Dashboard. O
+  avatar é identidade global e sua API não deve depender da liberação do módulo
+  Gestão Organizacional na empresa ativa.
+- Busca universal, histórico de páginas recentes, modo compacto e ações rápidas
+  foram descartados deste escopo.
+- Plano executável:
+  `_planejamento/menu-lateral-typescript-redesign.md`.
+- Estado local: implementação concluída, `typecheck`, build e smoke visual
+  responsivo aprovados; migration de preferências e smoke autenticado ainda
+  pendentes.
+
 ---
 
 ## REGRA MAXIMA — CONTROLE DE ALTERACOES
 
 **NUNCA COMMITAR. NUNCA FAZER PUSH. NUNCA PUBLICAR OU FAZER DEPLOY EM PRODUCAO.**
 
+---
+
+## HANDOFF DA FASE 7 — 01/08/2026
+
+A Fase 7 foi implementada e aprovada na restauração local. A preparação
+estrutural também foi executada e validada na Neon; o banco local usado nos
+testes foi `sistema_lv_fase7` em `127.0.0.1:55437`, com a API local em `3017`.
+Ainda não houve commit, push ou deploy dessa frente.
+
+Suítes HTTP aprovadas: pagamentos (17 cenários), ponto/sessões (15),
+incentivos (7), avisos/calendário (2) e limite da dashboard (6). Typecheck,
+build, auditorias estáticas e `git diff --check` também foram aprovados.
+
+O próximo passo é publicar seletivamente a Fase 7 e realizar o smoke autenticado
+final. Produção e arremates permanecem bloqueados para empresas secundárias com
+`CADEIA_PRODUTIVA_NAO_MIGRADA`; não remover os guards de `/api/producao` e
+`/api/arremates` nem o bloqueio `DashCadeiaNaoMigrada`.
+
+O worktree contém mudanças paralelas do Financeiro/importação de extratos e do
+Menu. Elas pertencem ao usuário, não devem ser revertidas e não devem entrar
+no commit seletivo da Fase 7. Os arquivos de `_planejamento` são ignorados
+por `.gitignore`; o commit final precisará adicioná-los com `git add -f`.
+
 O usuario revisa todas as alteracoes e executa pessoalmente os commits, pushes e deploys. Esta regra vale para todo o projeto, sem excecao, mesmo quando uma tarefa parecer concluida ou quando uma ferramenta sugerir automatizar essas operacoes.
+
+Atualizacao em 2026-08-01: o redesign funcional da tela inicial da Dashboard
+foi aprovado pelo usuario e implementado localmente sem alterar os modais. A
+tela removeu o topo tradicional, ganhou menu lateral/drawer, foco de meta como
+palco principal, resumo de ciclo e timeline animada de atividades preservando
+produto, variacao, OP, processo, data, horario, quantidade e pontos. O menu
+mantem os acessos existentes a carteira, desempenho, perfil, cofre e saida.
+Ainda falta smoke manual visual antes de qualquer commit, push ou deploy.
+
+Atualizacao em 2026-08-01: o refinamento dos blocos principais da tela inicial
+tambem foi aprovado e codado localmente. O header nao exibe mais “ciclo atual”;
+saudacao e periodo foram divididos em duas colunas; o periodo calcula o ultimo
+dia trabalhado considerando jornada e folgas do calendario; a projecao e o
+resumo de dias foram unificados; e o antigo link de contexto virou um painel
+de cenarios com carteira clicavel e explicacao do calculo. `typecheck`, build e
+`git diff --check` passaram. Ainda falta smoke manual visual antes de qualquer
+commit, push ou deploy.
+
+Atualizacao em 2026-08-01: o segundo refinamento visual foi implementado
+localmente. O bloco de periodo agora exibe uma unica data de fechamento,
+acompanhada de progresso do ciclo; os botoes Bronze, Prata e Ouro receberam
+cores proprias e celebracoes temporarias em escala crescente; o icone da
+carteira foi incorporado ao valor ja conquistado da projecao; e o bloco
+`ds-projecao-metricas` foi removido para evitar repeticao. `typecheck`, build e
+`git diff --check` passaram. Ainda falta smoke manual visual antes de qualquer
+commit, push ou deploy.
+
+Atualizacao em 2026-08-01: o terceiro refinamento visual incorporou o fechamento
+do ciclo ao eixo da barra de ritmo, eliminando `ds-dashboard-periodo-rodape`;
+as estrelinhas da celebracao Prata agora usam tratamento visual prateado; o
+`ds-projecao-selo` foi removido; e os cenarios da estrategia passaram a ter a
+mesma celebracao temporaria dos botoes de meta. A validacao local deve ser
+refeita antes de qualquer commit, push ou deploy.
+
+Atualizacao em 2026-08-01: a celebracao dos cenarios da estrategia recebeu
+escala, contraste e sombra maiores para continuar visivel no card escuro, e o
+hamburger mobile da dashboard passou de absoluto para fixo durante a rolagem.
+O ranking permanece na tela inicial por enquanto; foi criada uma proposta
+visual separada para substituir o bloco de atividades recentes por uma linha
+do tempo responsiva, mantendo produto, variacao, OP, processo, data, horario,
+quantidade e pontos. O mockup aguarda aprovacao antes da implementacao.
+
+Atualizacao em 2026-08-01: o bloco de atividades recentes passou a usar a linha
+do tempo do mockup, mantendo busca, Hoje, Ontem, data especifica, atualizacao,
+paginação e abertura da tabela de pontos. O titulo agora se adapta ao dia
+consultado (hoje, ontem, dia da semana, semanas atras ou data completa), e os
+filtros enviam o dia civil no fuso America/Sao_Paulo para tambem funcionar em
+historico antigo. O ranking continua sem mudancas enquanto a nova destinacao
+da area e avaliada. `typecheck`, build e `git diff --check` passaram.
+
+Atualizacao em 2026-08-01: cada etapa da linha do tempo agora destaca os pontos
+gerados em um selo maior, e a navegacao das atividades reutiliza a paginacao
+padrao `gs-paginacao-container` / `gs-paginacao-btn` / `gs-paginacao-info` do
+sistema por meio do wrapper React que chama `public/js/utils/Paginacao.js`, sem
+alterar a implementacao legada. `typecheck` e `git diff --check` passaram.
+
+Atualizacao em 2026-08-01: o ranking foi removido da grade principal e passou
+para o menu lateral. A dashboard agora usa uma sidebar fixa de 250px no
+desktop, ocupando toda a altura e absorvendo o antigo `margin-left` global; em
+mobile e tablet o drawer recebe a mesma galeria horizontal por toque. O novo
+ranking exibe posicao, podio e proxima conquista, preservando anonimato e a
+API semanal existente. A validacao de codigo passou; o smoke visual autenticado
+deve ser feito no ambiente do usuario.
+
+Atualizacao em 2026-08-01: o podio da galeria do ranking passou a exibir a
+posicao numerica explicita (`1º`, `2º`, `3º`) junto dos identificadores
+anonimos `Colega #N`, sem alterar a regra de anonimato da API.
+
+Atualizacao em 2026-08-01: a posicao individual do ranking foi reorganizada
+em um bloco sem corte visual, e o painel `Quem esta puxando o ritmo` passou a
+usar `rankingCompleto` para exibir todos os participantes anonimizados, do
+primeiro ao ultimo, em lista rolavel dentro da galeria.
+
+Atualizacao em 2026-08-01: o menu da dashboard passou a concentrar o contexto
+empresarial com o componente oficial `MenuEmpresaAtiva` e o hook
+`useMenuContexto`. Com um unico vinculo ativo, o botao informa o contrato ativo
+com a empresa; com mais de um, abre o seletor oficial e permite a troca. O
+drawer mobile agora possui a saida no cabecalho, enquanto versao e
+`Preferencias` ficam no rodape (Preferencias permanece desativado e mostra
+`Em breve!`). A validacao local passou em typecheck e build.
+
+Atualizacao em 2026-08-01: o hamburger da dashboard permanece fixo, mas o
+controle compacto da empresa e seu aviso acompanham o fluxo da pagina; o aviso
+fecha ao clicar fora. A projecao agora usa uma mensagem condensada, apresenta
+Ouro como alvo principal e comunica Bronze/Prata como alternativas quando o
+alvo principal nao for alcancado. A validacao local passou em typecheck, build
+e `git diff --check`.
+
+Atualizacao em 2026-08-01: o foco diario deixou de exibir o potencial fixo do
+ciclo e passou a mostrar quanto falta para a meta selecionada, ou que a meta
+foi alcançada. O badge `ds-foco-stage-nivel` agora recebe a cor do nivel e uma
+celebracao temporaria ao trocar de meta. Bronze usa 👍 no foco e na projecao.
+A validacao local passou em typecheck e build.
+
+Atualizacao em 2026-08-01: `Minha tabela de pontos` ganhou o componente
+`DashTabelaPontosRedesign`, mantendo a mesma API e todos os dados de produto,
+etapas e pontos. O modal agora possui cabecalho visual, resumo, cards por
+produto, barras proporcionais por etapa, estados de carregamento/vazio e
+layout mobile-first. As entradas da dashboard passaram a usar o redesign.
+A validacao local passou em typecheck e build.
+
+Atualizacao em 2026-08-01: o resumo intermediario foi removido da tabela de
+pontos. O subtitulo do cabecalho ganhou uma area propria e a decoracao lateral
+foi removida para garantir a leitura completa do texto em telas pequenas.
+A validacao local passou em typecheck, build e `git diff --check`.
+
+Atualizacao em 2026-08-01: o antigo `DashStatusAtualFab` deixou de ser
+renderizado como botao flutuante fixo. O novo `DashStatusAtualModal` foi
+implementado com cartao de status vivo, modal responsivo e estados para
+producao, almoco, pausa, sem tarefa, folga, fora do horario e tarefa concluida.
+O redesign preserva cronometro, pausa, previsao de termino, tarefa, processo,
+quantidade, pontos da tarefa, progresso de pontos do dia, retorno de intervalos
+e proxima tarefa. O endpoint `/api/producao/meu-status` agora tambem entrega
+`dias_trabalho` para distinguir folga de fora do horario. O cartao esta
+temporariamente dentro do `ds-dashboard-intro-copy`; o refinamento final dessa
+composicao fica para a proxima etapa. `typecheck`, build e `git diff --check`
+passaram.
+
+Atualizacao em 2026-08-01: o cartao de status foi refinado para funcionar como
+um sneak peek compacto no pequeno espaco lateral do `ds-dashboard-intro-copy`.
+O modal agora e renderizado via portal diretamente no `document.body`, evitando
+que ele fique preso, recortado ou visualmente limitado pelo bloco do cabecalho.
+
+Atualizacao em 2026-08-01: o sneak peek foi reorganizado em duas colunas
+internas no `ds-dashboard-intro-copy`: textos da saudacao na primeira e um
+cartao quase quadrado na segunda. O card adapta o destaque ao status atual,
+usando tempo percorrido na producao, retorno previsto nos intervalos e
+mensagens de proximo passo, descanso ou encerramento nos demais estados.
+
+Atualizacao em 2026-08-01: a composicao foi corrigida para manter o sneak peek
+dentro do proprio bloco azul da saudacao, ocupando somente a area direita com
+fundo translucido, borda arredondada e leitura de status/tempo. Ele nao e mais
+uma caixa branca externa nem uma nova linha da dashboard.
+
+Atualizacao em 2026-08-01: o usuario aprovou o encerramento funcional do
+redesign da dashboard e definiu que a Fase 8 nao sera executada neste ciclo. O
+objetivo passa a ser fechar 100% da Fase 7, preservando os bloqueios de producao
+e arremates para empresas secundarias. A dashboard passou por typecheck, build,
+node --check, diff check, auditorias estaticas e smoke visual aprovado pelo
+usuario. O encerramento restante e operacional: autorizacao da migration da
+Fase 7 na Neon, validacao controlada, publicacao e smoke autenticado final.
+
+Atualizacao em 2026-08-01: a preparacao da Fase 7 foi executada na Neon e o
+validador retornou `aprovado: true`: 17 colunas empresa_id, zero linhas sem
+empresa, zero divergencias, 17 constraints de empresa, 17 constraints de
+relacoes, 17 uniques de identidade e 5 uniques empresariais. A migration ficou
+registrada em sistema_migrations e nenhum modulo foi liberado para empresas
+secundarias. Avisos de coluna ja existente sao notices de reexecucao; nao rodar
+a migration novamente. O estado ainda possui colunas anulaveis e FKs NOT VALID,
+conforme o desenho aditivo da preparacao.
+
+Atualizacao em 2026-08-01: foi esclarecida a diferenca entre isolamento
+implementado e modulo liberado. Pagamentos e a dashboard legada foram as frentes
+funcionais aprovadas para o uso atual. Metas, pontos extras, configuracoes,
+gincanas, premiacoes, avisos e calendario possuem APIs isoladas e testes locais,
+mas continuam deliberadamente indisponiveis para a segunda empresa porque os
+modulos ainda nao foram liberados em `modulos_sistema` e `empresas_modulos`. A
+mensagem de modulo nao disponivel nessas paginas e, portanto, o bloqueio
+esperado, nao uma falha de isolamento.
+
+Regra expressa de dashboard multiempresa: para liberar a dashboard completa em
+uma empresa secundaria, nao basta habilitar o modulo `dashboard`. A dashboard
+depende de producao e arremates para pontos, atividades, desempenho, status ao
+vivo, ranking e projecoes. Esses dominios precisam primeiro ser migrados,
+validados e liberados com isolamento empresarial; somente depois o modulo
+`dashboard` pode ser habilitado e submetido ao smoke completo. Ate la,
+`/api/producao` e `/api/arremates` devem continuar fechados com
+`CADEIA_PRODUTIVA_NAO_MIGRADA`, mesmo se flags forem alteradas temporariamente,
+e `DashCadeiaNaoMigrada` deve permanecer visivel. Neste ciclo, a dashboard esta
+concluida para a empresa legada, mas nao sera liberada integralmente para a
+empresa secundaria porque a Fase 8 esta fora do escopo.

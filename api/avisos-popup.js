@@ -66,11 +66,12 @@ function buildDestinatariosClause(tipo, userId, startParamIndex) {
 // Usado pela dashboard das funcionárias.
 // ---------------------------------------------------------------------------
 router.get('/pendentes', async (req, res) => {
+    const empresaId = req.empresaId;
     let dbClient;
     try {
         dbClient = await pool.connect();
         const userId = req.usuarioLogado.id;
-        const tipos = req.usuarioLogado.tipos || [];
+        const tipos = req.vinculoEmpresa?.tipos || req.usuarioLogado.tipos || [];
         // Pega o primeiro tipo relevante (costureira, tiktik, etc.)
         const tipoUsuario = Array.isArray(tipos) ? (tipos[0] || '') : tipos;
 
@@ -88,10 +89,14 @@ router.get('/pendentes', async (req, res) => {
                    OR (ap.destinatarios = 'individuais' AND $2 = ANY(ap.ids_individuais))
                )
                AND ap.id NOT IN (
-                   SELECT aviso_id FROM avisos_popup_visualizacoes WHERE usuario_id = $2
+                   SELECT aviso_id
+                   FROM avisos_popup_visualizacoes
+                   WHERE usuario_id = $2
+                     AND empresa_id = $3
                )
+               AND ap.empresa_id = $3
              ORDER BY ap.urgente DESC, ap.criado_em DESC`,
-            [tipoUsuario, userId]
+            [tipoUsuario, userId, empresaId]
         );
 
         res.status(200).json(result.rows);
@@ -109,6 +114,7 @@ router.get('/pendentes', async (req, res) => {
 // Usado pela dashboard ao fechar o popup.
 // ---------------------------------------------------------------------------
 router.post('/:id/marcar-visto', async (req, res) => {
+    const empresaId = req.empresaId;
     let dbClient;
     try {
         dbClient = await pool.connect();
@@ -119,12 +125,18 @@ router.post('/:id/marcar-visto', async (req, res) => {
             return res.status(400).json({ error: 'ID de aviso inválido.' });
         }
 
+        const avisoRes = await dbClient.query(
+            'SELECT id FROM avisos_popup WHERE id = $1 AND empresa_id = $2',
+            [avisoId, empresaId]
+        );
+        if (!avisoRes.rows.length) return res.status(404).json({ error: 'Aviso não encontrado.' });
+
         // INSERT com ON CONFLICT para ser idempotente (double-tap seguro)
         await dbClient.query(
-            `INSERT INTO avisos_popup_visualizacoes (aviso_id, usuario_id)
-             VALUES ($1, $2)
-             ON CONFLICT (aviso_id, usuario_id) DO NOTHING`,
-            [avisoId, userId]
+            `INSERT INTO avisos_popup_visualizacoes (empresa_id, aviso_id, usuario_id)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (empresa_id, aviso_id, usuario_id) DO NOTHING`,
+            [empresaId, avisoId, userId]
         );
 
         res.status(200).json({ success: true });
@@ -142,6 +154,7 @@ router.post('/:id/marcar-visto', async (req, res) => {
 // Apenas admins.
 // ---------------------------------------------------------------------------
 router.get('/', async (req, res) => {
+    const empresaId = req.empresaId;
 
     let dbClient;
     try {
@@ -169,12 +182,16 @@ router.get('/', async (req, res) => {
                 (
                     SELECT COUNT(*)
                     FROM usuarios ue
+                    JOIN usuarios_empresas ue_empresa
+                      ON ue_empresa.usuario_id = ue.id
+                     AND ue_empresa.empresa_id = $1
+                     AND ue_empresa.ativo
                     WHERE (ue.is_test IS FALSE OR ue.is_test IS NULL)
-                      AND ue.data_demissao IS NULL
+                      AND ue_empresa.data_demissao IS NULL
                       AND (
                           ap.destinatarios = 'todos'
-                          OR (ap.destinatarios = 'costureiras' AND 'costureira' = ANY(ue.tipos))
-                          OR (ap.destinatarios = 'tiktiks'     AND 'tiktik'     = ANY(ue.tipos))
+                          OR (ap.destinatarios = 'costureiras' AND 'costureira' = ANY(ue_empresa.tipos))
+                          OR (ap.destinatarios = 'tiktiks'     AND 'tiktik'     = ANY(ue_empresa.tipos))
                           OR (ap.destinatarios = 'individuais' AND ue.id = ANY(ap.ids_individuais))
                       )
                 ) AS total_destinatarios,
@@ -183,14 +200,17 @@ router.get('/', async (req, res) => {
                     SELECT COUNT(*)
                     FROM avisos_popup_visualizacoes apv
                     WHERE apv.aviso_id = ap.id
-                ) AS total_visualizacoes
+                      AND apv.empresa_id = ap.empresa_id
+                  ) AS total_visualizacoes
              FROM avisos_popup ap
              LEFT JOIN usuarios u ON u.id = ap.criado_por
+             WHERE ap.empresa_id = $1
              ORDER BY
                 ap.is_template ASC,
                 ap.ativo DESC,
                 ap.urgente DESC,
-                ap.criado_em DESC`
+            ap.criado_em DESC`,
+            [empresaId]
         );
 
         res.status(200).json(result.rows);
@@ -208,6 +228,7 @@ router.get('/', async (req, res) => {
 // Usado pelo painel admin para acompanhamento gerencial.
 // ---------------------------------------------------------------------------
 router.get('/:id/visualizacoes', async (req, res) => {
+    const empresaId = req.empresaId;
     let dbClient;
     try {
         dbClient = await pool.connect();
@@ -216,8 +237,8 @@ router.get('/:id/visualizacoes', async (req, res) => {
 
         // Busca o aviso para saber os destinatários
         const { rows: [aviso] } = await dbClient.query(
-            'SELECT destinatarios, ids_individuais FROM avisos_popup WHERE id = $1',
-            [avisoId]
+            'SELECT destinatarios, ids_individuais FROM avisos_popup WHERE id = $1 AND empresa_id = $2',
+            [avisoId, empresaId]
         );
         if (!aviso) return res.status(404).json({ error: 'Aviso não encontrado.' });
 
@@ -227,27 +248,35 @@ router.get('/:id/visualizacoes', async (req, res) => {
              FROM avisos_popup_visualizacoes apv
              JOIN usuarios u ON u.id = apv.usuario_id
              WHERE apv.aviso_id = $1
+               AND apv.empresa_id = $2
              ORDER BY apv.visto_em ASC`,
-            [avisoId]
+            [avisoId, empresaId]
         );
 
         // Busca todos os destinatários elegíveis que AINDA NÃO viram
         const naoVisResult = await dbClient.query(
             `SELECT u.id, u.nome
              FROM usuarios u
+             JOIN usuarios_empresas ue
+               ON ue.usuario_id = u.id
+              AND ue.empresa_id = $3
+              AND ue.ativo
              WHERE (u.is_test IS FALSE OR u.is_test IS NULL)
-               AND u.data_demissao IS NULL
+               AND ue.data_demissao IS NULL
                AND (
                    $1 = 'todos'
-                   OR ($1 = 'costureiras' AND 'costureira' = ANY(u.tipos))
-                   OR ($1 = 'tiktiks'     AND 'tiktik'     = ANY(u.tipos))
+                   OR ($1 = 'costureiras' AND 'costureira' = ANY(ue.tipos))
+                   OR ($1 = 'tiktiks'     AND 'tiktik'     = ANY(ue.tipos))
                    OR ($1 = 'individuais' AND u.id = ANY($2::int[]))
                )
                AND u.id NOT IN (
-                   SELECT usuario_id FROM avisos_popup_visualizacoes WHERE aviso_id = $3
+                   SELECT usuario_id
+                   FROM avisos_popup_visualizacoes
+                   WHERE aviso_id = $4
+                     AND empresa_id = $3
                )
              ORDER BY u.nome ASC`,
-            [aviso.destinatarios, aviso.ids_individuais, avisoId]
+            [aviso.destinatarios, aviso.ids_individuais, empresaId, avisoId]
         );
 
         res.status(200).json({
@@ -269,6 +298,7 @@ router.get('/:id/visualizacoes', async (req, res) => {
 // Apenas admins.
 // ---------------------------------------------------------------------------
 router.post('/upload-imagem', upload.single('imagem'), async (req, res) => {
+    const empresaId = req.empresaId;
     if (!req.file) {
         return res.status(400).json({ error: 'Nenhum arquivo recebido.' });
     }
@@ -277,7 +307,7 @@ router.post('/upload-imagem', upload.single('imagem'), async (req, res) => {
         const ext = req.file.mimetype === 'image/webp' ? 'webp'
                   : req.file.mimetype === 'image/png'  ? 'png'
                   : 'jpg';
-        const nomeArquivo = `avisos-popup/aviso-${Date.now()}.${ext}`;
+        const nomeArquivo = `avisos-popup/empresa-${empresaId}/aviso-${Date.now()}.${ext}`;
 
         const blob = await put(nomeArquivo, req.file.buffer, {
             access: 'public',
@@ -296,6 +326,7 @@ router.post('/upload-imagem', upload.single('imagem'), async (req, res) => {
 // Cria um novo aviso. Apenas admins.
 // ---------------------------------------------------------------------------
 router.post('/', async (req, res) => {
+    const empresaId = req.empresaId;
 
     let dbClient;
     try {
@@ -334,11 +365,12 @@ router.post('/', async (req, res) => {
 
         const result = await dbClient.query(
             `INSERT INTO avisos_popup
-                (titulo, tipo, mensagem, url_imagem, cor_fundo, destinatarios,
+                (empresa_id, titulo, tipo, mensagem, url_imagem, cor_fundo, destinatarios,
                  ids_individuais, urgente, ativo, is_template, data_inicio, data_fim, criado_por)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
              RETURNING *`,
             [
+                empresaId,
                 titulo,
                 tipo,
                 mensagem || null,
@@ -370,6 +402,7 @@ router.post('/', async (req, res) => {
 // Se a imagem mudar (nova url_imagem diferente da atual), deleta a antiga do Blob.
 // ---------------------------------------------------------------------------
 router.put('/:id', async (req, res) => {
+    const empresaId = req.empresaId;
 
     let dbClient;
     try {
@@ -379,8 +412,8 @@ router.put('/:id', async (req, res) => {
 
         // Buscar aviso atual para comparar url_imagem
         const { rows: [atual] } = await dbClient.query(
-            'SELECT url_imagem FROM avisos_popup WHERE id = $1',
-            [avisoId]
+            'SELECT url_imagem FROM avisos_popup WHERE id = $1 AND empresa_id = $2',
+            [avisoId, empresaId]
         );
         if (!atual) return res.status(404).json({ error: 'Aviso não encontrado.' });
 
@@ -417,6 +450,7 @@ router.put('/:id', async (req, res) => {
                 data_inicio     = COALESCE($11, data_inicio),
                 data_fim        = $12
              WHERE id = $13
+               AND empresa_id = $14
              RETURNING *`,
             [
                 titulo || null,
@@ -432,6 +466,7 @@ router.put('/:id', async (req, res) => {
                 data_inicio || null,
                 data_fim ?? null,
                 avisoId,
+                empresaId,
             ]
         );
 
@@ -469,6 +504,7 @@ router.put('/:id', async (req, res) => {
 // Apenas admins.
 // ---------------------------------------------------------------------------
 router.put('/:id/toggle-ativo', async (req, res) => {
+    const empresaId = req.empresaId;
 
     let dbClient;
     try {
@@ -480,8 +516,9 @@ router.put('/:id/toggle-ativo', async (req, res) => {
             `UPDATE avisos_popup
              SET ativo = NOT ativo
              WHERE id = $1
+               AND empresa_id = $2
              RETURNING id, ativo`,
-            [avisoId]
+            [avisoId, empresaId]
         );
 
         if (result.rowCount === 0) {
@@ -503,6 +540,7 @@ router.put('/:id/toggle-ativo', async (req, res) => {
 // Apenas admins.
 // ---------------------------------------------------------------------------
 router.delete('/:id', async (req, res) => {
+    const empresaId = req.empresaId;
 
     let dbClient;
     try {
@@ -512,13 +550,16 @@ router.delete('/:id', async (req, res) => {
 
         // Buscar url_imagem antes de deletar
         const { rows: [aviso] } = await dbClient.query(
-            'SELECT url_imagem FROM avisos_popup WHERE id = $1',
-            [avisoId]
+            'SELECT url_imagem FROM avisos_popup WHERE id = $1 AND empresa_id = $2',
+            [avisoId, empresaId]
         );
         if (!aviso) return res.status(404).json({ error: 'Aviso não encontrado.' });
 
         // Deletar do banco (CASCADE cuida das visualizações)
-        await dbClient.query('DELETE FROM avisos_popup WHERE id = $1', [avisoId]);
+        await dbClient.query(
+            'DELETE FROM avisos_popup WHERE id = $1 AND empresa_id = $2',
+            [avisoId, empresaId]
+        );
 
         // Se tiver imagem no Vercel Blob, deletar
         if (aviso.url_imagem && aviso.url_imagem.includes('vercel-storage.com')) {
@@ -544,35 +585,53 @@ router.delete('/:id', async (req, res) => {
 // Cruza com a tabela avisos_popup para indicar quais estão em uso.
 // ---------------------------------------------------------------------------
 router.get('/blob-imagens', async (req, res) => {
+    const empresaId = req.empresaId;
     let dbClient;
     try {
         dbClient = await pool.connect();
 
-        // Busca todas as imagens no Blob com paginação automática
+        // Busca as imagens da empresa no Blob com paginação automática. A
+        // empresa legada também consulta o prefixo antigo para preservar os
+        // avisos criados antes da adoção do namespace empresarial.
         const blobs = [];
-        let cursor;
-        do {
-            const page = await list({ prefix: 'avisos-popup/', cursor, limit: 100 });
-            blobs.push(...page.blobs);
-            cursor = page.cursor;
-        } while (cursor);
+        const prefixEmpresa = `avisos-popup/empresa-${empresaId}/`;
+        const prefixes = [prefixEmpresa];
+        if (req.empresaAtiva?.eh_legada) prefixes.push('avisos-popup/');
+        for (const prefix of prefixes) {
+            let cursor;
+            do {
+                const page = await list({ prefix, cursor, limit: 100 });
+                blobs.push(...page.blobs);
+                cursor = page.cursor;
+            } while (cursor);
+        }
 
         // Busca todas as urls_imagem atualmente referenciadas na tabela
         const { rows: emUso } = await dbClient.query(
             `SELECT url_imagem, titulo, ativo
              FROM avisos_popup
-             WHERE url_imagem IS NOT NULL`
+             WHERE empresa_id = $1
+               AND url_imagem IS NOT NULL`,
+            [empresaId]
         );
         const emUsoMap = new Map(emUso.map(r => [r.url_imagem, r]));
 
-        const resultado = blobs.map(b => ({
+        const blobsUnicos = [...new Map(blobs.map((blob) => [blob.url, blob])).values()];
+        const resultado = blobsUnicos
+            .filter(b =>
+                emUsoMap.has(b.url)
+                || b.pathname.startsWith(prefixEmpresa)
+                || (req.empresaAtiva?.eh_legada
+                    && !/^avisos-popup\/empresa-\d+\//.test(b.pathname))
+            )
+            .map(b => ({
             url:         b.url,
             pathname:    b.pathname,
             size:        b.size,
             uploadedAt:  b.uploadedAt,
             emUso:       emUsoMap.has(b.url) ? emUsoMap.get(b.url).titulo : null,
             avisoAtivo:  emUsoMap.has(b.url) ? emUsoMap.get(b.url).ativo : false,
-        }));
+            }));
 
         // Ordena por data desc (mais recente primeiro)
         resultado.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
@@ -592,6 +651,7 @@ router.get('/blob-imagens', async (req, res) => {
 // Bloqueia se a imagem estiver referenciada por um aviso ativo.
 // ---------------------------------------------------------------------------
 router.delete('/blob-imagens', async (req, res) => {
+    const empresaId = req.empresaId;
     let dbClient;
     try {
         dbClient = await pool.connect();
@@ -603,8 +663,12 @@ router.delete('/blob-imagens', async (req, res) => {
 
         // Verifica se está em uso por algum aviso ativo
         const { rows } = await dbClient.query(
-            `SELECT id, titulo FROM avisos_popup WHERE url_imagem = $1 AND ativo = TRUE`,
-            [url]
+            `SELECT id, titulo
+             FROM avisos_popup
+             WHERE url_imagem = $1
+               AND empresa_id = $2
+               AND ativo = TRUE`,
+            [url, empresaId]
         );
         if (rows.length > 0) {
             return res.status(409).json({
@@ -616,8 +680,11 @@ router.delete('/blob-imagens', async (req, res) => {
 
         // Limpa a referência em avisos inativos que ainda apontam para ela
         await dbClient.query(
-            `UPDATE avisos_popup SET url_imagem = NULL WHERE url_imagem = $1`,
-            [url]
+            `UPDATE avisos_popup
+                SET url_imagem = NULL
+              WHERE url_imagem = $1
+                AND empresa_id = $2`,
+            [url, empresaId]
         );
 
         res.status(200).json({ success: true });

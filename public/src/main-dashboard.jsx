@@ -1,19 +1,49 @@
 import React, { useState, useEffect } from 'react';
-import DashHeader from './components/DashHeader';
-import DashAtividadesLista from './components/DashAtividadesLista';
+import DashMenuLateral from './components/DashMenuLateral';
+import DashAtividadesLista from './components/DashAtividadesRecentesRedesign';
 import DashFocoHoje from './components/DashFocoHoje';
 import DashDesempenhoModal from './components/DashDesempenhoModal';
 import { fetchAPI } from '/js/utils/api-utils';
 import { verificarAutenticacao } from '/js/utils/auth.js'; 
-import DashProjecaoCiclo from './components/DashProjecaoCiclo';
+import DashProjecaoCiclo from './components/DashProjecaoCicloRedesign';
 import DashCofreModal from './components/DashCofreModal';
 import DashPerfilModal from './components/DashPerfilModal';
 import DashPagamentosModal from './components/DashPagamentosModal';
-import DashRankingCard from './components/DashRankingCard';
 import DashFabGincana from './components/DashFabGincana';
-import DashVersionFooter from './components/DashVersionFooter';
 import DashAvisoPopup from './components/DashAvisoPopup';
-import DashStatusAtualFab from './components/DashStatusAtualFab';
+import DashStatusAtualModal from './components/DashStatusAtualModal';
+import DashCadeiaNaoMigrada from './components/DashCadeiaNaoMigrada';
+
+function dataHojeFormatada() {
+    return new Intl.DateTimeFormat('pt-BR', {
+        timeZone: 'America/Sao_Paulo',
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+    }).format(new Date());
+}
+
+function periodoFormatado(periodo) {
+    if (!periodo?.inicio || !periodo?.fim) return null;
+
+    const formatar = (valor) => new Intl.DateTimeFormat('pt-BR', {
+        timeZone: 'UTC',
+        day: '2-digit',
+        month: '2-digit',
+    }).format(new Date(valor + 'T12:00:00Z'));
+
+    return formatar(periodo.inicio) + '–' + formatar(periodo.fim);
+}
+
+function formatarDiaMesLongo(dataISO) {
+    if (!dataISO) return '--';
+
+    return new Intl.DateTimeFormat('pt-BR', {
+        timeZone: 'UTC',
+        day: 'numeric',
+        month: 'long',
+    }).format(new Date(dataISO + 'T12:00:00Z'));
+}
 
 export default function MainDashboard() {
     const [loading, setLoading] = useState(true);
@@ -25,7 +55,7 @@ export default function MainDashboard() {
     const [modalPagamentosAberto, setModalPagamentosAberto] = useState(false);
     const [impersonandoNome, setImpersonandoNome] = useState(null);
     const [avisosPopup, setAvisosPopup] = useState([]);
-    const [streakData, setStreakData] = useState(null);
+    const [dashboardBloqueada, setDashboardBloqueada] = useState(false);
 
     const carregar = async () => {
         // Detecta token de impersonação na URL e o armazena em sessionStorage (isolado por aba)
@@ -49,13 +79,11 @@ export default function MainDashboard() {
                 } catch (_) { /* ignora erro de decode */ }
             }
 
-            // Buscar avisos popup, streak e dados do dashboard em paralelo
-            const [resultado, avisosPendentes, streak] = await Promise.all([
+            // Buscar avisos popup e dados do dashboard em paralelo
+            const [resultado, avisosPendentes] = await Promise.all([
                 fetchAPI('/api/dashboard/desempenho'),
                 fetchAPI('/api/avisos-popup/pendentes').catch(() => []),
-                fetchAPI('/api/dashboard/streak').catch(() => null),
             ]);
-            setStreakData(streak);
             setAvisosPopup(avisosPendentes);
             setDados(resultado);
             
@@ -82,7 +110,11 @@ export default function MainDashboard() {
             // --------------------------------------
 
         } catch (error) {
-            console.error("Erro ao carregar dashboard:", error);
+            if (error?.codigo === 'CADEIA_PRODUTIVA_NAO_MIGRADA') {
+                setDashboardBloqueada(true);
+            } else {
+                console.error("Erro ao carregar dashboard:", error);
+            }
         } finally {
             setLoading(false);
         }
@@ -112,10 +144,30 @@ export default function MainDashboard() {
         );
     }
 
+    if (dashboardBloqueada) return <DashCadeiaNaoMigrada />;
+
     if (!dados) return <div style={{textAlign:'center', padding:'20px'}}>Erro ao carregar dados.</div>;
 
+    const diasUteisCiclo = Math.max(
+        Number(dados.acumulado.diasUteisRealDoEmpregadoNoCiclo || 0),
+        Number(dados.acumulado.diasTrabalhadosNoCiclo || 0)
+    );
+    const diasTrabalhadosCiclo = Number(dados.acumulado.diasTrabalhadosNoCiclo || 0);
+    const progressoCiclo = diasUteisCiclo > 0
+        ? Math.min(100, Math.round((diasTrabalhadosCiclo / diasUteisCiclo) * 100))
+        : 0;
+
     return (
-        <div className="ds-body autenticado">
+        <div className="ds-body autenticado ds-dashboard-app">
+            <DashMenuLateral
+                usuario={dados.usuario}
+                aoAbrirCofre={() => setModalCofreAberto(true)}
+                aoAbrirDesempenho={() => setModalDesempenhoAberto(true)}
+                aoAbrirPagamentos={() => setModalPagamentosAberto(true)}
+                aoAbrirPerfil={() => setModalPerfilAberto(true)}
+                aoSair={() => { localStorage.removeItem('token'); window.location.href = '/index.html'; }}
+            />
+
             {impersonandoNome && (
                 <div className="ds-impersonacao-banner">
                     <i className="fas fa-user-shield"></i>
@@ -123,53 +175,74 @@ export default function MainDashboard() {
                     <span className="ds-impersonacao-info">Sessão de 2h · Feche a aba para encerrar</span>
                 </div>
             )}
-            <DashHeader
-                usuario={dados.usuario}
-                saldoCofre={dados.cofre?.saldo}
-                pontosHoje={dados.hoje?.pontos}
-                streak={streakData}
-                aoAbrirCofre={() => setModalCofreAberto(true)}
-                aoAbrirDesempenho={() => setModalDesempenhoAberto(true)}
-                aoAbrirPerfil={() => setModalPerfilAberto(true)}
-                aoAbrirPagamentos={() => setModalPagamentosAberto(true)}
-                aoSair={() => { localStorage.removeItem('token'); window.location.href = '/index.html'; }}
-            />
+            <main className="ds-dashboard-main">
+                <div className="ds-dashboard-conteudo">
+                    <section className="ds-dashboard-intro">
+                        <div className="ds-dashboard-intro-copy">
+                            <div className="ds-dashboard-intro-copy-text">
+                                <p className="ds-dashboard-overline">
+                                    {dataHojeFormatada()}
+                                </p>
+                                <h1>Olá, {dados.usuario?.nome?.split(' ')[0] || 'colaboradora'}.</h1>
+                                <p className="ds-dashboard-chamada">Vamos buscar sua meta?</p>
+                            </div>
+                            <DashStatusAtualModal />
+                        </div>
+                        <div className="ds-dashboard-periodo">
+                            <div className="ds-dashboard-periodo-cabecalho">
+                                <span>Seu ciclo de produção</span>
+                                <strong>{periodoFormatado(dados.periodo) || '--'}</strong>
+                            </div>
+                            <div className="ds-dashboard-periodo-destaque">
+                                <strong>{dados.acumulado.diasRestantesNoCiclo ?? 0} dias</strong>
+                                <span>de trabalho até o último dia do ciclo</span>
+                            </div>
+                            <div className="ds-dashboard-periodo-progresso">
+                                <div className="ds-dashboard-periodo-progresso-legenda">
+                                    <span>Ritmo do ciclo</span>
+                                    <strong>{progressoCiclo}% concluído</strong>
+                                </div>
+                                <div className="ds-dashboard-periodo-progresso-barra-wrap">
+                                    <div
+                                        className="ds-dashboard-periodo-progresso-barra"
+                                        aria-label={`${diasTrabalhadosCiclo} de ${diasUteisCiclo} dias úteis cumpridos até ${formatarDiaMesLongo(dados.periodo?.fim)}`}
+                                    >
+                                        <span style={{ width: `${progressoCiclo}%` }}></span>
+                                        <i className="ds-dashboard-periodo-progresso-marco" aria-hidden="true"></i>
+                                    </div>
+                                    <div className="ds-dashboard-periodo-progresso-fechamento">
+                                        <strong>{formatarDiaMesLongo(dados.periodo?.fim)}</strong>
+                                        <span>último dia do ciclo</span>
+                                    </div>
+                                </div>
+                                <small>{diasTrabalhadosCiclo} dias cumpridos de {diasUteisCiclo} dias úteis</small>
+                            </div>
+                        </div>
+                    </section>
 
-            <main className="ds-container-principal">
-                <DashProjecaoCiclo
-                    valorAcumulado={dados.acumulado.totalGanho}
-                    diasUteisNoCiclo={dados.acumulado.diasUteisNoCiclo}
-                    diasTrabalhadosNoCiclo={dados.acumulado.diasTrabalhadosNoCiclo}
-                    diasDetalhes={dados.acumulado.diasDetalhes}
-                    metasPossiveis={dados.metasPossiveis}
-                    metaDoUsuario={metaDoUsuario}
-                    aoMudarMeta={setMetaDoUsuario}
-                    inicioCiclo={dados.periodo?.inicio}
-                    fimCiclo={dados.periodo?.fim}
-                    diasRestantesNoCiclo={dados.acumulado.diasRestantesNoCiclo}
-                    diaHojeJaEncerrado={dados.acumulado.diaHojeJaEncerrado}
-                    aoAbrirWallet={() => setModalPagamentosAberto(true)}
-                />
-                
-                <DashFocoHoje
-                    dadosHoje={dados.hoje}
-                    metasPossiveis={dados.metasPossiveis}
-                    metaInicial={metaDoUsuario}
-                    aoMudarMeta={setMetaDoUsuario}
-                    diasUteisNoCiclo={dados.acumulado.diasUteisRealDoEmpregadoNoCiclo}
-                />
+                    <DashFocoHoje
+                        dadosHoje={dados.hoje}
+                        metasPossiveis={dados.metasPossiveis}
+                        metaInicial={metaDoUsuario}
+                        aoMudarMeta={setMetaDoUsuario}
+                        diasUteisNoCiclo={dados.acumulado.diasUteisRealDoEmpregadoNoCiclo}
+                    />
 
-                <DashRankingCard />
+                    <section className="ds-dashboard-grid-secundario">
+                        <DashProjecaoCiclo
+                            valorAcumulado={dados.acumulado.totalGanho}
+                            diasUteisNoCiclo={dados.acumulado.diasUteisNoCiclo}
+                            diasTrabalhadosNoCiclo={dados.acumulado.diasTrabalhadosNoCiclo}
+                            metasPossiveis={dados.metasPossiveis}
+                            fimCiclo={dados.periodo?.fim}
+                            diasRestantesNoCiclo={dados.acumulado.diasRestantesNoCiclo}
+                            aoAbrirWallet={() => setModalPagamentosAberto(true)}
+                        />
+                    </section>
 
-                {/* Lista de Atividades */}
-                <DashAtividadesLista
-                    atividades={dados.atividadesRecentes}
-                    aoAtualizar={carregar}
-                />
-
+                    <DashAtividadesLista />
+                </div>
             </main>
-
-            <DashVersionFooter />
 
             {/* Avisos Popup — aparece sobre tudo ao carregar */}
             {avisosPopup.length > 0 && (
@@ -218,7 +291,6 @@ export default function MainDashboard() {
             )}
 
             <DashFabGincana />
-            <DashStatusAtualFab />
 
         </div>
     );

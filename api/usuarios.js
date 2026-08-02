@@ -105,11 +105,11 @@ export function determinarStatusFinalServidor(usuario, pontoDiario = null) {
     return STATUS.LIVRE;
 }
 
-export async function atualizarStatusUsuarioDB(usuarioId, novoStatus) {
+export async function atualizarStatusUsuarioDB(usuarioId, novoStatus, empresaId) {
     // ATENÇÃO: Esta função agora ignora o dbClient passado e pega sua própria conexão.
     
-    if (!usuarioId || !novoStatus) {
-        console.error('[ATOMIC-HAMMER] ERRO: usuarioId e novoStatus são obrigatórios.');
+    if (!usuarioId || !novoStatus || !empresaId) {
+        console.error('[ATOMIC-HAMMER] ERRO: usuarioId, novoStatus e empresaId são obrigatórios.');
         return;
     }
 
@@ -119,16 +119,34 @@ export async function atualizarStatusUsuarioDB(usuarioId, novoStatus) {
 
         const statusQueLimpamSessao = ['LIVRE', 'FALTOU', 'ALOCADO_EXTERNO'];
         let query;
-        const params = [novoStatus, usuarioId];
+        const params = [novoStatus, usuarioId, empresaId];
         const timestampSQL = `(NOW() AT TIME ZONE 'America/Sao_Paulo')`;
 
         if (statusQueLimpamSessao.includes(novoStatus)) {
-            query = `UPDATE usuarios SET status_atual = $1, status_data_modificacao = ${timestampSQL}, id_sessao_trabalho_atual = NULL WHERE id = $2`;
+            query = `UPDATE usuarios_empresas
+                     SET status_atual = $1,
+                         status_data_modificacao = ${timestampSQL},
+                         id_sessao_trabalho_atual = NULL,
+                         atualizado_em = NOW()
+                     WHERE usuario_id = $2
+                       AND empresa_id = $3
+                       AND ativo`;
         } else {
-            query = `UPDATE usuarios SET status_atual = $1, status_data_modificacao = ${timestampSQL} WHERE id = $2`;
+            query = `UPDATE usuarios_empresas
+                     SET status_atual = $1,
+                         status_data_modificacao = ${timestampSQL},
+                         atualizado_em = NOW()
+                     WHERE usuario_id = $2
+                       AND empresa_id = $3
+                       AND ativo`;
         }
 
-        await localClient.query(query, params);
+        const result = await localClient.query(query, params);
+        if (result.rowCount === 0) {
+            const error = new Error('Usuário não encontrado na empresa ativa.');
+            error.statusCode = 404;
+            throw error;
+        }
 
     } catch (error) {
         console.error(`[ATOMIC-HAMMER] ERRO ao atualizar status para usuário ${usuarioId}:`, error);
@@ -408,16 +426,18 @@ router.get('/', async (req, res) => {
         const query = `
             SELECT 
                 u.id, u.nome, u.nome_completo,
-                u.nome_usuario, u.email, u.tipos, u.nivel, u.permissoes,
-                u.salario_fixo, u.valor_passagem_diaria, u.elegivel_pagamento,
-                u.desconto_inss_percentual, 
-                u.desconto_vt_percentual,
+                u.nome_usuario, u.email, ue.tipos, ue.nivel, ue.permissoes,
+                ue.salario_fixo, ue.valor_passagem_diaria, ue.elegivel_pagamento,
+                ue.desconto_inss_percentual,
+                ue.desconto_vt_percentual,
                 ue.id_contato_financeiro, ue.data_admissao,
-                u.data_demissao,
-                u.horario_entrada_1, u.horario_saida_1,
-                u.horario_entrada_2, u.horario_saida_2,
-                u.horario_entrada_3, u.horario_saida_3,
-                u.dias_trabalho,
+                ue.data_demissao,
+                ue.horario_entrada_1, ue.horario_saida_1,
+                ue.horario_entrada_2, ue.horario_saida_2,
+                ue.horario_entrada_3, ue.horario_saida_3,
+                ue.dias_trabalho,
+                ue.status_atual, ue.status_data_modificacao,
+                ue.id_sessao_trabalho_atual,
                 COALESCE(u.avatar_url, $1) as avatar_url,
                 u.foto_oficial,
                 c.nome AS nome_contato_financeiro,
@@ -845,19 +865,52 @@ router.delete('/', async (req, res) => {
         
         const timestamp = Date.now();
         const query = `
-            UPDATE usuarios 
-            SET 
-                arquivado = TRUE,
-                status_atual = 'LIVRE',
-                id_sessao_trabalho_atual = NULL,
-                data_demissao = COALESCE(data_demissao, CURRENT_DATE),
-                nome_usuario = nome_usuario || '_arq_' || $2,
-                email = email || '_arq_' || $2
-            WHERE id = $1 
-            RETURNING id, nome
+            WITH vinculo_encerrado AS (
+                UPDATE usuarios_empresas
+                SET ativo = FALSE,
+                    status_atual = 'LIVRE',
+                    status_data_modificacao = NOW(),
+                    id_sessao_trabalho_atual = NULL,
+                    data_demissao = COALESCE(data_demissao, CURRENT_DATE)
+                WHERE usuario_id = $1
+                  AND empresa_id = $3
+                  AND ativo = TRUE
+                RETURNING usuario_id
+            )
+            UPDATE usuarios u
+            SET arquivado = CASE
+                    WHEN NOT EXISTS (
+                        SELECT 1
+                        FROM usuarios_empresas ue
+                        WHERE ue.usuario_id = u.id
+                          AND ue.ativo = TRUE
+                    ) THEN TRUE
+                    ELSE u.arquivado
+                END,
+                nome_usuario = CASE
+                    WHEN NOT EXISTS (
+                        SELECT 1
+                        FROM usuarios_empresas ue
+                        WHERE ue.usuario_id = u.id
+                          AND ue.ativo = TRUE
+                    ) THEN u.nome_usuario || '_arq_' || $2
+                    ELSE u.nome_usuario
+                END,
+                email = CASE
+                    WHEN NOT EXISTS (
+                        SELECT 1
+                        FROM usuarios_empresas ue
+                        WHERE ue.usuario_id = u.id
+                          AND ue.ativo = TRUE
+                    ) THEN u.email || '_arq_' || $2
+                    ELSE u.email
+                END
+            FROM vinculo_encerrado ve
+            WHERE u.id = ve.usuario_id
+            RETURNING u.id, u.nome
         `;
 
-        const result = await dbCliente.query(query, [id, timestamp]);
+        const result = await dbCliente.query(query, [id, timestamp, req.empresaId]);
 
         if (result.rowCount === 0) {
             return res.status(404).json({ error: 'Usuário não encontrado para arquivamento.' });
@@ -945,14 +998,20 @@ router.put('/:id/status', async (req, res) => {
         }
         
         // CORREÇÃO AQUI: A função atômica não precisa mais do dbClient.
-        await atualizarStatusUsuarioDB(idUsuarioParaAtualizar, novoStatus);
+        await atualizarStatusUsuarioDB(
+            idUsuarioParaAtualizar,
+            novoStatus,
+            req.empresaId
+        );
         
         res.status(200).json({ message: `Status do usuário ${idUsuarioParaAtualizar} atualizado para ${novoStatus}.` });
 
     } catch (error) {
         console.error(`[API /usuarios/:id/status] Erro:`, error);
         if (!res.headersSent) {
-            res.status(500).json({ error: 'Erro interno ao atualizar status.' });
+            res.status(error.statusCode || 500).json({
+                error: error.statusCode ? error.message : 'Erro interno ao atualizar status.',
+            });
         }
     } finally {
         if (dbClient) dbClient.release();

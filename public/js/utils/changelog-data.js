@@ -20,6 +20,21 @@
 
 export const changelog = [
     {
+        versao: '1.41.0',
+        versao_dashboard: '1.28.0',
+        data: '01/08/2026',
+        admin: [],
+        dashboard: [
+            'A tela inicial foi totalmente redesenhada para celular e tablet, com menu lateral, navegação mais clara e hambúrguer sempre acessível',
+            'Seu foco diário agora destaca a meta escolhida, o ritmo do ciclo e quanto ainda falta para avançar',
+            'Bronze, Prata e Ouro ganharam cores próprias e pequenas celebrações animadas ao serem selecionados',
+            'Atividades recentes agora aparecem em uma linha do tempo com filtros, paginação padrão e pontos de cada etapa em destaque',
+            'O ranking foi levado para o menu lateral e passou a mostrar a posição completa dos participantes de forma organizada',
+            'Minha tabela de pontos ganhou uma nova visualização, mais clara e confortável para consultar produtos, etapas e pontos',
+            'O status de produção agora aparece em um resumo vivo na saudação e abre um painel completo com produção, pausas, folgas e próximas tarefas',
+        ],
+    },
+    {
         versao: '1.40.4',
         data: '29/07/2026',
         admin: [

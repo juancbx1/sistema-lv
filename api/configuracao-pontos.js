@@ -48,10 +48,11 @@ router.use(async (req, res, next) => {
 
 router.get('/padrao', async (req, res) => {
     const { usuarioLogado } = req;
+    const empresaId = req.empresaId;
     let dbCliente;
     try {
         dbCliente = await pool.connect();
-        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbCliente, usuarioLogado.id);
+        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbCliente, usuarioLogado.id, empresaId);
 
         if (!permissoesCompletas.includes('acesso-ponto-por-processo')) {
             return res.status(403).json({ error: 'Permissão negada.' });
@@ -74,9 +75,9 @@ router.get('/padrao', async (req, res) => {
             FROM configuracoes_pontos_processos cpp
             LEFT JOIN produtos p ON cpp.produto_id = p.id  -- JOIN para buscar o nome
         `;
-        const queryParams = [];
-        const conditions = [];
-        let paramIndex = 1;
+        const queryParams = [empresaId];
+        const conditions = ['cpp.empresa_id = $1'];
+        let paramIndex = 2;
 
         if (produto_id) { // Filtro primário por ID
             queryParams.push(parseInt(produto_id));
@@ -120,10 +121,11 @@ router.get('/padrao', async (req, res) => {
 // ROTA ATUALIZADA PARA INCLUIR tipo_atividade e usar "Arremate (Config)"
 router.post('/padrao', async (req, res) => {
     const { usuarioLogado } = req;
+    const empresaId = req.empresaId;
     let dbCliente;
     try {
         dbCliente = await pool.connect();
-        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbCliente, usuarioLogado.id);
+        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbCliente, usuarioLogado.id, empresaId);
         if (!permissoesCompletas.includes('acesso-ponto-por-processo')) {
             return res.status(403).json({ error: 'Permissão negada para gerenciar configurações de pontos.' });
         }
@@ -156,9 +158,9 @@ router.post('/padrao', async (req, res) => {
         // Query UPSERT usando produto_id
         const upsertQuery = `
             INSERT INTO configuracoes_pontos_processos 
-                (produto_id, processo_nome, tipo_atividade, pontos_padrao, ativo, data_criacao, data_atualizacao, atualizado_em)
-            VALUES ($1, $2, $3, $4, $5, NOW(), NOW(), NOW())
-            ON CONFLICT (produto_id, processo_nome, tipo_atividade) -- USA A NOVA CONSTRAINT UNIQUE
+                (empresa_id, produto_id, processo_nome, tipo_atividade, pontos_padrao, ativo, data_criacao, data_atualizacao, atualizado_em)
+            VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW(), NOW())
+            ON CONFLICT (empresa_id, produto_id, processo_nome, tipo_atividade)
             DO UPDATE SET 
                 pontos_padrao = EXCLUDED.pontos_padrao, 
                 ativo = EXCLUDED.ativo, 
@@ -170,7 +172,7 @@ router.post('/padrao', async (req, res) => {
             // A lista (GET) trará o nome.
 
         const result = await dbCliente.query(upsertQuery,
-            [produtoIdNum, finalProcessoNome, tipo_atividade, pontosFloat, ativo]
+            [empresaId, produtoIdNum, finalProcessoNome, tipo_atividade, pontosFloat, ativo]
         );
         
         // Para retornar com o nome do produto (opcional, mas bom para consistência)
@@ -194,10 +196,11 @@ router.post('/padrao', async (req, res) => {
 // PUT /api/configuracao-pontos/padrao/:id
 router.put('/padrao/:id', async (req, res) => {
     const { usuarioLogado } = req;
+    const empresaId = req.empresaId;
     let dbCliente;
     try {
         dbCliente = await pool.connect();
-        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbCliente, usuarioLogado.id);
+        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbCliente, usuarioLogado.id, empresaId);
 
         if (!permissoesCompletas.includes('acesso-ponto-por-processo')) {
             return res.status(403).json({ error: 'Permissão negada para atualizar configuração de pontos.' });
@@ -243,9 +246,10 @@ router.put('/padrao/:id', async (req, res) => {
         const queryText = `
             UPDATE configuracoes_pontos_processos 
             SET ${updateFields.join(', ')} 
-            WHERE id = $${paramIndex} 
-            RETURNING *;`;
-        
+             WHERE id = $${paramIndex}
+               AND empresa_id = $${paramIndex + 1}
+             RETURNING *;`;
+        updateValues.push(empresaId);
         const result = await dbCliente.query(queryText, updateValues);
 
         if (result.rows.length === 0) {
@@ -270,10 +274,11 @@ router.put('/padrao/:id', async (req, res) => {
 // DELETE /api/configuracao-pontos/padrao/:id
 router.delete('/padrao/:id', async (req, res) => {
     const { usuarioLogado } = req;
+    const empresaId = req.empresaId;
     let dbCliente;
     try {
         dbCliente = await pool.connect();
-        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbCliente, usuarioLogado.id);
+        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbCliente, usuarioLogado.id, empresaId);
 
         if (!permissoesCompletas.includes('acesso-ponto-por-processo')) { // Ou 'excluir-ponto-por-processo'
             return res.status(403).json({ error: 'Permissão negada para excluir configuração de pontos.' });
@@ -284,8 +289,8 @@ router.delete('/padrao/:id', async (req, res) => {
             return res.status(400).json({ error: 'ID inválido fornecido na URL.' });
         }
         const result = await dbCliente.query(
-            'DELETE FROM configuracoes_pontos_processos WHERE id = $1 RETURNING *;',
-            [configId]
+            'DELETE FROM configuracoes_pontos_processos WHERE id = $1 AND empresa_id = $2 RETURNING *;',
+            [configId, empresaId]
         );
         if (result.rowCount === 0) {
             return res.status(404).json({ error: 'Configuração de pontos padrão não encontrada.' });

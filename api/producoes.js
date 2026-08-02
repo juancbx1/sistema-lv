@@ -8,6 +8,7 @@ import express from 'express';
 import { getPermissoesCompletasUsuarioDB } from './usuarios.js';
 import { verificarGincanasAposProducao } from './gincanas.js';
 import { registrarAuditoria } from './audit.js';
+import { obterEmpresaIdDoContexto } from './contexto-empresa.js';
 
 
 
@@ -48,7 +49,14 @@ const hhmmParaMin = (hhmm) => {
  * @param {string} horaAtualSP - Hora atual em São Paulo: 'HH:MM'
  * @returns {Promise<string>} Novo status: 'ALMOCO', 'PAUSA' ou 'LIVRE'
  */
-async function detectarIntervaloAoFinalizar(dbClient, funcionarioId, horarios, dataHojeSP, horaAtualSP) {
+async function detectarIntervaloAoFinalizar(
+    dbClient,
+    funcionarioId,
+    empresaId,
+    horarios,
+    dataHojeSP,
+    horaAtualSP
+) {
     const n = (t) => t ? String(t).substring(0, 5) : null;
 
     const s1Agendado = n(horarios.horario_saida_1);
@@ -61,8 +69,10 @@ async function detectarIntervaloAoFinalizar(dbClient, funcionarioId, horarios, d
     const pontoRes = await dbClient.query(
         `SELECT horario_real_s1, horario_real_e2, horario_real_s2, horario_real_e3
          FROM ponto_diario
-         WHERE funcionario_id = $1 AND data = $2`,
-        [funcionarioId, dataHojeSP]
+         WHERE funcionario_id = $1
+           AND data = $2
+           AND empresa_id = $3`,
+        [funcionarioId, dataHojeSP, empresaId]
     );
     const pontoHoje = pontoRes.rows[0] || null;
 
@@ -97,13 +107,14 @@ async function detectarIntervaloAoFinalizar(dbClient, funcionarioId, horarios, d
         const e2Dinamico = `${String(Math.floor(totalMin / 60)).padStart(2, '0')}:${String(totalMin % 60).padStart(2, '0')}`;
 
         await dbClient.query(
-            `INSERT INTO ponto_diario (funcionario_id, data, horario_real_s1, horario_real_e2)
-             VALUES ($1, $2, $3, $4)
-             ON CONFLICT (funcionario_id, data) DO UPDATE SET
+            `INSERT INTO ponto_diario
+                (funcionario_id, data, horario_real_s1, horario_real_e2, empresa_id)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (empresa_id, funcionario_id, data) DO UPDATE SET
                  horario_real_s1 = EXCLUDED.horario_real_s1,
                  horario_real_e2 = EXCLUDED.horario_real_e2,
                  updated_at = NOW()`,
-            [funcionarioId, dataHojeSP, horaAtualSP, e2Dinamico]
+            [funcionarioId, dataHojeSP, horaAtualSP, e2Dinamico, empresaId]
         );
 
         console.log(`[PONTO] Almoço registrado para func ${funcionarioId}: saiu ${horaAtualSP} → volta ${e2Dinamico}`);
@@ -136,13 +147,14 @@ async function detectarIntervaloAoFinalizar(dbClient, funcionarioId, horarios, d
         const e3Dinamico = `${String(Math.floor(totalMin / 60)).padStart(2, '0')}:${String(totalMin % 60).padStart(2, '0')}`;
 
         await dbClient.query(
-            `INSERT INTO ponto_diario (funcionario_id, data, horario_real_s2, horario_real_e3)
-             VALUES ($1, $2, $3, $4)
-             ON CONFLICT (funcionario_id, data) DO UPDATE SET
+            `INSERT INTO ponto_diario
+                (funcionario_id, data, horario_real_s2, horario_real_e3, empresa_id)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (empresa_id, funcionario_id, data) DO UPDATE SET
                  horario_real_s2 = EXCLUDED.horario_real_s2,
                  horario_real_e3 = EXCLUDED.horario_real_e3,
                  updated_at = NOW()`,
-            [funcionarioId, dataHojeSP, horaAtualSP, e3Dinamico]
+            [funcionarioId, dataHojeSP, horaAtualSP, e3Dinamico, empresaId]
         );
 
         console.log(`[PONTO] Pausa registrada para func ${funcionarioId}: saiu ${horaAtualSP} → volta ${e3Dinamico}`);
@@ -161,7 +173,14 @@ async function detectarIntervaloAoFinalizar(dbClient, funcionarioId, horarios, d
  * @param {number} funcionario_id - O ID do funcionário que realizou a tarefa.
  * @returns {Promise<object>} Uma promessa que resolve para um objeto { pontosGerados, valorPontoAplicado }.
  */
-async function calcularPontosProducao(dbClient, produto_id, processo, quantidade, funcionario_id) {
+async function calcularPontosProducao(
+    dbClient,
+    produto_id,
+    processo,
+    quantidade,
+    funcionario_id,
+    empresaId
+) {
     // Validação de segurança
     if (!produto_id || !processo || quantidade < 0 || !funcionario_id) {
         console.warn('[calcularPontosProducao] Dados de entrada inválidos. Retornando 0 pontos.');
@@ -169,8 +188,13 @@ async function calcularPontosProducao(dbClient, produto_id, processo, quantidade
     }
 
     const funcionarioInfoResult = await dbClient.query(
-        'SELECT tipos FROM usuarios WHERE id = $1 LIMIT 1',
-        [funcionario_id]
+        `SELECT tipos
+           FROM usuarios_empresas
+          WHERE usuario_id = $1
+            AND empresa_id = $2
+            AND ativo
+          LIMIT 1`,
+        [funcionario_id, empresaId]
     );
 
     let tipoAtividadeParaConfigPontos;
@@ -187,8 +211,13 @@ async function calcularPontosProducao(dbClient, produto_id, processo, quantidade
     if (quantidade > 0 && tipoAtividadeParaConfigPontos) {
         const configPontosResult = await dbClient.query(
             `SELECT pontos_padrao FROM configuracoes_pontos_processos
-             WHERE produto_id = $1 AND processo_nome = $2 AND tipo_atividade = $3 AND ativo = TRUE LIMIT 1;`,
-            [produto_id, processo, tipoAtividadeParaConfigPontos]
+             WHERE produto_id = $1
+               AND processo_nome = $2
+               AND tipo_atividade = $3
+               AND empresa_id = $4
+               AND ativo = TRUE
+             LIMIT 1;`,
+            [produto_id, processo, tipoAtividadeParaConfigPontos, empresaId]
         );
 
         if (configPontosResult.rows.length > 0 && configPontosResult.rows[0].pontos_padrao !== null) {
@@ -259,6 +288,7 @@ const verificarToken = (reqOriginal) => {
 router.use(async (req, res, next) => {
     try {
         req.usuarioLogado = verificarToken(req);
+        req.empresaId = obterEmpresaIdDoContexto(req);
         next();
     } catch (error) {
         console.error('[router/producoes MID] Erro no middleware:', error.message);
@@ -284,7 +314,18 @@ router.post('/', async (req, res) => {
         }
 
         // Verifica se usuário já está ocupado
-        const userStatusResult = await dbClient.query('SELECT id_sessao_trabalho_atual FROM usuarios WHERE id = $1 FOR UPDATE', [funcionario_id]);
+        const userStatusResult = await dbClient.query(
+            `SELECT id_sessao_trabalho_atual
+               FROM usuarios_empresas
+              WHERE usuario_id = $1
+                AND empresa_id = $2
+                AND ativo
+              FOR UPDATE`,
+            [funcionario_id, req.empresaId]
+        );
+        if (userStatusResult.rows.length === 0) {
+            throw new Error('Empregado não encontrado na empresa ativa.');
+        }
         if (userStatusResult.rows[0]?.id_sessao_trabalho_atual !== null) {
             throw new Error('Empregado já ocupado.');
         }
@@ -299,19 +340,33 @@ router.post('/', async (req, res) => {
         // O "Abatimento Global" na rota /fila-de-tarefas cuidará de descontar o saldo corretamente
         const sessaoQuery = `
             INSERT INTO sessoes_trabalho_producao 
-                (funcionario_id, op_numero, produto_id, variante, processo, quantidade_atribuida, status, data_inicio)
-            VALUES ($1, $2, $3, $4, $5, $6, 'EM_ANDAMENTO', NOW())
+                (funcionario_id, op_numero, produto_id, variante, processo,
+                 quantidade_atribuida, status, data_inicio, empresa_id)
+            VALUES ($1, $2, $3, $4, $5, $6, 'EM_ANDAMENTO', NOW(), $7)
             RETURNING id;
         `;
         const sessaoResult = await dbClient.query(sessaoQuery, [
-            funcionario_id, opNumero, produto_id, variante || null, processo, quantidade
+            funcionario_id,
+            opNumero,
+            produto_id,
+            variante || null,
+            processo,
+            quantidade,
+            req.empresaId,
         ]);
         const novaSessaoId = sessaoResult.rows[0].id;
 
         // Atualiza status do usuário
         await dbClient.query(
-            `UPDATE usuarios SET status_atual = 'PRODUZINDO', id_sessao_trabalho_atual = $1 WHERE id = $2`,
-            [novaSessaoId, funcionario_id]
+            `UPDATE usuarios_empresas
+                SET status_atual = 'PRODUZINDO',
+                    id_sessao_trabalho_atual = $1,
+                    status_data_modificacao =
+                        (NOW() AT TIME ZONE 'America/Sao_Paulo')
+              WHERE usuario_id = $2
+                AND empresa_id = $3
+                AND ativo`,
+            [novaSessaoId, funcionario_id, req.empresaId]
         );
 
         await dbClient.query('COMMIT');
@@ -348,7 +403,18 @@ router.post('/lote', async (req, res) => {
         await dbClient.query('BEGIN');
 
         // 1. Verifica se usuário já está ocupado (opcional, mas bom manter a regra)
-        const userStatusResult = await dbClient.query('SELECT id_sessao_trabalho_atual FROM usuarios WHERE id = $1 FOR UPDATE', [funcionario_id]);
+        const userStatusResult = await dbClient.query(
+            `SELECT id_sessao_trabalho_atual
+               FROM usuarios_empresas
+              WHERE usuario_id = $1
+                AND empresa_id = $2
+                AND ativo
+              FOR UPDATE`,
+            [funcionario_id, req.empresaId]
+        );
+        if (userStatusResult.rows.length === 0) {
+            throw new Error('Empregado não encontrado na empresa ativa.');
+        }
         // Se sua regra de negócio permitir acumular, remova essa verificação. 
         // Assumindo que "Atribuir Lote" substitui ou inicia uma nova rodada.
         
@@ -360,13 +426,16 @@ router.post('/lote', async (req, res) => {
 
             const sessaoQuery = `
                 INSERT INTO sessoes_trabalho_producao
-                    (funcionario_id, op_numero, produto_id, variante, processo, quantidade_atribuida, status, data_inicio, etapas_unificadas)
-                VALUES ($1, $2, $3, $4, $5, $6, 'EM_ANDAMENTO', NOW(), $7)
+                    (funcionario_id, op_numero, produto_id, variante, processo,
+                     quantidade_atribuida, status, data_inicio,
+                     etapas_unificadas, empresa_id)
+                VALUES ($1, $2, $3, $4, $5, $6, 'EM_ANDAMENTO', NOW(), $7, $8)
                 RETURNING id;
             `;
             const sessaoResult = await dbClient.query(sessaoQuery, [
                 funcionario_id, opNumero, produto_id, variante || null, processo, quantidade,
                 etapas_unificadas ? JSON.stringify(etapas_unificadas) : null,
+                req.empresaId,
             ]);
             idsSessoesCriadas.push(sessaoResult.rows[0].id);
         }
@@ -377,8 +446,15 @@ router.post('/lote', async (req, res) => {
         const ultimoId = idsSessoesCriadas[idsSessoesCriadas.length - 1];
         
         await dbClient.query(
-            `UPDATE usuarios SET status_atual = 'PRODUZINDO', id_sessao_trabalho_atual = $1 WHERE id = $2`,
-            [ultimoId, funcionario_id]
+            `UPDATE usuarios_empresas
+                SET status_atual = 'PRODUZINDO',
+                    id_sessao_trabalho_atual = $1,
+                    status_data_modificacao =
+                        (NOW() AT TIME ZONE 'America/Sao_Paulo')
+              WHERE usuario_id = $2
+                AND empresa_id = $3
+                AND ativo`,
+            [ultimoId, funcionario_id, req.empresaId]
         );
 
         await dbClient.query('COMMIT');
@@ -639,7 +715,8 @@ router.put('/', async (req, res) => {
                     producaoOriginal.produto_id,
                     producaoOriginal.processo,
                     quantidadeParaCalculo,
-                    idFuncionarioParaCalculo
+                    idFuncionarioParaCalculo,
+                    req.empresaId
                 );
 
                 updateFields.push(`pontos_gerados = $${paramIndex++}`);
@@ -823,13 +900,29 @@ router.put('/finalizar', async (req, res) => {
         await dbClient.query('BEGIN');
         
         // 1. Busca a sessão e trava
-        const sessaoResult = await dbClient.query('SELECT * FROM sessoes_trabalho_producao WHERE id = $1 FOR UPDATE', [id_sessao]);
+        const sessaoResult = await dbClient.query(
+            `SELECT *
+               FROM sessoes_trabalho_producao
+              WHERE id = $1
+                AND empresa_id = $2
+              FOR UPDATE`,
+            [id_sessao, req.empresaId]
+        );
         if (sessaoResult.rows.length === 0) throw new Error('Sessão não encontrada.');
         const sessao = sessaoResult.rows[0];
         if (sessao.status !== 'EM_ANDAMENTO') throw new Error('Tarefa já finalizada.');
 
         // 2. Busca dados do funcionário (UMA VEZ SÓ)
-        const funcRes = await dbClient.query('SELECT nome, tipos FROM usuarios WHERE id = $1', [sessao.funcionario_id]);
+        const funcRes = await dbClient.query(
+            `SELECT u.nome, ue.tipos
+               FROM usuarios u
+               JOIN usuarios_empresas ue
+                 ON ue.usuario_id = u.id
+                AND ue.empresa_id = $2
+                AND ue.ativo
+              WHERE u.id = $1`,
+            [sessao.funcionario_id, req.empresaId]
+        );
         const dadosFuncionario = funcRes.rows[0] || { nome: 'Desconhecido', tipos: [] };
         const nomeFuncionario = dadosFuncionario.nome;
 
@@ -858,7 +951,9 @@ router.put('/finalizar', async (req, res) => {
             for (const etapaUnif of etapasUnificadas) {
                 const idxUnif = etapasDoProduto.findIndex(e => (e.processo || e) === etapaUnif.processo);
                 const { pontosGerados, valorPontoAplicado } = await calcularPontosProducao(
-                    dbClient, sessao.produto_id, etapaUnif.processo, parseInt(quantidade_finalizada), sessao.funcionario_id
+                    dbClient, sessao.produto_id, etapaUnif.processo,
+                    parseInt(quantidade_finalizada), sessao.funcionario_id,
+                    req.empresaId
                 );
                 await dbClient.query(
                     `INSERT INTO producoes (id, op_numero, etapa_index, processo, produto_id, variacao, maquina, quantidade, funcionario, funcionario_id, data, lancado_por, valor_ponto_aplicado, pontos_gerados)
@@ -926,7 +1021,15 @@ router.put('/finalizar', async (req, res) => {
 
             if (disponivel > 0) {
                 const qtdLancar = Math.min(quantidadeRestante, disponivel);
-                const { pontosGerados, valorPontoAplicado } = await calcularPontosProducao(dbClient, sessao.produto_id, sessao.processo, qtdLancar, sessao.funcionario_id);
+                const { pontosGerados, valorPontoAplicado } =
+                    await calcularPontosProducao(
+                        dbClient,
+                        sessao.produto_id,
+                        sessao.processo,
+                        qtdLancar,
+                        sessao.funcionario_id,
+                        req.empresaId
+                    );
 
                 await dbClient.query(
                     `INSERT INTO producoes (id, op_numero, etapa_index, processo, produto_id, variacao, maquina, quantidade, funcionario, funcionario_id, data, lancado_por, valor_ponto_aplicado, pontos_gerados)
@@ -948,7 +1051,8 @@ router.put('/finalizar', async (req, res) => {
                 const idx = opAlvo.etapas.findIndex(e => (e.processo || e) === sessao.processo);
 
                 const { pontosGerados, valorPontoAplicado } = await calcularPontosProducao(
-                    dbClient, sessao.produto_id, sessao.processo, quantidadeRestante, sessao.funcionario_id
+                    dbClient, sessao.produto_id, sessao.processo,
+                    quantidadeRestante, sessao.funcionario_id, req.empresaId
                 );
 
                 await dbClient.query(
@@ -962,7 +1066,15 @@ router.put('/finalizar', async (req, res) => {
                  // Caso extremo: Não achou NENHUMA OP (nem a original existe mais?).
                  // Lança sem OP ou dá erro? Vamos lançar com OP '0000' para não perder a produção.
                  console.warn("Nenhuma OP encontrada para lançar a sobra. Usando OP de contingência.");
-                 const { pontosGerados, valorPontoAplicado } = await calcularPontosProducao(dbClient, sessao.produto_id, sessao.processo, quantidadeRestante, sessao.funcionario_id);
+                 const { pontosGerados, valorPontoAplicado } =
+                    await calcularPontosProducao(
+                        dbClient,
+                        sessao.produto_id,
+                        sessao.processo,
+                        quantidadeRestante,
+                        sessao.funcionario_id,
+                        req.empresaId
+                    );
                  
                  await dbClient.query(
                     `INSERT INTO producoes (id, op_numero, etapa_index, processo, produto_id, variacao, maquina, quantidade, funcionario, funcionario_id, data, lancado_por, valor_ponto_aplicado, pontos_gerados)
@@ -983,8 +1095,11 @@ router.put('/finalizar', async (req, res) => {
         const horariosRes = await dbClient.query(
             `SELECT horario_saida_1, horario_entrada_2, horario_saida_2,
                     horario_entrada_3, horario_saida_3, status_atual
-             FROM usuarios WHERE id = $1`,
-            [sessao.funcionario_id]
+             FROM usuarios_empresas
+             WHERE usuario_id = $1
+               AND empresa_id = $2
+               AND ativo`,
+            [sessao.funcionario_id, req.empresaId]
         );
         const horariosFuncionario = horariosRes.rows[0] || {};
 
@@ -998,6 +1113,7 @@ router.put('/finalizar', async (req, res) => {
             novoStatusFinal = await detectarIntervaloAoFinalizar(
                 dbClient,
                 sessao.funcionario_id,
+                req.empresaId,
                 horariosFuncionario,
                 dataHojeSP,
                 horaAtualSP
@@ -1008,8 +1124,14 @@ router.put('/finalizar', async (req, res) => {
             `UPDATE sessoes_trabalho_producao
              SET status = 'FINALIZADA', data_fim = NOW(), quantidade_finalizada = $1,
                  pausa_manual_ms = $3
-             WHERE id = $2`,
-            [quantidade_finalizada, id_sessao, Math.max(0, parseInt(pausa_manual_ms) || 0)]
+             WHERE id = $2
+               AND empresa_id = $4`,
+            [
+                quantidade_finalizada,
+                id_sessao,
+                Math.max(0, parseInt(pausa_manual_ms) || 0),
+                req.empresaId,
+            ]
         );
 
         // Reinicia o cronômetro da próxima tarefa na fila (se houver)
@@ -1018,19 +1140,25 @@ router.put('/finalizar', async (req, res) => {
             SET data_inicio = NOW()
             WHERE id = (
                 SELECT id FROM sessoes_trabalho_producao
-                WHERE funcionario_id = $1 AND status = 'EM_ANDAMENTO' AND id != $2
+                WHERE funcionario_id = $1
+                  AND empresa_id = $3
+                  AND status = 'EM_ANDAMENTO'
+                  AND id != $2
                 ORDER BY id ASC LIMIT 1
             )
-        `, [sessao.funcionario_id, id_sessao]);
+              AND empresa_id = $3
+        `, [sessao.funcionario_id, id_sessao, req.empresaId]);
 
         // Status pode ser LIVRE, ALMOCO ou PAUSA — não hardcodar 'LIVRE'
         await dbClient.query(
-            `UPDATE usuarios
+            `UPDATE usuarios_empresas
              SET status_atual = $1,
                  status_data_modificacao = (NOW() AT TIME ZONE 'America/Sao_Paulo'),
                  id_sessao_trabalho_atual = NULL
-             WHERE id = $2`,
-            [novoStatusFinal, sessao.funcionario_id]
+             WHERE usuario_id = $2
+               AND empresa_id = $3
+               AND ativo`,
+            [novoStatusFinal, sessao.funcionario_id, req.empresaId]
         );
 
         await dbClient.query('COMMIT');
@@ -1040,7 +1168,12 @@ router.put('/finalizar', async (req, res) => {
         // Hook de gincanas — apenas costureiras (tiktiks: aguardar fase posterior, seção 4.9 plano v4.0)
         if (dadosFuncionario.tipos.includes('costureira')) {
             try {
-                await verificarGincanasAposProducao(dbClient, sessao.funcionario_id, new Date());
+                await verificarGincanasAposProducao(
+                    dbClient,
+                    sessao.funcionario_id,
+                    new Date(),
+                    req.empresaId
+                );
             } catch (err) {
                 console.error('[GINCANA HOOK]', err.message);
             }
@@ -1113,11 +1246,23 @@ router.delete('/externo/:id', async (req, res) => {
             DELETE FROM sessoes_trabalho_producao
             WHERE id = (
                 SELECT id FROM sessoes_trabalho_producao
-                WHERE funcionario_id = $1 AND op_numero = $2 AND produto_id = $3 AND processo = $4 AND status = 'FINALIZADA'
+                WHERE funcionario_id = $1
+                  AND op_numero = $2
+                  AND produto_id = $3
+                  AND processo = $4
+                  AND empresa_id = $5
+                  AND status = 'FINALIZADA'
                 ORDER BY data_inicio DESC
                 LIMIT 1
             )
-        `, [p.funcionario_id, p.op_numero, p.produto_id, p.processo]);
+              AND empresa_id = $5
+        `, [
+            p.funcionario_id,
+            p.op_numero,
+            p.produto_id,
+            p.processo,
+            req.empresaId,
+        ]);
 
         // Remove o registro de producao
         await dbClient.query('DELETE FROM producoes WHERE id = $1', [p.id]);
@@ -1149,11 +1294,16 @@ router.post('/externo', async (req, res) => {
         // Busca o perfil placeholder de prestador externo.
         // Prioriza usuário que ainda tenha o tipo legado (ex: 'costureira' ou 'tiktik') no array de tipos.
         const freelanceRes = await dbClient.query(
-            `SELECT id, nome FROM usuarios
-             WHERE 'prestador_externo' = ANY(tipos)
-             ORDER BY (CASE WHEN $1 = ANY(tipos) THEN 0 ELSE 1 END), id
+            `SELECT u.id, u.nome
+               FROM usuarios u
+               JOIN usuarios_empresas ue
+                 ON ue.usuario_id = u.id
+                AND ue.empresa_id = $2
+                AND ue.ativo
+              WHERE 'prestador_externo' = ANY(ue.tipos)
+              ORDER BY (CASE WHEN $1 = ANY(ue.tipos) THEN 0 ELSE 1 END), u.id
              LIMIT 1`,
-            [freelance_tipo]
+            [freelance_tipo, req.empresaId]
         );
         if (freelanceRes.rows.length === 0) {
             throw new Error(`Nenhum usuário do tipo 'prestador_externo' cadastrado. Verifique o cadastro de usuários.`);
@@ -1171,9 +1321,19 @@ router.post('/externo', async (req, res) => {
 
             await dbClient.query(`
                 INSERT INTO sessoes_trabalho_producao
-                    (funcionario_id, op_numero, produto_id, variante, processo, quantidade_atribuida, quantidade_finalizada, status, data_inicio, data_fim)
-                VALUES ($1, $2, $3, $4, $5, $6, $6, 'FINALIZADA', NOW(), NOW())
-            `, [freelance.id, op_numero, produto_id, variante || null, processo, parseInt(quantidade)]);
+                    (funcionario_id, op_numero, produto_id, variante, processo,
+                     quantidade_atribuida, quantidade_finalizada, status,
+                     data_inicio, data_fim, empresa_id)
+                VALUES ($1, $2, $3, $4, $5, $6, $6, 'FINALIZADA', NOW(), NOW(), $7)
+            `, [
+                freelance.id,
+                op_numero,
+                produto_id,
+                variante || null,
+                processo,
+                parseInt(quantidade),
+                req.empresaId,
+            ]);
 
             const etapasParaRegistrar = Array.isArray(etapas_unificadas) && etapas_unificadas.length >= 2
                 ? etapas_unificadas
@@ -1239,7 +1399,8 @@ router.post('/externo', async (req, res) => {
                     if (disponivel > 0) {
                         const qtdLancar = Math.min(quantidadeRestante, disponivel);
                         const { pontosGerados, valorPontoAplicado } = await calcularPontosProducao(
-                            dbClient, produto_id, processoUnif, qtdLancar, freelance.id
+                            dbClient, produto_id, processoUnif, qtdLancar,
+                            freelance.id, req.empresaId
                         );
                         await dbClient.query(
                             `INSERT INTO producoes (id, op_numero, etapa_index, processo, produto_id, variacao, maquina, quantidade, funcionario, funcionario_id, data, lancado_por, valor_ponto_aplicado, pontos_gerados)
@@ -1262,7 +1423,8 @@ router.post('/externo', async (req, res) => {
                     if (opAlvo) {
                         const idx = opAlvo.etapas.findIndex(e => (e.processo || e) === processoUnif);
                         const { pontosGerados, valorPontoAplicado } = await calcularPontosProducao(
-                            dbClient, produto_id, processoUnif, quantidadeRestante, freelance.id
+                            dbClient, produto_id, processoUnif, quantidadeRestante,
+                            freelance.id, req.empresaId
                         );
                         await dbClient.query(
                             `INSERT INTO producoes (id, op_numero, etapa_index, processo, produto_id, variacao, maquina, quantidade, funcionario, funcionario_id, data, lancado_por, valor_ponto_aplicado, pontos_gerados)

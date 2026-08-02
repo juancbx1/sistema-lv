@@ -42,7 +42,11 @@ export async function fetchAPI(endpoint, options = {}) {
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({ error: response.statusText }));
-            throw new Error(errorData.error || `Erro HTTP ${response.status}`);
+            const error = new Error(errorData.error || `Erro HTTP ${response.status}`);
+            error.status = response.status;
+            error.codigo = errorData.codigo;
+            error.detalhes = errorData;
+            throw error;
         }
 
         // Se for 204 No Content

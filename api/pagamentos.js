@@ -20,6 +20,76 @@ const NOMES_CATEGORIAS_PAGAMENTO = {
     TAXA_VT: 'Taxas de VT',
 };
 
+function erroPagamento(statusCode, message) {
+    return Object.assign(new Error(message), { statusCode });
+}
+
+function numeroPagamento(valor) {
+    const numero = Number(valor);
+    return Number.isFinite(numero) ? numero : 0;
+}
+
+async function carregarVinculoEmpregado(
+    dbClient,
+    usuarioId,
+    empresaId,
+    { exigirAtivo = true, exigirElegivel = false } = {}
+) {
+    const result = await dbClient.query(
+        `SELECT
+            u.id,
+            u.nome,
+            u.nome_completo,
+            ue.tipos,
+            ue.nivel,
+            ue.salario_fixo,
+            ue.valor_passagem_diaria,
+            ue.elegivel_pagamento,
+            ue.id_contato_financeiro,
+            ue.desconto_inss_percentual,
+            ue.desconto_vt_percentual,
+            ue.data_admissao,
+            ue.data_demissao,
+            ue.dias_trabalho,
+            ue.ativo,
+            e.eh_legada
+         FROM usuarios_empresas ue
+         JOIN usuarios u ON u.id = ue.usuario_id
+         JOIN empresas e ON e.id = ue.empresa_id
+         WHERE ue.usuario_id = $1
+           AND ue.empresa_id = $2
+           AND ($3::boolean = FALSE OR ue.ativo)`,
+        [usuarioId, empresaId, exigirAtivo]
+    );
+    if (result.rows.length === 0) {
+        throw erroPagamento(404, 'Empregado não encontrado na empresa ativa.');
+    }
+    const vinculo = {
+        ...result.rows[0],
+        salario_fixo: numeroPagamento(result.rows[0].salario_fixo),
+        valor_passagem_diaria: numeroPagamento(result.rows[0].valor_passagem_diaria),
+        desconto_inss_percentual: numeroPagamento(
+            result.rows[0].desconto_inss_percentual
+        ),
+        desconto_vt_percentual: numeroPagamento(
+            result.rows[0].desconto_vt_percentual
+        ),
+    };
+    if (exigirElegivel && !vinculo.elegivel_pagamento) {
+        throw erroPagamento(409, 'Este vínculo não está elegível para pagamentos.');
+    }
+    return vinculo;
+}
+
+function exigirProducaoDisponivel(vinculo) {
+    if (!vinculo.eh_legada) {
+        throw erroPagamento(
+            409,
+            'Comissões baseadas em produção serão liberadas após a migração da cadeia produtiva desta empresa.'
+        );
+    }
+}
+
 async function carregarCategoriasPagamento(dbClient, empresaId, chavesNecessarias) {
     const nomes = chavesNecessarias.map((chave) => {
         const nome = NOMES_CATEGORIAS_PAGAMENTO[chave];
@@ -80,6 +150,7 @@ router.use(async (req, res, next) => {
             req.usuarioLogado.id,
             empresaId
         );
+        req.empresaId = empresaId;
         
         next(); // Passa para a rota específica (ex: /efetuar, /registros-dias)
 
@@ -121,12 +192,16 @@ router.get('/calcular', async (req, res) => {
     try {
         dbClient = await pool.connect();
 
-        const userRes = await dbClient.query('SELECT * FROM usuarios WHERE id = $1', [usuario_id]);
-        if (userRes.rows.length === 0) return res.status(404).json({ error: 'Empregado não encontrado.' });
-        const usuario = userRes.rows[0];
+        const usuario = await carregarVinculoEmpregado(
+            dbClient,
+            usuario_id,
+            req.empresaId,
+            { exigirAtivo: true, exigirElegivel: true }
+        );
 
         switch (tipo_pagamento) {
             case 'COMISSAO':
+                exigirProducaoDisponivel(usuario);
                 if (!competencia) return res.status(400).json({ error: 'Competência (Mês/Ano) é obrigatória.' });
                 periodoDetalhe = competencia; // Ex: "Janeiro/2026"
 
@@ -168,15 +243,30 @@ router.get('/calcular', async (req, res) => {
                 
                 // Busca Metas
                 // Usamos a data de fim da competência para pegar a regra vigente
-                const hojeSP = new Date().toLocaleDateString('en-CA');
-                const versaoQuery = `SELECT id FROM metas_versoes WHERE data_inicio_vigencia <= $1 ORDER BY data_inicio_vigencia DESC LIMIT 1`;
-                const versaoRes = await dbClient.query(versaoQuery, [fimCompetencia.toISOString().substring(0,10)]);
+                const versaoQuery = `
+                    SELECT id
+                    FROM metas_versoes
+                    WHERE empresa_id = $1
+                      AND data_inicio_vigencia <= $2
+                    ORDER BY data_inicio_vigencia DESC
+                    LIMIT 1
+                `;
+                const versaoRes = await dbClient.query(
+                    versaoQuery,
+                    [req.empresaId, fimCompetencia.toISOString().substring(0, 10)]
+                );
                 
                 let metasDoNivel = [];
                 if (versaoRes.rows.length > 0) {
                     const regrasRes = await dbClient.query(
-                        `SELECT pontos_meta, valor_comissao, descricao_meta FROM metas_regras WHERE id_versao = $1 AND tipo_usuario = $2 AND nivel = $3 ORDER BY pontos_meta ASC`,
-                        [versaoRes.rows[0].id, tipoUsuario, usuario.nivel]
+                        `SELECT pontos_meta, valor_comissao, descricao_meta
+                           FROM metas_regras
+                          WHERE id_versao = $1
+                            AND empresa_id = $2
+                            AND tipo_usuario = $3
+                            AND nivel = $4
+                          ORDER BY pontos_meta ASC`,
+                        [versaoRes.rows[0].id, req.empresaId, tipoUsuario, usuario.nivel]
                     );
                     metasDoNivel = regrasRes.rows;
                 }
@@ -188,19 +278,38 @@ router.get('/calcular', async (req, res) => {
                 if (tipoUsuario === 'tiktik') {
                     queryAtiv += ` UNION ALL SELECT data_lancamento as data, pontos_gerados FROM arremates WHERE usuario_tiktik_id = $1 AND data_lancamento BETWEEN $2 AND $3 AND tipo_lancamento = 'PRODUCAO'`;
                 }
-                queryAtiv += ` UNION ALL SELECT data_referencia::timestamptz as data, pontos as pontos_gerados FROM pontos_extras WHERE funcionario_id = $1 AND data_referencia BETWEEN $2::date AND $3::date AND cancelado = FALSE`;
-                const ativRes = await dbClient.query(queryAtiv, [usuario.id, inicioCompetencia, fimCompetencia]);
+                queryAtiv += ` UNION ALL
+                    SELECT data_referencia::timestamptz as data, pontos as pontos_gerados
+                    FROM pontos_extras
+                    WHERE funcionario_id = $1
+                      AND empresa_id = $4
+                      AND data_referencia BETWEEN $2::date AND $3::date
+                      AND cancelado = FALSE`;
+                const ativRes = await dbClient.query(
+                    queryAtiv,
+                    [usuario.id, inicioCompetencia, fimCompetencia, req.empresaId]
+                );
 
                 // Busca Resgates
                 const resgatesRes = await dbClient.query(
-                    `SELECT data_evento, quantidade FROM banco_pontos_log WHERE usuario_id = $1 AND tipo = 'RESGATE' AND data_evento BETWEEN $2 AND $3`,
-                    [usuario.id, inicioCompetencia, fimCompetencia]
+                    `SELECT data_evento, quantidade
+                       FROM banco_pontos_log
+                      WHERE usuario_id = $1
+                        AND empresa_id = $2
+                        AND tipo = 'RESGATE'
+                        AND data_evento BETWEEN $3 AND $4`,
+                    [usuario.id, req.empresaId, inicioCompetencia, fimCompetencia]
                 );
 
                 // Busca Ganhos (Pontos Extras creditados no Cofre)
                 const ganhosRes = await dbClient.query(
-                    `SELECT data_evento, quantidade FROM banco_pontos_log WHERE usuario_id = $1 AND tipo = 'GANHO' AND data_evento BETWEEN $2 AND $3`,
-                    [usuario.id, inicioCompetencia, fimCompetencia]
+                    `SELECT data_evento, quantidade
+                       FROM banco_pontos_log
+                      WHERE usuario_id = $1
+                        AND empresa_id = $2
+                        AND tipo = 'GANHO'
+                        AND data_evento BETWEEN $3 AND $4`,
+                    [usuario.id, req.empresaId, inicioCompetencia, fimCompetencia]
                 );
                 
                 // Mapeia por dia (YYYY-MM-DD)
@@ -216,8 +325,13 @@ router.get('/calcular', async (req, res) => {
 
                 // Para resgates, a query de log pode ter vindo com nome 'quantidade'
                 const resgatesRows = await dbClient.query(
-                    `SELECT data_evento, quantidade FROM banco_pontos_log WHERE usuario_id = $1 AND tipo = 'RESGATE' AND data_evento BETWEEN $2 AND $3`,
-                    [usuario.id, inicioCompetencia, fimCompetencia]
+                    `SELECT data_evento, quantidade
+                       FROM banco_pontos_log
+                      WHERE usuario_id = $1
+                        AND empresa_id = $2
+                        AND tipo = 'RESGATE'
+                        AND data_evento BETWEEN $3 AND $4`,
+                    [usuario.id, req.empresaId, inicioCompetencia, fimCompetencia]
                 );
                 
                 resgatesRows.rows.forEach(r => {
@@ -290,7 +404,7 @@ router.get('/calcular', async (req, res) => {
             case 'SALARIO':
                 if (!mes_referencia) return res.status(400).json({ error: 'Mês obrigatório.' });
                 salarioProporcional = usuario.salario_fixo;
-                descontoVT = usuario.salario_fixo * (usuario.desconto_vt_percentual || 0 / 100);
+                descontoVT = usuario.salario_fixo * ((usuario.desconto_vt_percentual || 0) / 100);
                 periodoDetalhe = mes_referencia;
                 break;
 
@@ -364,7 +478,10 @@ router.get('/calcular', async (req, res) => {
 
     } catch (error) {
         console.error('[API /pagamentos/calcular] Erro:', error);
-        res.status(500).json({ error: 'Erro interno ao calcular pagamento.', details: error.message });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro interno ao calcular pagamento.',
+            details: error.message
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -436,21 +553,35 @@ router.post('/efetuar', async (req, res) => {
             throw new Error('Conta de débito não encontrada na empresa ativa.');
         }
 
-        const userRes = await dbClient.query(
-            `SELECT ue.id_contato_financeiro
-               FROM usuarios_empresas ue
-               JOIN fc_contatos c
-                 ON c.id = ue.id_contato_financeiro
-                AND c.empresa_id = ue.empresa_id
-              WHERE ue.usuario_id = $1
-                AND ue.empresa_id = $2
-                AND ue.ativo`,
-            [id_funcionario, req.empresaId]
+        const vinculo = await carregarVinculoEmpregado(
+            dbClient,
+            id_funcionario,
+            req.empresaId,
+            { exigirAtivo: true, exigirElegivel: true }
         );
-        if (userRes.rows.length === 0 || !userRes.rows[0].id_contato_financeiro) {
-            throw new Error(`O empregado ${nome_funcionario} não possui um contato financeiro vinculado.`);
+        if (tipoPagamento === 'COMISSAO') {
+            exigirProducaoDisponivel(vinculo);
         }
-        const id_contato_financeiro = userRes.rows[0].id_contato_financeiro;
+        if (!vinculo.id_contato_financeiro) {
+            throw erroPagamento(
+                409,
+                `O empregado ${vinculo.nome} não possui um contato financeiro vinculado.`
+            );
+        }
+        const contatoRes = await dbClient.query(
+            `SELECT id
+               FROM fc_contatos
+              WHERE id = $1
+                AND empresa_id = $2`,
+            [vinculo.id_contato_financeiro, req.empresaId]
+        );
+        if (contatoRes.rows.length === 0) {
+            throw erroPagamento(
+                409,
+                `O contato financeiro de ${vinculo.nome} não pertence à empresa ativa.`
+            );
+        }
+        const id_contato_financeiro = vinculo.id_contato_financeiro;
         
         await dbClient.query('BEGIN');
 
@@ -481,8 +612,17 @@ router.post('/efetuar', async (req, res) => {
         if (tipoPagamento === 'COMISSAO') {
             const { proventos } = calculo;
             
-            const checkQuery = "SELECT id FROM historico_pagamentos_funcionarios WHERE usuario_id = $1 AND ciclo_nome = $2";
-            const checkResult = await dbClient.query(checkQuery, [id_funcionario, nomeCicloOuMotivo]);
+            const checkQuery = `
+                SELECT id
+                FROM historico_pagamentos_funcionarios
+                WHERE usuario_id = $1
+                  AND ciclo_nome = $2
+                  AND empresa_id = $3
+            `;
+            const checkResult = await dbClient.query(
+                checkQuery,
+                [id_funcionario, nomeCicloOuMotivo, req.empresaId]
+            );
             if (checkResult.rowCount > 0) {
                 await dbClient.query('ROLLBACK');
                 return res.status(409).json({ error: `Pagamento de comissão para o ciclo "${nomeCicloOuMotivo}" já foi registrado.` });
@@ -525,8 +665,16 @@ router.post('/efetuar', async (req, res) => {
 
             for (const data of datas_pagas) {
                 await dbClient.query(
-                    `INSERT INTO registro_dias_trabalhados (usuario_id, data, status, valor_referencia, observacao) VALUES ($1, $2, 'PAGO', $3, $4)`,
-                    [id_funcionario, data, valor_passagem_diaria, `Pagamento efetuado em lote por ${req.usuarioLogado.nome}`]
+                    `INSERT INTO registro_dias_trabalhados
+                        (usuario_id, data, status, valor_referencia, observacao, empresa_id)
+                     VALUES ($1, $2, 'PAGO', $3, $4, $5)`,
+                    [
+                        id_funcionario,
+                        data,
+                        valor_passagem_diaria,
+                        `Pagamento efetuado em lote por ${req.usuarioLogado.nome}`,
+                        req.empresaId
+                    ]
                 );
             }
         }
@@ -541,8 +689,20 @@ router.post('/efetuar', async (req, res) => {
             const detalhesParaSalvar = { ...calculo, datas_pagas: datas_pagas, valor_passagem_diaria: valor_passagem_diaria };
             
             await dbClient.query(
-                `INSERT INTO historico_pagamentos_funcionarios (usuario_id, ciclo_nome, descricao, valor_liquido_pago, id_usuario_pagador, detalhes_pagamento, id_conta_debito) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-                [id_funcionario, cicloParaSalvar, descricaoParaSalvar, totais.totalLiquidoAPagar, id_usuario_pagador, JSON.stringify(detalhesParaSalvar), id_conta_debito]
+                `INSERT INTO historico_pagamentos_funcionarios
+                    (usuario_id, ciclo_nome, descricao, valor_liquido_pago,
+                     id_usuario_pagador, detalhes_pagamento, id_conta_debito, empresa_id)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+                [
+                    id_funcionario,
+                    cicloParaSalvar,
+                    descricaoParaSalvar,
+                    totais.totalLiquidoAPagar,
+                    id_usuario_pagador,
+                    JSON.stringify(detalhesParaSalvar),
+                    id_conta_debito,
+                    req.empresaId
+                ]
             );
         }
 
@@ -555,7 +715,10 @@ router.post('/efetuar', async (req, res) => {
             console.error('[API /efetuar] ERRO NA TRANSAÇÃO, ROLLBACK EXECUTADO.');
         }
         console.error('[API /efetuar] DETALHES DO ERRO:', error);
-        res.status(500).json({ error: 'Erro ao efetuar pagamento.', details: error.message });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao efetuar pagamento.',
+            details: error.message
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -581,10 +744,11 @@ router.get('/historico', async (req, res) => {
                 historico_pagamentos_funcionarios h
             JOIN usuarios u ON h.usuario_id = u.id
             JOIN usuarios p ON h.id_usuario_pagador = p.id
+            WHERE h.empresa_id = $1
             ORDER BY h.data_pagamento DESC;
         `;
 
-        const result = await dbClient.query(query);
+        const result = await dbClient.query(query, [req.empresaId]);
         res.status(200).json(result.rows);
     } catch (error) {
         console.error('[API /historico] Erro:', error);
@@ -617,18 +781,43 @@ router.get('/registros-dias', async (req, res) => {
         if (!permissoesUsuario.includes('acessar-central-pagamentos')) {
             return res.status(403).json({ error: 'Permissão negada para acessar esta funcionalidade.' });
         }
+        await carregarVinculoEmpregado(
+            dbClient,
+            usuario_id,
+            req.empresaId,
+            { exigirAtivo: false }
+        );
         
         // O resto da lógica da rota continua a mesma
         const query = `
             SELECT data, status, valor_referencia, observacao 
             FROM registro_dias_trabalhados
-            WHERE usuario_id = $1 AND data BETWEEN $2 AND $3
+            WHERE usuario_id = $1
+              AND empresa_id = $2
+              AND data BETWEEN $3 AND $4
         `;
-        const result = await dbClient.query(query, [usuario_id, start, end]);
+        const result = await dbClient.query(
+            query,
+            [usuario_id, req.empresaId, start, end]
+        );
         
+        // DATE do Postgres não deve passar por toISOString() (UTC desloca o dia no BR).
+        const formatarDataPg = (valor) => {
+            if (!valor) return null;
+            if (typeof valor === 'string') return valor.slice(0, 10);
+            if (valor instanceof Date) {
+                const y = valor.getUTCFullYear();
+                const m = String(valor.getUTCMonth() + 1).padStart(2, '0');
+                const d = String(valor.getUTCDate()).padStart(2, '0');
+                return `${y}-${m}-${d}`;
+            }
+            return String(valor).slice(0, 10);
+        };
+
         const eventos = result.rows.map(row => {
             let color = '#7f8c8d';
             let title = row.status.replace(/_/g, ' '); // Padrão
+            const dataIso = formatarDataPg(row.data);
 
             if (row.status === 'PAGO') color = '#27ae60';
             if (row.status === 'FALTA_COMPENSAR') color = '#8e44ad';
@@ -640,9 +829,9 @@ router.get('/registros-dias', async (req, res) => {
             }
 
             return {
-                id: row.data.toISOString().split('T')[0],
+                id: dataIso,
                 title: title, // Usa a variável title
-                start: row.data.toISOString().split('T')[0],
+                start: dataIso,
                 allDay: true,
                 backgroundColor: color,
                 borderColor: color,
@@ -658,7 +847,9 @@ router.get('/registros-dias', async (req, res) => {
 
     } catch (error) {
         console.error('[API /registros-dias] Erro:', error);
-        res.status(500).json({ error: 'Erro ao buscar registros de dias.' });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao buscar registros de dias.'
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -681,11 +872,26 @@ router.post('/registrar-falta', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        await carregarVinculoEmpregado(
+            dbClient,
+            usuario_id,
+            req.empresaId,
+            { exigirAtivo: true }
+        );
         await dbClient.query('BEGIN');
         for (const data of datas) {
             // Verifica se já existe um registro para esse dia, para evitar duplicatas
-            const checkQuery = `SELECT id FROM registro_dias_trabalhados WHERE usuario_id = $1 AND data = $2`;
-            const checkResult = await dbClient.query(checkQuery, [usuario_id, data]);
+            const checkQuery = `
+                SELECT id
+                FROM registro_dias_trabalhados
+                WHERE usuario_id = $1
+                  AND data = $2
+                  AND empresa_id = $3
+            `;
+            const checkResult = await dbClient.query(
+                checkQuery,
+                [usuario_id, data, req.empresaId]
+            );
 
             if (checkResult.rowCount > 0) {
                 // Se já existe, apenas pulamos para o próximo, sem dar erro.
@@ -695,13 +901,17 @@ router.post('/registrar-falta', async (req, res) => {
 
             // Se não existe, insere o novo registro de falta
             const insertQuery = `
-                INSERT INTO registro_dias_trabalhados (usuario_id, data, status, valor_referencia, observacao)
-                VALUES ($1, $2, 'FALTA_NAO_JUSTIFICADA', $3, $4)
+                INSERT INTO registro_dias_trabalhados
+                    (usuario_id, data, status, valor_referencia, observacao, empresa_id)
+                VALUES ($1, $2, 'FALTA_NAO_JUSTIFICADA', $3, $4, $5)
             `;
             const observacao = `Falta registrada por: ${nome_usuario_logado}`;
             
             // Adicionamos o valor 0 como quarto parâmetro para o valor_referencia
-            await dbClient.query(insertQuery, [usuario_id, data, 0, observacao]);
+            await dbClient.query(
+                insertQuery,
+                [usuario_id, data, 0, observacao, req.empresaId]
+            );
         }
 
         await dbClient.query('COMMIT');
@@ -713,7 +923,10 @@ router.post('/registrar-falta', async (req, res) => {
             console.error('[API /registrar-falta] ERRO NA TRANSAÇÃO, ROLLBACK EXECUTADO.');
         }
         console.error('[API /registrar-falta] DETALHES DO ERRO:', error);
-        res.status(500).json({ error: 'Erro ao registrar faltas.', details: error.message });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao registrar faltas.',
+            details: error.message
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -734,6 +947,12 @@ router.get('/historico-vt', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        await carregarVinculoEmpregado(
+            dbClient,
+            usuario_id,
+            req.empresaId,
+            { exigirAtivo: false }
+        );
 
         // Buscamos no histórico todos os pagamentos cuja descrição começa com "Recarga VT"
         // e que não foram estornados ainda.
@@ -749,16 +968,20 @@ router.get('/historico-vt', async (req, res) => {
                 historico_pagamentos_funcionarios
             WHERE 
                 usuario_id = $1 
+                AND empresa_id = $2
                 AND descricao LIKE 'Recarga VT%'
             ORDER BY data_pagamento DESC;
         `;
 
-        const result = await dbClient.query(query, [usuario_id]);
+        const result = await dbClient.query(query, [usuario_id, req.empresaId]);
         res.status(200).json(result.rows);
 
     } catch (error) {
         console.error('[API /historico-vt] Erro:', error);
-        res.status(500).json({ error: 'Erro ao buscar histórico de recargas de VT.', details: error.message });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao buscar histórico de recargas de VT.',
+            details: error.message
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -787,12 +1010,20 @@ router.post('/estornar-vt', async (req, res) => {
         const historicoQuery = `
             SELECT usuario_id, detalhes_pagamento, estornado_em 
             FROM historico_pagamentos_funcionarios 
-            WHERE id = $1 FOR UPDATE; -- FOR UPDATE bloqueia a linha para evitar duplos estornos
+            WHERE id = $1
+              AND empresa_id = $2
+            FOR UPDATE; -- FOR UPDATE bloqueia a linha para evitar duplos estornos
         `;
-        const historicoResult = await dbClient.query(historicoQuery, [recarga_id]);
+        const historicoResult = await dbClient.query(
+            historicoQuery,
+            [recarga_id, req.empresaId]
+        );
 
         if (historicoResult.rowCount === 0) {
-            throw new Error(`Registro de pagamento com ID ${recarga_id} não encontrado.`);
+            throw erroPagamento(
+                404,
+                `Registro de pagamento com ID ${recarga_id} não encontrado na empresa ativa.`
+            );
         }
         
         const recarga = historicoResult.rows[0];
@@ -820,17 +1051,27 @@ router.post('/estornar-vt', async (req, res) => {
         // 3. Deleta os registros de dias da tabela de controle
         const deleteQuery = `
             DELETE FROM registro_dias_trabalhados 
-            WHERE usuario_id = $1 AND data = ANY($2::date[]) AND status = 'PAGO'
+            WHERE usuario_id = $1
+              AND empresa_id = $2
+              AND data = ANY($3::date[])
+              AND status = 'PAGO'
         `;
-        const deleteResult = await dbClient.query(deleteQuery, [recarga.usuario_id, datasPagas]);
+        await dbClient.query(
+            deleteQuery,
+            [recarga.usuario_id, req.empresaId, datasPagas]
+        );
 
         // 4. Marca o registro do histórico como estornado
         const updateHistoricoQuery = `
             UPDATE historico_pagamentos_funcionarios 
             SET estornado_em = NOW() 
             WHERE id = $1
+              AND empresa_id = $2
         `;
-        await dbClient.query(updateHistoricoQuery, [recarga_id]);
+        await dbClient.query(
+            updateHistoricoQuery,
+            [recarga_id, req.empresaId]
+        );
         
         await dbClient.query('COMMIT');
 
@@ -843,7 +1084,10 @@ router.post('/estornar-vt', async (req, res) => {
         }
         // Este é o log mais importante para depuração
         console.error('[API /estornar-vt] DETALHES DO ERRO:', error);
-        res.status(500).json({ error: 'Erro ao processar estorno.', details: error.message });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao processar estorno.',
+            details: error.message
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -865,10 +1109,24 @@ router.post('/remover-registro-dia', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        await carregarVinculoEmpregado(
+            dbClient,
+            usuario_id,
+            req.empresaId,
+            { exigirAtivo: false }
+        );
         
         // Simplesmente deleta a linha. Não precisa de transação para uma única operação.
-        const deleteQuery = `DELETE FROM registro_dias_trabalhados WHERE usuario_id = $1 AND data = $2`;
-        const result = await dbClient.query(deleteQuery, [usuario_id, data]);
+        const deleteQuery = `
+            DELETE FROM registro_dias_trabalhados
+            WHERE usuario_id = $1
+              AND data = $2
+              AND empresa_id = $3
+        `;
+        const result = await dbClient.query(
+            deleteQuery,
+            [usuario_id, data, req.empresaId]
+        );
 
         if (result.rowCount === 0) {
             // Isso pode acontecer se o usuário clicar rápido duas vezes. Não é um erro crítico.
@@ -879,7 +1137,10 @@ router.post('/remover-registro-dia', async (req, res) => {
 
     } catch (error) {
         console.error('[API /remover-registro-dia] DETALHES DO ERRO:', error);
-        res.status(500).json({ error: 'Erro ao remover registro de dia.', details: error.message });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao remover registro de dia.',
+            details: error.message
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -900,24 +1161,39 @@ router.get('/recibos/dados', async (req, res) => {
     try {
         dbClient = await pool.connect();
 
-        // 1. Busca Usuário e Metas
-        // Precisamos das metas para calcular o valor financeiro do dia
-        const userRes = await dbClient.query('SELECT tipos, nivel FROM usuarios WHERE id = $1', [usuario_id]);
-        const usuario = userRes.rows[0];
-        const tipoUsuario = usuario.tipos?.[0] || 'costureira';
+        // 1. Busca o vínculo empresarial e as metas da empresa ativa.
+        const usuario = await carregarVinculoEmpregado(
+            dbClient,
+            usuario_id,
+            req.empresaId,
+            { exigirAtivo: false }
+        );
+        exigirProducaoDisponivel(usuario);
+        const tipoUsuario = usuario.tipos?.includes('tiktik') ? 'tiktik' : 'costureira';
         const nivelUsuario = usuario.nivel || 1;
 
         // Busca a versão da meta vigente na DATA FIM do recibo
         const versaoMetaRes = await dbClient.query(
-            `SELECT id FROM metas_versoes WHERE data_inicio_vigencia <= $1 ORDER BY data_inicio_vigencia DESC LIMIT 1`, 
-            [data_fim]
+            `SELECT id
+               FROM metas_versoes
+              WHERE empresa_id = $1
+                AND data_inicio_vigencia <= $2
+              ORDER BY data_inicio_vigencia DESC
+              LIMIT 1`,
+            [req.empresaId, data_fim]
         );
         
         let metasConfiguradas = [];
         if (versaoMetaRes.rows.length > 0) {
             const regrasRes = await dbClient.query(
-                `SELECT pontos_meta, valor_comissao, descricao_meta FROM metas_regras WHERE id_versao = $1 AND tipo_usuario = $2 AND nivel = $3 ORDER BY pontos_meta ASC`,
-                [versaoMetaRes.rows[0].id, tipoUsuario, nivelUsuario]
+                `SELECT pontos_meta, valor_comissao, descricao_meta
+                   FROM metas_regras
+                  WHERE id_versao = $1
+                    AND empresa_id = $2
+                    AND tipo_usuario = $3
+                    AND nivel = $4
+                  ORDER BY pontos_meta ASC`,
+                [versaoMetaRes.rows[0].id, req.empresaId, tipoUsuario, nivelUsuario]
             );
             metasConfiguradas = regrasRes.rows;
         }
@@ -929,14 +1205,38 @@ router.get('/recibos/dados', async (req, res) => {
         if (tipoUsuario === 'tiktik') {
             queryText += ` UNION ALL SELECT data_lancamento as data, pontos_gerados FROM arremates WHERE usuario_tiktik_id = $1 AND data_lancamento BETWEEN $2 AND $3 AND tipo_lancamento = 'PRODUCAO'`;
         }
-        queryText += ` UNION ALL SELECT data_referencia::timestamptz as data, pontos as pontos_gerados FROM pontos_extras WHERE funcionario_id = $1 AND data_referencia BETWEEN $2::date AND $3::date AND cancelado = FALSE`;
+        queryText += ` UNION ALL
+            SELECT data_referencia::timestamptz as data, pontos as pontos_gerados
+            FROM pontos_extras
+            WHERE funcionario_id = $1
+              AND empresa_id = $4
+              AND data_referencia BETWEEN $2::date AND $3::date
+              AND cancelado = FALSE`;
 
-        const producaoRes = await dbClient.query(queryText, [usuario_id, data_inicio + ' 00:00:00', data_fim + ' 23:59:59']);
+        const producaoRes = await dbClient.query(
+            queryText,
+            [
+                usuario_id,
+                data_inicio + ' 00:00:00',
+                data_fim + ' 23:59:59',
+                req.empresaId
+            ]
+        );
 
         // 3. Busca Resgates e Ganhos (Cofre)
         const cofreRes = await dbClient.query(
-            `SELECT data_evento, quantidade, tipo FROM banco_pontos_log WHERE usuario_id = $1 AND tipo IN ('RESGATE', 'GANHO') AND data_evento BETWEEN $2 AND $3`,
-            [usuario_id, data_inicio + ' 00:00:00', data_fim + ' 23:59:59']
+            `SELECT data_evento, quantidade, tipo
+               FROM banco_pontos_log
+              WHERE usuario_id = $1
+                AND empresa_id = $2
+                AND tipo IN ('RESGATE', 'GANHO')
+                AND data_evento BETWEEN $3 AND $4`,
+            [
+                usuario_id,
+                req.empresaId,
+                data_inicio + ' 00:00:00',
+                data_fim + ' 23:59:59'
+            ]
         );
 
         // 4. Compila Dia a Dia
@@ -982,7 +1282,9 @@ router.get('/recibos/dados', async (req, res) => {
 
     } catch (error) {
         console.error('[API Recibos Dados] Erro:', error);
-        res.status(500).json({ error: 'Erro ao gerar dados.' });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao gerar dados.'
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -997,16 +1299,26 @@ router.post('/recibos/registrar', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        await carregarVinculoEmpregado(
+            dbClient,
+            usuario_id,
+            req.empresaId,
+            { exigirAtivo: false }
+        );
         
         await dbClient.query(
-            `INSERT INTO recibos_conferencia (usuario_id, data_inicio, data_fim, gerado_por) VALUES ($1, $2, $3, $4)`,
-            [usuario_id, data_inicio, data_fim, adminId]
+            `INSERT INTO recibos_conferencia
+                (usuario_id, data_inicio, data_fim, gerado_por, empresa_id)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [usuario_id, data_inicio, data_fim, adminId, req.empresaId]
         );
 
         res.status(201).json({ message: 'Recibo registrado.' });
     } catch (error) {
         console.error('[API Recibos Registrar] Erro:', error);
-        res.status(500).json({ error: 'Erro ao registrar.' });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao registrar.'
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -1019,14 +1331,21 @@ router.get('/recibos/verificar', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        await carregarVinculoEmpregado(
+            dbClient,
+            usuario_id,
+            req.empresaId,
+            { exigirAtivo: false }
+        );
 
         // Procura intersecção de datas
         const result = await dbClient.query(`
             SELECT data_inicio, data_fim, data_geracao 
             FROM recibos_conferencia 
             WHERE usuario_id = $1 
-              AND (data_inicio <= $3 AND data_fim >= $2)
-        `, [usuario_id, data_inicio, data_fim]);
+              AND empresa_id = $2
+              AND (data_inicio <= $4 AND data_fim >= $3)
+        `, [usuario_id, req.empresaId, data_inicio, data_fim]);
 
         res.status(200).json({ 
             jaExiste: result.rowCount > 0,
@@ -1035,7 +1354,67 @@ router.get('/recibos/verificar', async (req, res) => {
 
     } catch (error) {
         console.error('[API Recibos Verificar] Erro:', error);
-        res.status(500).json({ error: 'Erro ao verificar.' });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao verificar.'
+        });
+    } finally {
+        if (dbClient) dbClient.release();
+    }
+});
+
+// GET /api/pagamentos/recibos/cobertos
+// Lista usuários que já possuem recibo cobrindo o período (para badge / resumo da semana)
+router.get('/recibos/cobertos', async (req, res) => {
+    const { data_inicio, data_fim } = req.query;
+    if (!data_inicio || !data_fim) {
+        return res.status(400).json({ error: 'data_inicio e data_fim são obrigatórios.' });
+    }
+
+    let dbClient;
+    try {
+        dbClient = await pool.connect();
+        const result = await dbClient.query(
+            `SELECT DISTINCT usuario_id
+             FROM recibos_conferencia
+             WHERE empresa_id = $1
+               AND data_inicio <= $3
+               AND data_fim >= $2`,
+            [req.empresaId, data_inicio, data_fim]
+        );
+        res.status(200).json({
+            data_inicio,
+            data_fim,
+            usuario_ids: result.rows.map((row) => row.usuario_id),
+        });
+    } catch (error) {
+        console.error('[API Recibos Cobertos] Erro:', error);
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao consultar cobertura de recibos.',
+        });
+    } finally {
+        if (dbClient) dbClient.release();
+    }
+});
+
+// GET /api/pagamentos/recibos/intervalos-empresa
+// Todos os períodos de recibo da empresa ativa (para somar pendências por semana × usuário)
+router.get('/recibos/intervalos-empresa', async (req, res) => {
+    let dbClient;
+    try {
+        dbClient = await pool.connect();
+        const result = await dbClient.query(
+            `SELECT usuario_id, data_inicio, data_fim
+             FROM recibos_conferencia
+             WHERE empresa_id = $1
+             ORDER BY data_inicio DESC`,
+            [req.empresaId]
+        );
+        res.status(200).json(result.rows);
+    } catch (error) {
+        console.error('[API Recibos Intervalos Empresa] Erro:', error);
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao listar intervalos de recibos.',
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -1059,7 +1438,17 @@ router.post('/lote-vt', async (req, res) => {
     } = req.body;
 
     // 2. Validações Básicas
-    if (!id_conta_debito || !id_concessionaria || !itens || itens.length === 0) {
+    if (
+        !id_conta_debito ||
+        !id_concessionaria ||
+        !Array.isArray(itens) ||
+        itens.length === 0 ||
+        itens.some(
+            (item) =>
+                !Number.isSafeInteger(Number(item?.usuario_id)) ||
+                Number(item.usuario_id) <= 0
+        )
+    ) {
         return res.status(400).json({ error: 'Dados incompletos para o lote.' });
     }
 
@@ -1109,6 +1498,7 @@ router.post('/lote-vt', async (req, res) => {
               WHERE ue.usuario_id = ANY($1::int[])
                 AND ue.empresa_id = $2
                 AND ue.ativo
+                AND ue.elegivel_pagamento
                 AND (
                     ue.id_contato_financeiro IS NULL
                     OR c.id IS NOT NULL
@@ -1190,6 +1580,18 @@ router.post('/lote-vt', async (req, res) => {
             );
         }
 
+        // Modelo visual de aviso popup "Recarga VT" (Central de Alertas)
+        const tplVtRes = await dbClient.query(
+            `SELECT titulo, tipo, mensagem, cor_fundo, url_imagem, urgente
+               FROM avisos_popup
+              WHERE empresa_id = $1
+                AND is_template = TRUE
+                AND titulo ILIKE '%Recarga VT%'
+              LIMIT 1`,
+            [req.empresaId]
+        );
+        const tplVt = tplVtRes.rows[0] || null;
+
         // --- PASSO C: Registrar Histórico Individual e Bloquear Dias ---
         for (const item of itens) {
             const { usuario_id, dias_qtd, valor_total, datas_lista, nome_funcionario } = item;
@@ -1203,16 +1605,18 @@ router.post('/lote-vt', async (req, res) => {
             };
 
             await dbClient.query(
-                `INSERT INTO historico_pagamentos_funcionarios 
-                (usuario_id, descricao, valor_liquido_pago, id_usuario_pagador, detalhes_pagamento, id_conta_debito, data_pagamento) 
-                VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+                `INSERT INTO historico_pagamentos_funcionarios
+                (usuario_id, descricao, valor_liquido_pago, id_usuario_pagador,
+                 detalhes_pagamento, id_conta_debito, data_pagamento, empresa_id)
+                VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7)`,
                 [
                     usuario_id, 
                     `Recarga VT (${nomeConcessionaria})`,
                     valor_total, 
                     idUsuarioPagador, 
                     JSON.stringify(detalhesSimulados), 
-                    id_conta_debito
+                    id_conta_debito,
+                    req.empresaId
                 ]
             );
 
@@ -1220,16 +1624,77 @@ router.post('/lote-vt', async (req, res) => {
             if (datas_lista && datas_lista.length > 0) {
                 for (const dataStr of datas_lista) {
                     // Verifica se já existe registro (idempotência simples)
-                    const check = await dbClient.query("SELECT id FROM registro_dias_trabalhados WHERE usuario_id = $1 AND data = $2", [usuario_id, dataStr]);
+                    const check = await dbClient.query(
+                        `SELECT id
+                           FROM registro_dias_trabalhados
+                          WHERE usuario_id = $1
+                            AND data = $2
+                            AND empresa_id = $3`,
+                        [usuario_id, dataStr, req.empresaId]
+                    );
                     if (check.rowCount === 0) {
                         await dbClient.query(
-                            `INSERT INTO registro_dias_trabalhados (usuario_id, data, status, valor_referencia, observacao) 
-                             VALUES ($1, $2, 'PAGO', $3, $4)`,
-                            [usuario_id, dataStr, (valor_total / dias_qtd) || 0, `Lote VT ${nomeConcessionaria}`]
+                            `INSERT INTO registro_dias_trabalhados
+                                (usuario_id, data, status, valor_referencia, observacao, empresa_id)
+                             VALUES ($1, $2, 'PAGO', $3, $4, $5)`,
+                            [
+                                usuario_id,
+                                dataStr,
+                                (valor_total / dias_qtd) || 0,
+                                `Lote VT ${nomeConcessionaria}`,
+                                req.empresaId
+                            ]
                         );
                     }
                 }
             }
+
+            // 3. Aviso popup individual — usa o modelo "Recarga VT" da Central de Alertas
+            const datasFmt = Array.isArray(datas_lista) && datas_lista.length
+                ? [...datas_lista]
+                    .sort()
+                    .map((dataStr) => {
+                        const partes = String(dataStr).slice(0, 10).split('-');
+                        if (partes.length === 3) {
+                            return `${partes[2]}/${partes[1]}/${partes[0]}`;
+                        }
+                        return String(dataStr);
+                    })
+                    .join(', ')
+                : `${dias_qtd} dia(s)`;
+            const valorFmt = Number(valor_total || 0).toLocaleString('pt-BR', {
+                style: 'currency',
+                currency: 'BRL',
+            });
+            // Mensagem do modelo (se houver) + detalhes da recarga
+            const baseModelo = (tplVt?.mensagem && String(tplVt.mensagem).trim())
+                ? String(tplVt.mensagem).trim()
+                : 'Sua recarga de Vale Transporte foi realizada!';
+            const mensagemAviso =
+                `${baseModelo}\n\n` +
+                `Concessionária: ${nomeConcessionaria}\n` +
+                `Dias recarregados: ${datasFmt}\n` +
+                `Valor: ${valorFmt}`;
+
+            await dbClient.query(
+                `INSERT INTO avisos_popup
+                    (empresa_id, titulo, tipo, mensagem, url_imagem, cor_fundo, destinatarios,
+                     ids_individuais, urgente, ativo, is_template, data_inicio, data_fim, criado_por)
+                 VALUES ($1, $2, $3, $4, $5, $6, 'individuais',
+                         $7::int[], $8, TRUE, FALSE, $9, NULL, $10)`,
+                [
+                    req.empresaId,
+                    tplVt?.titulo || 'Recarga VT',
+                    tplVt?.tipo || 'texto',
+                    mensagemAviso,
+                    tplVt?.url_imagem || null,
+                    tplVt?.cor_fundo || 'azul',
+                    [Number(usuario_id)],
+                    tplVt?.urgente ?? false,
+                    new Date().toISOString().split('T')[0],
+                    idUsuarioPagador,
+                ]
+            );
         }
 
         await dbClient.query('COMMIT');
@@ -1238,7 +1703,10 @@ router.post('/lote-vt', async (req, res) => {
     } catch (error) {
         if (dbClient) await dbClient.query('ROLLBACK');
         console.error('[API /lote-vt] Erro:', error);
-        res.status(500).json({ error: 'Erro ao processar lote.', details: error.message });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao processar lote.',
+            details: error.message
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -1269,11 +1737,12 @@ router.get('/lotes-vt-agrupados', async (req, res) => {
                 )) as itens
             FROM historico_pagamentos_funcionarios
             WHERE detalhes_pagamento::text LIKE '%VALE_TRANSPORTE%'
+              AND empresa_id = $1
             GROUP BY data_pagamento, descricao
             ORDER BY data_pagamento DESC
             LIMIT 50;
         `;
-        const result = await dbClient.query(query);
+        const result = await dbClient.query(query, [req.empresaId]);
         res.status(200).json(result.rows);
     } catch (error) {
         console.error('[API GET /lotes-vt-agrupados] Erro:', error);
@@ -1294,17 +1763,44 @@ router.post('/marcar-lote-impresso', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
-        // Atualiza baseado nos IDs exatos. Infalível.
+        const idsNormalizados = ids.map(Number);
+        if (
+            idsNormalizados.some((id) => !Number.isSafeInteger(id) || id <= 0)
+        ) {
+            return res.status(400).json({ error: 'Lista de IDs inválida.' });
+        }
+        const idsUnicos = [...new Set(idsNormalizados)];
+
+        await dbClient.query('BEGIN');
+        const registros = await dbClient.query(
+            `SELECT id
+               FROM historico_pagamentos_funcionarios
+              WHERE id = ANY($1::int[])
+                AND empresa_id = $2
+              FOR UPDATE`,
+            [idsUnicos, req.empresaId]
+        );
+        if (registros.rowCount !== idsUnicos.length) {
+            throw erroPagamento(
+                404,
+                'Um ou mais pagamentos não foram encontrados na empresa ativa.'
+            );
+        }
         await dbClient.query(
             `UPDATE historico_pagamentos_funcionarios 
              SET recibo_impresso_em = NOW() 
-             WHERE id = ANY($1::int[])`,
-            [ids]
+             WHERE id = ANY($1::int[])
+               AND empresa_id = $2`,
+            [idsUnicos, req.empresaId]
         );
+        await dbClient.query('COMMIT');
         res.status(200).json({ message: 'Lote marcado como impresso.' });
     } catch (error) {
+        if (dbClient) await dbClient.query('ROLLBACK');
         console.error('[API /marcar-lote-impresso] Erro:', error);
-        res.status(500).json({ error: 'Erro ao marcar lote.' });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao marcar lote.'
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -1319,20 +1815,32 @@ router.get('/recibos/historico-periodos', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        await carregarVinculoEmpregado(
+            dbClient,
+            usuario_id,
+            req.empresaId,
+            { exigirAtivo: false }
+        );
         // Busca data_inicio e data_fim de todos os recibos do usuário
         const query = `
             SELECT data_inicio, data_fim 
             FROM recibos_conferencia 
             WHERE usuario_id = $1 
-            AND EXTRACT(YEAR FROM data_inicio) = $2
+              AND empresa_id = $2
+              AND EXTRACT(YEAR FROM data_inicio) = $3
         `;
-        const result = await dbClient.query(query, [usuario_id, ano || new Date().getFullYear()]);
+        const result = await dbClient.query(
+            query,
+            [usuario_id, req.empresaId, ano || new Date().getFullYear()]
+        );
         
         // Vamos expandir os intervalos no backend ou frontend? 
         // Frontend é mais leve pro banco. Retornamos os intervalos.
         res.status(200).json(result.rows);
     } catch (error) {
-        res.status(500).json({ error: 'Erro ao buscar histórico.' });
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao buscar histórico.'
+        });
     } finally {
         if (dbClient) dbClient.release();
     }

@@ -59,7 +59,11 @@ router.get('/', async (req, res) => {
 
     try {
         dbClient = await pool.connect();
-        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(
+            dbClient,
+            usuarioLogado.id,
+            req.empresaId
+        );
         if (!permissoesCompletas.includes('acesso-ordens-de-producao')) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
@@ -619,7 +623,11 @@ router.put('/', async (req, res) => {
         dbClient = await pool.connect();
         await dbClient.query('BEGIN'); // <<< 1. INICIA A TRANSAÇÃO NO COMEÇO
 
-        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(
+            dbClient,
+            usuarioLogado.id,
+            req.empresaId
+        );
         
         const opData = req.body;
         const { edit_id, numero, status, produto_id } = opData;
@@ -646,8 +654,10 @@ router.put('/', async (req, res) => {
             // Isso corrige o erro de tipo "integer = text".
             const sessoesAtivasResult = await dbClient.query(
                 `SELECT id, funcionario_id FROM sessoes_trabalho_producao 
-                 WHERE op_numero = $1 AND status = 'EM_ANDAMENTO'`, 
-                [numero]
+                 WHERE op_numero = $1
+                   AND empresa_id = $2
+                   AND status = 'EM_ANDAMENTO'`,
+                [numero, req.empresaId]
             );
             
             if (sessoesAtivasResult.rows.length > 0) {
@@ -655,10 +665,15 @@ router.put('/', async (req, res) => {
                 // 2. Agora podemos usar ::int[] com segurança, pois estamos comparando
                 // id_sessao_trabalho_atual (Inteiro) com idsSessoes (Inteiros).
                 const updateUserResult = await dbClient.query(
-                    `UPDATE usuarios 
-                     SET status_atual = 'LIVRE', id_sessao_trabalho_atual = NULL 
-                     WHERE id_sessao_trabalho_atual = ANY($1::int[])`,
-                    [idsSessoes]
+                    `UPDATE usuarios_empresas
+                        SET status_atual = 'LIVRE',
+                            id_sessao_trabalho_atual = NULL,
+                            status_data_modificacao =
+                                (NOW() AT TIME ZONE 'America/Sao_Paulo')
+                      WHERE id_sessao_trabalho_atual = ANY($1::int[])
+                        AND empresa_id = $2
+                        AND ativo`,
+                    [idsSessoes, req.empresaId]
                 );
                 
                 // 3. Opcional: Marcar essas sessões como CANCELADAS ou FINALIZADAS no banco
@@ -666,8 +681,9 @@ router.put('/', async (req, res) => {
                 await dbClient.query(
                     `UPDATE sessoes_trabalho_producao 
                      SET status = 'FINALIZADA_FORCADA', data_fim = NOW() 
-                     WHERE id = ANY($1::int[])`,
-                    [idsSessoes]
+                     WHERE id = ANY($1::int[])
+                       AND empresa_id = $2`,
+                    [idsSessoes, req.empresaId]
                 );
 
             }

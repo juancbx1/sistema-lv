@@ -5,6 +5,7 @@ import express from 'express';
 import pg from 'pg';
 import jwt from 'jsonwebtoken';
 import { getPermissoesCompletasUsuarioDB } from './usuarios.js';
+import { obterEmpresaIdDoContexto } from './contexto-empresa.js';
 
 const { Pool } = pg;
 const router = express.Router();
@@ -30,6 +31,7 @@ router.use(async (req, res, next) => {
         if (!authHeader) throw new Error('Token não fornecido');
         const token = authHeader.split(' ')[1];
         req.usuarioLogado = jwt.verify(token, SECRET_KEY);
+        req.empresaId = obterEmpresaIdDoContexto(req);
         next();
     } catch (error) {
         res.status(401).json({ error: 'Token inválido ou expirado.' });
@@ -244,8 +246,8 @@ router.get('/verificar-status', async (req, res) => {
         if (configOciosidade || configLentidao) {
             const tiktiksResult = await dbClient.query(`
                 SELECT 
-                    u.id, u.nome, u.status_atual, u.status_data_modificacao,
-                    u.ultimo_alerta_ociosidade_em, u.ultimo_alerta_lentidao_em,
+                    u.id, u.nome, ue.status_atual, ue.status_data_modificacao,
+                    ue.ultimo_alerta_ociosidade_em, ue.ultimo_alerta_lentidao_em,
                     s.data_inicio, s.produto_id, s.quantidade_entregue,
                     (
                         SELECT MAX(s2.data_fim) 
@@ -255,9 +257,15 @@ router.get('/verificar-status', async (req, res) => {
                           AND s2.data_fim >= date_trunc('day', NOW() AT TIME ZONE 'America/Sao_Paulo')
                     ) as data_ultima_tarefa_finalizada_hoje
                 FROM usuarios u
-                LEFT JOIN sessoes_trabalho_arremate s ON u.id_sessao_trabalho_atual = s.id
-                WHERE 'tiktik' = ANY(u.tipos) AND u.data_demissao IS NULL
-            `);
+                JOIN usuarios_empresas ue
+                  ON ue.usuario_id = u.id
+                 AND ue.empresa_id = $1
+                 AND ue.ativo
+                LEFT JOIN sessoes_trabalho_arremate s
+                  ON ue.id_sessao_trabalho_atual = s.id
+                WHERE 'tiktik' = ANY(ue.tipos)
+                  AND ue.data_demissao IS NULL
+            `, [req.empresaId]);
             const tiktiks = tiktiksResult.rows;
 
             const temposResult = await dbClient.query('SELECT produto_id, tempo_segundos_por_peca FROM tempos_padrao_arremate');
@@ -291,7 +299,13 @@ router.get('/verificar-status', async (req, res) => {
                                     nivel: 'critico'
                                 });
                                 queriesDeAtualizacao.push(
-                                    dbClient.query(`UPDATE usuarios SET ultimo_alerta_ociosidade_em = NOW() WHERE id = $1`, [tiktik.id])
+                                    dbClient.query(
+                                        `UPDATE usuarios_empresas
+                                            SET ultimo_alerta_ociosidade_em = NOW()
+                                          WHERE usuario_id = $1
+                                            AND empresa_id = $2`,
+                                        [tiktik.id, req.empresaId]
+                                    )
                                 );
                             }
                         }
@@ -337,7 +351,13 @@ router.get('/verificar-status', async (req, res) => {
                                     nivel: 'aviso'
                                 });
                                 queriesDeAtualizacao.push(
-                                    dbClient.query(`UPDATE usuarios SET ultimo_alerta_lentidao_em = NOW() WHERE id = $1`, [tiktik.id])
+                                    dbClient.query(
+                                        `UPDATE usuarios_empresas
+                                            SET ultimo_alerta_lentidao_em = NOW()
+                                          WHERE usuario_id = $1
+                                            AND empresa_id = $2`,
+                                        [tiktik.id, req.empresaId]
+                                    )
                                 );
                             }
                         }
@@ -356,8 +376,8 @@ router.get('/verificar-status', async (req, res) => {
         if (configOciosidadeCostureira || configLentidaoCostureira) {
             const costureirasResult = await dbClient.query(`
                 SELECT
-                    u.id, u.nome, u.status_atual, u.status_data_modificacao,
-                    u.ultimo_alerta_ociosidade_em, u.ultimo_alerta_lentidao_em,
+                    u.id, u.nome, ue.status_atual, ue.status_data_modificacao,
+                    ue.ultimo_alerta_ociosidade_em, ue.ultimo_alerta_lentidao_em,
                     s.data_inicio      AS sessao_data_inicio,
                     s.produto_id       AS sessao_produto_id,
                     s.processo         AS sessao_processo,
@@ -366,13 +386,21 @@ router.get('/verificar-status', async (req, res) => {
                         SELECT MAX(s2.data_fim)
                         FROM sessoes_trabalho_producao s2
                         WHERE s2.funcionario_id = u.id
+                          AND s2.empresa_id = ue.empresa_id
                           AND s2.status IN ('FINALIZADA', 'FINALIZADA_FORCADA')
                           AND s2.data_fim >= date_trunc('day', NOW() AT TIME ZONE 'America/Sao_Paulo')
                     ) AS data_ultima_tarefa_finalizada_hoje
                 FROM usuarios u
-                LEFT JOIN sessoes_trabalho_producao s ON u.id_sessao_trabalho_atual = s.id
-                WHERE 'costureira' = ANY(u.tipos) AND u.data_demissao IS NULL
-            `);
+                JOIN usuarios_empresas ue
+                  ON ue.usuario_id = u.id
+                 AND ue.empresa_id = $1
+                 AND ue.ativo
+                LEFT JOIN sessoes_trabalho_producao s
+                  ON ue.id_sessao_trabalho_atual = s.id
+                 AND s.empresa_id = ue.empresa_id
+                WHERE 'costureira' = ANY(ue.tipos)
+                  AND ue.data_demissao IS NULL
+            `, [req.empresaId]);
 
             // Busca TPP de produção — chave composta: produto_id + processo
             const tppProducaoResult = await dbClient.query(
@@ -407,7 +435,13 @@ router.get('/verificar-status', async (req, res) => {
                                     nivel: 'critico'
                                 });
                                 queriesDeAtualizacao.push(
-                                    dbClient.query(`UPDATE usuarios SET ultimo_alerta_ociosidade_em = NOW() WHERE id = $1`, [costureira.id])
+                                    dbClient.query(
+                                        `UPDATE usuarios_empresas
+                                            SET ultimo_alerta_ociosidade_em = NOW()
+                                          WHERE usuario_id = $1
+                                            AND empresa_id = $2`,
+                                        [costureira.id, req.empresaId]
+                                    )
                                 );
                             }
                         }
@@ -458,7 +492,13 @@ router.get('/verificar-status', async (req, res) => {
                                         nivel: 'aviso'
                                     });
                                     queriesDeAtualizacao.push(
-                                        dbClient.query(`UPDATE usuarios SET ultimo_alerta_lentidao_em = NOW() WHERE id = $1`, [costureira.id])
+                                        dbClient.query(
+                                            `UPDATE usuarios_empresas
+                                                SET ultimo_alerta_lentidao_em = NOW()
+                                              WHERE usuario_id = $1
+                                                AND empresa_id = $2`,
+                                            [costureira.id, req.empresaId]
+                                        )
                                     );
                                 }
                             } else {

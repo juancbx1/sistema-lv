@@ -7,6 +7,22 @@ import express from 'express';
 const router = express.Router();
 const pool = new Pool({ connectionString: process.env.POSTGRES_URL });
 
+async function obterEmpresaLegadaId(dbClient) {
+    const result = await dbClient.query(
+        `SELECT id
+           FROM empresas
+          WHERE eh_legada
+            AND ativa
+          ORDER BY id`
+    );
+    if (result.rows.length !== 1) {
+        throw new Error(
+            'O cron exige exatamente uma empresa legada ativa enquanto a cadeia produtiva não é multiempresa.'
+        );
+    }
+    return result.rows[0].id;
+}
+
 // Endpoint que a Vercel vai chamar
 router.get('/arquivar-concluidas', async (req, res) => {
     // SEGURANÇA: Verifica se quem chamou foi o Cron da Vercel
@@ -65,6 +81,7 @@ router.get('/registrar-intervalos', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        const empresaId = await obterEmpresaLegadaId(dbClient);
 
         // Hora atual em São Paulo
         const agora = new Date();
@@ -102,14 +119,16 @@ router.get('/registrar-intervalos', async (req, res) => {
         const { rows: feriadoRows } = await dbClient.query(`
             SELECT 1 FROM calendario_empresa
             WHERE data = $1::date
+              AND empresa_id = $2
               AND tipo IN ('feriado_nacional', 'feriado_regional', 'folga_empresa')
               AND NOT EXISTS (
                   SELECT 1 FROM calendario_empresa c2
                   WHERE c2.data = $1::date
+                    AND c2.empresa_id = $2
                     AND c2.tipo = 'trabalho_extra'
               )
             LIMIT 1
-        `, [dataHojeSP]);
+        `, [dataHojeSP, empresaId]);
 
         if (feriadoRows.length > 0) {
             console.log(`[CRON] registrar-intervalos ignorado — feriado/folga em ${dataHojeSP}`);
@@ -122,27 +141,33 @@ router.get('/registrar-intervalos', async (req, res) => {
             SELECT
                 u.id,
                 u.nome,
-                u.status_atual,
-                COALESCE(u.dias_trabalho, '{"1":true,"2":true,"3":true,"4":true,"5":true}'::jsonb) AS dias_trabalho,
-                to_char(u.horario_saida_1,  'HH24:MI') AS s1,
-                to_char(u.horario_entrada_2,'HH24:MI') AS e2,
-                to_char(u.horario_saida_2,  'HH24:MI') AS s2,
-                to_char(u.horario_entrada_3,'HH24:MI') AS e3,
+                ue.status_atual,
+                COALESCE(ue.dias_trabalho, '{"1":true,"2":true,"3":true,"4":true,"5":true}'::jsonb) AS dias_trabalho,
+                to_char(ue.horario_saida_1,  'HH24:MI') AS s1,
+                to_char(ue.horario_entrada_2,'HH24:MI') AS e2,
+                to_char(ue.horario_saida_2,  'HH24:MI') AS s2,
+                to_char(ue.horario_entrada_3,'HH24:MI') AS e3,
                 pd.horario_real_s1,
                 pd.horario_real_s2,
                 (
                     SELECT COUNT(*)::int
                     FROM sessoes_trabalho_producao sp
                     WHERE sp.funcionario_id = u.id
+                      AND sp.empresa_id = ue.empresa_id
                       AND (sp.data_inicio AT TIME ZONE 'America/Sao_Paulo')::date = $1::date
                 ) AS sessoes_hoje
             FROM usuarios u
+            JOIN usuarios_empresas ue
+              ON ue.usuario_id = u.id
+             AND ue.empresa_id = $2
+             AND ue.ativo
             LEFT JOIN ponto_diario pd
-                ON pd.funcionario_id = u.id AND pd.data = $1
-            WHERE u.ativo = TRUE
-              AND u.tipos && ARRAY['costureira','tiktik']::varchar[]
-              AND u.status_atual NOT IN ('FALTOU','ALOCADO_EXTERNO')
-        `, [dataHojeSP]);
+                ON pd.funcionario_id = u.id
+               AND pd.data = $1
+               AND pd.empresa_id = ue.empresa_id
+            WHERE ue.tipos && ARRAY['costureira','tiktik']::varchar[]
+              AND ue.status_atual NOT IN ('FALTOU','ALOCADO_EXTERNO')
+        `, [dataHojeSP, empresaId]);
 
         const inserts = [];
         const logAlmoco = [];
@@ -165,13 +190,15 @@ router.get('/registrar-intervalos', async (req, res) => {
                 if (s1Min !== null && agoraMin >= s1Min) {
                     inserts.push(
                         dbClient.query(
-                            `INSERT INTO ponto_diario (funcionario_id, data, horario_real_s1, horario_real_e2)
-                             VALUES ($1, $2, $3, $4)
-                             ON CONFLICT (funcionario_id, data) DO UPDATE SET
+                            `INSERT INTO ponto_diario
+                                (funcionario_id, data, horario_real_s1,
+                                 horario_real_e2, empresa_id)
+                             VALUES ($1, $2, $3, $4, $5)
+                             ON CONFLICT (empresa_id, funcionario_id, data) DO UPDATE SET
                                  horario_real_s1 = COALESCE(ponto_diario.horario_real_s1, EXCLUDED.horario_real_s1),
                                  horario_real_e2 = COALESCE(ponto_diario.horario_real_e2, EXCLUDED.horario_real_e2),
                                  updated_at      = NOW()`,
-                            [f.id, dataHojeSP, f.s1, f.e2]
+                            [f.id, dataHojeSP, f.s1, f.e2, empresaId]
                         )
                     );
                     logAlmoco.push(`${f.nome}(${f.id}):${f.s1}→${f.e2}`);
@@ -184,13 +211,15 @@ router.get('/registrar-intervalos', async (req, res) => {
                 if (s2Min !== null && agoraMin >= s2Min) {
                     inserts.push(
                         dbClient.query(
-                            `INSERT INTO ponto_diario (funcionario_id, data, horario_real_s2, horario_real_e3)
-                             VALUES ($1, $2, $3, $4)
-                             ON CONFLICT (funcionario_id, data) DO UPDATE SET
+                            `INSERT INTO ponto_diario
+                                (funcionario_id, data, horario_real_s2,
+                                 horario_real_e3, empresa_id)
+                             VALUES ($1, $2, $3, $4, $5)
+                             ON CONFLICT (empresa_id, funcionario_id, data) DO UPDATE SET
                                  horario_real_s2 = COALESCE(ponto_diario.horario_real_s2, EXCLUDED.horario_real_s2),
                                  horario_real_e3 = COALESCE(ponto_diario.horario_real_e3, EXCLUDED.horario_real_e3),
                                  updated_at      = NOW()`,
-                            [f.id, dataHojeSP, f.s2, f.e3]
+                            [f.id, dataHojeSP, f.s2, f.e3, empresaId]
                         )
                     );
                     logPausa.push(`${f.nome}(${f.id}):${f.s2}→${f.e3}`);

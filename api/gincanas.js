@@ -10,6 +10,19 @@ const router = express.Router();
 const pool = new Pool({ connectionString: process.env.POSTGRES_URL });
 const SECRET_KEY = process.env.JWT_SECRET;
 
+function empresaLegada(req) {
+    return req.empresaAtiva?.eh_legada === true;
+}
+
+function exigirCadeiaProdutivaLegada(req, res) {
+    if (empresaLegada(req)) return true;
+    res.status(403).json({
+        error: 'A cadeia de produção desta funcionalidade ainda não está disponível para a empresa ativa.',
+        codigo: 'CADEIA_PRODUTIVA_NAO_MIGRADA',
+    });
+    return false;
+}
+
 // ---------------------------------------------------------------------------
 // Auth middleware
 // ---------------------------------------------------------------------------
@@ -172,7 +185,16 @@ function calcularFase(gincana) {
 }
 
 // Calcula o valor do usuário na janela (pontos ou unidades físicas conforme escopo)
-async function calcularProgressoIndividual(dbClient, userId, escopo, janelaInicio, janelaFim, produtoId = null) {
+async function calcularProgressoIndividual(
+    dbClient,
+    userId,
+    escopo,
+    janelaInicio,
+    janelaFim,
+    produtoId = null,
+    cadeiaLegada = true
+) {
+    if (!cadeiaLegada) return 0;
     if (escopo === 'produto_especifico') {
         if (!produtoId) return 0;
         const res = await dbClient.query(
@@ -215,11 +237,19 @@ async function calcularProgressoIndividual(dbClient, userId, escopo, janelaInici
 }
 
 // Ranking completo — suporta produto_especifico além dos escopos de pontos
-async function calcularRankingBulk(dbClient, participantes, escopo, janelaInicio, janelaFim, produtoId = null) {
+async function calcularRankingBulk(
+    dbClient,
+    participantes,
+    escopo,
+    janelaInicio,
+    janelaFim,
+    produtoId = null,
+    empresaId
+) {
     let tipoFiltro;
-    if (participantes === 'costureiras') tipoFiltro = `'costureira' = ANY(u.tipos)`;
-    else if (participantes === 'tiktiks') tipoFiltro = `'tiktik' = ANY(u.tipos)`;
-    else tipoFiltro = `('costureira' = ANY(u.tipos) OR 'tiktik' = ANY(u.tipos))`;
+    if (participantes === 'costureiras') tipoFiltro = `'costureira' = ANY(ue.tipos)`;
+    else if (participantes === 'tiktiks') tipoFiltro = `'tiktik' = ANY(ue.tipos)`;
+    else tipoFiltro = `('costureira' = ANY(ue.tipos) OR 'tiktik' = ANY(ue.tipos))`;
 
     let query, params;
 
@@ -231,25 +261,29 @@ async function calcularRankingBulk(dbClient, participantes, escopo, janelaInicio
                 COALESCE((
                     SELECT SUM(p.quantidade)
                     FROM producoes p
-                    WHERE p.funcionario_id = u.id
-                      AND p.data BETWEEN $1 AND $2
-                      AND p.produto_id = $3
-                ), 0) AS valor
-            FROM usuarios u
-            WHERE ${tipoFiltro}
-              AND (u.is_test IS FALSE OR u.is_test IS NULL)
-              AND NOT ('prestador_externo' = ANY(u.tipos))
-              AND u.data_demissao IS NULL
+                 WHERE p.funcionario_id = u.id
+                       AND p.data BETWEEN $2 AND $3
+                       AND p.produto_id = $4
+                 ), 0) AS valor
+             FROM usuarios u
+             JOIN usuarios_empresas ue
+               ON ue.usuario_id = u.id
+              AND ue.empresa_id = $1
+              AND ue.ativo
+             WHERE ${tipoFiltro}
+               AND (u.is_test IS FALSE OR u.is_test IS NULL)
+               AND NOT ('prestador_externo' = ANY(ue.tipos))
+               AND ue.data_demissao IS NULL
         `;
-        params = [janelaInicio, janelaFim, produtoId];
+        params = [empresaId, janelaInicio, janelaFim, produtoId];
     } else {
         const producoesSub = (escopo === 'tudo' || escopo === 'apenas_processos_op')
             ? `COALESCE((
                    SELECT SUM(p.pontos_gerados)
                    FROM producoes p
                    WHERE p.funcionario_id = u.id
-                     AND p.data BETWEEN $1 AND $2
-               ), 0)`
+                       AND p.data BETWEEN $2 AND $3
+                ), 0)`
             : `0`;
 
         const arrematesSub = (escopo === 'tudo' || escopo === 'apenas_arremates')
@@ -257,7 +291,7 @@ async function calcularRankingBulk(dbClient, participantes, escopo, janelaInicio
                    SELECT SUM(a.pontos_gerados)
                    FROM arremates a
                    WHERE a.usuario_tiktik_id = u.id
-                     AND a.data_lancamento BETWEEN $1 AND $2
+                      AND a.data_lancamento BETWEEN $2 AND $3
                      AND a.tipo_lancamento = 'PRODUCAO'
                ), 0)`
             : `0`;
@@ -267,13 +301,17 @@ async function calcularRankingBulk(dbClient, participantes, escopo, janelaInicio
                 u.id   AS usuario_id,
                 u.nome,
                 (${producoesSub} + ${arrematesSub}) AS valor
-            FROM usuarios u
-            WHERE ${tipoFiltro}
-              AND (u.is_test IS FALSE OR u.is_test IS NULL)
-              AND NOT ('prestador_externo' = ANY(u.tipos))
-              AND u.data_demissao IS NULL
+             FROM usuarios u
+             JOIN usuarios_empresas ue
+               ON ue.usuario_id = u.id
+              AND ue.empresa_id = $1
+              AND ue.ativo
+             WHERE ${tipoFiltro}
+               AND (u.is_test IS FALSE OR u.is_test IS NULL)
+                AND NOT ('prestador_externo' = ANY(ue.tipos))
+               AND ue.data_demissao IS NULL
         `;
-        params = [janelaInicio, janelaFim];
+        params = [empresaId, janelaInicio, janelaFim];
     }
 
     const res = await dbClient.query(query, params);
@@ -300,7 +338,15 @@ function calcularNivelGanho(premiacoes, valor) {
 }
 
 // Tenta registrar vencedor de corrida atomicamente — retorna true se ganhou, false se alguém ganhou antes
-async function tentarRegistrarVencedorCorrida(dbClient, gincanaId, userId, premiacoes, semanaRef, ganhoEm = null) {
+async function tentarRegistrarVencedorCorrida(
+    dbClient,
+    gincanaId,
+    userId,
+    premiacoes,
+    semanaRef,
+    ganhoEm = null,
+    empresaId
+) {
     const melhorPremiacao = premiacoes.length > 0
         ? [...premiacoes].sort((a, b) => parseFloat(b.meta_valor) - parseFloat(a.meta_valor))[0]
         : null;
@@ -309,32 +355,41 @@ async function tentarRegistrarVencedorCorrida(dbClient, gincanaId, userId, premi
     const lockRes = await dbClient.query(
         `UPDATE gincanas
          SET vencedor_id = $1, encerrada_com_ganhador = TRUE, atualizado_em = NOW()
-         WHERE id = $2 AND encerrada_com_ganhador = FALSE
-         RETURNING id`,
-        [userId, gincanaId]
+         WHERE id = $2
+           AND empresa_id = $3
+           AND encerrada_com_ganhador = FALSE
+          RETURNING id`,
+        [userId, gincanaId, empresaId]
     );
 
     if (!lockRes.rows.length) return false;
 
     await dbClient.query(
         `INSERT INTO gincanas_premios_ganhos
-             (gincana_id, usuario_id, nivel_label, descricao_premio, semana_ref, ganho_em)
-         VALUES ($1, $2, $3, $4, $5, COALESCE($6, NOW()))
-         ON CONFLICT DO NOTHING`,
-        [gincanaId, userId, melhorPremiacao.nivel_label, melhorPremiacao.descricao_premio, semanaRef || null, ganhoEm || null]
+             (empresa_id, gincana_id, usuario_id, nivel_label, descricao_premio, semana_ref, ganho_em)
+          VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, NOW()))
+          ON CONFLICT DO NOTHING`,
+        [empresaId, gincanaId, userId, melhorPremiacao.nivel_label, melhorPremiacao.descricao_premio, semanaRef || null, ganhoEm || null]
     );
 
     return true;
 }
 
 // Recupera vencedor de corrida que encerrou sem detecção em tempo real (post-mortem)
-async function recuperarVencedorCorridaPostMortem(dbClient, gincana, premiacoes, janelaInicio, janelaFim) {
+async function recuperarVencedorCorridaPostMortem(
+    dbClient,
+    gincana,
+    premiacoes,
+    janelaInicio,
+    janelaFim,
+    empresaId
+) {
     if (!premiacoes.length) return;
     const metaValor = parseFloat(premiacoes[0].meta_valor);
     if (!metaValor) return;
 
     const ranking = await calcularRankingBulk(
-        dbClient, gincana.participantes, gincana.escopo_atividade, janelaInicio, janelaFim, gincana.produto_id
+        dbClient, gincana.participantes, gincana.escopo_atividade, janelaInicio, janelaFim, gincana.produto_id, empresaId
     );
     const candidatos = ranking.filter(r => r.valor >= metaValor);
     if (!candidatos.length) return;
@@ -364,7 +419,7 @@ async function recuperarVencedorCorridaPostMortem(dbClient, gincana, premiacoes,
 
     await dbClient.query('BEGIN');
     try {
-        await tentarRegistrarVencedorCorrida(dbClient, gincana.id, candidato.usuario_id, premiacoes, null, ganhoEm);
+        await tentarRegistrarVencedorCorrida(dbClient, gincana.id, candidato.usuario_id, premiacoes, null, ganhoEm, empresaId);
         await dbClient.query('COMMIT');
     } catch (e) {
         await dbClient.query('ROLLBACK');
@@ -372,17 +427,17 @@ async function recuperarVencedorCorridaPostMortem(dbClient, gincana, premiacoes,
 }
 
 // Registra todos os vencedores de uma gincana tipo 'meta' encerrada
-async function registrarVencedoresMeta(dbClient, gincanaId, ranking, premiacoes, semanaRef) {
+async function registrarVencedoresMeta(dbClient, gincanaId, ranking, premiacoes, semanaRef, empresaId) {
     for (const r of ranking) {
         const { nivelGanho } = calcularNivelGanho(premiacoes, r.valor);
         if (!nivelGanho) continue;
 
         await dbClient.query(
             `INSERT INTO gincanas_premios_ganhos
-                 (gincana_id, usuario_id, nivel_label, descricao_premio, semana_ref)
-             VALUES ($1, $2, $3, $4, $5)
-             ON CONFLICT DO NOTHING`,
-            [gincanaId, r.usuario_id, nivelGanho.nivel_label, nivelGanho.descricao_premio, semanaRef || null]
+                 (empresa_id, gincana_id, usuario_id, nivel_label, descricao_premio, semana_ref)
+              VALUES ($1, $2, $3, $4, $5, $6)
+              ON CONFLICT DO NOTHING`,
+            [empresaId, gincanaId, r.usuario_id, nivelGanho.nivel_label, nivelGanho.descricao_premio, semanaRef || null]
         );
     }
 }
@@ -392,10 +447,11 @@ async function registrarVencedoresMeta(dbClient, gincanaId, ranking, premiacoes,
 // ---------------------------------------------------------------------------
 router.get('/', async (req, res) => {
     const { filtro = 'ativas' } = req.query;
+    const empresaId = req.empresaId;
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id, empresaId);
         if (!permissoes.includes('acesso-ponto-por-processo')) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
@@ -416,9 +472,13 @@ router.get('/', async (req, res) => {
                     ) FILTER (WHERE gp.id IS NOT NULL) AS premiacoes
              FROM gincanas g
              LEFT JOIN produtos pr ON pr.id = g.produto_id
-             LEFT JOIN gincanas_premiacoes gp ON gp.gincana_id = g.id
-             GROUP BY g.id, pr.nome
-             ORDER BY g.criado_em DESC`
+              LEFT JOIN gincanas_premiacoes gp
+                ON gp.gincana_id = g.id
+               AND gp.empresa_id = g.empresa_id
+              WHERE g.empresa_id = $1
+              GROUP BY g.id, pr.nome
+              ORDER BY g.criado_em DESC`
+            , [empresaId]
         );
 
         const gincanas = result.rows.map(g => {
@@ -462,11 +522,14 @@ router.get('/', async (req, res) => {
 // ---------------------------------------------------------------------------
 router.get('/dashboard', async (req, res) => {
     const usuario = req.usuarioLogado;
+    const empresaId = req.empresaId;
+    if (!exigirCadeiaProdutivaLegada(req, res)) return;
     let dbClient;
     try {
         dbClient = await pool.connect();
 
-        const tipos = Array.isArray(usuario.tipos) ? usuario.tipos : [];
+        const tiposVinculo = req.vinculoEmpresa?.tipos || usuario.tipos;
+        const tipos = Array.isArray(tiposVinculo) ? tiposVinculo : [];
         const ehCostureira = tipos.includes('costureira');
         const ehTiktik     = tipos.includes('tiktik');
 
@@ -493,12 +556,16 @@ router.get('/dashboard', async (req, res) => {
                     ) AS premiacoes
              FROM gincanas g
              LEFT JOIN produtos pr ON pr.id = g.produto_id
-             LEFT JOIN gincanas_premiacoes gp ON gp.gincana_id = g.id
-             WHERE g.status = 'publicada'
-               AND g.visivel_dashboard = TRUE
+              LEFT JOIN gincanas_premiacoes gp
+                ON gp.gincana_id = g.id
+               AND gp.empresa_id = g.empresa_id
+              WHERE g.status = 'publicada'
+                AND g.empresa_id = $1
+                AND g.visivel_dashboard = TRUE
                AND g.datetime_fim > NOW() - INTERVAL '48 hours'
              GROUP BY g.id, pr.nome
              ORDER BY g.datetime_inicio ASC`
+            , [empresaId]
         );
 
         const resposta = [];
@@ -529,11 +596,11 @@ router.get('/dashboard', async (req, res) => {
 
             if (janelaInicio && janelaFim) {
                 meuValor = await calcularProgressoIndividual(
-                    dbClient, usuario.id, g.escopo_atividade, janelaInicio, janelaFim, g.produto_id
+                    dbClient, usuario.id, g.escopo_atividade, janelaInicio, janelaFim, g.produto_id, true
                 );
 
                 const ranking = await calcularRankingBulk(
-                    dbClient, g.participantes, g.escopo_atividade, janelaInicio, janelaFim, g.produto_id
+                    dbClient, g.participantes, g.escopo_atividade, janelaInicio, janelaFim, g.produto_id, empresaId
                 );
                 totalParticipantes = ranking.length;
 
@@ -556,7 +623,7 @@ router.get('/dashboard', async (req, res) => {
                         await dbClient.query('BEGIN');
                         try {
                             souVencedor = await tentarRegistrarVencedorCorrida(
-                                dbClient, g.id, usuario.id, premiacoes, faseInfo.semana_ref, new Date()
+                                dbClient, g.id, usuario.id, premiacoes, faseInfo.semana_ref, new Date(), empresaId
                             );
                             await dbClient.query('COMMIT');
                         } catch (e) {
@@ -568,9 +635,10 @@ router.get('/dashboard', async (req, res) => {
                 // Post-mortem: corrida encerrada sem ganhador registrado
                 if (ehCorrida && !g.encerrada_com_ganhador && faseInfo.fase === 'encerrada') {
                     try {
-                        await recuperarVencedorCorridaPostMortem(dbClient, g, premiacoes, janelaInicio, janelaFim);
+                        await recuperarVencedorCorridaPostMortem(dbClient, g, premiacoes, janelaInicio, janelaFim, empresaId);
                         const gAtt = await dbClient.query(
-                            'SELECT vencedor_id, encerrada_com_ganhador FROM gincanas WHERE id = $1', [g.id]
+                            'SELECT vencedor_id, encerrada_com_ganhador FROM gincanas WHERE id = $1 AND empresa_id = $2',
+                            [g.id, empresaId]
                         );
                         if (gAtt.rows[0]?.encerrada_com_ganhador) {
                             g.encerrada_com_ganhador = true;
@@ -589,10 +657,12 @@ router.get('/dashboard', async (req, res) => {
                 // Verificar se prêmio foi registrado e seu status de pagamento
                 const premioRes = await dbClient.query(
                     `SELECT pago_em, ganho_em FROM gincanas_premios_ganhos
-                     WHERE gincana_id = $1 AND usuario_id = $2
+                     WHERE empresa_id = $4
+                       AND gincana_id = $1
+                       AND usuario_id = $2
                        AND ($3::date IS NULL OR semana_ref = $3::date)
-                     LIMIT 1`,
-                    [g.id, usuario.id, faseInfo.semana_ref || null]
+                      LIMIT 1`,
+                    [g.id, usuario.id, faseInfo.semana_ref || null, empresaId]
                 );
                 if (premioRes.rows.length) {
                     premioRegistrado = true;
@@ -603,11 +673,11 @@ router.get('/dashboard', async (req, res) => {
                 // Registrar vencedores de meta quando encerrada (lazy)
                 if (!ehCorrida && (faseInfo.fase === 'encerrada' || faseInfo.fase === 'encerrada_semana')) {
                     const ranking2 = await calcularRankingBulk(
-                        dbClient, g.participantes, g.escopo_atividade, janelaInicio, janelaFim, g.produto_id
+                        dbClient, g.participantes, g.escopo_atividade, janelaInicio, janelaFim, g.produto_id, empresaId
                     );
                     try {
                         await dbClient.query('BEGIN');
-                        await registrarVencedoresMeta(dbClient, g.id, ranking2, premiacoes, faseInfo.semana_ref);
+                        await registrarVencedoresMeta(dbClient, g.id, ranking2, premiacoes, faseInfo.semana_ref, empresaId);
                         await dbClient.query('COMMIT');
                     } catch (_) {
                         await dbClient.query('ROLLBACK');
@@ -669,10 +739,11 @@ router.get('/dashboard', async (req, res) => {
 // GET /api/gincanas/:id — detalhes + premiações (admin)
 // ---------------------------------------------------------------------------
 router.get('/:id', async (req, res) => {
+    const empresaId = req.empresaId;
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id, empresaId);
         if (!permissoes.includes('acesso-ponto-por-processo')) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
@@ -681,14 +752,15 @@ router.get('/:id', async (req, res) => {
             `SELECT g.*, pr.nome AS produto_nome
              FROM gincanas g
              LEFT JOIN produtos pr ON pr.id = g.produto_id
-             WHERE g.id = $1`,
-            [req.params.id]
+              WHERE g.id = $1
+                AND g.empresa_id = $2`,
+            [req.params.id, empresaId]
         );
         if (!gRes.rows.length) return res.status(404).json({ error: 'Gincana não encontrada.' });
 
         const pRes = await dbClient.query(
-            'SELECT * FROM gincanas_premiacoes WHERE gincana_id = $1 ORDER BY ordem, meta_valor',
-            [req.params.id]
+            'SELECT * FROM gincanas_premiacoes WHERE gincana_id = $1 AND empresa_id = $2 ORDER BY ordem, meta_valor',
+            [req.params.id, empresaId]
         );
 
         const g = gRes.rows[0];
@@ -706,10 +778,12 @@ router.get('/:id', async (req, res) => {
 // GET /api/gincanas/:id/ranking — ranking completo (admin)
 // ---------------------------------------------------------------------------
 router.get('/:id/ranking', async (req, res) => {
+    const empresaId = req.empresaId;
+    if (!exigirCadeiaProdutivaLegada(req, res)) return;
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id, empresaId);
         if (!permissoes.includes('acesso-ponto-por-processo')) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
@@ -718,8 +792,9 @@ router.get('/:id/ranking', async (req, res) => {
             `SELECT g.*, pr.nome AS produto_nome
              FROM gincanas g
              LEFT JOIN produtos pr ON pr.id = g.produto_id
-             WHERE g.id = $1`,
-            [req.params.id]
+              WHERE g.id = $1
+                AND g.empresa_id = $2`,
+            [req.params.id, empresaId]
         );
         if (!gRes.rows.length) return res.status(404).json({ error: 'Gincana não encontrada.' });
 
@@ -727,8 +802,8 @@ router.get('/:id/ranking', async (req, res) => {
         const faseInfo = calcularFase(g);
 
         const pRes = await dbClient.query(
-            'SELECT * FROM gincanas_premiacoes WHERE gincana_id = $1 ORDER BY ordem, meta_valor',
-            [req.params.id]
+            'SELECT * FROM gincanas_premiacoes WHERE gincana_id = $1 AND empresa_id = $2 ORDER BY ordem, meta_valor',
+            [req.params.id, empresaId]
         );
         const premiacoes = pRes.rows;
 
@@ -746,7 +821,7 @@ router.get('/:id/ranking', async (req, res) => {
         }
 
         const ranking = await calcularRankingBulk(
-            dbClient, g.participantes, g.escopo_atividade, janelaInicio, janelaFim, g.produto_id
+            dbClient, g.participantes, g.escopo_atividade, janelaInicio, janelaFim, g.produto_id, empresaId
         );
 
         const ehEquipe = g.modalidade === 'equipe';
@@ -757,7 +832,7 @@ router.get('/:id/ranking', async (req, res) => {
         if (!ehCorrida && (faseInfo.fase === 'encerrada' || faseInfo.fase === 'encerrada_semana' || faseInfo.fase === 'arquivada')) {
             try {
                 await dbClient.query('BEGIN');
-                await registrarVencedoresMeta(dbClient, g.id, ranking, premiacoes, faseInfo.semana_ref);
+                await registrarVencedoresMeta(dbClient, g.id, ranking, premiacoes, faseInfo.semana_ref, empresaId);
                 await dbClient.query('COMMIT');
             } catch (_) {
                 await dbClient.query('ROLLBACK');
@@ -767,9 +842,10 @@ router.get('/:id/ranking', async (req, res) => {
         // Post-mortem: corrida encerrada sem ganhador registrado
         if (ehCorrida && !g.encerrada_com_ganhador && (faseInfo.fase === 'encerrada' || faseInfo.fase === 'arquivada') && janelaInicio && janelaFim) {
             try {
-                await recuperarVencedorCorridaPostMortem(dbClient, g, premiacoes, janelaInicio, janelaFim);
+                await recuperarVencedorCorridaPostMortem(dbClient, g, premiacoes, janelaInicio, janelaFim, empresaId);
                 const gAtt = await dbClient.query(
-                    'SELECT vencedor_id, encerrada_com_ganhador FROM gincanas WHERE id = $1', [g.id]
+                    'SELECT vencedor_id, encerrada_com_ganhador FROM gincanas WHERE id = $1 AND empresa_id = $2',
+                    [g.id, empresaId]
                 );
                 if (gAtt.rows[0]?.encerrada_com_ganhador) {
                     g.encerrada_com_ganhador = true;
@@ -784,9 +860,10 @@ router.get('/:id/ranking', async (req, res) => {
         const premiosPagosRes = await dbClient.query(
             `SELECT usuario_id, pago_em, ganho_em
              FROM gincanas_premios_ganhos
-             WHERE gincana_id = $1
-               AND ($2::date IS NULL OR semana_ref = $2::date)`,
-            [g.id, faseInfo.semana_ref || null]
+             WHERE empresa_id = $2
+               AND gincana_id = $1
+               AND ($3::date IS NULL OR semana_ref = $3::date)`,
+            [g.id, empresaId, faseInfo.semana_ref || null]
         );
         const mapaPremiados = new Map(premiosPagosRes.rows.map(r => [r.usuario_id, r]));
 
@@ -825,10 +902,11 @@ router.get('/:id/ranking', async (req, res) => {
 // POST /api/gincanas — cria em rascunho
 // ---------------------------------------------------------------------------
 router.post('/', async (req, res) => {
+    const empresaId = req.empresaId;
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id, empresaId);
         if (!permissoes.includes('gerenciar-gincanas')) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
@@ -858,12 +936,12 @@ router.post('/', async (req, res) => {
 
         const gRes = await dbClient.query(
             `INSERT INTO gincanas
-             (nome, descricao, banner_emoji, participantes, modalidade, tipo_premiacao,
+             (empresa_id, nome, descricao, banner_emoji, participantes, modalidade, tipo_premiacao,
               escopo_atividade, produto_id, tipo_recorrencia, datetime_inicio, datetime_fim,
               hora_inicio_semana, hora_fim_semana, visivel_dashboard, criado_por)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
              RETURNING *`,
-            [nome, descricao || null, banner_emoji, participantes, modalidade, tipo_premiacao,
+            [empresaId, nome, descricao || null, banner_emoji, participantes, modalidade, tipo_premiacao,
              escopo_atividade, produto_id || null, tipo_recorrencia, datetime_inicio, datetime_fim,
              hora_inicio_semana, hora_fim_semana, visivel_dashboard, req.usuarioLogado.id]
         );
@@ -872,17 +950,17 @@ router.post('/', async (req, res) => {
         for (const p of premiacoes) {
             await dbClient.query(
                 `INSERT INTO gincanas_premiacoes
-                     (gincana_id, nivel_label, emoji_icone, meta_valor, descricao_premio, valor_premio_reais, ordem)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-                [gincana.id, p.nivel_label, p.emoji_icone || '🏅', p.meta_valor, p.descricao_premio, p.valor_premio_reais || null, p.ordem || 0]
+                     (empresa_id, gincana_id, nivel_label, emoji_icone, meta_valor, descricao_premio, valor_premio_reais, ordem)
+                  VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+                [empresaId, gincana.id, p.nivel_label, p.emoji_icone || '🏅', p.meta_valor, p.descricao_premio, p.valor_premio_reais || null, p.ordem || 0]
             );
         }
 
         await dbClient.query('COMMIT');
 
         const pRes = await dbClient.query(
-            'SELECT * FROM gincanas_premiacoes WHERE gincana_id = $1 ORDER BY ordem, meta_valor',
-            [gincana.id]
+            'SELECT * FROM gincanas_premiacoes WHERE gincana_id = $1 AND empresa_id = $2 ORDER BY ordem, meta_valor',
+            [gincana.id, empresaId]
         );
         res.status(201).json({ ...gincana, premiacoes: pRes.rows });
     } catch (error) {
@@ -898,15 +976,19 @@ router.post('/', async (req, res) => {
 // PUT /api/gincanas/:id — edita (só rascunho)
 // ---------------------------------------------------------------------------
 router.put('/:id', async (req, res) => {
+    const empresaId = req.empresaId;
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id, empresaId);
         if (!permissoes.includes('gerenciar-gincanas')) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
 
-        const gRes = await dbClient.query('SELECT status FROM gincanas WHERE id = $1', [req.params.id]);
+        const gRes = await dbClient.query(
+            'SELECT status FROM gincanas WHERE id = $1 AND empresa_id = $2',
+            [req.params.id, empresaId]
+        );
         if (!gRes.rows.length) return res.status(404).json({ error: 'Gincana não encontrada.' });
         if (gRes.rows[0].status !== 'rascunho') {
             return res.status(400).json({ error: 'Só é possível editar gincanas em rascunho.' });
@@ -930,29 +1012,33 @@ router.put('/:id', async (req, res) => {
              tipo_recorrencia=$9, datetime_inicio=$10, datetime_fim=$11,
              hora_inicio_semana=$12, hora_fim_semana=$13, visivel_dashboard=$14,
              atualizado_em=NOW()
-             WHERE id=$15 RETURNING *`,
+             WHERE id=$15
+               AND empresa_id=$16 RETURNING *`,
             [nome, descricao || null, banner_emoji, participantes, modalidade || 'individual',
              tipo_premiacao || 'meta', escopo_atividade, produto_id || null,
              tipo_recorrencia, datetime_inicio, datetime_fim,
              hora_inicio_semana || null, hora_fim_semana || null, visivel_dashboard,
-             req.params.id]
+              req.params.id, empresaId]
         );
 
-        await dbClient.query('DELETE FROM gincanas_premiacoes WHERE gincana_id = $1', [req.params.id]);
+        await dbClient.query(
+            'DELETE FROM gincanas_premiacoes WHERE gincana_id = $1 AND empresa_id = $2',
+            [req.params.id, empresaId]
+        );
         for (const p of premiacoes) {
             await dbClient.query(
                 `INSERT INTO gincanas_premiacoes
-                     (gincana_id, nivel_label, emoji_icone, meta_valor, descricao_premio, valor_premio_reais, ordem)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-                [req.params.id, p.nivel_label, p.emoji_icone || '🏅', p.meta_valor, p.descricao_premio, p.valor_premio_reais || null, p.ordem || 0]
+                     (empresa_id, gincana_id, nivel_label, emoji_icone, meta_valor, descricao_premio, valor_premio_reais, ordem)
+                  VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+                [empresaId, req.params.id, p.nivel_label, p.emoji_icone || '🏅', p.meta_valor, p.descricao_premio, p.valor_premio_reais || null, p.ordem || 0]
             );
         }
 
         await dbClient.query('COMMIT');
 
         const pRes = await dbClient.query(
-            'SELECT * FROM gincanas_premiacoes WHERE gincana_id = $1 ORDER BY ordem, meta_valor',
-            [req.params.id]
+            'SELECT * FROM gincanas_premiacoes WHERE gincana_id = $1 AND empresa_id = $2 ORDER BY ordem, meta_valor',
+            [req.params.id, empresaId]
         );
         res.json({ ...updated.rows[0], premiacoes: pRes.rows });
     } catch (error) {
@@ -968,15 +1054,20 @@ router.put('/:id', async (req, res) => {
 // PATCH /api/gincanas/:id/publicar
 // ---------------------------------------------------------------------------
 router.patch('/:id/publicar', async (req, res) => {
+    const empresaId = req.empresaId;
+    if (!exigirCadeiaProdutivaLegada(req, res)) return;
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id, empresaId);
         if (!permissoes.includes('gerenciar-gincanas')) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
 
-        const gRes = await dbClient.query('SELECT * FROM gincanas WHERE id = $1', [req.params.id]);
+        const gRes = await dbClient.query(
+            'SELECT * FROM gincanas WHERE id = $1 AND empresa_id = $2',
+            [req.params.id, empresaId]
+        );
         if (!gRes.rows.length) return res.status(404).json({ error: 'Gincana não encontrada.' });
 
         const g = gRes.rows[0];
@@ -985,7 +1076,8 @@ router.patch('/:id/publicar', async (req, res) => {
         }
 
         const pRes = await dbClient.query(
-            'SELECT * FROM gincanas_premiacoes WHERE gincana_id = $1', [g.id]
+            'SELECT * FROM gincanas_premiacoes WHERE gincana_id = $1 AND empresa_id = $2',
+            [g.id, empresaId]
         );
         if (!pRes.rows.length) {
             return res.status(400).json({ error: 'A gincana precisa ter pelo menos uma premiação para ser publicada.' });
@@ -996,8 +1088,8 @@ router.patch('/:id/publicar', async (req, res) => {
         await dbClient.query('BEGIN');
 
         await dbClient.query(
-            'UPDATE gincanas SET status=$1, atualizado_em=NOW() WHERE id=$2',
-            ['publicada', g.id]
+            'UPDATE gincanas SET status=$1, atualizado_em=NOW() WHERE id=$2 AND empresa_id=$3',
+            ['publicada', g.id, empresaId]
         );
 
         if (notificar) {
@@ -1008,17 +1100,20 @@ router.patch('/:id/publicar', async (req, res) => {
             const tplRes = await dbClient.query(
                 `SELECT tipo, cor_fundo, url_imagem, urgente
                  FROM avisos_popup
-                 WHERE is_template = TRUE AND titulo ILIKE '%Gincana no Ar%'
-                 LIMIT 1`
+                 WHERE empresa_id = $1
+                   AND is_template = TRUE AND titulo ILIKE '%Gincana no Ar%'
+                 LIMIT 1`,
+                [empresaId]
             );
             const tpl = tplRes.rows[0] || null;
 
             await dbClient.query(
                 `INSERT INTO avisos_popup
-                    (titulo, tipo, mensagem, url_imagem, cor_fundo, destinatarios,
+                    (empresa_id, titulo, tipo, mensagem, url_imagem, cor_fundo, destinatarios,
                      ids_individuais, urgente, ativo, is_template, data_inicio, data_fim, criado_por)
-                 VALUES ($1,$2,$3,$4,$5,$6,NULL,$7,TRUE,FALSE,$8,NULL,$9)`,
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,NULL,$8,TRUE,FALSE,$9,NULL,$10)`,
                 [
+                    empresaId,
                     `${g.banner_emoji} Nova Gincana: ${g.nome}`,
                     tpl?.tipo       || 'texto',
                     g.descricao     || `Participe da gincana "${g.nome}"!`,
@@ -1034,7 +1129,10 @@ router.patch('/:id/publicar', async (req, res) => {
 
         await dbClient.query('COMMIT');
 
-        const updated = await dbClient.query('SELECT * FROM gincanas WHERE id = $1', [g.id]);
+        const updated = await dbClient.query(
+            'SELECT * FROM gincanas WHERE id = $1 AND empresa_id = $2',
+            [g.id, empresaId]
+        );
         res.json(updated.rows[0]);
     } catch (error) {
         if (dbClient) await dbClient.query('ROLLBACK');
@@ -1049,23 +1147,27 @@ router.patch('/:id/publicar', async (req, res) => {
 // PATCH /api/gincanas/:id/cancelar
 // ---------------------------------------------------------------------------
 router.patch('/:id/cancelar', async (req, res) => {
+    const empresaId = req.empresaId;
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id, empresaId);
         if (!permissoes.includes('gerenciar-gincanas')) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
 
-        const gRes = await dbClient.query('SELECT status FROM gincanas WHERE id = $1', [req.params.id]);
+        const gRes = await dbClient.query(
+            'SELECT status FROM gincanas WHERE id = $1 AND empresa_id = $2',
+            [req.params.id, empresaId]
+        );
         if (!gRes.rows.length) return res.status(404).json({ error: 'Gincana não encontrada.' });
         if (gRes.rows[0].status === 'cancelada') {
             return res.status(400).json({ error: 'Gincana já está cancelada.' });
         }
 
         await dbClient.query(
-            'UPDATE gincanas SET status=$1, atualizado_em=NOW() WHERE id=$2',
-            ['cancelada', req.params.id]
+            'UPDATE gincanas SET status=$1, atualizado_em=NOW() WHERE id=$2 AND empresa_id=$3',
+            ['cancelada', req.params.id, empresaId]
         );
         res.json({ ok: true });
     } catch (error) {
@@ -1080,15 +1182,19 @@ router.patch('/:id/cancelar', async (req, res) => {
 // DELETE /api/gincanas/:id — só rascunho ou cancelada
 // ---------------------------------------------------------------------------
 router.delete('/:id', async (req, res) => {
+    const empresaId = req.empresaId;
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id, empresaId);
         if (!permissoes.includes('gerenciar-gincanas')) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
 
-        const gRes = await dbClient.query('SELECT status FROM gincanas WHERE id = $1', [req.params.id]);
+        const gRes = await dbClient.query(
+            'SELECT status FROM gincanas WHERE id = $1 AND empresa_id = $2',
+            [req.params.id, empresaId]
+        );
         if (!gRes.rows.length) return res.status(404).json({ error: 'Gincana não encontrada.' });
 
         const status = gRes.rows[0].status;
@@ -1096,7 +1202,10 @@ router.delete('/:id', async (req, res) => {
             return res.status(400).json({ error: 'Só é possível deletar gincanas em rascunho ou canceladas.' });
         }
 
-        await dbClient.query('DELETE FROM gincanas WHERE id = $1', [req.params.id]);
+        await dbClient.query(
+            'DELETE FROM gincanas WHERE id = $1 AND empresa_id = $2',
+            [req.params.id, empresaId]
+        );
         res.json({ ok: true });
     } catch (error) {
         console.error('[DELETE /api/gincanas/:id] Erro:', error);
@@ -1110,7 +1219,8 @@ router.delete('/:id', async (req, res) => {
 // Hook pós-produção — chamado por api/producoes.js após COMMIT (seção 4.2 do plano v4.0)
 // Detecta cruzamento de meta no momento do lançamento (apenas costureiras por ora)
 // ---------------------------------------------------------------------------
-export async function verificarGincanasAposProducao(dbClient, funcionarioId, timestampProducao) {
+export async function verificarGincanasAposProducao(dbClient, funcionarioId, timestampProducao, empresaId) {
+    if (!empresaId) return;
     const gRes = await dbClient.query(
         `SELECT g.id, g.nome, g.participantes, g.modalidade, g.tipo_premiacao,
                 g.escopo_atividade, g.produto_id, g.tipo_recorrencia,
@@ -1124,15 +1234,18 @@ export async function verificarGincanasAposProducao(dbClient, funcionarioId, tim
                     ) ORDER BY gp.ordem ASC, gp.meta_valor ASC
                 ) FILTER (WHERE gp.id IS NOT NULL), '[]'::json) AS premiacoes
          FROM gincanas g
-         LEFT JOIN gincanas_premiacoes gp ON gp.gincana_id = g.id
+         LEFT JOIN gincanas_premiacoes gp
+           ON gp.gincana_id = g.id
+          AND gp.empresa_id = g.empresa_id
          WHERE g.status = 'publicada'
+           AND g.empresa_id = $2
            AND g.participantes IN ('costureiras', 'ambos')
            AND g.escopo_atividade IN ('tudo', 'apenas_processos_op', 'produto_especifico')
            AND g.datetime_inicio <= $1
            AND g.datetime_fim >= $1
            AND g.encerrada_com_ganhador = FALSE
          GROUP BY g.id`,
-        [timestampProducao]
+         [timestampProducao, empresaId]
     );
 
     for (const g of gRes.rows) {
@@ -1145,7 +1258,7 @@ export async function verificarGincanasAposProducao(dbClient, funcionarioId, tim
         const { janela_inicio: janelaInicio, janela_fim: janelaFim, semana_ref: semanaRef } = faseInfo;
 
         const valorAtual = await calcularProgressoIndividual(
-            dbClient, funcionarioId, g.escopo_atividade, janelaInicio, janelaFim, g.produto_id
+            dbClient, funcionarioId, g.escopo_atividade, janelaInicio, janelaFim, g.produto_id, true
         );
 
         const { nivelGanho } = calcularNivelGanho(premiacoes, valorAtual);
@@ -1155,7 +1268,7 @@ export async function verificarGincanasAposProducao(dbClient, funcionarioId, tim
             await dbClient.query('BEGIN');
             try {
                 await tentarRegistrarVencedorCorrida(
-                    dbClient, g.id, funcionarioId, premiacoes, semanaRef || null, timestampProducao
+                    dbClient, g.id, funcionarioId, premiacoes, semanaRef || null, timestampProducao, empresaId
                 );
                 await dbClient.query('COMMIT');
             } catch (e) {
@@ -1165,10 +1278,10 @@ export async function verificarGincanasAposProducao(dbClient, funcionarioId, tim
             // Meta: registra nível atingido com ganho_em = timestamp da produção
             await dbClient.query(
                 `INSERT INTO gincanas_premios_ganhos
-                     (gincana_id, usuario_id, nivel_label, descricao_premio, semana_ref, ganho_em)
-                 VALUES ($1, $2, $3, $4, $5, $6)
-                 ON CONFLICT DO NOTHING`,
-                [g.id, funcionarioId, nivelGanho.nivel_label, nivelGanho.descricao_premio,
+                     (empresa_id, gincana_id, usuario_id, nivel_label, descricao_premio, semana_ref, ganho_em)
+                  VALUES ($1, $2, $3, $4, $5, $6, $7)
+                  ON CONFLICT DO NOTHING`,
+                [empresaId, g.id, funcionarioId, nivelGanho.nivel_label, nivelGanho.descricao_premio,
                  semanaRef || null, timestampProducao]
             );
         }

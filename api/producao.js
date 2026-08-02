@@ -5,12 +5,22 @@ const { Pool } = pkg;
 import jwt from 'jsonwebtoken';
 import express from 'express';
 import { getPermissoesCompletasUsuarioDB, determinarStatusFinalServidor } from './usuarios.js';
+import { obterEmpresaIdDoContexto } from './contexto-empresa.js';
 
 const router = express.Router();
 const pool = new Pool({
     connectionString: process.env.POSTGRES_URL,
 });
 const SECRET_KEY = process.env.JWT_SECRET;
+
+function exigirCadeiaProdutivaLegada(req, res) {
+    if (req.empresaAtiva?.eh_legada === true) return true;
+    res.status(403).json({
+        error: 'A cadeia de producao ainda nao esta disponivel para a empresa ativa.',
+        codigo: 'CADEIA_PRODUTIVA_NAO_MIGRADA',
+    });
+    return false;
+}
 
 // Converte 'HH:MM' (ou 'HH:MM:SS') em minutos desde meia-noite. Null se inválido.
 const hhmmParaMin = (hhmm) => {
@@ -26,6 +36,8 @@ router.use(async (req, res, next) => {
         const token = req.headers.authorization?.split(' ')[1];
         if (!token) throw new Error('Token não fornecido');
         req.usuarioLogado = jwt.verify(token, SECRET_KEY);
+        req.empresaId = obterEmpresaIdDoContexto(req);
+        if (!exigirCadeiaProdutivaLegada(req, res)) return;
         next();
     } catch (error) {
         res.status(401).json({ error: 'Token inválido ou expirado' });
@@ -42,11 +54,12 @@ router.get('/meu-status', async (req, res) => {
         const [usuarioResult, pontoResult, pontosHojeResult] = await Promise.all([
             dbClient.query(`
                 SELECT
-                    u.id, u.nome, u.tipos, u.status_atual, u.status_data_modificacao,
-                    u.horario_entrada_1, u.horario_saida_1,
-                    u.horario_entrada_2, u.horario_saida_2,
-                    u.horario_entrada_3, u.horario_saida_3,
-                    u.dias_trabalho,
+                    u.id, u.nome, ue.tipos, ue.status_atual,
+                    ue.status_data_modificacao,
+                    ue.horario_entrada_1, ue.horario_saida_1,
+                    ue.horario_entrada_2, ue.horario_saida_2,
+                    ue.horario_entrada_3, ue.horario_saida_3,
+                    ue.dias_trabalho,
                     COALESCE(
                         json_agg(
                             json_build_object(
@@ -66,8 +79,14 @@ router.get('/meu-status', async (req, res) => {
                         '[]'
                     ) AS tarefas_ativas
                 FROM usuarios u
+                JOIN usuarios_empresas ue
+                    ON ue.usuario_id = u.id
+                    AND ue.empresa_id = $2
+                    AND ue.ativo
                 LEFT JOIN sessoes_trabalho_producao s
-                    ON u.id = s.funcionario_id AND s.status = 'EM_ANDAMENTO'
+                    ON u.id = s.funcionario_id
+                    AND s.empresa_id = ue.empresa_id
+                    AND s.status = 'EM_ANDAMENTO'
                 LEFT JOIN produtos p ON s.produto_id = p.id
                 LEFT JOIN LATERAL (
                     SELECT gr.imagem
@@ -81,20 +100,22 @@ router.get('/meu-status', async (req, res) => {
                     ON cpp.produto_id = s.produto_id
                     AND cpp.processo_nome = s.processo
                     AND cpp.tipo_atividade = 'costura_op_costureira'
+                    AND cpp.empresa_id = ue.empresa_id
                     AND cpp.ativo = TRUE
                 LEFT JOIN tempos_padrao_producao tpp_ref
                     ON tpp_ref.produto_id = s.produto_id
                     AND tpp_ref.processo = s.processo
                 WHERE u.id = $1
-                GROUP BY u.id
-            `, [userId]),
+                GROUP BY u.id, ue.id
+            `, [userId, req.empresaId]),
             dbClient.query(`
                 SELECT horario_real_s1, horario_real_e2,
                        horario_real_s2, horario_real_e3, horario_real_s3
                 FROM ponto_diario
                 WHERE funcionario_id = $1
+                  AND empresa_id = $2
                   AND data = (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
-            `, [userId]),
+            `, [userId, req.empresaId]),
             dbClient.query(`
                 SELECT COALESCE(SUM(pontos_gerados), 0)::numeric(10,2) AS pontos_hoje
                 FROM producoes
@@ -126,6 +147,7 @@ router.get('/meu-status', async (req, res) => {
             horario_entrada_2: row.horario_entrada_2,
             horario_saida_2:   row.horario_saida_2,
             horario_entrada_3: row.horario_entrada_3,
+            dias_trabalho:     row.dias_trabalho,
             ponto_hoje: pontoDiario ? {
                 horario_real_s1: pontoDiario.horario_real_s1,
                 horario_real_e2: pontoDiario.horario_real_e2,
@@ -149,7 +171,11 @@ router.get('/status-funcionarios', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(
+            dbClient,
+            req.usuarioLogado.id,
+            req.empresaId
+        );
         if (!permissoes.includes('acesso-ordens-de-producao')) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
@@ -158,10 +184,12 @@ router.get('/status-funcionarios', async (req, res) => {
         // Buscamos usuários e suas sessões ativas (agregadas em JSON array)
         const query = `
             SELECT 
-                u.id, u.nome, u.avatar_url, u.foto_oficial, u.nivel, u.status_atual, u.status_data_modificacao,
-                u.horario_entrada_1, u.horario_saida_1, u.horario_entrada_2, u.horario_saida_2,
-                u.horario_entrada_3, u.horario_saida_3, u.dias_trabalho,
-                u.tipos,
+                u.id, u.nome, u.avatar_url, u.foto_oficial,
+                ue.nivel, ue.status_atual, ue.status_data_modificacao,
+                ue.horario_entrada_1, ue.horario_saida_1,
+                ue.horario_entrada_2, ue.horario_saida_2,
+                ue.horario_entrada_3, ue.horario_saida_3, ue.dias_trabalho,
+                ue.tipos,
                 COALESCE(
                     json_agg(
                         json_build_object(
@@ -180,7 +208,14 @@ router.get('/status-funcionarios', async (req, res) => {
                     '[]'
                 ) as tarefas_ativas
             FROM usuarios u
-            LEFT JOIN sessoes_trabalho_producao s ON u.id = s.funcionario_id AND s.status = 'EM_ANDAMENTO'
+            JOIN usuarios_empresas ue
+              ON ue.usuario_id = u.id
+             AND ue.empresa_id = $1
+             AND ue.ativo
+            LEFT JOIN sessoes_trabalho_producao s
+              ON u.id = s.funcionario_id
+             AND s.empresa_id = ue.empresa_id
+             AND s.status = 'EM_ANDAMENTO'
             LEFT JOIN produtos p ON s.produto_id = p.id
             LEFT JOIN LATERAL (
                 SELECT gr.imagem
@@ -190,15 +225,15 @@ router.get('/status-funcionarios', async (req, res) => {
                 WHERE gr.variacao = s.variante
                 LIMIT 1
             ) g ON true
-            WHERE u.data_demissao IS NULL
-            AND ('costureira' = ANY(u.tipos) OR 'tiktik' = ANY(u.tipos))
+            WHERE ue.data_demissao IS NULL
+            AND ('costureira' = ANY(ue.tipos) OR 'tiktik' = ANY(ue.tipos))
             AND (u.is_test IS FALSE OR u.is_test IS NULL)
-            AND NOT ('prestador_externo' = ANY(u.tipos))
-            GROUP BY u.id
+            AND NOT ('prestador_externo' = ANY(ue.tipos))
+            GROUP BY u.id, ue.id
             ORDER BY u.nome ASC;
         `;
         
-        const result = await dbClient.query(query);
+        const result = await dbClient.query(query, [req.empresaId]);
 
         // Busca ponto_diario e sessoes_hoje em paralelo (bulk — sem N+1)
         const [pontoDiarioResult, sessoesHojeResult, feriadoHojeResult] = await Promise.all([
@@ -207,7 +242,9 @@ router.get('/status-funcionarios', async (req, res) => {
                         horario_real_s2, horario_real_e3, horario_real_s3,
                         saida_desfeita, saida_desfeita_por, saida_desfeita_em
                  FROM ponto_diario
-                 WHERE data = (NOW() AT TIME ZONE 'America/Sao_Paulo')::date`
+                 WHERE data = (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
+                   AND empresa_id = $1`,
+                [req.empresaId]
             ),
             dbClient.query(
                 `SELECT
@@ -237,21 +274,25 @@ router.get('/status-funcionarios', async (req, res) => {
                  ) g ON true
                  WHERE (s.data_inicio AT TIME ZONE 'America/Sao_Paulo')::date
                            = (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
+                   AND s.empresa_id = $1
                    AND s.status IN ('FINALIZADA', 'EM_ANDAMENTO')
-                 GROUP BY s.funcionario_id`
+                 GROUP BY s.funcionario_id`,
+                [req.empresaId]
             ),
             dbClient.query(`
                 SELECT descricao
                 FROM calendario_empresa
                 WHERE data = (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
+                  AND empresa_id = $1
                   AND tipo IN ('feriado_nacional', 'feriado_regional', 'folga_empresa')
                   AND NOT EXISTS (
                       SELECT 1 FROM calendario_empresa c2
                       WHERE c2.data = (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
+                        AND c2.empresa_id = $1
                         AND c2.tipo = 'trabalho_extra'
                   )
                 LIMIT 1
-            `),
+            `, [req.empresaId]),
         ]);
         const pontoDiarioMap  = new Map(pontoDiarioResult.rows.map(p => [p.funcionario_id, p]));
         const sessoesHojeMap  = new Map(sessoesHojeResult.rows.map(r => [r.funcionario_id, r.sessoes || []]));
@@ -300,13 +341,15 @@ router.get('/status-funcionarios', async (req, res) => {
                 if (agoraMin !== null && s1Min !== null && agoraMin >= s1Min) {
                     safetyNetInserts.push(
                         dbClient.query(
-                            `INSERT INTO ponto_diario (funcionario_id, data, horario_real_s1, horario_real_e2)
-                             VALUES ($1, $2, $3, $4)
-                             ON CONFLICT (funcionario_id, data) DO UPDATE SET
+                            `INSERT INTO ponto_diario
+                                (funcionario_id, data, horario_real_s1,
+                                 horario_real_e2, empresa_id)
+                             VALUES ($1, $2, $3, $4, $5)
+                             ON CONFLICT (empresa_id, funcionario_id, data) DO UPDATE SET
                                  horario_real_s1 = COALESCE(ponto_diario.horario_real_s1, EXCLUDED.horario_real_s1),
                                  horario_real_e2 = COALESCE(ponto_diario.horario_real_e2, EXCLUDED.horario_real_e2),
                                  updated_at = NOW()`,
-                            [row.id, dataHojeSP, s1, e2]
+                            [row.id, dataHojeSP, s1, e2, req.empresaId]
                         )
                     );
                     // Atualiza em memória para refletir na resposta
@@ -333,13 +376,15 @@ router.get('/status-funcionarios', async (req, res) => {
                 if (agoraMin !== null && s2Min !== null && agoraMin >= s2Min) {
                     safetyNetInserts.push(
                         dbClient.query(
-                            `INSERT INTO ponto_diario (funcionario_id, data, horario_real_s2, horario_real_e3)
-                             VALUES ($1, $2, $3, $4)
-                             ON CONFLICT (funcionario_id, data) DO UPDATE SET
+                            `INSERT INTO ponto_diario
+                                (funcionario_id, data, horario_real_s2,
+                                 horario_real_e3, empresa_id)
+                             VALUES ($1, $2, $3, $4, $5)
+                             ON CONFLICT (empresa_id, funcionario_id, data) DO UPDATE SET
                                  horario_real_s2 = COALESCE(ponto_diario.horario_real_s2, EXCLUDED.horario_real_s2),
                                  horario_real_e3 = COALESCE(ponto_diario.horario_real_e3, EXCLUDED.horario_real_e3),
                                  updated_at = NOW()`,
-                            [row.id, dataHojeSP, s2, e3]
+                            [row.id, dataHojeSP, s2, e3, req.empresaId]
                         )
                     );
                     if (!pontoAtual) {
@@ -509,7 +554,8 @@ router.get('/fila-de-tarefas', async (req, res) => {
                 SELECT produto_id, variante, processo, quantidade_atribuida, etapas_unificadas
                 FROM sessoes_trabalho_producao
                 WHERE status = 'EM_ANDAMENTO'
-            `),
+                  AND empresa_id = $1
+            `, [req.empresaId]),
             
             // Prateleira 4: Produtos (com grade para buscar imagem da variante)
             dbClient.query(`SELECT id, nome, imagem, grade FROM produtos`)
@@ -643,9 +689,10 @@ router.post('/sugestao-tarefa', async (req, res) => {
             SELECT produto_id, processo, COUNT(*) AS contagem
             FROM sessoes_trabalho_producao
             WHERE funcionario_id = $1
+              AND empresa_id = $2
               AND data_inicio > NOW() - INTERVAL '90 days'
             GROUP BY produto_id, processo
-        `, [funcionario_id]);
+        `, [funcionario_id, req.empresaId]);
 
         const historicoMap = new Map();
         historicoResult.rows.forEach(row => {
@@ -803,39 +850,70 @@ router.put('/sessoes/cancelar', async (req, res) => {
         dbClient = await pool.connect();
         await dbClient.query('BEGIN');
 
-        const sessaoResult = await dbClient.query('SELECT * FROM sessoes_trabalho_producao WHERE id = $1 FOR UPDATE', [id_sessao]);
+        const sessaoResult = await dbClient.query(
+            `SELECT *
+               FROM sessoes_trabalho_producao
+              WHERE id = $1
+                AND empresa_id = $2
+              FOR UPDATE`,
+            [id_sessao, req.empresaId]
+        );
         if (sessaoResult.rows.length === 0) throw new Error('Sessão de trabalho não encontrada.');
         const sessao = sessaoResult.rows[0];
         if (sessao.status !== 'EM_ANDAMENTO') throw new Error('Esta tarefa não está mais em andamento.');
 
         // Atualiza a sessão para CANCELADA
-        await dbClient.query(`UPDATE sessoes_trabalho_producao SET status = 'CANCELADA', data_fim = NOW() WHERE id = $1`, [id_sessao]);
+        await dbClient.query(
+            `UPDATE sessoes_trabalho_producao
+                SET status = 'CANCELADA', data_fim = NOW()
+              WHERE id = $1
+                AND empresa_id = $2`,
+            [id_sessao, req.empresaId]
+        );
 
         // Verifica se há outras sessões em andamento para este funcionário
         const restantesResult = await dbClient.query(
             `SELECT id FROM sessoes_trabalho_producao
              WHERE funcionario_id = $1 AND status = 'EM_ANDAMENTO' AND id != $2
+               AND empresa_id = $3
              ORDER BY id ASC LIMIT 1`,
-            [sessao.funcionario_id, id_sessao]
+            [sessao.funcionario_id, id_sessao, req.empresaId]
         );
 
         if (restantesResult.rows.length > 0) {
             const proximaId = restantesResult.rows[0].id;
             // Reinicia o cronômetro da próxima tarefa a partir de agora
             await dbClient.query(
-                `UPDATE sessoes_trabalho_producao SET data_inicio = NOW() WHERE id = $1`,
-                [proximaId]
+                `UPDATE sessoes_trabalho_producao
+                    SET data_inicio = NOW()
+                  WHERE id = $1
+                    AND empresa_id = $2`,
+                [proximaId, req.empresaId]
             );
             // Funcionário continua PRODUZINDO na próxima tarefa
             await dbClient.query(
-                `UPDATE usuarios SET status_atual = 'PRODUZINDO', id_sessao_trabalho_atual = $1 WHERE id = $2`,
-                [proximaId, sessao.funcionario_id]
+                `UPDATE usuarios_empresas
+                    SET status_atual = 'PRODUZINDO',
+                        id_sessao_trabalho_atual = $1,
+                        status_data_modificacao =
+                            (NOW() AT TIME ZONE 'America/Sao_Paulo')
+                  WHERE usuario_id = $2
+                    AND empresa_id = $3
+                    AND ativo`,
+                [proximaId, sessao.funcionario_id, req.empresaId]
             );
         } else {
             // Sem mais tarefas — libera o funcionário
             await dbClient.query(
-                `UPDATE usuarios SET status_atual = 'LIVRE', id_sessao_trabalho_atual = NULL WHERE id = $1`,
-                [sessao.funcionario_id]
+                `UPDATE usuarios_empresas
+                    SET status_atual = 'LIVRE',
+                        id_sessao_trabalho_atual = NULL,
+                        status_data_modificacao =
+                            (NOW() AT TIME ZONE 'America/Sao_Paulo')
+                  WHERE usuario_id = $1
+                    AND empresa_id = $2
+                    AND ativo`,
+                [sessao.funcionario_id, req.empresaId]
             );
         }
 

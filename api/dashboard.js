@@ -13,6 +13,15 @@ const pool = new Pool({
 });
 const SECRET_KEY = process.env.JWT_SECRET;
 
+function exigirCadeiaProdutivaLegada(req, res) {
+    if (req.empresaAtiva?.eh_legada === true) return true;
+    res.status(403).json({
+        error: 'A cadeia de produção da dashboard ainda não está disponível para a empresa ativa.',
+        codigo: 'CADEIA_PRODUTIVA_NAO_MIGRADA',
+    });
+    return false;
+}
+
 router.use(async (req, res, next) => {
     try {
         const authHeader = req.headers.authorization;
@@ -26,19 +35,29 @@ router.use(async (req, res, next) => {
 });
 
 // --- FUNÇÃO DE AUDITORIA DO COFRE (COM RESET DE CICLO) ---
-async function auditarCofrePontos(dbClient, usuarioId, historicoDias, metasConfiguradas, periodoInicio) {
+async function auditarCofrePontos(
+    dbClient,
+    usuarioId,
+    empresaId,
+    historicoDias,
+    metasConfiguradas,
+    periodoInicio
+) {
     // 0. Identifica o Ciclo Atual (Ex: "Janeiro/2026")
     const periodoAtual = getPeriodoFiscalAtual(new Date());
     const nomeCicloAtual = periodoAtual.nomeCompetencia; // Ex: "Janeiro 2026"
     
     // 1. Busca Saldo
-    let saldoRes = await dbClient.query('SELECT * FROM banco_pontos_saldo WHERE usuario_id = $1', [usuarioId]);
+    let saldoRes = await dbClient.query(
+        'SELECT * FROM banco_pontos_saldo WHERE usuario_id = $1 AND empresa_id = $2',
+        [usuarioId, empresaId]
+    );
     
     if (saldoRes.rows.length === 0) {
         // Cria novo com o ciclo atual marcado
         saldoRes = await dbClient.query(
-            'INSERT INTO banco_pontos_saldo (usuario_id, ciclo_referencia) VALUES ($1, $2) RETURNING *', 
-            [usuarioId, nomeCicloAtual]
+            'INSERT INTO banco_pontos_saldo (empresa_id, usuario_id, ciclo_referencia) VALUES ($1, $2, $3) RETURNING *',
+            [empresaId, usuarioId, nomeCicloAtual]
         );
     }
     
@@ -55,14 +74,14 @@ async function auditarCofrePontos(dbClient, usuarioId, historicoDias, metasConfi
         
         // Registra o reset no log para auditoria
         await dbClient.query(
-            `INSERT INTO banco_pontos_log (usuario_id, tipo, quantidade, descricao) VALUES ($1, 'RESET', 0, $2)`,
-            [usuarioId, `Início do ciclo ${nomeCicloAtual}`]
+            `INSERT INTO banco_pontos_log (empresa_id, usuario_id, tipo, quantidade, descricao) VALUES ($1, $2, 'RESET', 0, $3)`,
+            [empresaId, usuarioId, `Início do ciclo ${nomeCicloAtual}`]
         );
         
         // Atualiza a referência no banco imediatamente
         await dbClient.query(
-            `UPDATE banco_pontos_saldo SET saldo_atual = 0, usos_neste_ciclo = 0, ciclo_referencia = $1, ultimo_calculo = NOW() WHERE usuario_id = $2`,
-            [nomeCicloAtual, usuarioId]
+            `UPDATE banco_pontos_saldo SET saldo_atual = 0, usos_neste_ciclo = 0, ciclo_referencia = $1, ultimo_calculo = NOW() WHERE usuario_id = $2 AND empresa_id = $3`,
+            [nomeCicloAtual, usuarioId, empresaId]
         );
     }
 
@@ -99,14 +118,14 @@ async function auditarCofrePontos(dbClient, usuarioId, historicoDias, metasConfi
             if (sobra > 0) {
                 // Verifica se já foi pago
                 const logRes = await dbClient.query(
-                    `SELECT 1 FROM banco_pontos_log WHERE usuario_id = $1 AND tipo = 'GANHO' AND descricao LIKE $2`,
-                    [usuarioId, `%${dia.data}%`]
+                    `SELECT 1 FROM banco_pontos_log WHERE usuario_id = $1 AND empresa_id = $2 AND tipo = 'GANHO' AND descricao LIKE $3`,
+                    [usuarioId, empresaId, `%${dia.data}%`]
                 );
 
                 if (logRes.rowCount === 0) {
                     await dbClient.query(
-                        `INSERT INTO banco_pontos_log (usuario_id, tipo, quantidade, descricao) VALUES ($1, 'GANHO', $2, $3)`,
-                        [usuarioId, sobra, `Sobra do dia ${dia.data} (${metaBatida.descricao_meta})`]
+                        `INSERT INTO banco_pontos_log (empresa_id, usuario_id, tipo, quantidade, descricao) VALUES ($1, $2, 'GANHO', $3, $4)`,
+                        [empresaId, usuarioId, sobra, `Sobra do dia ${dia.data} (${metaBatida.descricao_meta})`]
                     );
                     novoSaldo += sobra;
                     houveAtualizacao = true;
@@ -117,8 +136,8 @@ async function auditarCofrePontos(dbClient, usuarioId, historicoDias, metasConfi
 
     if (houveAtualizacao) {
         await dbClient.query(
-            `UPDATE banco_pontos_saldo SET saldo_atual = $1, ultimo_calculo = NOW() WHERE usuario_id = $2`,
-            [novoSaldo, usuarioId]
+            `UPDATE banco_pontos_saldo SET saldo_atual = $1, ultimo_calculo = NOW() WHERE usuario_id = $2 AND empresa_id = $3`,
+            [novoSaldo, usuarioId, empresaId]
         );
     }
 
@@ -132,8 +151,8 @@ async function auditarCofrePontos(dbClient, usuarioId, historicoDias, metasConfi
 
     const resgatesSemanaisRes = await dbClient.query(
         `SELECT COUNT(*)::int as total FROM banco_pontos_log
-         WHERE usuario_id = $1 AND tipo = 'RESGATE' AND data_evento >= $2`,
-        [usuarioId, inicioSemanaAtual]
+         WHERE usuario_id = $1 AND empresa_id = $2 AND tipo = 'RESGATE' AND data_evento >= $3`,
+        [usuarioId, empresaId, inicioSemanaAtual]
     );
     const usosEssaSemana = resgatesSemanaisRes.rows[0].total;
 
@@ -142,12 +161,24 @@ async function auditarCofrePontos(dbClient, usuarioId, historicoDias, metasConfi
 
 router.get('/desempenho', async (req, res) => {
     const { id: usuarioId } = req.usuarioLogado;
+    const empresaId = req.empresaId;
+    if (!exigirCadeiaProdutivaLegada(req, res)) return;
     let dbClient;
     try {
         dbClient = await pool.connect();
 
         // 1. Busca Usuário (Com ID explícito)
-        const userRes = await dbClient.query('SELECT id, nome, tipos, nivel, avatar_url, dias_trabalho, horario_saida_3 FROM usuarios WHERE id = $1', [usuarioId]);
+        const userRes = await dbClient.query(
+            `SELECT u.id, u.nome, u.avatar_url,
+                    ue.tipos, ue.nivel, ue.dias_trabalho, ue.horario_saida_3
+             FROM usuarios u
+             JOIN usuarios_empresas ue
+               ON ue.usuario_id = u.id
+              AND ue.empresa_id = $2
+              AND ue.ativo
+             WHERE u.id = $1`,
+            [usuarioId, empresaId]
+        );
         if (userRes.rows.length === 0) return res.status(404).json({ error: 'Usuário não encontrado.' });
         const usuario = userRes.rows[0];
         const tipoUsuario = usuario.tipos?.[0] || 'costureira';
@@ -156,14 +187,23 @@ router.get('/desempenho', async (req, res) => {
         // 2. Busca Metas
         const hojeSP = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
         const versaoMetaRes = await dbClient.query(
-            `SELECT id FROM metas_versoes WHERE data_inicio_vigencia <= $1 ORDER BY data_inicio_vigencia DESC LIMIT 1`, 
-            [hojeSP]
+            `SELECT id FROM metas_versoes
+             WHERE empresa_id = $1
+               AND data_inicio_vigencia <= $2
+             ORDER BY data_inicio_vigencia DESC
+             LIMIT 1`,
+            [empresaId, hojeSP]
         );
         let metasConfiguradas = [];
         if (versaoMetaRes.rows.length > 0) {
             const regrasRes = await dbClient.query(
-                `SELECT pontos_meta, valor_comissao, descricao_meta FROM metas_regras WHERE id_versao = $1 AND tipo_usuario = $2 AND nivel = $3 ORDER BY pontos_meta ASC`,
-                [versaoMetaRes.rows[0].id, tipoUsuario, nivelUsuario]
+                `SELECT pontos_meta, valor_comissao, descricao_meta FROM metas_regras
+                 WHERE empresa_id = $1
+                   AND id_versao = $2
+                   AND tipo_usuario = $3
+                   AND nivel = $4
+                 ORDER BY pontos_meta ASC`,
+                [empresaId, versaoMetaRes.rows[0].id, tipoUsuario, nivelUsuario]
             );
             metasConfiguradas = regrasRes.rows;
         }
@@ -189,10 +229,13 @@ router.get('/desempenho', async (req, res) => {
             UNION ALL
             SELECT pe.id::text as id_original, pe.data_referencia as data, pe.pontos as pontos_gerados, NULL::text as op_numero, 'Pontos Extras' as processo, 'Bônus' as produto, 0 as quantidade, NULL as variacao, 'PontosExtra' as tipo_origem
             FROM pontos_extras pe
-            WHERE pe.funcionario_id = $1 AND pe.data_referencia BETWEEN $2::date AND $3::date AND pe.cancelado = FALSE
+            WHERE pe.funcionario_id = $1
+              AND pe.empresa_id = $4
+              AND pe.data_referencia BETWEEN $2::date AND $3::date
+              AND pe.cancelado = FALSE
         `;
 
-        const atividadesRes = await dbClient.query(queryText, [usuario.id, periodo.inicio, periodo.fim]);
+        const atividadesRes = await dbClient.query(queryText, [usuario.id, periodo.inicio, periodo.fim, empresaId]);
         const atividades = atividadesRes.rows;
 
         // Total de peças produzidas no ciclo (exclui Pontos Extras que têm quantidade = 0)
@@ -210,8 +253,12 @@ router.get('/desempenho', async (req, res) => {
 
         // Busca Resgates
         const resgatesRes = await dbClient.query(
-            `SELECT data_evento, quantidade FROM banco_pontos_log WHERE usuario_id = $1 AND tipo = 'RESGATE' AND data_evento BETWEEN $2 AND $3`,
-            [usuario.id, periodo.inicio, periodo.fim]
+            `SELECT data_evento, quantidade FROM banco_pontos_log
+             WHERE usuario_id = $1
+               AND empresa_id = $4
+               AND tipo = 'RESGATE'
+               AND data_evento BETWEEN $2 AND $3`,
+            [usuario.id, periodo.inicio, periodo.fim, empresaId]
         );
         resgatesRes.rows.forEach(r => {
             const diaResgateStr = new Date(r.data_evento).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
@@ -252,8 +299,9 @@ router.get('/desempenho', async (req, res) => {
             WHERE data BETWEEN $1 AND $2
               AND tipo IN ('feriado_nacional', 'feriado_regional', 'folga_empresa')
               AND funcionario_id IS NULL
+              AND empresa_id = $3
               AND visivel_dashboard = true
-        `, [inicioCicloStr, fimCicloStr]);
+        `, [inicioCicloStr, fimCicloStr, empresaId]);
         const datasExcluidas = new Set(feriadosCicloRes.rows.map(r => r.data.slice(0, 10)));
 
         // Todos os eventos do ciclo visíveis ao empregado (para o calendário da dashboard)
@@ -262,9 +310,10 @@ router.get('/desempenho', async (req, res) => {
             FROM calendario_empresa
             WHERE data BETWEEN $1 AND $2
               AND visivel_dashboard = true
+              AND empresa_id = $4
               AND (funcionario_id IS NULL OR funcionario_id = $3)
             ORDER BY data
-        `, [inicioCicloStr, fimCicloStr, usuario.id]);
+        `, [inicioCicloStr, fimCicloStr, usuario.id, empresaId]);
         const eventosCalendario = eventosCalendarioRes.rows.map(r => ({ ...r, data: r.data.slice(0, 10) }));
 
         // 12-E: dias úteis genéricos do ciclo (Seg-Sex, sem feriados visíveis)
@@ -327,7 +376,7 @@ router.get('/desempenho', async (req, res) => {
         })();
 
         // 7. PROCESSA O COFRE AUTOMATICAMENTE
-        const dadosCofre = await auditarCofrePontos(dbClient, usuario.id, historicoDias, metasConfiguradas, periodo.inicio);
+        const dadosCofre = await auditarCofrePontos(dbClient, usuario.id, empresaId, historicoDias, metasConfiguradas, periodo.inicio);
 
         // 7. Blocos Semanais
         const blocos = gerarBlocosSemanais(periodo.inicio, periodo.fim);
@@ -367,17 +416,21 @@ router.get('/desempenho', async (req, res) => {
             dataPagamentoAnterior = dPag.toLocaleDateString('pt-BR');
 
             // Busca Produção Anterior (POR ID)
-            const ativAntRes = await dbClient.query(queryText, [usuario.id, inicioCicloAnterior, fimCicloAnterior]);
+            const ativAntRes = await dbClient.query(
+                queryText,
+                [usuario.id, inicioCicloAnterior, fimCicloAnterior, empresaId]
+            );
             
             // Busca Resgates Anteriores (Com cast de data para segurança)
             const resgAntRes = await dbClient.query(
                 `SELECT data_evento, quantidade 
                  FROM banco_pontos_log 
                  WHERE usuario_id = $1 
-                   AND tipo = 'RESGATE' 
-                   AND data_evento::date >= $2::date 
-                   AND data_evento::date <= $3::date`,
-                [usuario.id, inicioCicloAnterior, fimCicloAnterior]
+                    AND empresa_id = $4
+                    AND tipo = 'RESGATE'
+                    AND data_evento::date >= $2::date
+                    AND data_evento::date <= $3::date`,
+                 [usuario.id, inicioCicloAnterior, fimCicloAnterior, empresaId]
             );
 
             // Mapeia Pontos
@@ -397,15 +450,24 @@ router.get('/desempenho', async (req, res) => {
 
             // Busca Metas da Época
             const versaoAntRes = await dbClient.query(
-                `SELECT id FROM metas_versoes WHERE data_inicio_vigencia <= $1 ORDER BY data_inicio_vigencia DESC LIMIT 1`,
-                [fimCicloAnterior.toISOString().substring(0,10)]
+                `SELECT id FROM metas_versoes
+                 WHERE empresa_id = $1
+                   AND data_inicio_vigencia <= $2
+                 ORDER BY data_inicio_vigencia DESC
+                 LIMIT 1`,
+                [empresaId, fimCicloAnterior.toISOString().substring(0,10)]
             );
             
             let metasAnt = [];
             if (versaoAntRes.rows.length > 0) {
                 const regrasAntRes = await dbClient.query(
-                    `SELECT pontos_meta, valor_comissao, descricao_meta FROM metas_regras WHERE id_versao = $1 AND tipo_usuario = $2 AND nivel = $3 ORDER BY pontos_meta ASC`,
-                    [versaoAntRes.rows[0].id, tipoUsuario, nivelUsuario]
+                    `SELECT pontos_meta, valor_comissao, descricao_meta FROM metas_regras
+                     WHERE empresa_id = $1
+                       AND id_versao = $2
+                       AND tipo_usuario = $3
+                       AND nivel = $4
+                     ORDER BY pontos_meta ASC`,
+                    [empresaId, versaoAntRes.rows[0].id, tipoUsuario, nivelUsuario]
                 );
                 metasAnt = regrasAntRes.rows;
             }
@@ -442,12 +504,14 @@ router.get('/desempenho', async (req, res) => {
             UNION ALL
             SELECT pe.id::text as id_original, pe.data_referencia as data, pe.pontos as pontos_gerados, NULL::text as op_numero, 'Pontos Extras' as processo, 'Bônus' as produto, 0 as quantidade, NULL as variacao, 'PontosExtra' as tipo_origem
             FROM pontos_extras pe
-            WHERE pe.funcionario_id = $1 AND pe.cancelado = FALSE
+            WHERE pe.funcionario_id = $1
+              AND pe.empresa_id = $2
+              AND pe.cancelado = FALSE
         `;
         // Ordena por data decrescente e limita
         queryLista += ` ORDER BY data DESC LIMIT 100`;
 
-        const listaRes = await dbClient.query(queryLista, [usuario.id]);
+        const listaRes = await dbClient.query(queryLista, [usuario.id, empresaId]);
         const atividadesParaLista = listaRes.rows;
 
         // 10. DATA EXATA DE PAGAMENTO DO CICLO FECHADO
@@ -471,7 +535,8 @@ router.get('/desempenho', async (req, res) => {
                 WHERE data BETWEEN $1 AND $2
                   AND tipo IN ('feriado_nacional', 'feriado_regional', 'folga_empresa')
                   AND funcionario_id IS NULL
-            `, [primeiroDiaPgto.toISOString().slice(0, 10), ultimoDiaPgto.toISOString().slice(0, 10)]);
+                  AND empresa_id = $3
+            `, [primeiroDiaPgto.toISOString().slice(0, 10), ultimoDiaPgto.toISOString().slice(0, 10), empresaId]);
 
             const datasExcluidasPgto = new Set(feriadosPgtoRes.rows.map(r => r.data.slice(0, 10)));
 
@@ -574,6 +639,8 @@ router.get('/desempenho', async (req, res) => {
 // GET /api/dashboard/atividades
 router.get('/atividades', async (req, res) => {
     const { id: usuarioId } = req.usuarioLogado;
+    const empresaId = req.empresaId;
+    if (!exigirCadeiaProdutivaLegada(req, res)) return;
     // Se não passar 'limit', assumimos que quer tudo para o front paginar
     const { data, busca } = req.query;
 
@@ -581,7 +648,11 @@ router.get('/atividades', async (req, res) => {
     try {
         dbClient = await pool.connect();
         
-        const userRes = await dbClient.query('SELECT tipos FROM usuarios WHERE id = $1', [usuarioId]);
+        const userRes = await dbClient.query(
+            `SELECT tipos FROM usuarios_empresas
+             WHERE usuario_id = $1 AND empresa_id = $2 AND ativo`,
+            [usuarioId, empresaId]
+        );
         const tipoUsuario = userRes.rows[0]?.tipos?.[0] || 'costureira';
 
         // 1. Monta a Subquery
@@ -609,19 +680,23 @@ router.get('/atividades', async (req, res) => {
                    0 as quantidade, NULL as variacao, 'PontosExtra' as tipo_origem,
                    pe.funcionario_id as uid
             FROM pontos_extras pe
-            WHERE pe.cancelado = FALSE
+            WHERE pe.empresa_id = $2
+              AND pe.cancelado = FALSE
         `;
 
         // 2. Filtros
         let whereClauses = [];
-        let params = [];
-        let paramIndex = 1;
+        let params = [usuarioId, empresaId];
+        let paramIndex = 3;
 
-        whereClauses.push(`uid = $${paramIndex++}`);
-        params.push(usuarioId);
+        whereClauses.push('uid = $1');
 
         if (data) {
-            whereClauses.push(`data::date = $${paramIndex++}::date`);
+            // `producoes.data` e `arremates.data_lancamento` representam o
+            // instante em UTC; o filtro da dashboard precisa respeitar o dia
+            // civil da colaboradora em America/Sao_Paulo, inclusive no
+            // historico antigo e nos registros proximos da meia-noite.
+            whereClauses.push(`((data AT TIME ZONE 'UTC') AT TIME ZONE 'America/Sao_Paulo')::date = $${paramIndex++}::date`);
             params.push(data);
         }
 
@@ -676,6 +751,8 @@ router.get('/atividades', async (req, res) => {
 // NOVA ROTA: RESGATAR PONTOS
 router.post('/resgatar-pontos', async (req, res) => {
     const { id: usuarioId } = req.usuarioLogado;
+    const empresaId = req.empresaId;
+    if (!exigirCadeiaProdutivaLegada(req, res)) return;
     const { quantidade } = req.body;
     let dbClient;
 
@@ -686,7 +763,10 @@ router.post('/resgatar-pontos', async (req, res) => {
         await dbClient.query('BEGIN');
 
         // 1. Verifica saldo
-        const saldoRes = await dbClient.query('SELECT * FROM banco_pontos_saldo WHERE usuario_id = $1 FOR UPDATE', [usuarioId]);
+        const saldoRes = await dbClient.query(
+            'SELECT * FROM banco_pontos_saldo WHERE usuario_id = $1 AND empresa_id = $2 FOR UPDATE',
+            [usuarioId, empresaId]
+        );
         if (saldoRes.rows.length === 0) throw new Error('Cofre não encontrado.');
 
         const saldoAtual = parseFloat(saldoRes.rows[0].saldo_atual);
@@ -702,15 +782,19 @@ router.post('/resgatar-pontos', async (req, res) => {
 
         const resgatesSemanaisRes = await dbClient.query(
             `SELECT COUNT(*)::int as total FROM banco_pontos_log
-             WHERE usuario_id = $1 AND tipo = 'RESGATE' AND data_evento >= $2`,
-            [usuarioId, inicioSemanaAtual]
+             WHERE usuario_id = $1 AND empresa_id = $2 AND tipo = 'RESGATE' AND data_evento >= $3`,
+            [usuarioId, empresaId, inicioSemanaAtual]
         );
         if (resgatesSemanaisRes.rows[0].total >= 2) {
             throw new Error('Você já usou seus 2 resgates desta semana. Volta na segunda-feira!');
         }
 
         // 3. Verifica produção mínima hoje (500 pts)
-        const tipoRes = await dbClient.query('SELECT tipos FROM usuarios WHERE id = $1', [usuarioId]);
+        const tipoRes = await dbClient.query(
+            `SELECT tipos FROM usuarios_empresas
+             WHERE usuario_id = $1 AND empresa_id = $2 AND ativo`,
+            [usuarioId, empresaId]
+        );
         const tipoUsuario = tipoRes.rows[0]?.tipos?.[0] || 'costureira';
         const hojeStrSP = agoraSP.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
 
@@ -731,8 +815,11 @@ router.post('/resgatar-pontos', async (req, res) => {
         }
         const pontosHojeExtras = await dbClient.query(
             `SELECT COALESCE(SUM(pontos), 0)::float as total FROM pontos_extras
-             WHERE funcionario_id = $1 AND data_referencia = $2::date AND cancelado = FALSE`,
-            [usuarioId, hojeStrSP]
+              WHERE funcionario_id = $1
+                AND empresa_id = $3
+                AND data_referencia = $2::date
+                AND cancelado = FALSE`,
+             [usuarioId, hojeStrSP, empresaId]
         );
         pontosHoje += pontosHojeExtras.rows[0].total;
 
@@ -742,15 +829,17 @@ router.post('/resgatar-pontos', async (req, res) => {
 
         // 4. Deduz do Saldo
         await dbClient.query(
-            `UPDATE banco_pontos_saldo SET saldo_atual = saldo_atual - $1, usos_neste_ciclo = usos_neste_ciclo + 1 WHERE usuario_id = $2`,
-            [quantidade, usuarioId]
+            `UPDATE banco_pontos_saldo
+             SET saldo_atual = saldo_atual - $1, usos_neste_ciclo = usos_neste_ciclo + 1
+             WHERE usuario_id = $2 AND empresa_id = $3`,
+            [quantidade, usuarioId, empresaId]
         );
 
         // 3. Registra no Log
         const hojeStr = new Date().toLocaleDateString('pt-BR');
         await dbClient.query(
-            `INSERT INTO banco_pontos_log (usuario_id, tipo, quantidade, descricao) VALUES ($1, 'RESGATE', $2, $3)`,
-            [usuarioId, quantidade, `Resgate manual para o dia ${hojeStr}`]
+            `INSERT INTO banco_pontos_log (empresa_id, usuario_id, tipo, quantidade, descricao) VALUES ($1, $2, 'RESGATE', $3, $4)`,
+            [empresaId, usuarioId, quantidade, `Resgate manual para o dia ${hojeStr}`]
         );
 
         await dbClient.query('COMMIT');
@@ -766,6 +855,7 @@ router.post('/resgatar-pontos', async (req, res) => {
 
 router.get('/cofre/extrato', async (req, res) => {
     const { id: usuarioId } = req.usuarioLogado;
+    const empresaId = req.empresaId;
     const { page = 1, limit = 8 } = req.query; // Adicionado paginação
     let dbClient;
     try {
@@ -775,17 +865,21 @@ router.get('/cofre/extrato', async (req, res) => {
         const offset = (parseInt(page) - 1) * limitNum;
 
         // 1. Busca Total de Itens (para saber se tem mais páginas)
-        const countRes = await dbClient.query('SELECT COUNT(*) FROM banco_pontos_log WHERE usuario_id = $1', [usuarioId]);
+        const countRes = await dbClient.query(
+            'SELECT COUNT(*) FROM banco_pontos_log WHERE usuario_id = $1 AND empresa_id = $2',
+            [usuarioId, empresaId]
+        );
         const totalItems = parseInt(countRes.rows[0].count);
 
         // 2. Busca os Dados Paginados
         const result = await dbClient.query(`
-            SELECT tipo, quantidade, descricao, data_evento 
+            SELECT tipo, quantidade, descricao, data_evento
             FROM banco_pontos_log 
-            WHERE usuario_id = $1 
-            ORDER BY data_evento DESC 
-            LIMIT $2 OFFSET $3
-        `, [usuarioId, limitNum, offset]);
+             WHERE usuario_id = $1
+               AND empresa_id = $4
+             ORDER BY data_evento DESC
+             LIMIT $2 OFFSET $3
+        `, [usuarioId, limitNum, offset, empresaId]);
 
         res.status(200).json({
             rows: result.rows,
@@ -806,6 +900,7 @@ router.get('/cofre/extrato', async (req, res) => {
 // GET /api/dashboard/meus-pagamentos
 router.get('/meus-pagamentos', async (req, res) => {
     const { id: usuarioId } = req.usuarioLogado;
+    const empresaId = req.empresaId;
     let dbClient;
     try {
         dbClient = await pool.connect();
@@ -818,11 +913,12 @@ router.get('/meus-pagamentos', async (req, res) => {
                 descricao
             FROM historico_pagamentos_funcionarios
             WHERE usuario_id = $1
+              AND empresa_id = $2
               AND descricao ILIKE '%Comissão%'
               AND data_pagamento >= '2025-12-14 00:00:00'
             ORDER BY data_pagamento DESC
             LIMIT 12
-        `, [usuarioId]);
+        `, [usuarioId, empresaId]);
 
         res.status(200).json(historicoRes.rows);
 
@@ -838,12 +934,18 @@ router.get('/meus-pagamentos', async (req, res) => {
 // GET /api/dashboard/minha-tabela-pontos
 router.get('/minha-tabela-pontos', async (req, res) => {
     const { id: usuarioId } = req.usuarioLogado;
+    const empresaId = req.empresaId;
+    if (!exigirCadeiaProdutivaLegada(req, res)) return;
     let dbClient;
     try {
         dbClient = await pool.connect();
 
         // 1. Tipo do usuário
-        const tipoRes = await dbClient.query('SELECT tipos FROM usuarios WHERE id = $1', [usuarioId]);
+        const tipoRes = await dbClient.query(
+            `SELECT tipos FROM usuarios_empresas
+             WHERE usuario_id = $1 AND empresa_id = $2 AND ativo`,
+            [usuarioId, empresaId]
+        );
         const tipoUsuario = tipoRes.rows[0]?.tipos?.[0] || 'costureira';
 
         // costureiras usam 'costura_op_costureira'; tiktiks usam 'processo_op_tiktik' e 'arremate_tiktik'
@@ -875,9 +977,10 @@ router.get('/minha-tabela-pontos', async (req, res) => {
             JOIN produtos p ON cpp.produto_id = p.id
             WHERE cpp.produto_id = ANY($1::int[])
               AND cpp.tipo_atividade = ANY($2::text[])
+              AND cpp.empresa_id = $3
               AND cpp.ativo = true
             ORDER BY p.nome ASC, cpp.pontos_padrao DESC
-        `, [produtosIds, tiposAtividade]);
+        `, [produtosIds, tiposAtividade, empresaId]);
 
         // 4. Agrupa por produto
         const mapaGrupo = {};
@@ -908,6 +1011,8 @@ router.get('/minha-tabela-pontos', async (req, res) => {
 
 // GET /api/dashboard/ranking-semana
 router.get('/ranking-semana', async (req, res) => {
+    const empresaId = req.empresaId;
+    if (!exigirCadeiaProdutivaLegada(req, res)) return;
     const { id: usuarioId } = req.usuarioLogado;
     let dbClient;
     try {
@@ -949,7 +1054,7 @@ router.get('/ranking-semana', async (req, res) => {
         const todosIds = usuariosRes.rows.map(r => r.id);
 
         if (todosIds.length <= 1) {
-            return res.status(200).json({ totalParticipantes: todosIds.length, ranking: [] });
+            return res.status(200).json({ totalParticipantes: todosIds.length, ranking: [], rankingCompleto: [] });
         }
 
         // 4. Somar pontos de cada usuário na semana
@@ -1025,6 +1130,15 @@ router.get('/ranking-semana', async (req, res) => {
             pontos: r.pontos,
             isEu: r.isEu,
             separador: r.separador || false
+        }));
+
+        // Cards compactos usam o recorte acima; o menu lateral precisa
+        // percorrer todos os participantes sem expor qualquer identificador.
+        const rankingCompleto = rankingOrdenado.map(r => ({
+            posicao: r.posicao,
+            pontos: r.pontos,
+            isEu: r.isEu,
+            separador: false
         }));
 
         // 8. Gap para motivação
@@ -1110,6 +1224,7 @@ router.get('/ranking-semana', async (req, res) => {
             diaSemana,
             todosZerados,
             ranking: rankingFinal,
+            rankingCompleto,
             semanasNoTopo,
         });
 
@@ -1124,6 +1239,8 @@ router.get('/ranking-semana', async (req, res) => {
 // GET /api/dashboard/streak
 // Retorna quantos dias seguidos com produção o usuário tem
 router.get('/streak', async (req, res) => {
+    const empresaId = req.empresaId;
+    if (!exigirCadeiaProdutivaLegada(req, res)) return;
     const { id: usuarioId } = req.usuarioLogado;
     let dbClient;
     try {
@@ -1220,11 +1337,25 @@ router.get('/streak', async (req, res) => {
 // Retorna conquistas gamificadas para o ciclo atual
 router.get('/conquistas-ciclo', async (req, res) => {
     const { id: usuarioId } = req.usuarioLogado;
+    const empresaId = req.empresaId;
+    if (!req.empresaAtiva?.eh_legada) {
+        return res.status(403).json({
+            error: 'As conquistas dependentes da cadeia produtiva ainda não estão disponíveis para a empresa ativa.',
+            codigo: 'CADEIA_PRODUTIVA_NAO_MIGRADA',
+        });
+    }
     let dbClient;
     try {
         dbClient = await pool.connect();
 
-        const tipoRes = await dbClient.query('SELECT tipos FROM usuarios WHERE id = $1', [usuarioId]);
+        const tipoRes = await dbClient.query(
+            `SELECT ue.tipos
+             FROM usuarios_empresas ue
+             WHERE ue.usuario_id = $1
+               AND ue.empresa_id = $2
+               AND ue.ativo`,
+            [usuarioId, empresaId]
+        );
         const tipoUsuario = tipoRes.rows[0]?.tipos?.[0] || 'costureira';
 
         const periodo = getPeriodoFiscalAtual(new Date());
@@ -1258,14 +1389,23 @@ router.get('/conquistas-ciclo', async (req, res) => {
         // Meta mínima do ciclo
         const hojeSP = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
         const versaoRes = await dbClient.query(
-            `SELECT id FROM metas_versoes WHERE data_inicio_vigencia <= $1 ORDER BY data_inicio_vigencia DESC LIMIT 1`,
-            [hojeSP]
+            `SELECT id FROM metas_versoes
+             WHERE empresa_id = $1
+               AND data_inicio_vigencia <= $2
+             ORDER BY data_inicio_vigencia DESC
+             LIMIT 1`,
+            [empresaId, hojeSP]
         );
         let metaMinima = 1000;
         if (versaoRes.rows.length > 0) {
             const regraRes = await dbClient.query(
-                `SELECT pontos_meta FROM metas_regras WHERE id_versao = $1 AND tipo_usuario = $2 ORDER BY pontos_meta ASC LIMIT 1`,
-                [versaoRes.rows[0].id, tipoUsuario]
+                `SELECT pontos_meta FROM metas_regras
+                 WHERE empresa_id = $1
+                   AND id_versao = $2
+                   AND tipo_usuario = $3
+                 ORDER BY pontos_meta ASC
+                 LIMIT 1`,
+                [empresaId, versaoRes.rows[0].id, tipoUsuario]
             );
             if (regraRes.rows.length > 0) metaMinima = parseFloat(regraRes.rows[0].pontos_meta);
         }

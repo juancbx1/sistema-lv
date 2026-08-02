@@ -5,7 +5,7 @@
 import React, { useState } from 'react';
 import { changelog } from '/js/utils/changelog-data.js';
 
-export default function DashVersionFooter() {
+export default function DashVersionFooter({ className = '' }) {
     const [aberto, setAberto] = useState(false);
 
     // Apenas entradas que têm novidades para a dashboard
@@ -18,7 +18,7 @@ export default function DashVersionFooter() {
 
     return (
         <>
-            <footer className="ds-version-footer" onClick={() => setAberto(true)} title="Ver novidades desta versão">
+            <footer className={`ds-version-footer${className ? ` ${className}` : ''}`} onClick={() => setAberto(true)} title="Ver novidades desta versão">
                 <i className="fas fa-circle-info"></i>
                 <span>v{versaoRodape}</span>
             </footer>

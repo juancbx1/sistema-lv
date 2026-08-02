@@ -5,6 +5,7 @@ import pkg from 'pg';
 const { Pool } = pkg;
 import jwt from 'jsonwebtoken';
 import express from 'express';
+import { obterEmpresaIdDoContexto } from './contexto-empresa.js';
 
 const router = express.Router();
 const pool = new Pool({ connectionString: process.env.POSTGRES_URL, timezone: 'UTC' });
@@ -15,6 +16,7 @@ router.use(async (req, res, next) => {
         const authHeader = req.headers.authorization;
         if (!authHeader?.startsWith('Bearer ')) return res.status(401).json({ error: 'Token ausente.' });
         req.usuarioLogado = jwt.verify(authHeader.split(' ')[1], SECRET_KEY);
+        req.empresaId = obterEmpresaIdDoContexto(req);
         next();
     } catch {
         res.status(401).json({ error: 'Token inválido ou expirado.' });
@@ -78,6 +80,7 @@ router.get('/diaria', async (req, res) => {
                 SELECT data FROM calendario_empresa
                 WHERE data >= ($1::date - INTERVAL '14 days')
                   AND data <  $1::date
+                  AND empresa_id = $2
                   AND tipo IN ('feriado_nacional', 'feriado_regional', 'folga_empresa')
                   AND funcionario_id IS NULL
             ),
@@ -85,6 +88,7 @@ router.get('/diaria', async (req, res) => {
                 SELECT data FROM calendario_empresa
                 WHERE data >= ($1::date - INTERVAL '14 days')
                   AND data <  $1::date
+                  AND empresa_id = $2
                   AND tipo = 'trabalho_extra'
                   AND funcionario_id IS NULL
             )
@@ -96,7 +100,7 @@ router.get('/diaria', async (req, res) => {
                     EXTRACT(DOW FROM d) NOT IN (0, 6)   -- seg–sex são úteis por padrão
                     OR d IN (SELECT data FROM trabalho_extra)  -- sáb/dom explicitamente trabalhados
                 )
-        `, [dataFiltroSQL]);
+        `, [dataFiltroSQL, req.empresaId]);
         // Fallback para ontem caso não haja produção nos últimos 14 dias (sistema recém-iniciado)
         const ultimoDiaUtilSQL = ultimoDiaRows[0]?.ultimo_dia || ontemSQL;
 
@@ -118,7 +122,7 @@ router.get('/diaria', async (req, res) => {
                 WITH producoes_dia AS (
                     SELECT p.funcionario_id,
                            u.nome AS nome_funcionario, u.avatar_url, u.foto_oficial,
-                           u.tipos AS tipo_funcionario, u.nivel, u.status_atual,
+                           ue.tipos AS tipo_funcionario, ue.nivel, ue.status_atual,
                            'processo'   AS tipo_atividade,
                            p.processo   AS nome_atividade,
                            prod.nome    AS nome_produto,
@@ -130,18 +134,22 @@ router.get('/diaria', async (req, res) => {
                            ) AS imagem_url
                     FROM producoes p
                     JOIN usuarios u    ON p.funcionario_id = u.id
+                    JOIN usuarios_empresas ue
+                      ON ue.usuario_id = u.id
+                     AND ue.empresa_id = $2
+                     AND ue.ativo = TRUE
                     JOIN produtos prod ON p.produto_id     = prod.id
                     WHERE p.data AT TIME ZONE 'America/Sao_Paulo' >= $1::date
                       AND p.data AT TIME ZONE 'America/Sao_Paulo' <  ($1::date + INTERVAL '1 day')
-                      AND u.tipos && ARRAY['costureira','tiktik']
-                      AND u.data_admissao IS NOT NULL
-                      AND u.data_admissao::date <= $1::date
-                      AND (u.data_demissao IS NULL OR u.data_demissao::date > $1::date)
+                      AND ue.tipos && ARRAY['costureira','tiktik']
+                      AND ue.data_admissao IS NOT NULL
+                      AND ue.data_admissao::date <= $1::date
+                      AND (ue.data_demissao IS NULL OR ue.data_demissao::date > $1::date)
                 ),
                 arremates_dia AS (
                     SELECT a.usuario_tiktik_id AS funcionario_id,
                            u.nome AS nome_funcionario, u.avatar_url, u.foto_oficial,
-                           u.tipos AS tipo_funcionario, u.nivel, u.status_atual,
+                           ue.tipos AS tipo_funcionario, ue.nivel, ue.status_atual,
                            'arremate'             AS tipo_atividade,
                            'Arremate'             AS nome_atividade,
                            prod.nome              AS nome_produto,
@@ -154,19 +162,23 @@ router.get('/diaria', async (req, res) => {
                            ) AS imagem_url
                     FROM arremates a
                     JOIN usuarios u    ON a.usuario_tiktik_id = u.id
+                    JOIN usuarios_empresas ue
+                      ON ue.usuario_id = u.id
+                     AND ue.empresa_id = $2
+                     AND ue.ativo = TRUE
                     JOIN produtos prod ON a.produto_id        = prod.id
                     WHERE a.data_lancamento AT TIME ZONE 'America/Sao_Paulo' >= $1::date
                       AND a.data_lancamento AT TIME ZONE 'America/Sao_Paulo' <  ($1::date + INTERVAL '1 day')
                       AND a.tipo_lancamento = 'PRODUCAO'
-                      AND u.data_admissao IS NOT NULL
-                      AND u.data_admissao::date <= $1::date
-                      AND (u.data_demissao IS NULL OR u.data_demissao::date > $1::date)
+                      AND ue.data_admissao IS NOT NULL
+                      AND ue.data_admissao::date <= $1::date
+                      AND (ue.data_demissao IS NULL OR ue.data_demissao::date > $1::date)
                 ),
                 pontos_extras_dia AS (
                     SELECT
                         pe.funcionario_id,
                         u.nome AS nome_funcionario, u.avatar_url, u.foto_oficial,
-                        u.tipos AS tipo_funcionario, u.nivel, u.status_atual,
+                        ue.tipos AS tipo_funcionario, ue.nivel, ue.status_atual,
                         'pontos_extra'  AS tipo_atividade,
                         'Pontos Extras' AS nome_atividade,
                         'Bônus'         AS nome_produto,
@@ -177,17 +189,22 @@ router.get('/diaria', async (req, res) => {
                         NULL::text      AS imagem_url
                     FROM pontos_extras pe
                     JOIN usuarios u ON u.id = pe.funcionario_id
+                    JOIN usuarios_empresas ue
+                      ON ue.usuario_id = u.id
+                     AND ue.empresa_id = pe.empresa_id
+                     AND ue.ativo = TRUE
                     WHERE pe.data_referencia = $1::date
+                      AND pe.empresa_id = $2
                       AND pe.cancelado = FALSE
-                      AND u.data_admissao IS NOT NULL
-                      AND u.data_admissao::date <= $1::date
-                      AND (u.data_demissao IS NULL OR u.data_demissao::date > $1::date)
+                      AND ue.data_admissao IS NOT NULL
+                      AND ue.data_admissao::date <= $1::date
+                      AND (ue.data_demissao IS NULL OR ue.data_demissao::date > $1::date)
                 )
                 SELECT * FROM producoes_dia
                 UNION ALL SELECT * FROM arremates_dia
                 UNION ALL SELECT * FROM pontos_extras_dia
                 ORDER BY data_hora DESC
-            `, [dataFiltroSQL]),
+            `, [dataFiltroSQL, req.empresaId]),
 
             // 2. Totais do último dia útil com produção, por funcionário (badges individuais)
             dbClient.query(`
@@ -212,8 +229,8 @@ router.get('/diaria', async (req, res) => {
             // 3. Totais globais do último dia útil com produção (KPI bar da equipe)
             dbClient.query(`
                 SELECT
-                    COALESCE(SUM(CASE WHEN u.tipos @> ARRAY['costureira'] THEN t.quantidade ELSE 0 END), 0)::int   AS pecas_costura,
-                    COALESCE(SUM(CASE WHEN u.tipos @> ARRAY['tiktik'] AND t.tipo_atividade = 'processo' THEN t.quantidade ELSE 0 END), 0)::int AS pecas_tiktik,
+                    COALESCE(SUM(CASE WHEN ue.tipos @> ARRAY['costureira'] THEN t.quantidade ELSE 0 END), 0)::int   AS pecas_costura,
+                    COALESCE(SUM(CASE WHEN ue.tipos @> ARRAY['tiktik'] AND t.tipo_atividade = 'processo' THEN t.quantidade ELSE 0 END), 0)::int AS pecas_tiktik,
                     COALESCE(SUM(CASE WHEN t.tipo_atividade = 'arremate' THEN t.quantidade ELSE 0 END), 0)::int    AS arremates,
                     COALESCE(SUM(t.pontos_gerados), 0)::float AS pontos_total
                 FROM (
@@ -229,32 +246,44 @@ router.get('/diaria', async (req, res) => {
                       AND tipo_lancamento = 'PRODUCAO'
                 ) t
                 JOIN usuarios u ON t.funcionario_id = u.id
-            `, [ultimoDiaUtilSQL]),
+                JOIN usuarios_empresas ue
+                  ON ue.usuario_id = u.id
+                 AND ue.empresa_id = $2
+                 AND ue.ativo = TRUE
+            `, [ultimoDiaUtilSQL, req.empresaId]),
 
             // 4. Todos os usuários ativos costureira/tiktik (com vínculo RH ativo)
             dbClient.query(`
-                SELECT id, nome, avatar_url, foto_oficial, nivel, tipos, status_atual
-                FROM usuarios
-                WHERE tipos && ARRAY['costureira','tiktik']
-                  AND data_admissao IS NOT NULL
-                  AND data_demissao IS NULL
+                SELECT u.id, u.nome, u.avatar_url, u.foto_oficial,
+                       ue.nivel, ue.tipos, ue.status_atual
+                FROM usuarios u
+                JOIN usuarios_empresas ue
+                  ON ue.usuario_id = u.id
+                 AND ue.empresa_id = $1
+                 AND ue.ativo = TRUE
+                WHERE ue.tipos && ARRAY['costureira','tiktik']
+                  AND ue.data_admissao IS NOT NULL
+                  AND ue.data_demissao IS NULL
                   AND (is_test IS FALSE OR is_test IS NULL)
-                ORDER BY nome
-            `),
+                  AND (u.arquivado IS FALSE OR u.arquivado IS NULL)
+                ORDER BY u.nome
+            `, [req.empresaId]),
 
             // 5. Ponto diário de hoje
             dbClient.query(`
                 SELECT funcionario_id, horario_real_s1, horario_real_e2, horario_real_s2, horario_real_e3
                 FROM ponto_diario
                 WHERE data = $1::date
-            `, [dataFiltroSQL]),
+                  AND empresa_id = $2
+            `, [dataFiltroSQL, req.empresaId]),
 
             // 6. Versão vigente das metas (só o id — regras buscadas depois)
             dbClient.query(`
                 SELECT id FROM metas_versoes
                 WHERE data_inicio_vigencia <= $1
+                  AND empresa_id = $2
                 ORDER BY data_inicio_vigencia DESC LIMIT 1
-            `, [dataFiltroSQL]),
+            `, [dataFiltroSQL, req.empresaId]),
 
             // 8. Média histórica: pontos por dia dos últimos 30 dias (exclui dias sem produção)
             dbClient.query(`
@@ -315,11 +344,12 @@ router.get('/diaria', async (req, res) => {
                 SELECT tipo, descricao
                 FROM calendario_empresa
                 WHERE data = $1::date
+                  AND empresa_id = $2
                   AND tipo IN ('feriado_nacional', 'feriado_regional', 'folga_empresa', 'trabalho_extra')
                   AND funcionario_id IS NULL
                 ORDER BY CASE tipo WHEN 'trabalho_extra' THEN 0 ELSE 1 END ASC
                 LIMIT 1
-            `, [dataFiltroSQL]),
+            `, [dataFiltroSQL, req.empresaId]),
         ]);
 
         // ── Média histórica 30 dias ────────────────────────────────────────
@@ -360,9 +390,11 @@ router.get('/diaria', async (req, res) => {
         if (versaoResult.rows.length > 0) {
             const { rows } = await dbClient.query(`
                 SELECT tipo_usuario, nivel, pontos_meta, valor_comissao, descricao_meta
-                FROM metas_regras WHERE id_versao = $1
+                FROM metas_regras
+                WHERE id_versao = $1
+                  AND empresa_id = $2
                 ORDER BY tipo_usuario, nivel, pontos_meta ASC
-            `, [versaoResult.rows[0].id]);
+            `, [versaoResult.rows[0].id, req.empresaId]);
             metasBruto = rows;
         }
 
@@ -555,6 +587,17 @@ router.get('/desempenho-historico', async (req, res) => {
         if (!funcionarioId) return res.status(400).json({ error: 'funcionarioId obrigatório.' });
 
         dbClient = await pool.connect();
+
+        const vinculoResult = await dbClient.query(`
+            SELECT 1
+            FROM usuarios_empresas
+            WHERE usuario_id = $1
+              AND empresa_id = $2
+              AND ativo = TRUE
+        `, [funcionarioId, req.empresaId]);
+        if (vinculoResult.rowCount === 0) {
+            return res.status(404).json({ error: 'Funcionário não encontrado nesta empresa.' });
+        }
 
         const { rows } = await dbClient.query(`
             WITH atividades AS (

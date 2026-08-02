@@ -84,6 +84,12 @@ function calcularTempoDePausa(horariosUsuario, dataInicioTarefa, dataFimTarefa) 
 router.use(async (req, res, next) => {
     try {
         req.usuarioLogado = verificarTokenInterna(req); 
+        if (req.empresaAtiva?.eh_legada !== true) {
+            return res.status(403).json({
+                error: 'A cadeia de arremates ainda nao esta disponivel para a empresa ativa.',
+                codigo: 'CADEIA_PRODUTIVA_NAO_MIGRADA',
+            });
+        }
         next(); 
     } catch (error) {
         console.error('[router/arremates MID] Erro no middleware:', error.message, error.stack ? error.stack.substring(0,500) : '');
@@ -779,21 +785,27 @@ router.get('/status-tiktiks', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(
+            dbClient,
+            req.usuarioLogado.id,
+            req.empresaId
+        );
         if (!permissoes.includes('acesso-ordens-de-arremates')) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
 
         // 1. Resetar status manuais de dias anteriores
         await dbClient.query(`
-            UPDATE usuarios 
+            UPDATE usuarios_empresas
             SET 
                 status_atual = 'LIVRE', 
                 status_data_modificacao = (NOW() AT TIME ZONE 'America/Sao_Paulo')::date 
             WHERE status_atual IN ('FALTOU', 'ALOCADO_EXTERNO', 'LIVRE_MANUAL')
+                AND empresa_id = $1
+                AND ativo
                 AND status_data_modificacao IS NOT NULL
                 AND status_data_modificacao < (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
-        `);
+        `, [req.empresaId]);
         
         const temposResult = await dbClient.query('SELECT produto_id, tempo_segundos_por_peca FROM tempos_padrao_arremate');
         const temposMap = new Map(temposResult.rows.map(row => [row.produto_id, parseFloat(row.tempo_segundos_por_peca)]));
@@ -803,13 +815,17 @@ router.get('/status-tiktiks', async (req, res) => {
         const query = `
             SELECT
                 u.id, u.nome, COALESCE(u.avatar_url, $1) as avatar_url, u.foto_oficial,
-                u.nivel, u.tipos, u.dias_trabalho, u.status_atual,
-                u.status_data_modificacao, u.horario_entrada_1, u.horario_saida_1,
-                u.horario_entrada_2, u.horario_saida_2, u.horario_entrada_3, u.horario_saida_3
+                ue.nivel, ue.tipos, ue.dias_trabalho, ue.status_atual,
+                ue.status_data_modificacao, ue.horario_entrada_1, ue.horario_saida_1,
+                ue.horario_entrada_2, ue.horario_saida_2, ue.horario_entrada_3, ue.horario_saida_3
             FROM usuarios u
+            JOIN usuarios_empresas ue
+              ON ue.usuario_id = u.id
+             AND ue.empresa_id = $2
+             AND ue.ativo
             WHERE
-                'tiktik' = ANY(u.tipos)
-                AND u.data_demissao IS NULL
+                'tiktik' = ANY(ue.tipos)
+                AND ue.data_demissao IS NULL
                 AND (u.is_test IS FALSE OR u.is_test IS NULL)
                 AND NOT EXISTS (
                     SELECT 1
@@ -818,7 +834,10 @@ router.get('/status-tiktiks', async (req, res) => {
                 )
             ORDER BY u.nome ASC;
         `;
-        const result = await dbClient.query(query, [process.env.DEFAULT_AVATAR_URL]);
+        const result = await dbClient.query(query, [
+            process.env.DEFAULT_AVATAR_URL,
+            req.empresaId,
+        ]);
         const tiktiksBase = result.rows;
 
         // Agora, buscamos TODAS as sessões ativas de TODOS os tiktiks de uma vez
@@ -859,8 +878,9 @@ router.get('/status-tiktiks', async (req, res) => {
                        saida_desfeita, saida_desfeita_por
                 FROM ponto_diario
                 WHERE data = (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
+                  AND empresa_id = $2
                   AND funcionario_id = ANY($1::int[])
-            `, [tiktikIds]),
+            `, [tiktikIds, req.empresaId]),
             dbClient.query(`
                 SELECT
                     s.usuario_tiktik_id,
@@ -975,8 +995,13 @@ router.post('/sessoes/iniciar', async (req, res) => {
 
         // --- INÍCIO DA NOVA LÓGICA DE BLOQUEIO DE USUÁRIO ---
         const userStatusResult = await dbClient.query(
-            'SELECT id_sessao_trabalho_atual FROM usuarios WHERE id = $1 FOR UPDATE',
-            [usuario_tiktik_id]
+            `SELECT id_sessao_trabalho_atual
+               FROM usuarios_empresas
+              WHERE usuario_id = $1
+                AND empresa_id = $2
+                AND ativo
+              FOR UPDATE`,
+            [usuario_tiktik_id, req.empresaId]
         );
         if (userStatusResult.rows.length === 0) {
             await dbClient.query('ROLLBACK');
@@ -1065,8 +1090,15 @@ router.post('/sessoes/iniciar', async (req, res) => {
         
         // --- INÍCIO DA LÓGICA DE ATUALIZAÇÃO DE STATUS ---
         await dbClient.query(
-            `UPDATE usuarios SET status_atual = 'PRODUZINDO', id_sessao_trabalho_atual = $1 WHERE id = $2`,
-            [novaSessaoId, usuario_tiktik_id]
+            `UPDATE usuarios_empresas
+                SET status_atual = 'PRODUZINDO',
+                    id_sessao_trabalho_atual = $1,
+                    status_data_modificacao =
+                        (NOW() AT TIME ZONE 'America/Sao_Paulo')
+              WHERE usuario_id = $2
+                AND empresa_id = $3
+                AND ativo`,
+            [novaSessaoId, usuario_tiktik_id, req.empresaId]
         );
         // --- FIM DA LÓGICA DE ATUALIZAÇÃO DE STATUS ---
 
@@ -1110,7 +1142,16 @@ router.post('/sessoes/finalizar', async (req, res) => {
         const sessoes = sessoesResult.rows;
         const usuarioTiktikId = sessoes[0].usuario_tiktik_id;
 
-        const userTiktikResult = await dbClient.query(`SELECT * FROM usuarios WHERE id = $1`, [usuarioTiktikId]);
+        const userTiktikResult = await dbClient.query(
+            `SELECT u.*, ue.*
+               FROM usuarios u
+               JOIN usuarios_empresas ue
+                 ON ue.usuario_id = u.id
+                AND ue.empresa_id = $2
+                AND ue.ativo
+              WHERE u.id = $1`,
+            [usuarioTiktikId, req.empresaId]
+        );
         const lancadorResult = await dbClient.query(`SELECT nome FROM usuarios WHERE id = $1`, [req.usuarioLogado.id]);
         if (userTiktikResult.rows.length === 0 || lancadorResult.rows.length === 0) throw new Error('Usuário Tiktik ou Lançador não encontrado.');
         const nomeTiktik = userTiktikResult.rows[0].nome;
@@ -1193,8 +1234,15 @@ router.post('/sessoes/finalizar', async (req, res) => {
 
         if (outraSessaoAtivaResult.rowCount === 0) {
             await dbClient.query(
-                `UPDATE usuarios SET status_atual = 'LIVRE', id_sessao_trabalho_atual = NULL WHERE id = $1`,
-                [usuarioTiktikId]
+                `UPDATE usuarios_empresas
+                    SET status_atual = 'LIVRE',
+                        id_sessao_trabalho_atual = NULL,
+                        status_data_modificacao =
+                            (NOW() AT TIME ZONE 'America/Sao_Paulo')
+                  WHERE usuario_id = $1
+                    AND empresa_id = $2
+                    AND ativo`,
+                [usuarioTiktikId, req.empresaId]
             );
         }
 
@@ -1295,7 +1343,11 @@ router.post('/sessoes/cancelar', async (req, res) => {
         );
         
         if (outraSessaoAtivaResult.rowCount === 0) {
-            await atualizarStatusUsuarioDB(usuarioTiktikId, 'LIVRE');
+            await atualizarStatusUsuarioDB(
+                usuarioTiktikId,
+                'LIVRE',
+                req.empresaId
+            );
         }
 
 
@@ -1723,7 +1775,11 @@ router.post('/sessoes/iniciar-lote', async (req, res) => {
             await dbClient.query(sessaoQuery, [tiktikId, produto_id, variante === '-' ? null : variante, saldo_para_arrematar, ops_detalhe[0].numero, ops_detalhe[0].edit_id, JSON.stringify(ops_detalhe)]);
         }
 
-        await atualizarStatusUsuarioDB(tiktikId, 'PRODUZINDO'); 
+        await atualizarStatusUsuarioDB(
+            tiktikId,
+            'PRODUZINDO',
+            req.empresaId
+        );
         
         await dbClient.query('COMMIT');
         

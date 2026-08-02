@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { fetchAPI } from '/js/utils/api-utils';
-import DashTabelaPontosModal from './DashTabelaPontos';
+import DashTabelaPontosModal from './DashTabelaPontosRedesign';
 
 export default function DashAtividadesLista({ aoAtualizar }) {
     const [filtroPeriodo, setFiltroPeriodo] = useState('hoje');
@@ -102,9 +102,9 @@ export default function DashAtividadesLista({ aoAtualizar }) {
     const [modalTabelaAberto, setModalTabelaAberto] = useState(false);
 
     return (
-        <section className="ds-card ds-painel-detalhamento">
+        <section className="ds-card ds-atividades-timeline-panel">
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                <h2 className="ds-card-titulo" style={{ margin: 0 }}>Detalhamento das Atividades</h2>
+                <h2 className="ds-card-titulo" style={{ margin: 0 }}>Atividades recentes</h2>
                 <button
                     onClick={() => setModalTabelaAberto(true)}
                     title="Ver minha tabela de pontos"

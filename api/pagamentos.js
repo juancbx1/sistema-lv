@@ -680,10 +680,18 @@ router.post('/efetuar', async (req, res) => {
         }
         
         if (totais.totalLiquidoAPagar > 0) {
-            const cicloParaSalvar = (tipoPagamento === 'COMISSAO') ? nomeCicloOuMotivo : null;
+            // Comissão, salário e benefícios gravam a referência em ciclo_nome para a UI bater o status PAGO
+            const cicloParaSalvar =
+                (tipoPagamento === 'COMISSAO' ||
+                    tipoPagamento === 'SALARIO' ||
+                    tipoPagamento === 'BENEFICIOS')
+                    ? nomeCicloOuMotivo
+                    : null;
             
             let descricaoParaSalvar = nomeCicloOuMotivo;
             if (tipoPagamento === 'COMISSAO') descricaoParaSalvar = 'Pagamento de Comissão';
+            if (tipoPagamento === 'SALARIO') descricaoParaSalvar = nomeCicloOuMotivo || 'Pagamento de Salário';
+            if (tipoPagamento === 'BENEFICIOS') descricaoParaSalvar = nomeCicloOuMotivo || 'Vale Alimentação';
             if (tipoPagamento === 'VALE_TRANSPORTE') descricaoParaSalvar = `Recarga VT (${datas_pagas.length} dias)`;
             
             const detalhesParaSalvar = { ...calculo, datas_pagas: datas_pagas, valor_passagem_diaria: valor_passagem_diaria };
@@ -1515,47 +1523,70 @@ router.post('/lote-vt', async (req, res) => {
             throw new Error('O lote contém pessoa sem vínculo ativo com a empresa.');
         }
 
-        // --- PASSO A: Lançamento Financeiro do MONTANTE DE VT (DETALHADO) ---
-        // Cria o registro PAI (tipo_rateio = 'DETALHADO')
+        // --- PASSO A: Lançamento Financeiro do MONTANTE DE VT ---
+        // 1 empregado → lançamento simples (sem rateio)
+        // 2+ empregados no mesmo lote → rateio DETALHADO (favorecido visual: "Diversos" no card)
         if (valor_total_vt > 0) {
-            const resPai = await dbClient.query(
-                `INSERT INTO fc_lancamentos 
-                 (id_conta_bancaria, id_categoria, tipo, tipo_rateio, valor,
-                  data_transacao, descricao, id_usuario_lancamento, empresa_id)
-                 VALUES ($1, $2, 'DESPESA', 'DETALHADO', $3, NOW(), $4, $5, $6)
-                 RETURNING id`,
-                [
-                    id_conta_debito, 
-                    categoriasPagamento.VALE_TRANSPORTE,
-                    valor_total_vt, 
-                    `Recarga VT (${nomeConcessionaria}) - ${itens.length} funcionários`,
-                    idUsuarioPagador,
-                    req.empresaId
-                ]
-            );
-            
-            const idPai = resPai.rows[0].id;
+            if (itens.length === 1) {
+                const unico = itens[0];
+                const idContatoUnico = contatoPorUsuario.get(Number(unico.usuario_id)) || null;
+                const descSimples =
+                    `Recarga VT (${nomeConcessionaria}) — ${unico.nome_funcionario || 'empregado'}` +
+                    (unico.dias_qtd ? ` (${unico.dias_qtd} dia${Number(unico.dias_qtd) === 1 ? '' : 's'})` : '');
 
-            // Cria os registros FILHOS (Itens do Rateio) para cada funcionário
-            for (const item of itens) {
-                // Se o funcionário não tiver contato financeiro, salvamos null (mas idealmente todos devem ter)
-                // A descrição do item ajuda na auditoria visual rápida
-                const descItem = `VT: ${item.nome_funcionario} (${item.dias_qtd} dias)`;
-                
                 await dbClient.query(
-                    `INSERT INTO fc_lancamento_itens 
-                     (id_lancamento_pai, id_categoria, id_contato_item,
-                      descricao_item, valor_total_item, empresa_id)
-                     VALUES ($1, $2, $3, $4, $5, $6)`,
+                    `INSERT INTO fc_lancamentos
+                     (id_conta_bancaria, id_categoria, tipo, valor,
+                      data_transacao, descricao, id_contato,
+                      id_usuario_lancamento, empresa_id)
+                     VALUES ($1, $2, 'DESPESA', $3, NOW(), $4, $5, $6, $7)`,
                     [
-                        idPai,
+                        id_conta_debito,
                         categoriasPagamento.VALE_TRANSPORTE,
-                        contatoPorUsuario.get(Number(item.usuario_id)) || null,
-                        descItem,
-                        item.valor_total,
+                        valor_total_vt,
+                        descSimples,
+                        idContatoUnico,
+                        idUsuarioPagador,
+                        req.empresaId,
+                    ]
+                );
+            } else {
+                const resPai = await dbClient.query(
+                    `INSERT INTO fc_lancamentos 
+                     (id_conta_bancaria, id_categoria, tipo, tipo_rateio, valor,
+                      data_transacao, descricao, id_usuario_lancamento, empresa_id)
+                     VALUES ($1, $2, 'DESPESA', 'DETALHADO', $3, NOW(), $4, $5, $6)
+                     RETURNING id`,
+                    [
+                        id_conta_debito, 
+                        categoriasPagamento.VALE_TRANSPORTE,
+                        valor_total_vt, 
+                        `Recarga VT (${nomeConcessionaria}) - ${itens.length} funcionários`,
+                        idUsuarioPagador,
                         req.empresaId
                     ]
                 );
+                
+                const idPai = resPai.rows[0].id;
+
+                for (const item of itens) {
+                    const descItem = `VT: ${item.nome_funcionario} (${item.dias_qtd} dias)`;
+                    
+                    await dbClient.query(
+                        `INSERT INTO fc_lancamento_itens 
+                         (id_lancamento_pai, id_categoria, id_contato_item,
+                          descricao_item, valor_total_item, empresa_id)
+                         VALUES ($1, $2, $3, $4, $5, $6)`,
+                        [
+                            idPai,
+                            categoriasPagamento.VALE_TRANSPORTE,
+                            contatoPorUsuario.get(Number(item.usuario_id)) || null,
+                            descItem,
+                            item.valor_total,
+                            req.empresaId
+                        ]
+                    );
+                }
             }
         }
 
@@ -1649,7 +1680,7 @@ router.post('/lote-vt', async (req, res) => {
                 }
             }
 
-            // 3. Aviso popup individual — usa o modelo "Recarga VT" da Central de Alertas
+            // 3. Aviso popup individual — modelo "Recarga VT" (imediato, fuso SP)
             const datasFmt = Array.isArray(datas_lista) && datas_lista.length
                 ? [...datas_lista]
                     .sort()
@@ -1666,7 +1697,6 @@ router.post('/lote-vt', async (req, res) => {
                 style: 'currency',
                 currency: 'BRL',
             });
-            // Mensagem do modelo (se houver) + detalhes da recarga
             const baseModelo = (tplVt?.mensagem && String(tplVt.mensagem).trim())
                 ? String(tplVt.mensagem).trim()
                 : 'Sua recarga de Vale Transporte foi realizada!';
@@ -1676,22 +1706,38 @@ router.post('/lote-vt', async (req, res) => {
                 `Dias recarregados: ${datasFmt}\n` +
                 `Valor: ${valorFmt}`;
 
+            // Nunca usar tipo "imagem" puro com mensagem customizada: na dashboard
+            // o corpo some e, se a URL falhar, o card fica preto/vazio.
+            // Com imagem do modelo → "misto"; sem imagem → "texto".
+            const urlImagem = tplVt?.url_imagem || null;
+            const tipoAviso = urlImagem ? 'misto' : 'texto';
+            const corFundo = (tplVt?.cor_fundo && String(tplVt.cor_fundo).trim())
+                ? String(tplVt.cor_fundo).trim()
+                : 'azul';
+            const idDestinatario = Number(usuario_id);
+            if (!Number.isSafeInteger(idDestinatario) || idDestinatario <= 0) {
+                throw new Error(`ID de usuário inválido para aviso de recarga: ${usuario_id}`);
+            }
+
             await dbClient.query(
                 `INSERT INTO avisos_popup
                     (empresa_id, titulo, tipo, mensagem, url_imagem, cor_fundo, destinatarios,
                      ids_individuais, urgente, ativo, is_template, data_inicio, data_fim, criado_por)
-                 VALUES ($1, $2, $3, $4, $5, $6, 'individuais',
-                         $7::int[], $8, TRUE, FALSE, $9, NULL, $10)`,
+                 VALUES (
+                    $1, $2, $3, $4, $5, $6, 'individuais',
+                    $7::int[], $8, TRUE, FALSE,
+                    (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date,
+                    NULL, $9
+                 )`,
                 [
                     req.empresaId,
                     tplVt?.titulo || 'Recarga VT',
-                    tplVt?.tipo || 'texto',
+                    tipoAviso,
                     mensagemAviso,
-                    tplVt?.url_imagem || null,
-                    tplVt?.cor_fundo || 'azul',
-                    [Number(usuario_id)],
-                    tplVt?.urgente ?? false,
-                    new Date().toISOString().split('T')[0],
+                    urlImagem,
+                    corFundo,
+                    [idDestinatario],
+                    Boolean(tplVt?.urgente),
                     idUsuarioPagador,
                 ]
             );

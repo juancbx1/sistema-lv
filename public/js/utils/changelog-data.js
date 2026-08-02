@@ -20,6 +20,24 @@
 
 export const changelog = [
     {
+        versao: '1.42.0',
+        versao_dashboard: '1.29.0',
+        data: '01/08/2026',
+        admin: [
+            'Central de Pagamentos reforçada em TypeScript, com abas de comissão, salário, benefícios e passagem mais claras e seguras',
+            'Comissão: competências em cards, sem trava artificial de data, status sem comissão e mês previsto de pagamento em destaque',
+            'Recibos semanais: badge de pendências, histórico de semanas fechadas e corte a partir de 08/03/2026',
+            'Passagem (VT): layout tablet-first, calendário sincronizado, confirmação detalhada do lote e lançamento simples (1 pessoa) ou rateio Diversos (2+)',
+            'Após recarga de VT, cada empregada recebe aviso popup individual com o modelo Recarga VT (imagem + detalhes)',
+            'Salário e VA com referências mensais, status em aberto / a pagar / pendente / pago; VA no dia 25 ou próximo útil pelo calendário da empresa',
+            'Central de Alertas entende avisos individuais do Financeiro e mostra o nome da pessoa ao editar',
+        ],
+        dashboard: [
+            'Quando o VT for recarregado, você recebe um aviso na hora com os dias e o valor da recarga',
+            'O aviso usa o visual oficial de Recarga VT e aparece só para quem recebeu a recarga',
+        ],
+    },
+    {
         versao: '1.41.0',
         versao_dashboard: '1.28.0',
         data: '01/08/2026',

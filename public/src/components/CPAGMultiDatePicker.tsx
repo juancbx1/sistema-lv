@@ -74,15 +74,23 @@ export default function CPAGMultiDatePicker({
             <button
               type="button"
               key={dataStr}
-              onClick={() => !readOnly && onToggleDia(dataStr)}
+              onClick={() => {
+                if (readOnly || bloqueado) return;
+                onToggleDia(dataStr);
+              }}
               aria-pressed={selecionado}
+              aria-disabled={bloqueado || readOnly}
+              title={bloqueado ? legendaBloqueado : undefined}
               style={{
                 padding: '8px 0', textAlign: 'center', borderRadius: '4px',
-                backgroundColor: selecionado ? 'var(--cpg-cor-primaria)' : bloqueado ? '#e0e0e0' : 'transparent',
-                color: selecionado ? '#fff' : outroMes ? '#ccc' : bloqueado ? '#999' : '#333',
-                border: bloqueado && !selecionado ? '1px solid #ccc' : 'none',
-                cursor: readOnly ? 'default' : 'pointer', fontWeight: selecionado ? 'bold' : 'normal',
-                fontSize: '0.9rem', opacity: outroMes && !selecionado ? 0.6 : 1,
+                // Já pago tem prioridade visual sobre seleção residual
+                backgroundColor: bloqueado ? '#e0e0e0' : selecionado ? 'var(--cpg-cor-primaria)' : 'transparent',
+                color: bloqueado ? '#999' : selecionado ? '#fff' : outroMes ? '#ccc' : '#333',
+                border: bloqueado ? '1px solid #ccc' : 'none',
+                cursor: readOnly || bloqueado ? 'not-allowed' : 'pointer',
+                fontWeight: selecionado && !bloqueado ? 'bold' : 'normal',
+                fontSize: '0.9rem',
+                opacity: outroMes && !selecionado && !bloqueado ? 0.6 : 1,
               }}
             >{data.getDate()}</button>
           );

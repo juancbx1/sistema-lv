@@ -1,527 +1,659 @@
-import React, { useState, useEffect } from 'react';
-import Select, { components } from 'react-select';
+import { useState, useEffect, useMemo } from 'react';
+import Select, { components, type NoticeProps } from 'react-select';
 import { formatarMoeda } from '../utils/cpag-format';
 import { mostrarConfirmacao, mostrarToast } from '../utils/cpag-feedback';
+import { fetchCpag } from '../utils/cpag-api';
 import UIFeedbackNotFound from './UIFeedbackNotFound';
+import UICarregando from './UICarregando.jsx';
 import CPAGMultiDatePicker from './CPAGMultiDatePicker.tsx';
 import CPAGModalHistoricoVT from './CPAGModalHistoricoVT.tsx';
 import CPAGGerenciadorRecibosVT from './CPAGGerenciadorRecibosVT.tsx';
+import type {
+  CpagConcessionaria,
+  CpagConcessionariaOption,
+  CpagContaFinanceira,
+  CpagLinhaTabelaVT,
+  CpagLoteVTPayload,
+  CpagRegistroDiaEvento,
+  CpagSelectOption,
+  CpagUsuario,
+} from '../utils/cpag-types';
 
-interface Props { usuarios: any[]; contas: any[]; }
-interface ConcessionariaOption { value: number | string; label: string; taxa_recarga_percentual?: number | string; id_contato_financeiro?: number | string | null; }
-interface FuncionarioOption { value: number | string; label: string; }
+interface Props {
+  usuarios: CpagUsuario[];
+  contas: CpagContaFinanceira[];
+}
 
-const CustomNoOptions = (props: any) => (
-    <components.NoOptionsMessage {...props}>
-        <div style={{ padding: '10px' }}>
-            <UIFeedbackNotFound icon="fa-search" titulo="Sem resultados" mensagem="Nenhum registro encontrado." />
-        </div>
-    </components.NoOptionsMessage>
+const CustomNoOptions = (props: NoticeProps<CpagSelectOption, false>) => (
+  <components.NoOptionsMessage {...props}>
+    <div style={{ padding: '10px' }}>
+      <UIFeedbackNotFound
+        icon="fa-search"
+        titulo="Sem resultados"
+        mensagem="Nenhum registro encontrado."
+      />
+    </div>
+  </components.NoOptionsMessage>
 );
 
+const CustomNoOptionsMulti = (props: NoticeProps<CpagSelectOption, true>) => (
+  <components.NoOptionsMessage {...props}>
+    <div style={{ padding: '10px' }}>
+      <UIFeedbackNotFound
+        icon="fa-search"
+        titulo="Sem resultados"
+        mensagem="Nenhum registro encontrado."
+      />
+    </div>
+  </components.NoOptionsMessage>
+);
+
+function formatarDataCurta(iso: string): string {
+  const partes = String(iso).slice(0, 10).split('-');
+  if (partes.length !== 3) return iso;
+  return `${partes[2]}/${partes[1]}`;
+}
+
+function formatarListaDatas(datas: string[]): string {
+  if (!datas.length) return 'nenhuma data';
+  return [...datas].sort().map(formatarDataCurta).join(', ');
+}
+
+function arraysIguais(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const sa = [...a].sort();
+  const sb = [...b].sort();
+  return sa.every((v, i) => v === sb[i]);
+}
+
+function dataLocalISOHojeMais(diasOffset: number): string {
+  const base = new Date();
+  const d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + diasOffset, 12, 0, 0, 0);
+  const ano = d.getFullYear();
+  const mes = String(d.getMonth() + 1).padStart(2, '0');
+  const dia = String(d.getDate()).padStart(2, '0');
+  return `${ano}-${mes}-${dia}`;
+}
+
+function normalizarDataIso(valor: string | null | undefined): string | null {
+  if (!valor) return null;
+  const s = String(valor).slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+}
+
+async function carregarDiasPagosUsuario(usuarioId: number | string): Promise<string[]> {
+  const start = dataLocalISOHojeMais(-180);
+  const end = dataLocalISOHojeMais(120);
+  const eventos = await fetchCpag<CpagRegistroDiaEvento[]>(
+    `/api/pagamentos/registros-dias?usuario_id=${usuarioId}&start=${start}&end=${end}`,
+  );
+  return (Array.isArray(eventos) ? eventos : [])
+    .filter((e) => e.extendedProps?.status === 'PAGO')
+    .map((e) => normalizarDataIso(e.start))
+    .filter((d): d is string => Boolean(d));
+}
+
 export default function CPAGPassagem({ usuarios, contas }: Props) {
-    // --- ESTADOS ---
-    const [concessionarias, setConcessionarias] = useState<any[]>([]);
-    const [selConcessionaria, setSelConcessionaria] = useState<ConcessionariaOption | null>(null);
-    const [selConta, setSelConta] = useState<FuncionarioOption | null>(null);
+  const [concessionarias, setConcessionarias] = useState<CpagConcessionaria[]>([]);
+  const [selConcessionaria, setSelConcessionaria] = useState<CpagConcessionariaOption | null>(
+    null,
+  );
+  const [selConta, setSelConta] = useState<CpagSelectOption | null>(null);
+  const [diasGlobais, setDiasGlobais] = useState<string[]>([]);
+  const [selFuncionarios, setSelFuncionarios] = useState<CpagSelectOption[]>([]);
+  const [diasEspecificos, setDiasEspecificos] = useState<Record<string, string[]>>({});
+  const [modalUserAberto, setModalUserAberto] = useState<number | string | null>(null);
+  const [modalRecibosAberto, setModalRecibosAberto] = useState(false);
+  const [diasPagosUsuarioAtual, setDiasPagosUsuarioAtual] = useState<string[]>([]);
+  const [loadingDiasUser, setLoadingDiasUser] = useState(false);
+  const [modalHistoricoAberto, setModalHistoricoAberto] = useState(false);
+  const [usuarioParaHistorico, setUsuarioParaHistorico] = useState<number | string | null>(null);
+  const [taxaManual, setTaxaManual] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [dadosTabela, setDadosTabela] = useState<CpagLinhaTabelaVT[]>([]);
 
-    // CALENDÁRIO MESTRE
-    const [diasGlobais, setDiasGlobais] = useState<string[]>([]); // ['2026-01-12', '2026-01-13']
+  const handleAbrirEdicaoUsuario = async (usuarioId: number | string) => {
+    setModalUserAberto(usuarioId);
+    setDiasPagosUsuarioAtual([]);
+    setLoadingDiasUser(true);
 
-    // SELEÇÃO E DADOS
-    const [selFuncionarios, setSelFuncionarios] = useState<FuncionarioOption[]>([]);
+    try {
+      const diasPagos = await carregarDiasPagosUsuario(usuarioId);
+      setDiasPagosUsuarioAtual(diasPagos);
 
-    // MAPA DE EXCEÇÕES: { [id_usuario]: ['data1', 'data2'] }
-    // Se o usuário não estiver aqui, ele usa o diasGlobais.
-    // Se estiver aqui, ele usa o array específico dele.
-    const [diasEspecificos, setDiasEspecificos] = useState<Record<string, string[]>>({});
-
-    // MODAIS
-    const [modalUserAberto, setModalUserAberto] = useState(null); // ID do usuário sendo editado
-    const [modalRecibosAberto, setModalRecibosAberto] = useState(false);
-    const [diasPagosUsuarioAtual, setDiasPagosUsuarioAtual] = useState<string[]>([]);
-    const [loadingDiasUser, setLoadingDiasUser] = useState(false);
-    const [modalHistoricoAberto, setModalHistoricoAberto] = useState(false);
-    const [usuarioParaHistorico, setUsuarioParaHistorico] = useState<number | string | null>(null);
-
-    // FINANCEIRO
-    const [taxaManual, setTaxaManual] = useState('');
-    const [loading, setLoading] = useState(false);
-
-    // Função para abrir o modal de edição individual e buscar os dias já pagos
-    const handleAbrirEdicaoUsuario = async (usuarioId: number | string) => {
-        setModalUserAberto(usuarioId as any);
-        setDiasPagosUsuarioAtual([]);
-        setLoadingDiasUser(true);
-
-        // Define um intervalo amplo para buscar (ex: mês atual e próximo)
-        // Para simplificar, pegamos 60 dias pra frente e pra trás da data de hoje ou do filtro
-        const hoje = new Date();
-        const start = new Date(hoje.setDate(hoje.getDate() - 30)).toISOString().split('T')[0];
-        const end = new Date(hoje.setDate(hoje.getDate() + 90)).toISOString().split('T')[0];
-
-        try {
-            const token = localStorage.getItem('token');
-            const res = await fetch(`/api/pagamentos/registros-dias?usuario_id=${usuarioId}&start=${start}&end=${end}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const eventos = await res.json();
-
-            // Filtra apenas os dias que estão com status PAGO
-            const diasPagos = eventos
-                .filter((e: any) => e.extendedProps.status === 'PAGO')
-                .map((e: any) => e.start); // A API retorna YYYY-MM-DD em 'start'
-
-            setDiasPagosUsuarioAtual(diasPagos);
-
-        } catch (error) {
-            console.error("Erro ao buscar dias pagos:", error);
-            mostrarToast("Não foi possível carregar os dias já pagos.", "erro");
-        } finally {
-            setLoadingDiasUser(false);
+      // Remove da seleção qualquer dia já pago (evita azul por cima do “já pago”)
+      setDiasEspecificos((prev) => {
+        const chave = String(usuarioId);
+        const atuais = prev[chave] || [...diasGlobais];
+        const limpos = atuais.filter((d) => !diasPagos.includes(d));
+        if (arraysIguais(atuais, limpos) && prev[chave]) return prev;
+        if (selFuncionarios.length === 1) {
+          setDiasGlobais((g) => g.filter((d) => !diasPagos.includes(d)));
         }
-    };
+        return { ...prev, [chave]: limpos };
+      });
+    } catch (error) {
+      console.error('Erro ao buscar dias pagos:', error);
+      mostrarToast('Não foi possível carregar os dias já pagos.', 'erro');
+    } finally {
+      setLoadingDiasUser(false);
+    }
+  };
 
-    // --- CARGA INICIAL ---
-    useEffect(() => {
-        async function loadData() {
-            try {
-                const token = localStorage.getItem('token');
-                const res = await fetch('/api/financeiro/concessionarias-vt', { headers: { 'Authorization': `Bearer ${token}` } });
-                const data = await res.json();
-                setConcessionarias((data as any[]).filter((c: any) => c.ativo));
-            } catch (err) { console.error(err); }
-        }
-        loadData();
-    }, []);
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const data = await fetchCpag<CpagConcessionaria[]>('/api/financeiro/concessionarias-vt');
+        setConcessionarias((Array.isArray(data) ? data : []).filter((c) => c.ativo));
+      } catch (err) {
+        console.error(err);
+      }
+    }
+    void loadData();
+  }, []);
 
-    // --- HANDLERS DO CALENDÁRIO MESTRE ---
-    const toggleDiaGlobal = (dataStr: string) => {
-        setDiasGlobais(prev => {
-            if (prev.includes(dataStr)) return prev.filter(d => d !== dataStr).sort();
-            return [...prev, dataStr].sort();
-        });
-        // IMPORTANTE: Ao mudar o global, resetamos as especificidades para evitar inconsistência?
-        // Ou mantemos? Vamos manter, mas o usuário precisa estar ciente.
-        // Por simplificação: Resetamos as exceções para garantir que todos fiquem alinhados com o novo padrão,
-        // a menos que o usuário edite novamente.
-        setDiasEspecificos({});
-    };
+  /**
+   * Calendário mestre → tabela (todos usam o padrão).
+   * Limpa exceções individuais para manter sincronismo.
+   * Dias já pagos do contexto atual (1 empregado) não entram.
+   */
+  const toggleDiaGlobal = (dataStr: string) => {
+    if (diasPagosUsuarioAtual.includes(dataStr) && selFuncionarios.length === 1) {
+      mostrarToast('Este dia já foi pago para o empregado.', 'aviso');
+      return;
+    }
+    setDiasGlobais((prev) => {
+      if (prev.includes(dataStr)) return prev.filter((d) => d !== dataStr).sort();
+      return [...prev, dataStr].sort();
+    });
+    setDiasEspecificos({});
+  };
 
-    // --- HANDLERS DO CALENDÁRIO INDIVIDUAL ---
-    const toggleDiaUsuario = (usuarioId: number | string, dataStr: string) => {
-        setDiasEspecificos(prev => {
-            // Pega os dias atuais desse usuário (ou o global se não tiver específico)
-            const diasAtuais = prev[usuarioId] || [...diasGlobais];
+  /**
+   * Dias do empregado (modal/tabela) → estado individual + espelha no calendário mestre
+   * quando há um único funcionário, ou quando todos ficam com o mesmo conjunto de dias.
+   */
+  const toggleDiaUsuario = (usuarioId: number | string, dataStr: string) => {
+    if (diasPagosUsuarioAtual.includes(dataStr)) {
+      mostrarToast('Este dia já foi pago e não pode ser selecionado de novo.', 'aviso');
+      return;
+    }
+    setDiasEspecificos((prev) => {
+      const chave = String(usuarioId);
+      const diasAtuais = prev[chave] || [...diasGlobais];
+      let novosDias: string[];
+      if (diasAtuais.includes(dataStr)) {
+        novosDias = diasAtuais.filter((d) => d !== dataStr);
+      } else {
+        novosDias = [...diasAtuais, dataStr];
+      }
+      novosDias.sort();
+      const proximo = { ...prev, [chave]: novosDias };
 
-            let novosDias;
-            if (diasAtuais.includes(dataStr)) {
-                novosDias = diasAtuais.filter(d => d !== dataStr);
-            } else {
-                novosDias = [...diasAtuais, dataStr];
-            }
-            novosDias.sort();
-
-            return { ...prev, [usuarioId]: novosDias };
-        });
-    };
-
-
-
-    // --- CÁLCULOS ---
-    // Calcula o total individual dinamicamente
-    const getDadosUsuario = (usuarioId: number | string) => {
-        const usuario = usuarios.find(u => u.id === usuarioId);
-        const dias = diasEspecificos[usuarioId] || diasGlobais;
-        const valorDiario = parseFloat(usuario?.valor_passagem_diaria || 0);
-        return {
-            id: usuarioId,
-            nome: usuario?.nome || '?',
-            valorDiario,
-            dias,
-            total: dias.length * valorDiario
-        };
-    };
-
-    // Totalização
-    // DADOS DA TABELA (Agora é State, para permitir edição)
-    // Armazena: { id, nome, valorDiario, dias (array), total (float ou string), diasManual (bool), totalManual (bool) }
-    const [dadosTabela, setDadosTabela] = useState<any[]>([]);
-    // Converte para float seguro (trata string vazia como 0)
-    const totalVT = dadosTabela.reduce((acc, item) => acc + (parseFloat(item.total) || 0), 0);
-
-    // Taxa (Correção do NaN)
-    const taxaPercentual = selConcessionaria ? parseFloat(String(selConcessionaria.taxa_recarga_percentual || 0)) : 0;
-    const taxaCalculada = totalVT * (taxaPercentual / 100);
-    const valorTaxaFinal = taxaManual !== '' ? parseFloat(taxaManual) : taxaCalculada;
-    const totalBoleto = totalVT + valorTaxaFinal;
-
-    // --- OPÇÕES DOS SELECTS ---
-    const usersFiltrados = usuarios.filter(u =>
-        selConcessionaria &&
-        u.concessionarias_vt &&
-        // Garante comparação segura mesmo se um lado for string "2" e outro número 2
-        u.concessionarias_vt.some((id: any) => parseInt(String(id), 10) === parseInt(String(selConcessionaria.value), 10))
-    );
-    const userOptions = usersFiltrados.map(u => ({ value: u.id, label: u.nome }));
-    const contaOptions = contas.map(c => ({ value: c.id, label: c.nome_conta }));
-    const concessOptions = concessionarias.map(c => ({
-        value: c.id,
-        label: c.nome,
-        taxa_recarga_percentual: c.taxa_recarga_percentual,
-        id_contato_financeiro: c.id_contato_financeiro // <--- PEGA DO BANCO
-    }));
-
-    useEffect(() => {
-        // Gera os dados baseados na seleção e nos calendários
-        const novosDados = selFuncionarios.map(sel => {
-            const usuarioId = sel.value;
-            const usuario = usuarios.find(u => u.id === usuarioId);
-            const dias = diasEspecificos[usuarioId] || diasGlobais;
-            const valorDiario = parseFloat(usuario?.valor_passagem_diaria || 0);
-
-            // Tenta recuperar o estado anterior deste usuário na tabela
-            const estadoAnterior = dadosTabela.find(d => d.id === usuarioId);
-
-            let total;
-
-            // Se o usuário já editou o total manualmente, mantém o valor dele
-            if (estadoAnterior && estadoAnterior.totalManual) {
-                total = estadoAnterior.total;
-            } else {
-                // Senão, calcula (Dias * Valor)
-                total = dias.length * valorDiario;
-            }
-
-            return {
-                id: usuarioId,
-                nome: usuario?.nome || '?',
-                valorDiario,
-                dias,
-                total,
-                totalManual: estadoAnterior?.totalManual || false
-            };
-        });
-
-        // Só atualiza se houver mudança real para evitar loop infinito
-        // (Uma comparação simples de JSON resolve para este caso)
-        if (JSON.stringify(novosDados) !== JSON.stringify(dadosTabela)) {
-            setDadosTabela(novosDados);
-        }
-    }, [selFuncionarios, diasGlobais, diasEspecificos]);
-
-    const handleChangeTotal = (id: number | string, novoValor: string) => {
-        setDadosTabela(prev => prev.map(item => {
-            if (item.id === id) {
-                return {
-                    ...item,
-                    total: novoValor, // Permite string temporária enquanto digita
-                    totalManual: true // Marca que foi editado manualmente
-                };
-            }
-            return item;
-        }));
-    };
-
-    // --- ENVIO ---
-    const handleProcessarLote = async () => {
-        if (!selConcessionaria || !selConta || dadosTabela.length === 0) {
-            mostrarToast('Preencha os dados e selecione empregados.', 'aviso');
-            return;
-        }
-        if (diasGlobais.length === 0 && Object.keys(diasEspecificos).length === 0) {
-            mostrarToast('Selecione ao menos um dia no calendário.', 'aviso');
-            return;
-        }
-
-        const confirmado = await mostrarConfirmacao(
-            `Confirma o pagamento do Lote <strong>${selConcessionaria.label}</strong>?<br><br>
-             Valor VT: ${formatarMoeda(totalVT)}<br>
-             Taxa: ${formatarMoeda(valorTaxaFinal)}<br>
-             <strong>Total: ${formatarMoeda(totalBoleto)}</strong>`,
-            { tipo: 'aviso', textoConfirmar: 'Confirmar Lote' }
+      // Espelha no calendário mestre quando possível (1 pessoa ou todos iguais)
+      const idsSelecionados = selFuncionarios.map((f) => String(f.value));
+      if (idsSelecionados.length === 1 && idsSelecionados[0] === chave) {
+        setDiasGlobais(novosDias);
+      } else if (idsSelecionados.length > 1) {
+        const conjuntos = idsSelecionados.map((id) =>
+          id === chave ? novosDias : proximo[id] || [...diasGlobais],
         );
-        if (!confirmado) return;
-
-        setLoading(true);
-        try {
-            const token = localStorage.getItem('token');
-            const payload = {
-                id_conta_debito: selConta.value,
-                id_concessionaria: selConcessionaria.value,
-                // Envia o ID do contato que veio no objeto selecionado
-                id_contato_concessionaria: selConcessionaria.id_contato_financeiro,
-                nome_concessionaria: selConcessionaria.label,
-                valor_total_vt: totalVT,
-                valor_total_taxa: valorTaxaFinal,
-                itens: dadosTabela.map(d => {
-                    // Buscamos o usuário original para pegar o id_contato_financeiro
-                    const userOriginal = usuarios.find(u => u.id === d.id);
-                    return {
-                        usuario_id: d.id,
-                        id_contato_financeiro: userOriginal?.id_contato_financeiro,
-                        nome_funcionario: d.nome,
-                        dias_qtd: d.dias.length,
-                        valor_total: parseFloat(d.total) || 0,
-                        datas_lista: d.dias
-                    };
-                })
-            };
-
-            const res = await fetch('/api/pagamentos/lote-vt', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify(payload)
-            });
-
-            if (!res.ok) {
-                const data = await res.json();
-                throw new Error(data.error);
-            }
-
-            mostrarToast('Lote processado com sucesso!', 'sucesso');
-            // Reset parcial
-            setSelFuncionarios([]);
-            setDiasEspecificos({});
-            setTaxaManual('');
-
-        } catch (err) {
-            mostrarToast(err instanceof Error ? err.message : 'Erro ao processar lote.', 'erro');
-        } finally {
-            setLoading(false);
+        const todosIguais = conjuntos.every((c) => arraysIguais(c, conjuntos[0]));
+        if (todosIguais) {
+          setDiasGlobais(conjuntos[0]);
+          // Todos iguais → limpa exceções e volta ao padrão global
+          return {};
         }
+      }
+
+      return proximo;
+    });
+  };
+
+  // Com 1 empregado na lista, carrega “já pago” também no calendário mestre
+  useEffect(() => {
+    if (selFuncionarios.length !== 1) {
+      if (modalUserAberto == null) setDiasPagosUsuarioAtual([]);
+      return;
+    }
+    const uid = selFuncionarios[0].value;
+    let ativo = true;
+    void (async () => {
+      try {
+        const pagos = await carregarDiasPagosUsuario(uid);
+        if (!ativo) return;
+        setDiasPagosUsuarioAtual(pagos);
+        setDiasGlobais((prev) => prev.filter((d) => !pagos.includes(d)));
+      } catch (err) {
+        console.error(err);
+      }
+    })();
+    return () => {
+      ativo = false;
     };
+  }, [selFuncionarios]);
 
-    const handleVerHistorico = (uId: number | string) => {
-        setUsuarioParaHistorico(uId);
-        setModalHistoricoAberto(true);
-    };
+  const totalVT = dadosTabela.reduce(
+    (acc, item) => acc + (Number.parseFloat(String(item.total)) || 0),
+    0,
+  );
 
-    return (
-        <div className="cpg-card">
-            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'20px', borderBottom:'1px solid #e9ecef', paddingBottom:'10px'}}>
-                <h2 className="cpg-section-title" style={{border:'none', margin:0, padding:0}}>Lote de Vale Transporte</h2>
-                <button
-                    className="cpg-btn cpg-btn-secundario"
-                    onClick={() => setModalRecibosAberto(true)}
-                >
-                    <i className="fas fa-print"></i> Gerenciar Recibos
-                </button>
-            </div>
+  const taxaPercentual = selConcessionaria
+    ? Number.parseFloat(String(selConcessionaria.taxa_recarga_percentual || 0))
+    : 0;
+  const taxaCalculada = totalVT * (taxaPercentual / 100);
+  const valorTaxaFinal = taxaManual !== '' ? Number.parseFloat(taxaManual) : taxaCalculada;
+  const totalBoleto = totalVT + valorTaxaFinal;
 
-            <div className="cpg-bonus-container" style={{gridTemplateColumns: '1fr 2fr'}}>
+  const usersFiltrados = usuarios.filter(
+    (u) =>
+      selConcessionaria &&
+      u.concessionarias_vt &&
+      u.concessionarias_vt.some(
+        (id) =>
+          Number.parseInt(String(id), 10) ===
+          Number.parseInt(String(selConcessionaria.value), 10),
+      ),
+  );
+  const userOptions = usersFiltrados.map((u) => ({ value: u.id, label: u.nome }));
+  const contaOptions = contas.map((c) => ({ value: c.id, label: c.nome_conta }));
+  const concessOptions: CpagConcessionariaOption[] = concessionarias.map((c) => ({
+    value: c.id,
+    label: c.nome ?? c.nome_concessionaria ?? String(c.id),
+    taxa_recarga_percentual: c.taxa_recarga_percentual,
+    id_contato_financeiro: c.id_contato_financeiro,
+  }));
 
-                {/* --- COLUNA 1: CONFIGURAÇÃO --- */}
-                <div>
-                    <div className="cpg-form-group">
-                        <label>Concessionária</label>
-                        <Select
-                            options={concessOptions}
-                            value={selConcessionaria}
-                            onChange={(val) => {
-                                setSelConcessionaria(val);
-                                setSelFuncionarios([]);
-                                setDiasEspecificos({});
-                            }}
-                            placeholder="Selecione..."
-                            components={{ NoOptionsMessage: CustomNoOptions }}
-                        />
-                    </div>
+  useEffect(() => {
+    const novosDados: CpagLinhaTabelaVT[] = selFuncionarios.map((sel) => {
+      const usuarioId = sel.value;
+      const usuario = usuarios.find((u) => u.id === usuarioId);
+      const dias = diasEspecificos[String(usuarioId)] || diasGlobais;
+      const valorDiario = Number.parseFloat(String(usuario?.valor_passagem_diaria || 0));
 
-                    <div className="cpg-form-group">
-                        <label>Dias de Recarga (Padrão para Todos)</label>
-                        <div style={{ marginTop: '5px' }}>
-                            <CPAGMultiDatePicker
-                                diasSelecionados={diasGlobais}
-                                onToggleDia={toggleDiaGlobal}
-                            />
-                        </div>
-                        <small style={{display:'block', marginTop:'5px', color:'#666'}}>
-                            Clique nos dias para selecionar/remover.
-                        </small>
-                    </div>
-                </div>
+      const estadoAnterior = dadosTabela.find((d) => d.id === usuarioId);
 
-                {/* --- COLUNA 2: SELEÇÃO E TABELA --- */}
-                <div>
-                    <div className="cpg-form-group">
-                        <label>Selecionar Empregados ({selConcessionaria?.label || '...'})</label>
-                        <Select
-                            isMulti
-                            options={userOptions}
-                            value={selFuncionarios}
-                            onChange={(value) => setSelFuncionarios(Array.from(value))}
-                            placeholder={!selConcessionaria ? "Selecione a concessionária primeiro" : "Busque e selecione..."}
-                            isDisabled={!selConcessionaria}
-                            components={{ NoOptionsMessage: CustomNoOptions }}
-                            closeMenuOnSelect={false}
-                        />
-                    </div>
+      let total: number | string;
+      if (estadoAnterior && estadoAnterior.totalManual) {
+        total = estadoAnterior.total;
+      } else {
+        total = dias.length * valorDiario;
+      }
 
-                    {dadosTabela.length > 0 && (
-                        <div style={{marginTop:'20px'}}>
-                            <table className="cpg-tabela-detalhes">
-                                <thead>
-                                    <tr>
-                                        <th>Funcionário</th>
-                                        <th style={{textAlign:'center'}}>Valor Dia</th>
-                                        <th style={{textAlign:'center'}}>Dias Selecionados</th>
-                                        <th style={{textAlign:'right'}}>Total</th>
-                                        <th style={{width:'50px'}}></th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {dadosTabela.map(item => (
-                                        <tr key={item.id}>
-                                            <td>{item.nome}</td>
-                                            <td style={{textAlign:'center'}}>{formatarMoeda(item.valorDiario)}</td>
-                                            <td style={{textAlign:'center'}}>
-                                                <button
-                                                    className="cpg-btn-secundario"
-                                                    style={{padding:'5px 10px', fontSize:'0.9rem'}}
-                                                    onClick={() => handleAbrirEdicaoUsuario(item.id)} // <--- ALTERADO AQUI
-                                                >
-                                                    {item.dias.length} dias <i className="fas fa-edit"></i>
-                                                </button>
+      return {
+        id: usuarioId,
+        nome: usuario?.nome || '?',
+        valorDiario,
+        dias,
+        total,
+        totalManual: estadoAnterior?.totalManual || false,
+      };
+    });
 
-                                                {/* POPOVER DE EDIÇÃO INDIVIDUAL */}
-                                                {modalUserAberto === item.id && (
-                                                    <div style={{
-                                                        position:'absolute', zIndex:100,
-                                                        background:'#fff', padding:'15px',
-                                                        boxShadow:'0 5px 25px rgba(0,0,0,0.3)',
-                                                        borderRadius:'8px',
-                                                        left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
-                                                        width: '340px'
-                                                    }}>
-                                                        <h4 style={{margin:'0 0 15px 0', fontSize:'1rem', textAlign:'center'}}>
-                                                            Ajustar: {item.nome}
-                                                        </h4>
+    if (JSON.stringify(novosDados) !== JSON.stringify(dadosTabela)) {
+      setDadosTabela(novosDados);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sincronização intencional da tabela
+  }, [selFuncionarios, diasGlobais, diasEspecificos]);
 
-                                                        {loadingDiasUser ? (
-                                                            <div className="cpg-spinner" style={{padding:'20px'}}>Carregando histórico...</div>
-                                                        ) : (
-                                                            <CPAGMultiDatePicker
-                                                                diasSelecionados={item.dias}
-                                                                diasBloqueados={diasPagosUsuarioAtual} // <--- AQUI ESTÁ O BLOQUEIO
-                                                                onToggleDia={(d) => toggleDiaUsuario(item.id, d)}
-                                                            />
-                                                        )}
-
-                                                        <div style={{display:'flex', justifyContent:'flex-end', marginTop:'15px'}}>
-                                                            <button
-                                                                className="cpg-btn cpg-btn-primario"
-                                                                style={{width:'100%'}}
-                                                                onClick={() => setModalUserAberto(null)}
-                                                            >
-                                                                Concluir
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                )}
-                                                {/* FIM DO MODAL HACK */}
-
-                                                {/* BACKDROP PARA O MODAL ACIMA */}
-                                                {modalUserAberto === item.id && (
-                                                    <div
-                                                        style={{position:'fixed', top:0, left:0, width:'100%', height:'100%', zIndex:99}}
-                                                        onClick={() => setModalUserAberto(null)}
-                                                    ></div>
-                                                )}
-
-                                            </td>
-                                            <td style={{textAlign:'right'}}>
-                                                <div style={{display:'flex', alignItems:'center', justifyContent:'flex-end', gap:'5px'}}>
-                                                    <span style={{fontSize:'0.9rem', color:'#666'}}>R$</span>
-                                                    <input
-                                                        type="number"
-                                                        step="0.01"
-                                                        value={item.total}
-                                                        onChange={(e) => handleChangeTotal(item.id, e.target.value)}
-                                                        className="cpg-input"
-                                                        style={{
-                                                            padding:'5px',
-                                                            textAlign:'right',
-                                                            width:'100px',
-                                                            fontWeight:'bold',
-                                                            color: 'var(--cpg-cor-despesa)',
-                                                            border: item.totalManual ? '1px solid #f39c12' : '1px solid #ced4da'
-                                                        }}
-                                                        title={item.totalManual ? "Valor editado manualmente" : "Calculado automaticamente"}
-                                                    />
-                                                </div>
-                                            </td>
-                                            <td>
-                                                <button className="cpg-btn-icon-small" title="Ver Histórico" onClick={() => handleVerHistorico(item.id)}>
-                                                    <i className="fas fa-history"></i>
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-
-                            {/* RODAPÉ FINANCEIRO */}
-                            <div style={{
-                                marginTop: '20px', background: '#f8f9fa', padding: '20px',
-                                borderRadius: '8px', display: 'grid', gap: '15px',
-                                gridTemplateColumns: '1fr 1fr 2fr 1fr'
-                            }}>
-                                <div>
-                                    <label style={{fontSize:'0.8rem', color:'#666'}}>Subtotal VT</label>
-                                    <div style={{fontWeight:'bold'}}>{formatarMoeda(totalVT)}</div>
-                                </div>
-                                <div>
-                                    <label style={{fontSize:'0.8rem', color:'#666'}}>Taxa {taxaManual && '(Manual)'}</label>
-                                    <input
-                                        type="number" step="0.01" className="cpg-input"
-                                        style={{padding:'5px', fontSize:'0.9rem'}}
-                                        placeholder={formatarMoeda(taxaCalculada)}
-                                        value={taxaManual}
-                                        onChange={e => setTaxaManual(e.target.value)}
-                                    />
-                                </div>
-                                <div>
-                                    <label style={{fontSize:'0.8rem', color:'#666'}}>Conta Saída</label>
-                                    <Select
-                                        options={contaOptions}
-                                        value={selConta} onChange={setSelConta}
-                                        placeholder="Selecione..."
-                                        menuPlacement="top"
-                                    />
-                                </div>
-                                <div style={{textAlign:'right'}}>
-                                    <label style={{fontSize:'0.8rem', color:'#666'}}>Total</label>
-                                    <div style={{fontSize:'1.3rem', fontWeight:'bold', color:'var(--cpg-cor-despesa)'}}>
-                                        {formatarMoeda(totalBoleto)}
-                                    </div>
-                                </div>
-                            </div>
-
-                            <button
-                                className="cpg-btn cpg-btn-primario"
-                                style={{width:'100%', marginTop:'20px'}}
-                                onClick={handleProcessarLote}
-                                disabled={loading}
-                            >
-                                {loading ? 'Processando...' : 'Confirmar Lote'}
-                            </button>
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            {/* MODAL DE HISTÓRICO */}
-            <CPAGModalHistoricoVT
-                isOpen={modalHistoricoAberto}
-                onClose={() => setModalHistoricoAberto(false)}
-                usuarioId={usuarioParaHistorico}
-            />
-            {/* MODAL DE RECIBOS (NOVO) */}
-            <CPAGGerenciadorRecibosVT
-                isOpen={modalRecibosAberto}
-                onClose={() => setModalRecibosAberto(false)}
-            />
-        </div>
+  const handleChangeTotal = (id: number | string, novoValor: string) => {
+    setDadosTabela((prev) =>
+      prev.map((item) => {
+        if (item.id === id) {
+          return {
+            ...item,
+            total: novoValor,
+            totalManual: true,
+          };
+        }
+        return item;
+      }),
     );
+  };
+
+  const handleProcessarLote = async () => {
+    if (!selConcessionaria || !selConta || dadosTabela.length === 0) {
+      mostrarToast('Preencha os dados e selecione empregados.', 'aviso');
+      return;
+    }
+    if (dadosTabela.every((d) => d.dias.length === 0)) {
+      mostrarToast('Selecione ao menos um dia de recarga.', 'aviso');
+      return;
+    }
+
+    const linhasFuncionarios = dadosTabela
+      .map(
+        (d) =>
+          `<tr>
+            <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:left"><strong>${d.nome}</strong></td>
+            <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:left;font-size:0.9em">${formatarListaDatas(d.dias)}</td>
+            <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right">${formatarMoeda(d.total)}</td>
+          </tr>`,
+      )
+      .join('');
+
+    const confirmado = await mostrarConfirmacao(
+      `<div style="text-align:left">
+        <p style="margin:0 0 10px">Confirma o pagamento do lote <strong>${selConcessionaria.label}</strong>?</p>
+        <div style="max-height:220px;overflow:auto;margin:10px 0;border:1px solid #e9ecef;border-radius:8px">
+          <table style="width:100%;border-collapse:collapse;font-size:0.92em">
+            <thead>
+              <tr style="background:#f8f9fa">
+                <th style="padding:8px;text-align:left">Empregado</th>
+                <th style="padding:8px;text-align:left">Datas da recarga</th>
+                <th style="padding:8px;text-align:right">Valor</th>
+              </tr>
+            </thead>
+            <tbody>${linhasFuncionarios}</tbody>
+          </table>
+        </div>
+        <p style="margin:8px 0 0">Valor VT: <strong>${formatarMoeda(totalVT)}</strong></p>
+        <p style="margin:4px 0">Taxa: <strong>${formatarMoeda(valorTaxaFinal)}</strong></p>
+        <p style="margin:8px 0 0;font-size:1.05em"><strong>Total: ${formatarMoeda(totalBoleto)}</strong></p>
+        <p style="margin:10px 0 0;font-size:0.85em;color:#64748b">Cada empregado receberá um aviso popup na dashboard confirmando a recarga.</p>
+      </div>`,
+      { tipo: 'aviso', textoConfirmar: 'Confirmar Lote' },
+    );
+    if (!confirmado) return;
+
+    setLoading(true);
+    try {
+      const payload: CpagLoteVTPayload = {
+        id_conta_debito: selConta.value,
+        id_concessionaria: selConcessionaria.value,
+        id_contato_concessionaria: selConcessionaria.id_contato_financeiro,
+        nome_concessionaria: selConcessionaria.label,
+        valor_total_vt: totalVT,
+        valor_total_taxa: valorTaxaFinal,
+        itens: dadosTabela.map((d) => {
+          const userOriginal = usuarios.find((u) => u.id === d.id);
+          return {
+            usuario_id: d.id,
+            id_contato_financeiro: userOriginal?.id_contato_financeiro,
+            nome_funcionario: d.nome,
+            dias_qtd: d.dias.length,
+            valor_total: Number.parseFloat(String(d.total)) || 0,
+            datas_lista: d.dias,
+          };
+        }),
+      };
+
+      await fetchCpag('/api/pagamentos/lote-vt', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+
+      mostrarToast('Lote processado com sucesso! Avisos enviados às funcionárias.', 'sucesso');
+      setSelFuncionarios([]);
+      setDiasEspecificos({});
+      setDiasGlobais([]);
+      setTaxaManual('');
+      setDadosTabela([]);
+    } catch (err) {
+      mostrarToast(err instanceof Error ? err.message : 'Erro ao processar lote.', 'erro');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerHistorico = (uId: number | string) => {
+    setUsuarioParaHistorico(uId);
+    setModalHistoricoAberto(true);
+  };
+
+  const resumoDiasGlobais = useMemo(
+    () => (diasGlobais.length ? formatarListaDatas(diasGlobais) : 'Nenhum dia padrão'),
+    [diasGlobais],
+  );
+
+  return (
+    <div className="cpg-card cpg-passagem">
+      <div className="cpg-passagem__header">
+        <h2 className="cpg-section-title" style={{ border: 'none', margin: 0, padding: 0 }}>
+          Lote de Vale Transporte
+        </h2>
+        <button
+          type="button"
+          className="cpg-btn cpg-btn-secundario"
+          onClick={() => setModalRecibosAberto(true)}
+        >
+          <i className="fas fa-print"></i> Gerenciar Recibos
+        </button>
+      </div>
+
+      {/* Configuração — largura total, tablet-first */}
+      <section className="cpg-vt-config">
+        <div className="cpg-vt-campos">
+          <div className="cpg-form-group">
+            <label>Concessionária</label>
+            <Select
+              options={concessOptions}
+              value={selConcessionaria}
+              onChange={(val) => {
+                setSelConcessionaria(val);
+                setSelFuncionarios([]);
+                setDiasEspecificos({});
+              }}
+              placeholder="Selecione..."
+              components={{ NoOptionsMessage: CustomNoOptions }}
+            />
+          </div>
+          <div className="cpg-form-group">
+            <label>Empregados ({selConcessionaria?.label || '…'})</label>
+            <Select
+              isMulti
+              options={userOptions}
+              value={selFuncionarios}
+              onChange={(value) => setSelFuncionarios(Array.from(value ?? []))}
+              placeholder={
+                !selConcessionaria
+                  ? 'Selecione a concessionária primeiro'
+                  : 'Busque e selecione...'
+              }
+              isDisabled={!selConcessionaria}
+              components={{ NoOptionsMessage: CustomNoOptionsMulti }}
+              closeMenuOnSelect={false}
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* Calendário em bloco próprio — não espremido à esquerda */}
+      <section className="cpg-vt-calendario">
+        <div className="cpg-vt-calendario__cabecalho">
+          <div>
+            <h3>Dias de recarga (padrão para todos)</h3>
+            <p>
+              Clique nos dias do calendário. O mesmo conjunto preenche “Dias selecionados” na
+              tabela. Ajuste individual permanece disponível por empregado.
+            </p>
+          </div>
+          <span className="cpg-vt-calendario__resumo">{resumoDiasGlobais}</span>
+        </div>
+        <div className="cpg-vt-calendario__box">
+          <CPAGMultiDatePicker
+            diasSelecionados={diasGlobais}
+            diasBloqueados={selFuncionarios.length === 1 ? diasPagosUsuarioAtual : []}
+            onToggleDia={toggleDiaGlobal}
+            legendaBloqueado="Já pago"
+            legendaSelecionado="Selecionado"
+          />
+        </div>
+        {selFuncionarios.length === 1 && diasPagosUsuarioAtual.length > 0 && (
+          <p className="cpg-vt-calendario__hint">
+            {diasPagosUsuarioAtual.length} dia(s) já pagos para este empregado (bloqueados no
+            calendário).
+          </p>
+        )}
+        {selFuncionarios.length > 1 && (
+          <p className="cpg-vt-calendario__hint">
+            Com vários empregados, os dias já pagos de cada um aparecem ao ajustar individualmente
+            (“X dias”).
+          </p>
+        )}
+      </section>
+
+      {dadosTabela.length > 0 && (
+        <section className="cpg-vt-tabela-wrap">
+          <div className="cpg-tabela-container">
+            <table className="cpg-tabela-detalhes cpg-vt-tabela">
+              <thead>
+                <tr>
+                  <th>Empregado</th>
+                  <th style={{ textAlign: 'center' }}>Valor / dia</th>
+                  <th style={{ textAlign: 'center' }}>Dias selecionados</th>
+                  <th style={{ textAlign: 'right' }}>Total</th>
+                  <th style={{ width: '48px' }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {dadosTabela.map((item) => (
+                  <tr key={item.id}>
+                    <td>
+                      <strong>{item.nome}</strong>
+                      {item.dias.length > 0 && (
+                        <div className="cpg-vt-datas-linha">{formatarListaDatas(item.dias)}</div>
+                      )}
+                    </td>
+                    <td style={{ textAlign: 'center' }}>{formatarMoeda(item.valorDiario)}</td>
+                    <td style={{ textAlign: 'center' }}>
+                      <button
+                        type="button"
+                        className="cpg-btn cpg-btn-secundario cpg-vt-btn-dias"
+                        onClick={() => void handleAbrirEdicaoUsuario(item.id)}
+                      >
+                        {item.dias.length} dia{item.dias.length === 1 ? '' : 's'}{' '}
+                        <i className="fas fa-edit" aria-hidden="true" />
+                      </button>
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <div className="cpg-vt-total-edit">
+                        <span>R$</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={item.total}
+                          onChange={(e) => handleChangeTotal(item.id, e.target.value)}
+                          className="cpg-input"
+                          title={
+                            item.totalManual
+                              ? 'Valor editado manualmente'
+                              : 'Calculado automaticamente'
+                          }
+                          style={{
+                            border: item.totalManual
+                              ? '1px solid #f39c12'
+                              : '1px solid #ced4da',
+                          }}
+                        />
+                      </div>
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="cpg-btn-icon-small"
+                        title="Ver histórico"
+                        onClick={() => handleVerHistorico(item.id)}
+                      >
+                        <i className="fas fa-history" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="cpg-vt-rodape">
+            <div className="cpg-vt-rodape__item">
+              <label>Subtotal VT</label>
+              <strong>{formatarMoeda(totalVT)}</strong>
+            </div>
+            <div className="cpg-vt-rodape__item">
+              <label>Taxa {taxaManual !== '' ? '(manual)' : ''}</label>
+              <input
+                type="number"
+                step="0.01"
+                className="cpg-input"
+                placeholder={formatarMoeda(taxaCalculada)}
+                value={taxaManual}
+                onChange={(e) => setTaxaManual(e.target.value)}
+              />
+            </div>
+            <div className="cpg-vt-rodape__item cpg-vt-rodape__item--conta">
+              <label>Conta de saída</label>
+              <Select
+                options={contaOptions}
+                value={selConta}
+                onChange={setSelConta}
+                placeholder="Selecione..."
+                menuPlacement="top"
+              />
+            </div>
+            <div className="cpg-vt-rodape__item cpg-vt-rodape__item--total">
+              <label>Total</label>
+              <strong className="cpg-vt-total-final">{formatarMoeda(totalBoleto)}</strong>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            className="cpg-btn cpg-btn-primario cpg-vt-confirmar"
+            onClick={() => void handleProcessarLote()}
+            disabled={loading}
+          >
+            {loading ? 'Processando…' : 'Confirmar lote'}
+          </button>
+        </section>
+      )}
+
+      {/* Modal de ajuste individual de dias */}
+      {modalUserAberto != null && (
+        <>
+          <div
+            className="cpg-vt-modal-backdrop"
+            onClick={() => setModalUserAberto(null)}
+            aria-hidden="true"
+          />
+          <div className="cpg-vt-modal-dias" role="dialog" aria-modal="true">
+            <h4>
+              Ajustar dias —{' '}
+              {dadosTabela.find((d) => d.id === modalUserAberto)?.nome || 'Empregado'}
+            </h4>
+            {loadingDiasUser ? (
+              <UICarregando variante="bloco" tamanho="md" texto="Carregando dias pagos…" />
+            ) : (
+              <CPAGMultiDatePicker
+                diasSelecionados={
+                  dadosTabela.find((d) => d.id === modalUserAberto)?.dias || []
+                }
+                diasBloqueados={diasPagosUsuarioAtual}
+                onToggleDia={(d) => toggleDiaUsuario(modalUserAberto, d)}
+                legendaBloqueado="Já pago"
+                legendaSelecionado="Selecionado"
+              />
+            )}
+            <button
+              type="button"
+              className="cpg-btn cpg-btn-primario"
+              style={{ width: '100%', marginTop: 14 }}
+              onClick={() => setModalUserAberto(null)}
+            >
+              Concluir
+            </button>
+          </div>
+        </>
+      )}
+
+      <CPAGModalHistoricoVT
+        isOpen={modalHistoricoAberto}
+        onClose={() => setModalHistoricoAberto(false)}
+        usuarioId={usuarioParaHistorico}
+      />
+      <CPAGGerenciadorRecibosVT
+        isOpen={modalRecibosAberto}
+        onClose={() => setModalRecibosAberto(false)}
+      />
+    </div>
+  );
 }

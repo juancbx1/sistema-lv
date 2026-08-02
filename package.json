@@ -1,6 +1,6 @@
 {
   "name": "sistema-lv",
-  "version": "1.40.4",
+  "version": "1.42.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -26,12 +26,14 @@
     "jspdf": "^3.0.4",
     "jspdf-autotable": "^5.0.2",
     "multer": "^2.0.2",
+    "pdf-parse": "^2.4.5",
     "pg": "^8.14.1",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-select": "^5.10.2",
     "react-tooltip": "^5.29.1",
-    "recharts": "^3.1.2"
+    "recharts": "^3.1.2",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/react": "^19.2.17",

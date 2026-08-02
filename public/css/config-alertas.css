@@ -1821,3 +1821,68 @@ input:checked + .slider:before {
     border-radius: 2px;
     margin: 8px auto 2px;
 }
+
+/* Destinatários individuais (ex.: avisos de recarga VT do Financeiro) */
+.avpm-individuais {
+    margin-top: 10px;
+    padding: 12px;
+    border: 1px solid #e8eaf0;
+    border-radius: 10px;
+    background: #f8fafc;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.avpm-individuais-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.avpm-individuo-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: #eef2ff;
+    color: #3730a3;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+.avpm-individuo-chip-x {
+    border: none;
+    background: transparent;
+    color: #6366f1;
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0 2px;
+}
+.avpm-individuais-vazio {
+    margin: 0;
+    font-size: 0.85rem;
+    color: #64748b;
+}
+.avpm-individuais-lista {
+    max-height: 180px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 4px;
+}
+.avpm-individuo-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+.avpm-individuo-item.ativo {
+    border-color: #6366f1;
+    background: #eef2ff;
+}

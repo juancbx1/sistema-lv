@@ -28,8 +28,19 @@ const formatDate = (value?: string) =>
       })
     : 'Não registrado';
 
-const uniqueNames = (values: Array<string | undefined>) =>
-  Array.from(new Set(values.map((value) => value?.trim()).filter(Boolean))).join(', ');
+/** Rateio com vários favorecidos: placeholder visual "Diversos" (sem criar categoria). */
+function rotuloFavorecidoRateio(
+  itens: Array<{ nome_contato_item?: string | null }> | undefined,
+  fallback?: string | null,
+): string {
+  const nomes = Array.from(
+    new Set((itens ?? []).map((item) => item.nome_contato_item?.trim()).filter(Boolean) as string[]),
+  );
+  if (nomes.length >= 2) return 'Diversos';
+  if (nomes.length === 1) return nomes[0];
+  if ((itens?.length ?? 0) >= 2) return 'Diversos';
+  return fallback?.trim() || 'Não informado';
+}
 
 /** Chave YYYY-MM-DD estável para ordenar/comparar vencimentos. */
 function dataKey(dataVencimento?: string) {
@@ -86,11 +97,9 @@ export default function FinanceiroAgendaCard({
   const temItensRateio = !isLote && itensRateio.length > 0;
   const podeExpandir = isLote || temItensRateio;
 
-  const favorecidosRateio = uniqueNames(itensRateio.map((item) => item.nome_contato_item));
-  const favorecido =
-    isRateio && favorecidosRateio
-      ? favorecidosRateio
-      : primeiro.nome_favorecido || 'Não informado';
+  const favorecido = isRateio
+    ? rotuloFavorecidoRateio(itensRateio, primeiro.nome_favorecido)
+    : primeiro.nome_favorecido || 'Não informado';
 
   const categoria = isLote
     ? qtdAtrasadas > 0

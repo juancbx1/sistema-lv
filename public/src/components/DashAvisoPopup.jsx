@@ -72,10 +72,19 @@ export default function DashAvisoPopup({ avisos: avisosIniciais, onMarcarVisto }
         }, 250);
     };
 
-    const tipo   = atual.tipo;
     const cor    = atual.cor_fundo || 'azul';
     const grad   = COR_GRAD[cor]   || COR_GRAD.azul;
     const btnCor = COR_BTN[cor]    || COR_BTN.azul;
+
+    // Se o tipo pede imagem mas a URL falhou/não veio, cai para texto (evita card preto vazio)
+    const temImagem = Boolean(atual.url_imagem);
+    let tipo = atual.tipo || 'texto';
+    if ((tipo === 'imagem' || tipo === 'misto') && !temImagem) {
+        tipo = 'texto';
+    } else if (tipo === 'imagem' && temImagem && atual.mensagem) {
+        // Imagem + mensagem: trata como misto para não esconder o texto
+        tipo = 'misto';
+    }
 
     // Tipo "imagem" sem urgência: o X fecha e registra — não exibe corpus abaixo
     const semCorpo = tipo === 'imagem' && !atual.urgente;

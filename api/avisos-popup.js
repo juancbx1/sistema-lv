@@ -60,6 +60,33 @@ function buildDestinatariosClause(tipo, userId, startParamIndex) {
     )`;
 }
 
+/** Normaliza ids_individuais vindos do PG (int[], string "{1,2}", JSON, etc.). */
+function normalizarIdsIndividuais(valor) {
+    if (valor == null) return [];
+    if (Array.isArray(valor)) {
+        return valor
+            .map((id) => Number(id))
+            .filter((id) => Number.isSafeInteger(id) && id > 0);
+    }
+    if (typeof valor === 'string') {
+        const limpo = valor.trim();
+        if (!limpo) return [];
+        try {
+            const parsed = JSON.parse(limpo);
+            if (Array.isArray(parsed)) return normalizarIdsIndividuais(parsed);
+        } catch {
+            // formato PG: {1,2,3}
+        }
+        return limpo
+            .replace(/^{|}$/g, '')
+            .split(',')
+            .map((s) => Number(s.trim()))
+            .filter((id) => Number.isSafeInteger(id) && id > 0);
+    }
+    const n = Number(valor);
+    return Number.isSafeInteger(n) && n > 0 ? [n] : [];
+}
+
 // ---------------------------------------------------------------------------
 // ROTA: GET /api/avisos-popup/pendentes
 // Retorna avisos não vistos pelo usuário logado.
@@ -75,13 +102,15 @@ router.get('/pendentes', async (req, res) => {
         // Pega o primeiro tipo relevante (costureira, tiktik, etc.)
         const tipoUsuario = Array.isArray(tipos) ? (tipos[0] || '') : tipos;
 
+        // Data “de negócio” sempre em America/Sao_Paulo (evita atraso de 1 dia no UTC do Neon)
         const result = await dbClient.query(
             `SELECT ap.id, ap.titulo, ap.tipo, ap.mensagem, ap.url_imagem,
                     ap.cor_fundo, ap.urgente, ap.criado_em
              FROM avisos_popup ap
              WHERE ap.ativo = TRUE
-               AND ap.data_inicio <= CURRENT_DATE
-               AND (ap.data_fim IS NULL OR ap.data_fim >= CURRENT_DATE)
+               AND ap.is_template = FALSE
+               AND ap.data_inicio <= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date
+               AND (ap.data_fim IS NULL OR ap.data_fim >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date)
                AND (
                    ap.destinatarios = 'todos'
                    OR (ap.destinatarios = 'costureiras' AND $1 = 'costureira')
@@ -213,7 +242,36 @@ router.get('/', async (req, res) => {
             [empresaId]
         );
 
-        res.status(200).json(result.rows);
+        // Enriquece avisos individuais com nomes dos destinatários (ex.: recarga VT do Financeiro)
+        const idsIndividuais = new Set();
+        for (const row of result.rows) {
+            const ids = normalizarIdsIndividuais(row.ids_individuais);
+            row.ids_individuais = ids;
+            ids.forEach((id) => idsIndividuais.add(id));
+        }
+
+        let nomesPorId = new Map();
+        if (idsIndividuais.size > 0) {
+            const nomesRes = await dbClient.query(
+                `SELECT id, nome
+                   FROM usuarios
+                  WHERE id = ANY($1::int[])`,
+                [Array.from(idsIndividuais)]
+            );
+            nomesPorId = new Map(nomesRes.rows.map((u) => [Number(u.id), u.nome]));
+        }
+
+        const rows = result.rows.map((row) => {
+            if (row.destinatarios !== 'individuais') {
+                return { ...row, destinatarios_nomes: [] };
+            }
+            const nomes = (row.ids_individuais || [])
+                .map((id) => nomesPorId.get(Number(id)))
+                .filter(Boolean);
+            return { ...row, destinatarios_nomes: nomes };
+        });
+
+        res.status(200).json(rows);
     } catch (error) {
         console.error('[API /avisos-popup GET] Erro:', error);
         res.status(500).json({ error: 'Erro ao buscar avisos.' });

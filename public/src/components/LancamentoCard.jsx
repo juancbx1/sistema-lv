@@ -79,7 +79,16 @@ const LancamentoCard = ({ lancamento, onEdit, onDelete, onShowDetails }) => {
 
             {/* BLOCO DE DETALHES */}
             <div className="card-details">
-                <span className="detail-item"><i className="fas fa-user-friends"></i><b>Favorecido:</b> {lancamento.nome_favorecido || '-'}</span>
+                <span className="detail-item"><i className="fas fa-user-friends"></i><b>Favorecido:</b> {
+                    (() => {
+                        if (lancamento.tipo_rateio === 'DETALHADO' && Array.isArray(lancamento.itens) && lancamento.itens.length >= 2) {
+                            const nomes = [...new Set(lancamento.itens.map((i) => i.nome_contato_item).filter(Boolean))];
+                            if (nomes.length >= 2 || lancamento.itens.length >= 2) return 'Diversos';
+                            if (nomes.length === 1) return nomes[0];
+                        }
+                        return lancamento.nome_favorecido || '-';
+                    })()
+                }</span>
                 <span className="detail-item"><i className="fas fa-tag"></i><b>Categoria:</b> {categoriaExibida}</span>
                 <span className="detail-item"><i className="fas fa-university"></i><b>Conta:</b> {lancamento.nome_conta}</span>
                 <span className="detail-item"><i className="fas fa-calendar-day"></i><b>Data:</b> {new Date(lancamento.data_transacao).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</span>

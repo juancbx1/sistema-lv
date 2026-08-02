@@ -34,6 +34,21 @@ async function fetchApi(endpoint, options = {}) {
 const TIPO_LABEL  = { texto: 'Texto', imagem: 'Imagem', misto: 'Misto' };
 const DEST_LABEL  = { todos: 'Todos', costureiras: 'Costureiras', tiktiks: 'Tiktiks', individuais: 'Individuais' };
 
+/** Rótulo amigável de destinatários (inclui nomes em avisos individuais, ex.: VT). */
+function rotuloDestinatarios(aviso) {
+    if (aviso.destinatarios === 'individuais') {
+        const nomes = Array.isArray(aviso.destinatarios_nomes)
+            ? aviso.destinatarios_nomes.filter(Boolean)
+            : [];
+        if (nomes.length === 1) return nomes[0];
+        if (nomes.length === 2) return `${nomes[0]}, ${nomes[1]}`;
+        if (nomes.length > 2) return `${nomes[0]} +${nomes.length - 1}`;
+        const qtd = Array.isArray(aviso.ids_individuais) ? aviso.ids_individuais.length : 0;
+        return qtd > 0 ? `${qtd} pessoa${qtd > 1 ? 's' : ''}` : 'Individuais';
+    }
+    return DEST_LABEL[aviso.destinatarios] || aviso.destinatarios || '—';
+}
+
 function statusCard(aviso) {
     if (aviso.is_template)  return 'template';
     if (!aviso.ativo)       return 'inativo';
@@ -84,8 +99,8 @@ function AvisoCard({ aviso, onEditar, onToggleAtivo, onDeletar, onVerVisualizaco
                         </span>
                     )}
                     {ehTemplate && <span className="avp-badge avp-badge--template">Modelo</span>}
-                    <span className="avp-dest">
-                        <i className="fas fa-users"></i> {DEST_LABEL[aviso.destinatarios]}
+                    <span className="avp-dest" title={rotuloDestinatarios(aviso)}>
+                        <i className="fas fa-users"></i> {rotuloDestinatarios(aviso)}
                     </span>
                     {aviso.data_inicio && !ehTemplate && (
                         <span className="avp-dest">

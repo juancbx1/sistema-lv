@@ -88,8 +88,19 @@ const formatDate = (value?: string) =>
       })
     : 'Não registrado';
 
-const uniqueNames = (values: Array<string | undefined>) =>
-  Array.from(new Set(values.map((value) => value?.trim()).filter(Boolean))).join(', ');
+/** Rateio com vários favorecidos: placeholder visual "Diversos" (sem criar categoria). */
+function rotuloFavorecidoRateio(
+  itens: Array<{ nome_contato_item?: string | null }> | undefined,
+  fallback?: string | null,
+): string {
+  const nomes = Array.from(
+    new Set((itens ?? []).map((item) => item.nome_contato_item?.trim()).filter(Boolean) as string[]),
+  );
+  if (nomes.length >= 2) return 'Diversos';
+  if (nomes.length === 1) return nomes[0];
+  if ((itens?.length ?? 0) >= 2) return 'Diversos';
+  return fallback?.trim() || 'Não informado';
+}
 
 function toneStatusSol(status?: string) {
   if (status === 'APROVADO') return 'sucesso';
@@ -115,8 +126,9 @@ export default function LancamentoFinanceiroCard({
   const isRateio = lancamento.tipo_rateio === 'DETALHADO';
   const isCompra = lancamento.tipo_rateio === 'COMPRA';
   const isTransferencia = Boolean(lancamento.id_transferencia_vinculada);
-  const favorecidosRateio = uniqueNames((lancamento.itens ?? []).map((item) => item.nome_contato_item));
-  const favorecido = isRateio && favorecidosRateio ? favorecidosRateio : lancamento.nome_favorecido || 'Não informado';
+  const favorecido = isRateio
+    ? rotuloFavorecidoRateio(lancamento.itens, lancamento.nome_favorecido)
+    : lancamento.nome_favorecido || 'Não informado';
   const dataCaixaInfo = rotuloDataLancamento(lancamento);
   const dataCaixaTexto = textoDataLancamento(lancamento);
   const categoria = isTransferencia

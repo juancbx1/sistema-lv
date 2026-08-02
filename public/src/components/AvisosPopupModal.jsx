@@ -8,7 +8,7 @@
 //   onSalvo   — callback após salvar com sucesso
 //   onFechar  — callback para fechar o modal
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import imageCompression from 'browser-image-compression';
 import { mostrarMensagem } from '/js/utils/popups.js';
 
@@ -44,7 +44,32 @@ const DESTS = [
     { id: 'todos',       label: '👥 Todos os usuários' },
     { id: 'costureiras', label: '🧵 Costureiras' },
     { id: 'tiktiks',     label: '⚡ Tiktiks' },
+    { id: 'individuais', label: '👤 Pessoas específicas' },
 ];
+
+function normalizarIdsIndividuais(valor) {
+    if (valor == null) return [];
+    if (Array.isArray(valor)) {
+        return valor.map((id) => Number(id)).filter((id) => Number.isSafeInteger(id) && id > 0);
+    }
+    if (typeof valor === 'string') {
+        const limpo = valor.trim();
+        if (!limpo) return [];
+        try {
+            const parsed = JSON.parse(limpo);
+            if (Array.isArray(parsed)) return normalizarIdsIndividuais(parsed);
+        } catch {
+            // formato PG {1,2}
+        }
+        return limpo
+            .replace(/^{|}$/g, '')
+            .split(',')
+            .map((s) => Number(s.trim()))
+            .filter((id) => Number.isSafeInteger(id) && id > 0);
+    }
+    const n = Number(valor);
+    return Number.isSafeInteger(n) && n > 0 ? [n] : [];
+}
 
 const TIPO_EVENTO_LABEL = {
     feriado_nacional: '🇧🇷 Feriado Nacional',
@@ -233,7 +258,16 @@ export default function AvisosPopupModal({ aviso, modo = 'criar', onSalvo, onFec
     const [mensagem, setMensagem]     = useState(aviso?.mensagem    || '');
     const [urlImagem, setUrlImagem]   = useState(aviso?.url_imagem  || '');
     const [corFundo, setCorFundo]     = useState(aviso?.cor_fundo   || 'azul');
-    const [destinatarios, setDestinatarios] = useState(aviso?.destinatarios || 'todos');
+    const destInicial = ['todos', 'costureiras', 'tiktiks', 'individuais'].includes(aviso?.destinatarios)
+        ? aviso.destinatarios
+        : 'todos';
+    const [destinatarios, setDestinatarios] = useState(destInicial);
+    const [idsIndividuais, setIdsIndividuais] = useState(() =>
+        normalizarIdsIndividuais(aviso?.ids_individuais)
+    );
+    const [pessoas, setPessoas] = useState([]); // { id, nome }
+    const [buscaPessoa, setBuscaPessoa] = useState('');
+    const [carregandoPessoas, setCarregandoPessoas] = useState(false);
     const [urgente, setUrgente]       = useState(aviso?.urgente     || false);
     const [isTemplate, setIsTemplate] = useState(
         modo === 'usar-template' ? false : (aviso?.is_template || false)
@@ -272,6 +306,60 @@ export default function AvisosPopupModal({ aviso, modo = 'criar', onSalvo, onFec
             setInfoCompressao(null);
         }
     }, [tipo]);
+
+    // Carrega pessoas da empresa para destinatários individuais (ex.: avisos de recarga VT)
+    useEffect(() => {
+        if (destinatarios !== 'individuais') return;
+        if (pessoas.length > 0) return;
+        let ativo = true;
+        const carregar = async () => {
+            setCarregandoPessoas(true);
+            try {
+                const data = await fetchApi('/api/usuarios');
+                if (!ativo) return;
+                const lista = (Array.isArray(data) ? data : [])
+                    .filter((u) => u && u.id != null && u.nome)
+                    .map((u) => ({ id: Number(u.id), nome: u.nome }))
+                    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+                setPessoas(lista);
+            } catch {
+                // Se falhar, ainda mostramos IDs conhecidos
+            } finally {
+                if (ativo) setCarregandoPessoas(false);
+            }
+        };
+        void carregar();
+        return () => {
+            ativo = false;
+        };
+    }, [destinatarios, pessoas.length]);
+
+    const pessoasSelecionadas = useMemo(() => {
+        const mapa = new Map(pessoas.map((p) => [p.id, p.nome]));
+        // Inclui nomes vindos do aviso (API enriquecida) se a lista ainda não carregou
+        const nomesAviso = Array.isArray(aviso?.destinatarios_nomes)
+            ? aviso.destinatarios_nomes
+            : [];
+        return idsIndividuais.map((id, idx) => ({
+            id,
+            nome: mapa.get(id) || nomesAviso[idx] || `Usuário #${id}`,
+        }));
+    }, [idsIndividuais, pessoas, aviso?.destinatarios_nomes]);
+
+    const pessoasFiltradas = useMemo(() => {
+        const termo = buscaPessoa.trim().toLowerCase();
+        const base = termo
+            ? pessoas.filter((p) => p.nome.toLowerCase().includes(termo))
+            : pessoas;
+        return base.slice(0, 40);
+    }, [pessoas, buscaPessoa]);
+
+    const alternarPessoa = (id) => {
+        const n = Number(id);
+        setIdsIndividuais((atual) =>
+            atual.includes(n) ? atual.filter((x) => x !== n) : [...atual, n]
+        );
+    };
 
     // Carrega eventos do calendário quando expandido
     const handleAbrirCalendario = async () => {
@@ -336,6 +424,10 @@ export default function AvisosPopupModal({ aviso, modo = 'criar', onSalvo, onFec
             mostrarMensagem('Selecione uma imagem para este tipo de aviso.', 'aviso');
             return;
         }
+        if (destinatarios === 'individuais' && idsIndividuais.length === 0) {
+            mostrarMensagem('Selecione ao menos uma pessoa como destinatário.', 'aviso');
+            return;
+        }
 
         setSalvando(true);
         try {
@@ -357,7 +449,7 @@ export default function AvisosPopupModal({ aviso, modo = 'criar', onSalvo, onFec
                 url_imagem:      temImagem ? urlFinal : null,
                 cor_fundo:       tipo === 'texto' ? corFundo : 'azul',
                 destinatarios,
-                ids_individuais: [],
+                ids_individuais: destinatarios === 'individuais' ? idsIndividuais : [],
                 urgente,
                 is_template:     isTemplate,
                 ativo:           !isTemplate,
@@ -574,12 +666,77 @@ export default function AvisosPopupModal({ aviso, modo = 'criar', onSalvo, onFec
                         <select
                             className="avpm-input avpm-select"
                             value={destinatarios}
-                            onChange={e => setDestinatarios(e.target.value)}
+                            onChange={e => {
+                                const v = e.target.value;
+                                setDestinatarios(v);
+                                if (v !== 'individuais') setIdsIndividuais([]);
+                            }}
                         >
                             {DESTS.map(d => (
                                 <option key={d.id} value={d.id}>{d.label}</option>
                             ))}
                         </select>
+
+                        {destinatarios === 'individuais' && (
+                            <div className="avpm-individuais">
+                                {pessoasSelecionadas.length > 0 ? (
+                                    <div className="avpm-individuais-chips">
+                                        {pessoasSelecionadas.map((p) => (
+                                            <span key={p.id} className="avpm-individuo-chip">
+                                                <i className="fas fa-user" aria-hidden="true" />
+                                                {p.nome}
+                                                <button
+                                                    type="button"
+                                                    className="avpm-individuo-chip-x"
+                                                    onClick={() => alternarPessoa(p.id)}
+                                                    aria-label={`Remover ${p.nome}`}
+                                                >
+                                                    ×
+                                                </button>
+                                            </span>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <p className="avpm-individuais-vazio">
+                                        Nenhuma pessoa selecionada. Avisos do Financeiro (ex.: recarga VT)
+                                        costumam ter uma pessoa específica.
+                                    </p>
+                                )}
+
+                                <input
+                                    className="avpm-input"
+                                    style={{ marginTop: 8 }}
+                                    placeholder="Buscar pessoa para adicionar..."
+                                    value={buscaPessoa}
+                                    onChange={(e) => setBuscaPessoa(e.target.value)}
+                                />
+
+                                {carregandoPessoas ? (
+                                    <p className="avpm-individuais-vazio">
+                                        <i className="fas fa-spinner fa-spin" /> Carregando pessoas…
+                                    </p>
+                                ) : (
+                                    <div className="avpm-individuais-lista">
+                                        {pessoasFiltradas.map((p) => {
+                                            const marcado = idsIndividuais.includes(p.id);
+                                            return (
+                                                <label key={p.id} className={`avpm-individuo-item${marcado ? ' ativo' : ''}`}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={marcado}
+                                                        onChange={() => alternarPessoa(p.id)}
+                                                    />
+                                                    <span>{p.nome}</span>
+                                                </label>
+                                            );
+                                        })}
+                                        {pessoas.length > 0 && pessoasFiltradas.length === 0 && (
+                                            <p className="avpm-individuais-vazio">Nenhum resultado para a busca.</p>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
 
                     {/* Datas + sugestões do calendário — oculto para modelos */}

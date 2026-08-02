@@ -11,7 +11,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import UIFeedbackNotFound from './UIFeedbackNotFound';
-import OPPaginacaoWrapper from './OPPaginacaoWrapper.tsx';
+import OPPaginacaoWrapper from './OPPaginacaoWrapper.jsx';
 import { mostrarMensagem } from '/js/utils/popups.js';
 import { calcularStatusDemanda, STATUS_META } from '/src/utils/demandaStatus.js';
 

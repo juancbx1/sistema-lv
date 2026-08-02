@@ -4,13 +4,10 @@ import { fetchFinanceiro } from '../utils/financeiro-api';
 import type { FinanceiroConfigPanel, FinanceiroContato } from '../utils/financeiro-types';
 import { useFinanceiro } from './FinanceiroContext';
 
-import FinanceiroRegrasImportacao from './FinanceiroRegrasImportacao';
-
 const TABS: Array<{ id: FinanceiroConfigPanel; label: string; icon: string }> = [
   { id: 'contas', label: 'Contas Bancárias', icon: 'fa-university' },
   { id: 'favorecidos', label: 'Favorecidos', icon: 'fa-user-friends' },
   { id: 'categorias', label: 'Categorias e Grupos', icon: 'fa-tags' },
-  { id: 'regras-importacao', label: 'Regras de importação', icon: 'fa-magic' },
   { id: 'taxas-vt', label: 'Taxas de VT', icon: 'fa-bus' },
 ];
 
@@ -331,12 +328,6 @@ export default function FinanceiroConfiguracoes() {
                   : 'Nenhum grupo cadastrado.'}
               </p>
             )}
-          </section>
-        )}
-
-        {active === 'regras-importacao' && (
-          <section className="fc-config-secao">
-            <FinanceiroRegrasImportacao />
           </section>
         )}
 

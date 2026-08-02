@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { obterProdutos as obterProdutosDoStorage } from '/js/utils/storage.js';
 import UIFeedbackNotFound from './UIFeedbackNotFound';
 import UICarregando from './UICarregando';
-import OPPaginacaoWrapper from './OPPaginacaoWrapper.tsx';
+import OPPaginacaoWrapper from './OPPaginacaoWrapper.jsx';
 import UIBuscaInteligente, { filtrarListaInteligente } from './UIBuscaInteligente';
 import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio';
 

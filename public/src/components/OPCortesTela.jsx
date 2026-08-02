@@ -7,7 +7,7 @@ import OPRegistroCorte from './OPRegistroCorte.jsx';
 import OPCorteEstoqueCard from './OPCorteEstoqueCard.jsx';
 import OPFormulario from './OPFormulario.jsx';
 import OPCriarModal from './OPCriarModal.jsx';
-import OPPaginacaoWrapper from './OPPaginacaoWrapper.tsx';
+import OPPaginacaoWrapper from './OPPaginacaoWrapper.jsx';
 import OPCortesRadar from './OPCortesRadar.jsx';
 import OPCortesAgente from './OPCortesAgente.jsx';
 import OPQuickLogModal from './OPQuickLogModal.jsx';

@@ -17,11 +17,17 @@ function formatarDataBR(iso?: string | null): string {
 
 interface Props {
   variante?: 'desktop' | 'mobile';
+  /** Saldo já buscado no bootstrap da página (evita pop-in do card). */
+  dadosInicial?: DashVtSaldo | null;
 }
 
-export default function DashVtSaldoCard({ variante = 'desktop' }: Props) {
-  const [dados, setDados] = useState<DashVtSaldo | null>(null);
+export default function DashVtSaldoCard({ variante = 'desktop', dadosInicial = null }: Props) {
+  const [dados, setDados] = useState<DashVtSaldo | null>(dadosInicial);
   const [erro, setErro] = useState(false);
+
+  useEffect(() => {
+    if (dadosInicial) setDados(dadosInicial);
+  }, [dadosInicial]);
 
   useEffect(() => {
     let ativo = true;
@@ -45,12 +51,16 @@ export default function DashVtSaldoCard({ variante = 'desktop' }: Props) {
         setErro(false);
       } catch {
         if (!ativo) return;
-        setErro(true);
-        setDados(null);
+        // Mantém bootstrap se a recarga falhar
+        if (!dadosInicial) {
+          setErro(true);
+          setDados(null);
+        }
       }
     };
 
-    void carregar();
+    // Bootstrap já trouxe o saldo: só refresh periódico
+    if (!dadosInicial) void carregar();
     intervalo = setInterval(carregar, 5 * 60 * 1000);
 
     const onVis = () => {
@@ -63,7 +73,7 @@ export default function DashVtSaldoCard({ variante = 'desktop' }: Props) {
       if (intervalo) clearInterval(intervalo);
       document.removeEventListener('visibilitychange', onVis);
     };
-  }, []);
+  }, [dadosInicial]);
 
   if (erro || !dados || dados.visivel === false) return null;
   if (!(Number(dados.valor_passagem_diaria) > 0)) return null;

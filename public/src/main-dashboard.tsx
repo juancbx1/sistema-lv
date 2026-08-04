@@ -6,7 +6,7 @@ import DashDesempenhoModal from './components/DashDesempenhoModal';
 // @ts-expect-error módulo JS legado sem tipos
 import { fetchAPI } from '/js/utils/api-utils';
 // @ts-expect-error módulo JS legado sem tipos
-import { verificarAutenticacao } from '/js/utils/auth.js';
+import { verificarAutenticacao, salvarContextoEmpresaLocal } from '/js/utils/auth.js';
 import DashProjecaoCiclo from './components/DashProjecaoCicloRedesign';
 import DashCofreModal from './components/DashCofreModal';
 import DashPerfilModal from './components/DashPerfilModal';
@@ -20,9 +20,13 @@ import type {
     DashApiError,
     DashAvisoPopup as DashAvisoPopupItem,
     DashDesempenhoResponse,
+    DashMeuStatus,
     DashMeta,
     DashPeriodo,
+    DashRankingSemana,
+    DashVtSaldo,
 } from './utils/dashboard-types';
+import type { MenuContextoEmpresa } from './utils/menu-types';
 
 function dataHojeFormatada(): string {
     return new Intl.DateTimeFormat('pt-BR', {
@@ -66,6 +70,11 @@ export default function MainDashboard() {
     const [impersonandoNome, setImpersonandoNome] = useState<string | null>(null);
     const [avisosPopup, setAvisosPopup] = useState<DashAvisoPopupItem[]>([]);
     const [dashboardBloqueada, setDashboardBloqueada] = useState(false);
+    // Dados que antes chegavam em cascata depois do paint (pareciam "atrasados")
+    const [contextoEmpresaInicial, setContextoEmpresaInicial] = useState<MenuContextoEmpresa | null>(null);
+    const [statusInicial, setStatusInicial] = useState<DashMeuStatus | null>(null);
+    const [rankingInicial, setRankingInicial] = useState<DashRankingSemana | null>(null);
+    const [vtInicial, setVtInicial] = useState<DashVtSaldo | null>(null);
 
     const carregar = async () => {
         // Detecta token de impersonação na URL e o armazena em sessionStorage (isolado por aba)
@@ -94,15 +103,40 @@ export default function MainDashboard() {
                 }
             }
 
-            // Buscar avisos popup e dados do dashboard em paralelo
-            const [resultado, avisosPendentes] = await Promise.all([
-                fetchAPI('/api/dashboard/desempenho') as Promise<DashDesempenhoResponse>,
-                (fetchAPI('/api/avisos-popup/pendentes') as Promise<DashAvisoPopupItem[]>).catch(
-                    () => [] as DashAvisoPopupItem[],
-                ),
-            ]);
+            // Carrega em PARALELO o que a tela inicial precisa pintar de uma vez.
+            // Antes, empresa/status/VT/ranking só começavam depois do paint → pop-in.
+            const [resultado, avisosPendentes, contextoEmpresa, meuStatus, ranking, meuVt] =
+                await Promise.all([
+                    fetchAPI('/api/dashboard/desempenho') as Promise<DashDesempenhoResponse>,
+                    (fetchAPI('/api/avisos-popup/pendentes') as Promise<DashAvisoPopupItem[]>).catch(
+                        () => [] as DashAvisoPopupItem[],
+                    ),
+                    (fetchAPI('/api/contexto-empresa') as Promise<MenuContextoEmpresa>).catch(
+                        () => null as MenuContextoEmpresa | null,
+                    ),
+                    (fetchAPI('/api/producao/meu-status') as Promise<DashMeuStatus>).catch(
+                        () => null as DashMeuStatus | null,
+                    ),
+                    (fetchAPI('/api/dashboard/ranking-semana') as Promise<DashRankingSemana>).catch(
+                        () => null as DashRankingSemana | null,
+                    ),
+                    (fetchAPI('/api/dashboard/meu-vt') as Promise<DashVtSaldo>).catch(
+                        () => null as DashVtSaldo | null,
+                    ),
+                ]);
             setAvisosPopup(avisosPendentes);
             setDados(resultado);
+            setContextoEmpresaInicial(contextoEmpresa);
+            setStatusInicial(meuStatus);
+            setRankingInicial(ranking);
+            setVtInicial(meuVt);
+            // Persistência para o chip de empresa pintar no primeiro frame na próxima visita
+            if (contextoEmpresa?.empresaAtiva) {
+                salvarContextoEmpresaLocal(
+                    { empresa_ativa: contextoEmpresa.empresaAtiva },
+                    localStorage,
+                );
+            }
 
             // --- LÓGICA DE PERSISTÊNCIA DA META ---
             const metaSalvaPontos = localStorage.getItem('meta_diaria_planejada');
@@ -179,6 +213,9 @@ export default function MainDashboard() {
         <div className="ds-body autenticado ds-dashboard-app">
             <DashMenuLateral
                 usuario={dados.usuario}
+                contextoEmpresaInicial={contextoEmpresaInicial}
+                rankingInicial={rankingInicial}
+                vtInicial={vtInicial}
                 aoAbrirCofre={() => setModalCofreAberto(true)}
                 aoAbrirDesempenho={() => setModalDesempenhoAberto(true)}
                 aoAbrirPagamentos={() => setModalPagamentosAberto(true)}
@@ -204,7 +241,7 @@ export default function MainDashboard() {
                                 <h1>Olá, {dados.usuario?.nome?.split(' ')[0] || 'colaboradora'}.</h1>
                                 <p className="ds-dashboard-chamada">Vamos buscar sua meta?</p>
                             </div>
-                            <DashStatusAtualModal />
+                            <DashStatusAtualModal statusInicial={statusInicial} />
                         </div>
                         <div className="ds-dashboard-periodo">
                             <div className="ds-dashboard-periodo-cabecalho">

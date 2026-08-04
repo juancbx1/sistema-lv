@@ -8,7 +8,19 @@ import DashVersionFooter from './DashVersionFooter';
 import MenuEmpresaAtiva from './MenuEmpresaAtiva';
 import MenuEmpresaSeletor from './MenuEmpresaSeletor';
 import useMenuContexto from '../hooks/useMenuContexto';
-import type { DashUsuario, DashRankingSemana } from '../utils/dashboard-types';
+import type { DashUsuario, DashRankingSemana, DashVtSaldo } from '../utils/dashboard-types';
+import type { MenuContextoEmpresa, MenuEmpresa } from '../utils/menu-types';
+
+function lerEmpresaAtivaLocal(): MenuEmpresa | null {
+    try {
+        const raw = localStorage.getItem('empresaAtiva') || sessionStorage.getItem('empresaAtiva');
+        if (!raw) return null;
+        const empresa = JSON.parse(raw) as MenuEmpresa;
+        return empresa?.id ? empresa : null;
+    } catch {
+        return null;
+    }
+}
 
 function MenuItem({ icone, label, onClick, ativo = false }: {
     icone: string;
@@ -30,6 +42,10 @@ function MenuItem({ icone, label, onClick, ativo = false }: {
 
 interface DashMenuLateralProps {
     usuario?: DashUsuario | null;
+    /** Contexto já buscado no bootstrap da página (evita pop-in do chip de empresa). */
+    contextoEmpresaInicial?: MenuContextoEmpresa | null;
+    rankingInicial?: DashRankingSemana | null;
+    vtInicial?: DashVtSaldo | null;
     aoAbrirCofre: () => void;
     aoAbrirDesempenho: () => void;
     aoAbrirPagamentos: () => void;
@@ -39,6 +55,9 @@ interface DashMenuLateralProps {
 
 export default function DashMenuLateral({
     usuario,
+    contextoEmpresaInicial = null,
+    rankingInicial = null,
+    vtInicial = null,
     aoAbrirCofre,
     aoAbrirDesempenho,
     aoAbrirPagamentos,
@@ -49,7 +68,7 @@ export default function DashMenuLateral({
     const avatarUrl = usuario?.avatar_url || imgDefaultAvatar;
     const nome = usuario?.nome || 'Colaboradora';
     const nivel = usuario?.nivel || '?';
-    const [rankingDados, setRankingDados] = useState<DashRankingSemana | null>(null);
+    const [rankingDados, setRankingDados] = useState<DashRankingSemana | null>(rankingInicial);
     const {
         contexto: contextoEmpresa,
         trocandoPara,
@@ -59,15 +78,28 @@ export default function DashMenuLateral({
     const [contratoAvisoAberto, setContratoAvisoAberto] = useState(false);
     const [preferenciasAviso, setPreferenciasAviso] = useState(false);
     const preferenciasAvisoTimer = useRef<number | null>(null);
+    // Cache local: pinta o chip no primeiro frame se o bootstrap ainda não chegou
+    const [empresaLocal] = useState<MenuEmpresa | null>(() => lerEmpresaAtivaLocal());
 
-    const empresaAtiva = contextoEmpresa?.empresaAtiva || usuario?.empresa_ativa;
-    const empresasDisponiveis = contextoEmpresa?.empresas || [];
+    const empresaAtiva =
+        contextoEmpresa?.empresaAtiva
+        || contextoEmpresaInicial?.empresaAtiva
+        || (usuario?.empresa_ativa as MenuEmpresa | undefined)
+        || empresaLocal;
+    const empresasDisponiveis =
+        contextoEmpresa?.empresas
+        || contextoEmpresaInicial?.empresas
+        || [];
 
     useEffect(() => () => {
         if (preferenciasAvisoTimer.current) {
             window.clearTimeout(preferenciasAvisoTimer.current);
         }
     }, []);
+
+    useEffect(() => {
+        if (rankingInicial) setRankingDados(rankingInicial);
+    }, [rankingInicial]);
 
     useEffect(() => {
         let ativo = true;
@@ -78,7 +110,7 @@ export default function DashMenuLateral({
                 const resultado = await fetchAPI('/api/dashboard/ranking-semana');
                 if (ativo) setRankingDados(resultado);
             } catch {
-                if (ativo) setRankingDados(null);
+                if (ativo && !rankingInicial) setRankingDados(null);
             }
         };
 
@@ -87,7 +119,8 @@ export default function DashMenuLateral({
             intervalo = setInterval(buscarRanking, 10 * 60 * 1000);
         };
 
-        buscarRanking();
+        // Bootstrap já trouxe o ranking: só polling periódico
+        if (!rankingInicial) void buscarRanking();
         iniciarAtualizacao();
 
         const aoMudarVisibilidade = () => {
@@ -106,7 +139,7 @@ export default function DashMenuLateral({
             if (intervalo) clearInterval(intervalo);
             document.removeEventListener('visibilitychange', aoMudarVisibilidade);
         };
-    }, []);
+    }, [rankingInicial]);
 
     useEffect(() => {
         if (!drawerAberto) return undefined;
@@ -219,7 +252,7 @@ export default function DashMenuLateral({
                     <MenuItem icone="fa-vault" label="Banco de resgate" onClick={aoAbrirCofre} />
                 </nav>
 
-                <DashVtSaldoCard variante="desktop" />
+                <DashVtSaldoCard variante="desktop" dadosInicial={vtInicial} />
                 <DashRankingMenu dados={rankingDados} variante="desktop" />
 
                 <div className="ds-menu-rodape">
@@ -301,7 +334,7 @@ export default function DashMenuLateral({
                     <MenuItem icone="fa-vault" label="Banco de resgate" onClick={() => acaoDrawer(aoAbrirCofre)} />
                 </nav>
 
-                <DashVtSaldoCard variante="mobile" />
+                <DashVtSaldoCard variante="mobile" dadosInicial={vtInicial} />
                 <DashRankingMenu dados={rankingDados} variante="mobile" />
 
                 <div className="ds-menu-drawer-rodape">

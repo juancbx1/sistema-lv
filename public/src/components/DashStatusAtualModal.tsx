@@ -290,20 +290,58 @@ function StatusLiveCard({ statusData, tempoMs, onOpen }: { statusData?: DashMeuS
     );
 }
 
-export default function DashStatusAtualModal() {
-    const [statusData, setStatusData] = useState<DashMeuStatus | null>(null);
+function StatusLiveCardSkeleton() {
+    return (
+        <div
+            className="ds-status-live-card ds-status-live-card--skeleton"
+            aria-busy="true"
+            aria-label="Carregando status"
+        >
+            <span className="ds-status-live-top">
+                <span className="ds-status-live-icone" aria-hidden="true"><i className="fas fa-circle-notch fa-spin" /></span>
+                <span className="ds-status-live-kicker">Status</span>
+            </span>
+            <span className="ds-status-live-copy"><strong>Carregando…</strong><small>Atualizando seu dia</small></span>
+            <span className="ds-status-live-metric"><small>aguarde</small><strong>—</strong></span>
+        </div>
+    );
+}
+
+export default function DashStatusAtualModal({
+    statusInicial = null,
+}: {
+    /** Status já buscado no bootstrap da página (evita pop-in do card). */
+    statusInicial?: DashMeuStatus | null;
+}) {
+    const [statusData, setStatusData] = useState<DashMeuStatus | null>(statusInicial);
     const [tempoMs, setTempoMs] = useState(0);
     const [modalAberto, setModalAberto] = useState(false);
+    const [carregou, setCarregou] = useState(Boolean(statusInicial));
     const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-    const statusDataRef = useRef<DashMeuStatus | null>(null);
+    const statusDataRef = useRef<DashMeuStatus | null>(statusInicial);
     const modalAbertoRef = useRef(false);
 
     useEffect(() => { statusDataRef.current = statusData; }, [statusData]);
     useEffect(() => { modalAbertoRef.current = modalAberto; }, [modalAberto]);
 
+    // Se o pai entregar status no bootstrap, usa na hora e ainda permite refresh depois
+    useEffect(() => {
+        if (statusInicial) {
+            setStatusData(statusInicial);
+            setCarregou(true);
+        }
+    }, [statusInicial]);
+
     const buscarStatus = useCallback(async () => {
-        try { setStatusData(await fetchAPI('/api/producao/meu-status')); } catch { /* status é complementar à dashboard */ }
+        try {
+            const data = await fetchAPI('/api/producao/meu-status') as DashMeuStatus;
+            setStatusData(data);
+            setCarregou(true);
+        } catch {
+            /* status é complementar — se já temos inicial, mantém */
+            setCarregou(true);
+        }
     }, []);
 
     const iniciarTimer = useCallback(() => {
@@ -324,7 +362,8 @@ export default function DashStatusAtualModal() {
     const reiniciarPolling = useCallback(() => { pararPolling(); iniciarPolling(); }, [pararPolling, iniciarPolling]);
 
     useEffect(() => {
-        buscarStatus();
+        // Se já veio no bootstrap, não refaz a 1ª chamada imediata — só polling
+        if (!statusInicial) void buscarStatus();
         iniciarPolling();
         iniciarTimer();
         const handleVisibilityChange = () => {
@@ -333,11 +372,15 @@ export default function DashStatusAtualModal() {
         };
         document.addEventListener('visibilitychange', handleVisibilityChange);
         return () => { pararPolling(); pararTimer(); document.removeEventListener('visibilitychange', handleVisibilityChange); };
-    }, [buscarStatus, iniciarPolling, iniciarTimer, pararPolling, pararTimer]);
+    }, [buscarStatus, iniciarPolling, iniciarTimer, pararPolling, pararTimer, statusInicial]);
 
     useEffect(() => { if (!document.hidden) reiniciarPolling(); }, [modalAberto, reiniciarPolling]);
 
-    if (!statusData || statusData.tipos?.includes('tiktik')) return null;
+    if (statusData?.tipos?.includes('tiktik')) return null;
+    if (!statusData) {
+        // Com bootstrap paralelo, isto só aparece se o endpoint falhar/atrasar
+        return carregou ? null : <StatusLiveCardSkeleton />;
+    }
 
     return (
         <>

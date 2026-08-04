@@ -11303,6 +11303,13 @@ body.ds-body {
 .ds-status-live-card--folga { --ds-status-cor: #6b758b; --ds-status-fundo: #edf3f5; }
 .ds-status-live-card--fora { --ds-status-cor: #6d68d8; --ds-status-fundo: #eeedff; }
 .ds-status-live-card--concluida { --ds-status-cor: #32b9b1; --ds-status-fundo: #e2f8f6; }
+.ds-status-live-card--skeleton {
+    --ds-status-cor: rgba(255, 255, 255, 0.45);
+    --ds-status-fundo: rgba(255, 255, 255, 0.08);
+    opacity: 0.85;
+    cursor: default;
+    pointer-events: none;
+}
 
 .ds-status-live-icone {
     display: grid;

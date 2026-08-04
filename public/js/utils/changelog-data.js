@@ -20,6 +20,15 @@
 
 export const changelog = [
     {
+        versao: '1.43.1',
+        versao_dashboard: '1.30.1',
+        data: '03/08/2026',
+        admin: [],
+        dashboard: [
+            'A tela inicial carrega de uma vez: empresa, status ao vivo, Meu cartão VT e ranking não “piscam” mais depois dos outros blocos',
+        ],
+    },
+    {
         versao: '1.43.0',
         versao_dashboard: '1.30.0',
         data: '03/08/2026',

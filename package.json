@@ -1,6 +1,6 @@
 {
   "name": "sistema-lv",
-  "version": "1.43.1",
+  "version": "1.43.2",
   "type": "module",
   "scripts": {
     "dev": "vite",

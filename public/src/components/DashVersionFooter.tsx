@@ -3,6 +3,7 @@
 // Ao clicar abre um modal com as novidades da versão atual para funcionários.
 
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 // @ts-expect-error módulo JS legado sem tipos
 import { changelog } from '/js/utils/changelog-data.js';
 import type { DashChangelogEntrada } from '../utils/dashboard-types';
@@ -25,28 +26,34 @@ export default function DashVersionFooter({ className = '' }: { className?: stri
                 <span>v{versaoRodape}</span>
             </footer>
 
-            {aberto && (
-                <div className="ds-popup-overlay ativo" onClick={() => setAberto(false)} style={{ zIndex: 1500 }}>
+            {aberto && createPortal(
+                <div
+                    className="ds-popup-overlay ativo ds-version-modal-overlay"
+                    onClick={() => setAberto(false)}
+                    role="presentation"
+                >
                     <div
                         className="ds-version-modal"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="ds-version-modal-titulo"
                         onClick={e => e.stopPropagation()}
                     >
-                        {/* Header */}
                         <div className="ds-version-modal-header">
                             <div className="ds-version-modal-titulo-bloco">
-                                <i className="fas fa-rocket"></i>
-                                <h2>Novidades do Sistema</h2>
+                                <i className="fas fa-rocket" aria-hidden="true"></i>
+                                <h2 id="ds-version-modal-titulo">Novidades do Sistema</h2>
                             </div>
                             <button
+                                type="button"
                                 className="ds-modal-close-simple"
                                 onClick={() => setAberto(false)}
-                                aria-label="Fechar"
+                                aria-label="Fechar novidades do sistema"
                             >
-                                <i className="fas fa-times"></i>
+                                <i className="fas fa-times" aria-hidden="true"></i>
                             </button>
                         </div>
 
-                        {/* Lista de versões */}
                         <div className="ds-version-modal-body">
                             {entradasDashboard.length === 0 ? (
                                 <p className="ds-version-vazio">Nenhuma novidade registrada ainda.</p>
@@ -65,7 +72,7 @@ export default function DashVersionFooter({ className = '' }: { className?: stri
                                         <ul className="ds-version-lista">
                                             {(entrada.dashboard || []).map((item, i) => (
                                                 <li key={i}>
-                                                    <i className="fas fa-check"></i>
+                                                    <i className="fas fa-check" aria-hidden="true"></i>
                                                     <span>{item}</span>
                                                 </li>
                                             ))}
@@ -75,7 +82,8 @@ export default function DashVersionFooter({ className = '' }: { className?: stri
                             )}
                         </div>
                     </div>
-                </div>
+                </div>,
+                document.body,
             )}
         </>
     );

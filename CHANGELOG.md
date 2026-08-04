@@ -18,6 +18,16 @@ Depois: `git push && git push --tags` → Vercel faz o deploy automaticamente.
 
 ---
 
+## [1.43.2] — 2026-08-03
+
+### Dashboard dos empregados
+- Foco de hoje reconhece a maior meta alcançada e indica o próximo nível.
+- Barra de progresso acompanha a meta selecionada com gradientes próprios para Bronze, Prata e Ouro.
+- Celebrações com emojis, confetes, mensagens personalizadas e festa especial para o Ouro.
+- Bloco de potencial reorganizado para mostrar o valor garantido e o caminho até o Ouro.
+
+---
+
 ## [1.21.0] — 2026-05-01
 
 ### Marco inicial do SemVer

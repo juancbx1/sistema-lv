@@ -20,6 +20,19 @@
 
 export const changelog = [
     {
+        versao: '1.43.2',
+        versao_dashboard: '1.31.0',
+        data: '03/08/2026',
+        admin: [],
+        dashboard: [
+            'Seu foco de hoje agora reconhece automaticamente a maior meta alcançada e mostra o próximo nível a perseguir',
+            'A barra de progresso acompanha a cor da meta selecionada, com gradientes próprios para Bronze, Prata e Ouro',
+            'Cada meta ganhou uma celebração visual com emoji, confetes e mensagem personalizada; o Ouro tem uma festa especial com glitters',
+            'O bloco de potencial ficou mais inteligente: mostra o valor garantido e o caminho até o Ouro sem repetir o saldo de pontos',
+            'Depois de conquistar o Ouro, o fill dourado e os glitters permanecem mesmo que outra meta seja selecionada',
+        ],
+    },
+    {
         versao: '1.43.1',
         versao_dashboard: '1.30.1',
         data: '03/08/2026',

@@ -94,6 +94,11 @@ export default function DashVtSaldoCard({ variante = 'desktop', dadosInicial = n
   const viagens = via > 0 ? Math.floor(saldoAgora / via) : 0;
   const nivel =
     saldoAgora <= 0 ? 'zerado' : diasCompletos <= 1 ? 'baixo' : 'ok';
+  const statusLabel = nivel === 'zerado'
+    ? 'Sem crédito'
+    : nivel === 'baixo'
+      ? 'Saldo baixo'
+      : 'Cobertura ativa';
 
   const ultimaDevolucao = (dados.ultimos_movimentos || []).find((m) => m.tipo === 'devolucao_saldo');
 
@@ -119,11 +124,19 @@ export default function DashVtSaldoCard({ variante = 'desktop', dadosInicial = n
       className={`ds-vt-card ds-vt-card--${variante} ds-vt-card--${nivel}`}
       aria-label="Meu cartão VT"
     >
-      <div className="ds-vt-card-borda" aria-hidden="true" />
       <header className="ds-vt-card-cabecalho">
-        <strong>
-          <i className="fas fa-bus" aria-hidden="true" /> Meu cartão VT
-        </strong>
+        <div className="ds-vt-card-titulo">
+          <span className="ds-vt-card-icone" aria-hidden="true">
+            <i className="fas fa-bus" />
+          </span>
+          <span>
+            <strong>Meu cartão VT</strong>
+            <small>Saldo de passagem</small>
+          </span>
+        </div>
+        <span className={`ds-vt-card-status ds-vt-card-status--${nivel}`}>
+          {statusLabel}
+        </span>
       </header>
 
       <div className="ds-vt-card-saldo">
@@ -150,7 +163,16 @@ export default function DashVtSaldoCard({ variante = 'desktop', dadosInicial = n
           <strong className="ds-vt-card-saldo-valor">{formatarMoeda(saldoAgora)}</strong>
         )}
 
-        <span className="ds-vt-card-dias">{textoCobertura}</span>
+      </div>
+
+      <div className="ds-vt-card-cobertura">
+        <span className="ds-vt-card-cobertura-icone" aria-hidden="true">
+          <i className="fas fa-route" />
+        </span>
+        <span className="ds-vt-card-cobertura-copy">
+          <small>Estimativa de cobertura</small>
+          <strong>{textoCobertura}</strong>
+        </span>
       </div>
 
       {provisionado > 0 && (

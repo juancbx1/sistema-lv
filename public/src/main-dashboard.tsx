@@ -49,6 +49,20 @@ function periodoFormatado(periodo?: DashPeriodo | null): string | null {
     return formatar(periodo.inicio) + '–' + formatar(periodo.fim);
 }
 
+function obterSufixoVtParaSmoke(): string {
+    const qs = new URLSearchParams(window.location.search);
+    const params = new URLSearchParams();
+
+    if (qs.get('vt_soft') === '1' || qs.get('vt_soft') === 'true') {
+        params.set('vt_soft', '1');
+    }
+    if (qs.get('vt_hora')) {
+        params.set('vt_hora', String(qs.get('vt_hora')));
+    }
+
+    return params.toString() ? `?${params.toString()}` : '';
+}
+
 function formatarDiaMesLongo(dataISO?: string | null): string {
     if (!dataISO) return '--';
 
@@ -105,6 +119,7 @@ export default function MainDashboard() {
 
             // Carrega em PARALELO o que a tela inicial precisa pintar de uma vez.
             // Antes, empresa/status/VT/ranking só começavam depois do paint → pop-in.
+            const sufixoVt = obterSufixoVtParaSmoke();
             const [resultado, avisosPendentes, contextoEmpresa, meuStatus, ranking, meuVt] =
                 await Promise.all([
                     fetchAPI('/api/dashboard/desempenho') as Promise<DashDesempenhoResponse>,
@@ -120,7 +135,7 @@ export default function MainDashboard() {
                     (fetchAPI('/api/dashboard/ranking-semana') as Promise<DashRankingSemana>).catch(
                         () => null as DashRankingSemana | null,
                     ),
-                    (fetchAPI('/api/dashboard/meu-vt') as Promise<DashVtSaldo>).catch(
+                    (fetchAPI(`/api/dashboard/meu-vt${sufixoVt}`) as Promise<DashVtSaldo>).catch(
                         () => null as DashVtSaldo | null,
                     ),
                 ]);
@@ -281,6 +296,9 @@ export default function MainDashboard() {
                         metaInicial={metaDoUsuario}
                         aoMudarMeta={setMetaDoUsuario}
                         diasUteisNoCiclo={dados.acumulado.diasUteisRealDoEmpregadoNoCiclo}
+                        usuarioId={dados.usuario?.id}
+                        empresaId={dados.usuario?.empresa_ativa?.id}
+                        nomeUsuario={dados.usuario?.nome}
                     />
 
                     <section className="ds-dashboard-grid-secundario">

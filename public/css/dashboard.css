@@ -3721,15 +3721,6 @@ body.ds-body.autenticado {
     margin-bottom: 14px;
 }
 
-.ds-foco-meta-info {
-    font-size: 0.82rem;
-    color: #888;
-    display: flex;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 4px;
-}
-
 /* ==========================================================================
    Ranking Anônimo da Semana
    ========================================================================== */
@@ -7366,8 +7357,7 @@ body.ds-body.autenticado {
 .ds-foco-stage-principal,
 .ds-foco-stage-rodape,
 .ds-foco-hoje-stage > .ds-foco-barra-container,
-.ds-foco-hoje-stage > .ds-foco-barra-legenda,
-.ds-foco-hoje-stage > .ds-foco-meta-info {
+.ds-foco-hoje-stage > .ds-foco-barra-legenda {
     position: relative;
     z-index: 1;
 }
@@ -7428,6 +7418,7 @@ body.ds-body.autenticado {
 }
 
 .ds-foco-stage-potencial {
+    max-width: min(230px, 48%);
     padding-bottom: 2px;
     text-align: right;
 }
@@ -7443,6 +7434,26 @@ body.ds-body.autenticado {
     margin-top: 2px;
     color: var(--ds-cor-branco);
     font-size: 1.25rem;
+}
+
+.ds-foco-stage-potencial small {
+    display: block;
+    margin-top: 4px;
+    color: rgba(255, 255, 255, 0.64);
+    font-size: 0.58rem;
+    line-height: 1.35;
+}
+
+.ds-foco-stage-potencial--bronze strong {
+    color: #ffe1a8;
+}
+
+.ds-foco-stage-potencial--prata strong {
+    color: #e4edf4;
+}
+
+.ds-foco-stage-potencial--ouro strong {
+    color: #ffe19a;
 }
 
 .ds-foco-barra-container {
@@ -7526,22 +7537,6 @@ body.ds-body.autenticado {
     background: var(--ds-cor-branco);
     border-color: var(--ds-cor-branco);
     font-weight: 800;
-}
-
-.ds-foco-meta-info {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    gap: 6px 14px;
-    margin-top: 16px;
-    padding-top: 12px;
-    border-top: 1px solid rgba(255, 255, 255, 0.14);
-    color: rgba(255, 255, 255, 0.65);
-    font-size: 0.67rem;
-}
-
-.ds-foco-meta-info strong {
-    color: var(--ds-cor-branco);
 }
 
 .ds-dashboard-resumo-ciclo {
@@ -8870,37 +8865,6 @@ body.ds-body.autenticado {
         opacity: 0;
         transform: translate(-50%, -43px) scale(calc(var(--ds-meta-animacao-escala) * 0.68)) rotate(10deg);
     }
-}
-
-.ds-foco-meta-info--bronze {
-    --ds-meta-info-cor: #d98655;
-    --ds-meta-info-fundo: rgba(174, 82, 38, 0.27);
-}
-
-.ds-foco-meta-info--prata {
-    --ds-meta-info-cor: #dce6ed;
-    --ds-meta-info-fundo: rgba(202, 214, 224, 0.24);
-}
-
-.ds-foco-meta-info--ouro {
-    --ds-meta-info-cor: #f4cf63;
-    --ds-meta-info-fundo: rgba(224, 173, 41, 0.28);
-}
-
-.ds-foco-meta-info .ds-foco-meta-valor-hoje {
-    display: inline-block;
-    margin-left: 3px;
-    padding: 3px 7px;
-    border-radius: 7px;
-    color: var(--ds-cor-branco);
-    background: var(--ds-meta-info-fundo, rgba(255, 255, 255, 0.12));
-    font-size: 0.76rem;
-}
-
-.ds-foco-meta-info--bronze > span:last-child strong,
-.ds-foco-meta-info--prata > span:last-child strong,
-.ds-foco-meta-info--ouro > span:last-child strong {
-    color: var(--ds-meta-info-cor);
 }
 
 .ds-projecao-composicao-item {
@@ -12015,4 +11979,765 @@ body.ds-body {
     .ds-vt-card {
         transition: none;
     }
+}
+
+/* ============================================================================
+   SIDEBAR DA DASHBOARD — hierarquia aprovada em 2026-08-03
+   O ranking mantém sua identidade e seus três painéis; estes ajustes cuidam
+   somente da estrutura ao redor e do cartão de VT.
+   ============================================================================ */
+
+.ds-menu-lateral-desktop {
+    width: 250px;
+    padding: 18px 15px 14px;
+    gap: 0;
+    background:
+        radial-gradient(circle at 12% 0%, rgba(83, 200, 194, 0.18), transparent 32%),
+        linear-gradient(180deg, #204765 0%, var(--ds-cor-azul-escuro) 72%, #142b40 100%);
+}
+
+.ds-menu-cabecalho {
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+    min-width: 0;
+}
+
+.ds-menu-lateral-desktop .ds-menu-avatar {
+    min-width: 0;
+    min-height: 62px;
+    margin: 0;
+    padding: 9px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 15px;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.ds-menu-lateral-desktop .ds-menu-avatar:hover,
+.ds-menu-lateral-desktop .ds-menu-avatar:focus-visible {
+    border-color: rgba(116, 202, 221, 0.58);
+    background: rgba(255, 255, 255, 0.12);
+    outline: none;
+}
+
+.ds-menu-avatar-sair {
+    display: inline-flex;
+    min-width: 48px;
+    min-height: 62px;
+    flex: 0 0 48px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 7px 5px;
+    border: 1px solid rgba(255, 178, 178, 0.24);
+    border-radius: 13px;
+    color: #ffb2b2;
+    background: rgba(255, 255, 255, 0.045);
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.58rem;
+    transition: color 160ms ease, background 160ms ease, border-color 160ms ease;
+}
+
+.ds-menu-avatar-sair i { font-size: 0.78rem; }
+
+.ds-menu-avatar-sair:hover,
+.ds-menu-avatar-sair:focus-visible {
+    border-color: rgba(255, 178, 178, 0.5);
+    color: #ffd2d2;
+    background: rgba(255, 178, 178, 0.1);
+    outline: none;
+}
+
+.ds-menu-lateral-desktop .ds-menu-navegacao {
+    gap: 4px;
+    margin-top: 18px;
+}
+
+.ds-menu-informacoes-uteis {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 18px;
+}
+
+.ds-menu-secao-label {
+    margin: 0 0 0 6px;
+    color: rgba(234, 245, 251, 0.5);
+    font-size: 0.58rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+.ds-menu-informacoes-uteis .ds-vt-card,
+.ds-menu-informacoes-uteis .ds-ranking-menu {
+    margin-top: 0;
+}
+
+.ds-menu-lateral-desktop .ds-menu-rodape {
+    margin-top: auto;
+    padding-top: 16px;
+}
+
+.ds-menu-recursos-rodape {
+    padding-top: 10px;
+    border-top-color: rgba(255, 255, 255, 0.14);
+}
+
+/* Cartão VT — superfície alinhada ao menu, com leitura por camadas. */
+.ds-vt-card {
+    margin: 0;
+    padding: 14px;
+    border: 1px solid rgba(125, 211, 252, 0.22);
+    border-radius: 16px;
+    background:
+        radial-gradient(circle at 100% 0%, rgba(83, 200, 194, 0.22), transparent 38%),
+        linear-gradient(150deg, rgba(28, 104, 144, 0.8), rgba(10, 30, 49, 0.98));
+    box-shadow: 0 12px 24px rgba(13, 27, 62, 0.14);
+}
+
+.ds-vt-card--baixo {
+    border-color: rgba(251, 191, 36, 0.38);
+}
+
+.ds-vt-card--zerado {
+    border-color: rgba(248, 113, 113, 0.42);
+}
+
+.ds-vt-card-cabecalho {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 0 0 14px;
+    padding: 0;
+}
+
+.ds-vt-card-titulo {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 8px;
+}
+
+.ds-vt-card-icone {
+    display: grid;
+    width: 30px;
+    height: 30px;
+    flex: 0 0 30px;
+    place-items: center;
+    border: 1px solid rgba(156, 229, 223, 0.28);
+    border-radius: 10px;
+    color: #9ce5df;
+    background: rgba(83, 200, 194, 0.15);
+    font-size: 0.76rem;
+}
+
+.ds-vt-card-titulo > span:last-child {
+    display: grid;
+    min-width: 0;
+    gap: 2px;
+}
+
+.ds-vt-card-titulo strong {
+    overflow: hidden;
+    color: #f8fafc;
+    font-size: 0.78rem;
+    font-weight: 800;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ds-vt-card-titulo small {
+    color: rgba(226, 232, 240, 0.58);
+    font-size: 0.58rem;
+}
+
+.ds-vt-card-status {
+    flex: 0 0 auto;
+    padding: 4px 7px;
+    border-radius: 999px;
+    color: #9ce5df;
+    background: rgba(83, 200, 194, 0.14);
+    font-size: 0.52rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.ds-vt-card-status--baixo {
+    color: #fde68a;
+    background: rgba(251, 191, 36, 0.15);
+}
+
+.ds-vt-card-status--zerado {
+    color: #fecaca;
+    background: rgba(248, 113, 113, 0.15);
+}
+
+.ds-vt-card-saldo {
+    gap: 4px;
+    padding: 0;
+}
+
+.ds-vt-card-saldo-label {
+    color: rgba(226, 232, 240, 0.68);
+    font-size: 0.62rem;
+}
+
+.ds-vt-card-saldo-valor {
+    color: #f8fafc;
+    font-size: 1.55rem;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+}
+
+.ds-vt-card-valores { gap: 5px 7px; }
+.ds-vt-card-valor-livro { font-size: 0.8rem; }
+.ds-vt-card-saldo-valor--agora { color: #dffaf6; text-shadow: none; }
+
+.ds-vt-card-cobertura {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-top: 12px;
+    padding: 9px;
+    border: 1px solid rgba(156, 229, 223, 0.16);
+    border-radius: 11px;
+    background: rgba(83, 200, 194, 0.08);
+}
+
+.ds-vt-card-cobertura-icone {
+    display: grid;
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+    place-items: center;
+    border-radius: 8px;
+    color: #9ce5df;
+    background: rgba(83, 200, 194, 0.15);
+    font-size: 0.62rem;
+}
+
+.ds-vt-card-cobertura-copy {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+}
+
+.ds-vt-card-cobertura-copy small {
+    color: rgba(226, 232, 240, 0.58);
+    font-size: 0.56rem;
+}
+
+.ds-vt-card-cobertura-copy strong {
+    color: #dffaf6;
+    font-size: 0.64rem;
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+.ds-vt-card-prov,
+.ds-vt-card-devolucao {
+    gap: 7px;
+    margin-top: 9px;
+    padding: 8px 9px;
+    border-radius: 10px;
+    font-size: 0.62rem;
+}
+
+.ds-vt-card-alerta {
+    margin-top: 9px;
+    padding: 0;
+    font-size: 0.64rem;
+}
+
+@media (max-width: 1023px) {
+    .ds-menu-informacoes-uteis {
+        gap: 10px;
+        margin-top: 18px;
+    }
+
+    .ds-menu-drawer .ds-vt-card,
+    .ds-menu-drawer .ds-ranking-menu {
+        margin-top: 0;
+    }
+
+    .ds-menu-drawer-cabecalho {
+        padding-bottom: 14px;
+    }
+}
+
+/* Novidades da versão: o portal já está no body; o overlay ocupa a viewport. */
+.ds-version-modal-overlay {
+    inset: 0;
+    width: auto;
+    height: auto;
+    min-height: 100dvh;
+    padding: clamp(16px, 4vw, 40px);
+    z-index: 10000 !important;
+}
+
+.ds-version-modal-overlay .ds-version-modal {
+    position: relative;
+    width: min(620px, 100%);
+    max-width: 620px;
+    max-height: min(82dvh, 720px);
+}
+
+.ds-version-modal-overlay .ds-version-modal-header {
+    position: relative;
+    padding-right: 54px;
+}
+
+@media (max-width: 560px) {
+    .ds-version-modal-overlay {
+        padding: 16px;
+    }
+
+.ds-version-modal-overlay .ds-version-modal {
+    max-height: calc(100dvh - 32px);
+    border-radius: 16px;
+}
+}
+
+/* ==========================================================================
+   Festa de metas — maior nível atingido no dia
+   ========================================================================== */
+.ds-foco-barra-container {
+    position: relative;
+    overflow: visible;
+}
+
+.ds-foco-barra-fill {
+    position: relative;
+    overflow: hidden;
+    transition: width 0.65s cubic-bezier(0.22, 1, 0.36, 1), background 0.35s ease, filter 0.35s ease;
+}
+
+.ds-foco-barra-fill::after {
+    position: absolute;
+    inset: 0;
+    content: '';
+    background: linear-gradient(105deg, transparent 12%, rgba(255, 255, 255, 0.58) 48%, transparent 82%);
+    transform: translateX(-125%);
+}
+
+.ds-foco-barra-fill--carregando {
+    background: linear-gradient(90deg, #d99b4d, #ffe7a2, #d99b4d);
+    background-size: 220% 100%;
+    animation: ds-foco-barra-carregando 1.9s ease-in-out infinite;
+}
+
+.ds-foco-barra-fill--carregando::after,
+.ds-foco-barra-fill--ouro::after {
+    animation: ds-foco-barra-brilho 1.35s ease-in-out infinite;
+}
+
+.ds-foco-barra-fill--bronze {
+    background: linear-gradient(90deg, #ad5e34, #d98655, #f0b087);
+}
+
+.ds-foco-barra-fill--prata {
+    background: linear-gradient(90deg, #8699aa, #dce6ed, #9fafbe);
+}
+
+.ds-foco-barra-fill--ouro {
+    background: linear-gradient(90deg, #c38b26, #f4cf63 48%, #fff0a8);
+    box-shadow: 0 0 15px rgba(244, 207, 99, 0.8);
+    animation: ds-foco-barra-ouro-pulsar 1.05s ease-in-out infinite;
+}
+
+.ds-foco-barra-container--ouro {
+    box-shadow: 0 0 0 3px rgba(244, 207, 99, 0.11), 0 0 20px rgba(244, 207, 99, 0.16);
+}
+
+.ds-foco-barra-glitters {
+    position: absolute;
+    z-index: 3;
+    inset: -26px 0 -26px;
+    pointer-events: none;
+}
+
+.ds-foco-barra-glitters span {
+    position: absolute;
+    top: var(--ds-glitter-top);
+    left: var(--ds-glitter-left);
+    color: #fff2ad;
+    font-size: 0.72rem;
+    line-height: 1;
+    text-shadow: 0 0 7px rgba(255, 233, 130, 0.95);
+    animation: ds-foco-glitter-subir 1.2s ease-in-out var(--ds-glitter-delay) infinite;
+}
+
+.ds-foco-meta-celebracao {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    min-height: 74px;
+    margin-top: 16px;
+    padding: 11px 18px 12px;
+    overflow: visible;
+    border: 1px solid rgba(255, 231, 162, 0.38);
+    border-radius: 14px;
+    color: var(--ds-cor-branco);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.14), rgba(255, 231, 162, 0.13));
+    text-align: center;
+    animation: ds-foco-celebracao-entrar 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.ds-foco-meta-celebracao--prata {
+    border-color: rgba(220, 230, 237, 0.55);
+    background: linear-gradient(135deg, rgba(220, 230, 237, 0.18), rgba(255, 255, 255, 0.08));
+}
+
+.ds-foco-meta-celebracao--ouro {
+    min-height: 86px;
+    border-color: rgba(244, 207, 99, 0.8);
+    background: linear-gradient(135deg, rgba(244, 207, 99, 0.28), rgba(255, 255, 255, 0.12));
+    box-shadow: 0 0 26px rgba(244, 207, 99, 0.2), inset 0 0 20px rgba(255, 244, 184, 0.08);
+}
+
+.ds-foco-meta-celebracao strong,
+.ds-foco-meta-celebracao > span:not(.ds-foco-confetes):not(.ds-foco-celebracao-icone) {
+    position: relative;
+    z-index: 2;
+}
+
+.ds-foco-meta-celebracao strong {
+    font-size: 0.84rem;
+}
+
+.ds-foco-meta-celebracao > span:not(.ds-foco-confetes):not(.ds-foco-celebracao-icone) {
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 0.68rem;
+}
+
+.ds-foco-celebracao-icone {
+    position: relative;
+    z-index: 2;
+    font-size: 1.18rem;
+    line-height: 1;
+    filter: drop-shadow(0 4px 6px rgba(5, 17, 40, 0.35));
+    animation: ds-foco-celebracao-icone 0.95s ease-in-out 0.15s both;
+}
+
+.ds-foco-meta-celebracao--ouro .ds-foco-celebracao-icone {
+    font-size: 1.5rem;
+    animation-duration: 1.15s;
+}
+
+.ds-foco-confetes {
+    position: absolute;
+    z-index: 1;
+    inset: -60px -8px -28px;
+    overflow: visible;
+    pointer-events: none;
+}
+
+.ds-foco-confetes span {
+    position: absolute;
+    top: var(--ds-confete-origem-y);
+    left: var(--ds-confete-origem-x);
+    width: 6px;
+    height: 10px;
+    border-radius: 2px;
+    background: var(--ds-confete-cor);
+    box-shadow: 0 0 5px rgba(255, 255, 255, 0.34);
+    opacity: 0;
+    animation: ds-foco-confete-explodir 1.05s cubic-bezier(0.16, 0.84, 0.34, 1) var(--ds-confete-delay) both;
+}
+
+.ds-foco-confetes span:nth-child(3n) {
+    width: 8px;
+    height: 5px;
+    border-radius: 999px;
+}
+
+.ds-foco-confetes span:nth-child(4n) {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+}
+
+@keyframes ds-foco-barra-carregando {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+}
+
+@keyframes ds-foco-barra-brilho {
+    from { transform: translateX(-125%); }
+    to { transform: translateX(165%); }
+}
+
+@keyframes ds-foco-barra-ouro-pulsar {
+    0%, 100% { filter: saturate(1) brightness(1); }
+    50% { filter: saturate(1.42) brightness(1.12); }
+}
+
+@keyframes ds-foco-glitter-subir {
+    0%, 100% { opacity: 0; transform: translate(0, 8px) scale(0.45) rotate(0deg); }
+    30% { opacity: 1; transform: translate(0, 0) scale(1.15) rotate(45deg); }
+    72% { opacity: 0.95; }
+    100% { opacity: 0; transform: translate(var(--ds-glitter-x), var(--ds-glitter-y)) scale(0.72) rotate(120deg); }
+}
+
+@keyframes ds-foco-celebracao-entrar {
+    from { opacity: 0; transform: translateY(12px) scale(0.96); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes ds-foco-celebracao-icone {
+    0% { opacity: 0; transform: translateY(9px) scale(0.35) rotate(-15deg); }
+    45% { opacity: 1; transform: translateY(-4px) scale(1.18) rotate(8deg); }
+    72% { transform: translateY(1px) scale(0.96) rotate(-4deg); }
+    100% { opacity: 1; transform: translateY(0) scale(1) rotate(0); }
+}
+
+@keyframes ds-foco-confete-explodir {
+    0% { opacity: 0; transform: translate(0, 0) rotate(0deg) scale(0.35); }
+    12% { opacity: 1; }
+    100% {
+        opacity: 0;
+        transform: translate(var(--ds-confete-destino-x), var(--ds-confete-destino-y)) rotate(var(--ds-confete-rotacao)) scale(1);
+    }
+}
+
+@media (max-width: 720px) {
+    .ds-foco-meta-celebracao {
+        padding-right: 12px;
+        padding-left: 12px;
+    }
+
+    .ds-foco-meta-celebracao--ouro {
+        min-height: 92px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ds-foco-barra-fill,
+    .ds-foco-barra-fill::after,
+    .ds-foco-barra-glitters,
+    .ds-foco-meta-celebracao,
+    .ds-foco-celebracao-icone,
+    .ds-foco-confetes {
+        animation: none !important;
+    }
+
+    .ds-foco-barra-glitters,
+    .ds-foco-confetes {
+        display: none;
+    }
+}
+
+/* Os três cenários do alvo devem permanecer lado a lado. */
+.ds-projecao-cenarios {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (max-width: 399px) {
+    .ds-projecao-cenarios {
+        gap: 5px;
+    }
+
+    .ds-projecao-cenario {
+        min-height: 66px;
+        padding: 8px 6px;
+    }
+
+    .ds-projecao-cenario strong {
+        font-size: 0.76rem;
+    }
+
+    .ds-projecao-cenario span,
+    .ds-projecao-cenario small {
+        font-size: 0.54rem;
+    }
+
+    .ds-projecao-cenario::after {
+        right: 4px;
+        padding: 1px 4px;
+        font-size: 0.4rem;
+    }
+}
+
+/* Cabeçalho do foco: coluna de potencial estável e sem quebras tortas. */
+.ds-foco-stage-principal {
+    grid-template-columns: minmax(0, 1fr) 144px;
+    gap: 14px;
+}
+
+.ds-foco-stage-potencial {
+    width: 144px;
+    max-width: none;
+    min-width: 144px;
+}
+
+.ds-foco-stage-potencial > span,
+.ds-foco-stage-potencial > strong {
+    white-space: nowrap;
+}
+
+@media (max-width: 399px) {
+    .ds-foco-stage-principal {
+        grid-template-columns: minmax(0, 1fr) 140px;
+        gap: 10px;
+    }
+
+    .ds-foco-stage-potencial {
+        width: 140px;
+        min-width: 140px;
+    }
+
+    .ds-foco-stage-potencial strong {
+        font-size: 1.15rem;
+    }
+}
+
+/* Potencial visual: valor máximo do Ouro riscado e valor já garantido. */
+.ds-foco-stage-potencial-rotulo {
+    color: #ffe7a2 !important;
+    font-size: 0.62rem !important;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+.ds-foco-stage-potencial-comparacao {
+    display: flex;
+    align-items: baseline;
+    justify-content: flex-end;
+    gap: 5px;
+    margin-top: 5px;
+    white-space: nowrap;
+}
+
+.ds-foco-stage-potencial-comparacao del {
+    color: rgba(255, 255, 255, 0.58);
+    font-size: 0.82rem;
+    text-decoration-color: #ef8b69;
+    text-decoration-thickness: 2px;
+}
+
+.ds-foco-potencial-alvo {
+    animation: ds-foco-potencial-alvo 1.7s ease-in-out infinite;
+}
+
+.ds-foco-potencial-seta {
+    color: #ffe7a2 !important;
+    font-size: 1.05rem !important;
+    font-weight: 800;
+}
+
+.ds-foco-stage-potencial-comparacao strong {
+    margin-top: 0;
+    color: #ffe7a2;
+    font-size: 1rem;
+}
+
+.ds-foco-stage-potencial--bronze .ds-foco-stage-potencial-comparacao strong {
+    color: #ffd3a8;
+}
+
+.ds-foco-stage-potencial--prata .ds-foco-stage-potencial-comparacao strong {
+    color: #e4edf4;
+}
+
+.ds-foco-stage-potencial > small {
+    margin-top: 5px;
+    white-space: nowrap;
+}
+
+@keyframes ds-foco-potencial-alvo {
+    0%, 100% {
+        opacity: 0.54;
+        transform: translateX(0);
+    }
+    50% {
+        opacity: 1;
+        transform: translateX(-2px) scale(1.04);
+        text-shadow: 0 0 8px rgba(255, 231, 162, 0.72);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ds-foco-potencial-alvo {
+        animation: none;
+    }
+}
+
+/* Ouro: mesma assinatura cromática do botão Ouro, com pulso mais elegante. */
+.ds-foco-barra-fill--ouro {
+    background: linear-gradient(90deg, #b97812, #e3b83e 48%, #ffe59a);
+    box-shadow: 0 0 13px rgba(227, 184, 62, 0.62);
+    animation: ds-foco-barra-ouro-pulsar-refinado 1.8s ease-in-out infinite;
+}
+
+.ds-foco-barra-container--ouro {
+    box-shadow: 0 0 0 3px rgba(227, 184, 62, 0.1), 0 0 18px rgba(227, 184, 62, 0.14);
+}
+
+.ds-foco-barra-glitters span {
+    color: #ffe59a;
+    text-shadow: 0 0 6px rgba(227, 184, 62, 0.88);
+}
+
+.ds-foco-stage-potencial--ouro strong {
+    color: #e3b83e;
+}
+
+.ds-foco-stage-potencial-comparacao strong {
+    font-weight: 800;
+}
+
+.ds-foco-potencial-seta {
+    animation: ds-foco-potencial-seta 1.7s ease-in-out infinite;
+}
+
+@keyframes ds-foco-barra-ouro-pulsar-refinado {
+    0%, 100% {
+        filter: saturate(1) brightness(0.98);
+    }
+    50% {
+        filter: saturate(1.12) brightness(1.06);
+    }
+}
+
+@keyframes ds-foco-potencial-seta {
+    0%, 100% {
+        opacity: 0.62;
+        transform: translateX(0);
+    }
+    50% {
+        opacity: 1;
+        transform: translateX(3px);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ds-foco-potencial-seta,
+    .ds-foco-barra-fill--ouro {
+        animation: none;
+    }
+}
+
+/* Ouro selecionado, mas ainda não conquistado: mesmo fill em progresso de Bronze/Prata. */
+.ds-foco-barra-fill--ouro-alvo-nao-atingido {
+    background: linear-gradient(90deg, #d7aa34, #e3b83e 50%, #f1d676);
+    animation: none;
+    filter: none;
+    background-size: 100% 100%;
+    background-position: 0 50%;
+    box-shadow: none;
+}
+
+.ds-foco-barra-fill--ouro-alvo-nao-atingido::after {
+    opacity: 1;
+    animation: ds-foco-barra-brilho 1.35s ease-in-out infinite;
 }

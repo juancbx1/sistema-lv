@@ -73,11 +73,13 @@ export default function DashMenuLateral({
         contexto: contextoEmpresa,
         trocandoPara,
         trocarEmpresa,
-    } = useMenuContexto();
+} = useMenuContexto();
     const [seletorEmpresaAberto, setSeletorEmpresaAberto] = useState(false);
     const [contratoAvisoAberto, setContratoAvisoAberto] = useState(false);
     const [preferenciasAviso, setPreferenciasAviso] = useState(false);
     const preferenciasAvisoTimer = useRef<number | null>(null);
+    const drawerRef = useRef<HTMLElement | null>(null);
+    const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
     // Cache local: pinta o chip no primeiro frame se o bootstrap ainda não chegou
     const [empresaLocal] = useState<MenuEmpresa | null>(() => lerEmpresaAtivaLocal());
 
@@ -147,7 +149,7 @@ export default function DashMenuLateral({
         setContratoAvisoAberto(false);
 
         const fecharComEsc = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') setDrawerAberto(false);
+            if (event.key === 'Escape') fecharDrawer();
         };
 
         document.addEventListener('keydown', fecharComEsc);
@@ -169,7 +171,12 @@ export default function DashMenuLateral({
         return () => document.removeEventListener('pointerdown', fecharAoClicarFora);
     }, [contratoAvisoAberto]);
 
-    const fecharDrawer = () => setDrawerAberto(false);
+    const fecharDrawer = () => {
+        if (drawerRef.current?.contains(document.activeElement)) {
+            menuTriggerRef.current?.focus();
+        }
+        setDrawerAberto(false);
+    };
     const acaoDrawer = (acao: () => void) => {
         fecharDrawer();
         acao();
@@ -227,22 +234,33 @@ export default function DashMenuLateral({
     return (
         <>
             <aside className="ds-menu-lateral-desktop" aria-label="Menu da dashboard">
-                <button
-                    type="button"
-                    className="ds-menu-avatar"
-                    onClick={aoAbrirPerfil}
-                    aria-label="Abrir perfil"
-                >
-                    <span className="ds-menu-avatar-imagem">
-                        <img src={avatarUrl} alt="" />
-                        <b>{nivel}</b>
-                    </span>
-                    <span className="ds-menu-avatar-copy">
-                        <strong>{nome}</strong>
-                        <small>Costureira · nível {nivel}</small>
-                    </span>
-                    <i className="fas fa-chevron-right" aria-hidden="true" />
-                </button>
+                <div className="ds-menu-cabecalho">
+                    <button
+                        type="button"
+                        className="ds-menu-avatar"
+                        onClick={aoAbrirPerfil}
+                        aria-label="Abrir perfil"
+                    >
+                        <span className="ds-menu-avatar-imagem">
+                            <img src={avatarUrl} alt="" />
+                            <b>{nivel}</b>
+                        </span>
+                        <span className="ds-menu-avatar-copy">
+                            <strong>{nome}</strong>
+                            <small>Costureira · nível {nivel}</small>
+                        </span>
+                        <i className="fas fa-chevron-right" aria-hidden="true" />
+                    </button>
+                    <button
+                        type="button"
+                        className="ds-menu-avatar-sair"
+                        onClick={aoSair}
+                        aria-label="Sair do sistema"
+                    >
+                        <i className="fas fa-sign-out-alt" aria-hidden="true" />
+                        <span>Sair</span>
+                    </button>
+                </div>
 
                 <nav className="ds-menu-navegacao">
                     <MenuItem icone="fa-th-large" label="Início" ativo />
@@ -252,12 +270,14 @@ export default function DashMenuLateral({
                     <MenuItem icone="fa-vault" label="Banco de resgate" onClick={aoAbrirCofre} />
                 </nav>
 
-                <DashVtSaldoCard variante="desktop" dadosInicial={vtInicial} />
-                <DashRankingMenu dados={rankingDados} variante="desktop" />
+                <div className="ds-menu-informacoes-uteis">
+                    <p className="ds-menu-secao-label">Informações úteis</p>
+                    <DashVtSaldoCard variante="desktop" dadosInicial={vtInicial} />
+                    <DashRankingMenu dados={rankingDados} variante="desktop" />
+                </div>
 
                 <div className="ds-menu-rodape">
                     {renderRodapeRecursos('desktop')}
-                    <MenuItem icone="fa-sign-out-alt" label="Sair" onClick={aoSair} />
                 </div>
             </aside>
 
@@ -291,6 +311,7 @@ export default function DashMenuLateral({
             <button
                 type="button"
                 className="ds-menu-trigger"
+                ref={menuTriggerRef}
                 onClick={() => setDrawerAberto(true)}
                 aria-label="Abrir menu"
                 aria-expanded={drawerAberto}
@@ -306,8 +327,10 @@ export default function DashMenuLateral({
 
             <aside
                 className={'ds-menu-drawer' + (drawerAberto ? ' aberto' : '')}
+                ref={drawerRef}
                 aria-label="Menu da dashboard"
                 aria-hidden={!drawerAberto}
+                inert={!drawerAberto}
             >
                 <div className="ds-menu-drawer-cabecalho">
                     <img src={avatarUrl} alt="" className="ds-menu-drawer-avatar" />
@@ -334,8 +357,11 @@ export default function DashMenuLateral({
                     <MenuItem icone="fa-vault" label="Banco de resgate" onClick={() => acaoDrawer(aoAbrirCofre)} />
                 </nav>
 
-                <DashVtSaldoCard variante="mobile" dadosInicial={vtInicial} />
-                <DashRankingMenu dados={rankingDados} variante="mobile" />
+                <div className="ds-menu-informacoes-uteis">
+                    <p className="ds-menu-secao-label">Informações úteis</p>
+                    <DashVtSaldoCard variante="mobile" dadosInicial={vtInicial} />
+                    <DashRankingMenu dados={rankingDados} variante="mobile" />
+                </div>
 
                 <div className="ds-menu-drawer-rodape">
                     {renderRodapeRecursos('mobile')}

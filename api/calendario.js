@@ -103,7 +103,10 @@ router.get('/dias-uteis', async (req, res) => {
             SELECT data FROM calendario_empresa
             WHERE empresa_id = $3
               AND data BETWEEN $1 AND $2
-              AND tipo IN ('feriado_nacional', 'feriado_regional', 'folga_empresa', 'falta')
+              AND tipo IN (
+                    'feriado_nacional', 'feriado_regional', 'folga_empresa',
+                    'falta', 'falta_justificada', 'falta_injustificada'
+                  )
               AND (funcionario_id IS NULL OR funcionario_id = $4)
         `, [inicio, fim, empresaId, funcionario_id || null]);
 
@@ -136,17 +139,24 @@ router.get('/dias-uteis', async (req, res) => {
     }
 });
 
-// ─── GET /proximo-dia-util-pagamento — 5º dia útil (Seg–Sab) do mês ───────
+// ─── GET /proximo-dia-util-pagamento
+// Previsão de pagamento de COMISSÕES no mês informado (YYYY-MM):
+// 5º dia útil CLT (seg–sáb) + 1 dia útil seguinte. Pode ser antecipada.
 router.get('/proximo-dia-util-pagamento', async (req, res) => {
     const empresaId = req.empresaId;
     const { mes } = req.query; // "2026-04"
     if (!mes) return res.status(400).json({ error: 'Parâmetro mes obrigatório (YYYY-MM).' });
 
-    const [ano, mesNum] = mes.split('-').map(Number);
-    const primeiroDia   = new Date(Date.UTC(ano, mesNum, 1));     // 1º do mês seguinte
-    const ultimoDia     = new Date(Date.UTC(ano, mesNum + 1, 0)); // último dia do mês seguinte
-    const inicioStr     = primeiroDia.toISOString().slice(0, 10);
-    const fimStr        = ultimoDia.toISOString().slice(0, 10);
+    const [ano, mesNum] = String(mes).split('-').map(Number);
+    if (!ano || !mesNum || mesNum < 1 || mesNum > 12) {
+        return res.status(400).json({ error: 'Parâmetro mes inválido (use YYYY-MM).' });
+    }
+
+    const primeiroDia = new Date(Date.UTC(ano, mesNum - 1, 1));
+    const fimBusca = new Date(Date.UTC(ano, mesNum - 1, 1));
+    fimBusca.setUTCDate(fimBusca.getUTCDate() + 45);
+    const inicioStr = primeiroDia.toISOString().slice(0, 10);
+    const fimStr = fimBusca.toISOString().slice(0, 10);
 
     let dbClient;
     try {
@@ -161,28 +171,24 @@ router.get('/proximo-dia-util-pagamento', async (req, res) => {
         `, [inicioStr, fimStr, empresaId]);
 
         const datasExcluidas = new Set(
-            eventosRes.rows.map(r => new Date(r.data).toISOString().slice(0, 10))
+            eventosRes.rows.map((r) => {
+                if (r.data instanceof Date) return r.data.toISOString().slice(0, 10);
+                return String(r.data).slice(0, 10);
+            })
         );
 
-        let diasContados = 0;
-        let cursor = new Date(primeiroDia);
+        const { previsaoPagamentoComissao } = await import('./lib/dias-uteis-pagamento.js');
+        const prev = previsaoPagamentoComissao(ano, mesNum, datasExcluidas);
 
-        while (diasContados < 5) {
-            const dow = cursor.getUTCDay();
-            const dateStr = cursor.toISOString().slice(0, 10);
-            // CLT Art.459: Seg–Sab contam (domingo não)
-            if (dow !== 0 && !datasExcluidas.has(dateStr)) {
-                diasContados++;
-                if (diasContados === 5) break;
-            }
-            cursor.setUTCDate(cursor.getUTCDate() + 1);
-        }
-
-        const dataPagamento = cursor.toISOString().slice(0, 10);
-        const dataFormatada = new Date(dataPagamento + 'T12:00:00Z')
-            .toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
-
-        res.json({ dataPagamento, dataFormatada, mesReferencia: mes });
+        res.json({
+            dataPagamento: prev.dataPagamento,
+            dataFormatada: prev.dataFormatada,
+            quintoDiaUtil: prev.quintoDiaUtil,
+            quintoDiaUtilFormatado: prev.quintoDiaUtilFormatado,
+            isPrevisao: true,
+            nota: prev.nota,
+            mesReferencia: mes,
+        });
     } catch (err) {
         console.error('[Calendário GET /proximo-dia-util-pagamento]', err);
         res.status(500).json({ error: 'Erro ao calcular data de pagamento.' });
@@ -190,6 +196,30 @@ router.get('/proximo-dia-util-pagamento', async (req, res) => {
         if (dbClient) dbClient.release();
     }
 });
+
+const TIPOS_FALTA_INDIVIDUAL = new Set(['falta', 'falta_justificada', 'falta_injustificada']);
+
+async function processarImpactoFaltaVt(dbClient, req, evento) {
+    if (!evento || !TIPOS_FALTA_INDIVIDUAL.has(evento.tipo) || !evento.funcionario_id) return;
+    try {
+        const { processarFaltaCalendario, schemaVtDisponivel } = await import('./vt-cartao-motor.js');
+        if (!(await schemaVtDisponivel(dbClient))) return;
+        const dataRef = evento.data instanceof Date
+            ? evento.data.toISOString().slice(0, 10)
+            : String(evento.data).slice(0, 10);
+        await processarFaltaCalendario(dbClient, {
+            empresaId: req.empresaId,
+            usuarioId: Number(evento.funcionario_id),
+            dataRef,
+            tipoFalta: evento.tipo,
+            calendarioEventoId: evento.id,
+            autorId: req.usuarioLogado?.id || null,
+            autorNome: req.usuarioLogado?.nome || null,
+        });
+    } catch (err) {
+        console.error('[Calendário] impacto VT na falta:', err.message);
+    }
+}
 
 // ─── POST / — cria evento (admin/supervisor) ──────────────────────────────
 router.post('/', async (req, res) => {
@@ -205,6 +235,7 @@ router.post('/', async (req, res) => {
         if (!(await validarFuncionarioDaEmpresa(dbClient, funcionario_id, empresaId))) {
             return res.status(404).json({ error: 'Funcionário não encontrado na empresa ativa.' });
         }
+        await dbClient.query('BEGIN');
         const result = await dbClient.query(`
             INSERT INTO calendario_empresa
                 (empresa_id, data, tipo, funcionario_id, descricao, conta_como_dia_util_pagamento, visivel_dashboard, criado_por)
@@ -220,8 +251,13 @@ router.post('/', async (req, res) => {
             visivel_dashboard ?? true,
             req.usuarioLogado.id,
         ]);
+        await processarImpactoFaltaVt(dbClient, req, result.rows[0]);
+        await dbClient.query('COMMIT');
         res.status(201).json(result.rows[0]);
     } catch (err) {
+        if (dbClient) {
+            try { await dbClient.query('ROLLBACK'); } catch { /* ignore */ }
+        }
         if (err.code === '23505') return res.status(409).json({ error: 'Já existe um evento desse tipo nessa data para esse funcionário.' });
         console.error('[Calendário POST /]', err);
         res.status(500).json({ error: 'Erro ao criar evento.' });
@@ -244,6 +280,7 @@ router.put('/:id', async (req, res) => {
         if (!(await validarFuncionarioDaEmpresa(dbClient, funcionario_id, empresaId))) {
             return res.status(404).json({ error: 'Funcionário não encontrado na empresa ativa.' });
         }
+        await dbClient.query('BEGIN');
         const result = await dbClient.query(`
             UPDATE calendario_empresa
             SET data = $1, tipo = $2, funcionario_id = $3, descricao = $4,
@@ -253,9 +290,17 @@ router.put('/:id', async (req, res) => {
             RETURNING *
         `, [data, tipo, funcionario_id || null, descricao, conta_como_dia_util_pagamento ?? false, visivel_dashboard ?? true, id, empresaId]);
 
-        if (result.rowCount === 0) return res.status(404).json({ error: 'Evento não encontrado.' });
+        if (result.rowCount === 0) {
+            await dbClient.query('ROLLBACK');
+            return res.status(404).json({ error: 'Evento não encontrado.' });
+        }
+        await processarImpactoFaltaVt(dbClient, req, result.rows[0]);
+        await dbClient.query('COMMIT');
         res.json(result.rows[0]);
     } catch (err) {
+        if (dbClient) {
+            try { await dbClient.query('ROLLBACK'); } catch { /* ignore */ }
+        }
         if (err.code === '23505') return res.status(409).json({ error: 'Conflito: já existe um evento desse tipo nessa data.' });
         console.error('[Calendário PUT /:id]', err);
         res.status(500).json({ error: 'Erro ao atualizar evento.' });

@@ -148,12 +148,20 @@ function ProxPagamentoCard({ pagamentoCicloFechado }: { pagamentoCicloFechado?: 
         ? formatarPeriodo(pagamentoCicloFechado.periodoInicio ?? null, pagamentoCicloFechado.periodoFim ?? null)
         : '';
     const dataFormatada = pagamentoCicloFechado?.dataPagamentoFormatada || null;
+    const isPrevisao = pagamentoCicloFechado?.isPrevisao !== false;
+    const notaPrevisao = pagamentoCicloFechado?.notaPrevisao
+        || 'Data prevista de pagamento. Pode ser antecipada pela empresa — não é data garantida.';
 
     return (
         <div className="prox-pag">
             <div className="prox-pag-topo">
                 <i className="fas fa-money-bill-wave" />
                 <span>Próximo pagamento</span>
+                {isPrevisao && dataFormatada && (
+                    <span className="prox-pag-badge-previsao" title={notaPrevisao}>
+                        Previsão
+                    </span>
+                )}
             </div>
 
             {/* corpo com inline styles para garantir visibilidade independente de CSS externo */}
@@ -179,9 +187,13 @@ function ProxPagamentoCard({ pagamentoCicloFechado }: { pagamentoCicloFechado?: 
             </div>
 
             {dataFormatada && (
-                <div className="prox-pag-data">
-                    <i className="fas fa-calendar-check" />
-                    Recebe em <strong>{dataFormatada}</strong>
+                <div className="prox-pag-data prox-pag-data--previsao">
+                    <i className="fas fa-calendar-day" />
+                    <div className="prox-pag-data-texto">
+                        <span className="prox-pag-data-label">Previsão de recebimento</span>
+                        <strong>{dataFormatada}</strong>
+                        <small>{notaPrevisao}</small>
+                    </div>
                 </div>
             )}
             {!dataFormatada && (

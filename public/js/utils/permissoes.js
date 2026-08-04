@@ -106,6 +106,7 @@ export const permissoesDisponiveis = [
     { id: 'acesso-financeiro', label: 'Acesso ao Módulo Financeiro (Caixa)', categoria: 'Financeiro — Caixa e Lançamentos' },
     { id: 'visualizar-financeiro', label: 'Visualizar dashboard e extratos', categoria: 'Financeiro — Caixa e Lançamentos' },
     { id: 'lancar-transacao', label: 'Ação: Lançar novas receitas e despesas', categoria: 'Financeiro — Caixa e Lançamentos' },
+    { id: 'importar-extrato', label: 'Ação: Importar extrato bancário (OFX) e conciliar', categoria: 'Financeiro — Caixa e Lançamentos' },
     { id: 'editar-transacao', label: 'Ação: Editar lançamentos financeiros', categoria: 'Financeiro — Caixa e Lançamentos' },
     { id: 'estornar-transacao', label: 'Ação: Estornar lançamentos financeiros', categoria: 'Financeiro — Caixa e Lançamentos' },
     { id: 'aprovar-pagamento', label: 'Ação: Dar baixa em contas a pagar/receber', categoria: 'Financeiro — Caixa e Lançamentos' },
@@ -137,6 +138,7 @@ export const permissoesDisponiveis = [
     { id: 'permitir-pagar-beneficios', label: 'Ação: Pagar Benefícios', categoria: 'Pagamentos à Empregados' },
     { id: 'permitir-conceder-bonus', label: 'Ação: Conceder bônus e premiações', categoria: 'Pagamentos à Empregados' },
     { id: 'permitir-pagar-passagens', label: 'Ação: Pagar vales-transporte (passagens)', categoria: 'Pagamentos à Empregados' },
+    { id: 'ajustar-consumo-vt', label: 'Ação: Ajustar consumo de passagem (VT) — carona / retroativo', categoria: 'Pagamentos à Empregados' },
     { id: 'permitir-lancar-falta-nao-justificada', label: 'Ação: Lançar faltas não justificadas', categoria: 'Pagamentos à Empregados' },
     { id: 'permitir-estornar-passagens', label: 'Ação: Estornar pagamentos de passagens', categoria: 'Pagamentos à Empregados' },
 

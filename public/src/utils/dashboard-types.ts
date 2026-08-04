@@ -120,7 +120,12 @@ export interface DashCicloPagamentoResumo {
   valor?: number | string | null;
   periodoInicio?: string | null;
   periodoFim?: string | null;
+  dataPagamentoExata?: string | null;
   dataPagamentoFormatada?: string | null;
+  quintoDiaUtil?: string | null;
+  quintoDiaUtilFormatado?: string | null;
+  isPrevisao?: boolean;
+  notaPrevisao?: string | null;
   [key: string]: unknown;
 }
 
@@ -276,6 +281,55 @@ export interface DashAvisoPopup {
   cor_fundo?: DashAvisoCor;
   url_imagem?: string | null;
   urgente?: boolean;
+  [key: string]: unknown;
+}
+
+// ── Saldo cartão VT (menu lateral) ───────────────────────────────────────────
+
+export interface DashVtMovimento {
+  id?: number | string;
+  tipo?: string;
+  sentido?: string | null;
+  valor?: number;
+  data_ref?: string | null;
+  justificativa_fato?: string | null;
+  justificativa_demora?: string | null;
+  ocorreu_em?: string | null;
+  rotulo?: string;
+  [key: string]: unknown;
+}
+
+export interface DashVtSoftDesconto {
+  sentido?: 'ida' | 'volta' | string;
+  valor?: number;
+  data_ref?: string | null;
+  desde_hora?: string | null;
+  rotulo?: string | null;
+  mensagem_simples?: string | null;
+}
+
+export interface DashVtSaldo {
+  schema_ok?: boolean;
+  visivel?: boolean;
+  /** Saldo real no livro (sem soft). */
+  saldo_disponivel?: number;
+  /** Saldo para a empregada ver (livro − soft ida da manhã). */
+  saldo_exibido?: number;
+  soft_ativo?: boolean;
+  soft_total?: number;
+  soft_descontos?: DashVtSoftDesconto[];
+  soft_desde_hora?: string | null;
+  soft_fonte_hora?: 'jornada_e1' | 'padrao_0730' | string | null;
+  soft_simulado?: boolean;
+  saldo_provisionado?: number;
+  valor_passagem_diaria?: number;
+  valor_via?: number;
+  dias_restantes_estimados?: number;
+  vias_restantes_estimadas?: number;
+  proximo_consumo_em?: string | null;
+  recargas_provisionadas?: Array<{ valor?: number; valida_em?: string | null }>;
+  ultimos_movimentos?: DashVtMovimento[];
+  mensagem?: string;
   [key: string]: unknown;
 }
 

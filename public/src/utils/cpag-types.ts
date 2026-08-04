@@ -196,6 +196,61 @@ export interface CpagLoteVTPayloadItem {
   datas_lista: string[];
 }
 
+/** Movimento do livro do cartão VT. */
+export interface CpagVtMovimento {
+  id: number | string;
+  tipo: string;
+  sentido?: string | null;
+  status_credito?: string | null;
+  valor: number;
+  data_ref?: string | null;
+  data_origem?: string | null;
+  data_destino?: string | null;
+  motivo?: string | null;
+  justificativa_fato?: string | null;
+  justificativa_demora?: string | null;
+  ocorreu_em?: string | null;
+  valida_em?: string | null;
+  autor_nome?: string | null;
+  rotulo?: string;
+}
+
+export interface CpagVtTransferencia {
+  data_origem?: string | null;
+  data_destino?: string | null;
+  motivo?: string | null;
+  ocorreu_em?: string | null;
+  autor_nome?: string | null;
+}
+
+export interface CpagVtSaldo {
+  schema_ok?: boolean;
+  visivel?: boolean;
+  usuario_id?: number | string;
+  nome?: string;
+  saldo_disponivel: number;
+  saldo_provisionado: number;
+  valor_passagem_diaria: number;
+  valor_via?: number;
+  dias_restantes_estimados?: number;
+  vias_restantes_estimadas?: number;
+  proximo_consumo_em?: string | null;
+  recargas_provisionadas?: Array<{ id: number | string; valor: number; valida_em?: string | null }>;
+  transferencias?: CpagVtTransferencia[];
+  ultimos_movimentos?: CpagVtMovimento[];
+  mensagem?: string;
+  erro?: string;
+}
+
+export interface CpagVtAjustePayload {
+  usuario_id: number | string;
+  data_ref: string;
+  usou_ida: boolean;
+  usou_volta: boolean;
+  justificativa_fato: string;
+  justificativa_demora: string;
+}
+
 export interface CpagLoteVTPayload {
   id_conta_debito: number | string;
   id_concessionaria: number | string;

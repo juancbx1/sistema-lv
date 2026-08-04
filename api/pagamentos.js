@@ -5,6 +5,16 @@ const { Pool } = pkg;
 import express from 'express';
 import { getPermissoesCompletasUsuarioDB } from './usuarios.js';
 import { obterEmpresaIdDoContexto } from './contexto-empresa.js';
+import {
+    ajustarConsumoVt,
+    definirSaldoCartaoVt,
+    detalheDiaVt,
+    listarSaldosVt,
+    obterSaldoVt,
+    registrarCreditoRecarga,
+    registrarEstornoRecarga,
+    schemaVtDisponivel,
+} from './vt-cartao-motor.js';
 
 const router = express.Router();
 const pool = new Pool({
@@ -1080,6 +1090,18 @@ router.post('/estornar-vt', async (req, res) => {
             updateHistoricoQuery,
             [recarga_id, req.empresaId]
         );
+
+        try {
+            await registrarEstornoRecarga(dbClient, {
+                empresaId: req.empresaId,
+                usuarioId: Number(recarga.usuario_id),
+                recargaId: Number(recarga_id),
+                autorId: req.usuarioLogado?.id || null,
+                autorNome: req.usuarioLogado?.nome || null,
+            });
+        } catch (errEstornoVt) {
+            console.error('[estornar-vt] Falha ao registrar estorno no cartão VT:', errEstornoVt.message);
+        }
         
         await dbClient.query('COMMIT');
 
@@ -1635,11 +1657,12 @@ router.post('/lote-vt', async (req, res) => {
                 datas_pagas: datas_lista
             };
 
-            await dbClient.query(
+            const histVtRes = await dbClient.query(
                 `INSERT INTO historico_pagamentos_funcionarios
                 (usuario_id, descricao, valor_liquido_pago, id_usuario_pagador,
                  detalhes_pagamento, id_conta_debito, data_pagamento, empresa_id)
-                VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7)`,
+                VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7)
+                RETURNING id`,
                 [
                     usuario_id, 
                     `Recarga VT (${nomeConcessionaria})`,
@@ -1650,6 +1673,24 @@ router.post('/lote-vt', async (req, res) => {
                     req.empresaId
                 ]
             );
+            const recargaHistoricoId = histVtRes.rows[0]?.id;
+
+            // Crédito no cartão VT (provisionado 48h) — no-op se schema ainda não existir
+            if (recargaHistoricoId) {
+                try {
+                    await registrarCreditoRecarga(dbClient, {
+                        empresaId: req.empresaId,
+                        usuarioId: Number(usuario_id),
+                        valor: valor_total,
+                        recargaId: recargaHistoricoId,
+                        datasLista: Array.isArray(datas_lista) ? datas_lista : [],
+                        autorId: idUsuarioPagador,
+                        autorNome: req.usuarioLogado?.nome || null,
+                    });
+                } catch (errCredito) {
+                    console.error('[lote-vt] Falha ao registrar crédito VT (não bloqueia lote):', errCredito.message);
+                }
+            }
 
             // 2. Marca os dias como PAGOS na tabela de controle (evita pagamento duplicado)
             if (datas_lista && datas_lista.length > 0) {
@@ -1886,6 +1927,212 @@ router.get('/recibos/historico-periodos', async (req, res) => {
     } catch (error) {
         res.status(error.statusCode || 500).json({
             error: error.statusCode ? error.message : 'Erro ao buscar histórico.'
+        });
+    } finally {
+        if (dbClient) dbClient.release();
+    }
+});
+
+// ─── Saldo do cartão VT ─────────────────────────────────────────────────────
+
+// GET /api/pagamentos/vt-saldo?usuario_id=
+router.get('/vt-saldo', async (req, res) => {
+    if (!req.permissoesUsuario?.includes('acessar-central-pagamentos')) {
+        return res.status(403).json({ error: 'Permissão negada.' });
+    }
+    const usuarioId = Number.parseInt(String(req.query.usuario_id), 10);
+    if (!Number.isInteger(usuarioId) || usuarioId <= 0) {
+        return res.status(400).json({ error: 'usuario_id obrigatório.' });
+    }
+
+    let dbClient;
+    try {
+        dbClient = await pool.connect();
+        await carregarVinculoEmpregado(dbClient, usuarioId, req.empresaId, { exigirAtivo: false });
+        const saldo = await obterSaldoVt(dbClient, req.empresaId, usuarioId, { reconciliar: true });
+        res.json(saldo);
+    } catch (error) {
+        console.error('[API /vt-saldo]', error);
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao consultar saldo VT.',
+            details: error.message,
+        });
+    } finally {
+        if (dbClient) dbClient.release();
+    }
+});
+
+// GET /api/pagamentos/vt-saldo/lote?usuario_ids=1,2,3
+router.get('/vt-saldo/lote', async (req, res) => {
+    if (!req.permissoesUsuario?.includes('acessar-central-pagamentos')) {
+        return res.status(403).json({ error: 'Permissão negada.' });
+    }
+    const raw = String(req.query.usuario_ids || '');
+    const ids = raw
+        .split(',')
+        .map((s) => Number.parseInt(s.trim(), 10))
+        .filter((n) => Number.isInteger(n) && n > 0);
+
+    let dbClient;
+    try {
+        dbClient = await pool.connect();
+        const resultado = await listarSaldosVt(dbClient, req.empresaId, ids);
+        res.json(resultado);
+    } catch (error) {
+        console.error('[API /vt-saldo/lote]', error);
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao listar saldos VT.',
+            details: error.message,
+        });
+    } finally {
+        if (dbClient) dbClient.release();
+    }
+});
+
+// GET /api/pagamentos/vt-saldo/dia?usuario_id=&data=
+router.get('/vt-saldo/dia', async (req, res) => {
+    if (!req.permissoesUsuario?.includes('acessar-central-pagamentos')) {
+        return res.status(403).json({ error: 'Permissão negada.' });
+    }
+    const usuarioId = Number.parseInt(String(req.query.usuario_id), 10);
+    const dataRef = String(req.query.data || '').slice(0, 10);
+    if (!Number.isInteger(usuarioId) || usuarioId <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(dataRef)) {
+        return res.status(400).json({ error: 'usuario_id e data (YYYY-MM-DD) são obrigatórios.' });
+    }
+
+    let dbClient;
+    try {
+        dbClient = await pool.connect();
+        await carregarVinculoEmpregado(dbClient, usuarioId, req.empresaId, { exigirAtivo: false });
+        const detalhe = await detalheDiaVt(dbClient, req.empresaId, usuarioId, dataRef);
+        res.json(detalhe);
+    } catch (error) {
+        console.error('[API /vt-saldo/dia]', error);
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao consultar dia VT.',
+            details: error.message,
+        });
+    } finally {
+        if (dbClient) dbClient.release();
+    }
+});
+
+// POST /api/pagamentos/vt-saldo/ajustar-consumo
+router.post('/vt-saldo/ajustar-consumo', async (req, res) => {
+    if (!req.permissoesUsuario?.includes('ajustar-consumo-vt')) {
+        return res.status(403).json({
+            error: 'Permissão negada. É necessário a permissão "Ajustar consumo de passagem (VT)".',
+            codigo: 'SEM_PERMISSAO_AJUSTAR_VT',
+        });
+    }
+
+    const {
+        usuario_id,
+        data_ref,
+        usou_ida,
+        usou_volta,
+        justificativa_fato,
+        justificativa_demora,
+    } = req.body || {};
+
+    if (typeof usou_ida !== 'boolean' || typeof usou_volta !== 'boolean') {
+        return res.status(400).json({
+            error: 'Informe usou_ida e usou_volta como boolean (true/false).',
+        });
+    }
+
+    let dbClient;
+    try {
+        dbClient = await pool.connect();
+        await carregarVinculoEmpregado(dbClient, usuario_id, req.empresaId, { exigirAtivo: true });
+        await dbClient.query('BEGIN');
+        const resultado = await ajustarConsumoVt(dbClient, {
+            empresaId: req.empresaId,
+            usuarioId: Number(usuario_id),
+            dataRef: data_ref,
+            usouIda: usou_ida,
+            usouVolta: usou_volta,
+            justificativaFato: justificativa_fato,
+            justificativaDemora: justificativa_demora,
+            autorId: req.usuarioLogado.id,
+            autorNome: req.usuarioLogado.nome,
+        });
+        await dbClient.query('COMMIT');
+        res.status(200).json(resultado);
+    } catch (error) {
+        if (dbClient) {
+            try { await dbClient.query('ROLLBACK'); } catch { /* ignore */ }
+        }
+        console.error('[API /vt-saldo/ajustar-consumo]', error);
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao ajustar consumo VT.',
+            codigo: error.codigo || undefined,
+            details: error.message,
+        });
+    } finally {
+        if (dbClient) dbClient.release();
+    }
+});
+
+// GET /api/pagamentos/vt-saldo/schema — diagnóstico rápido
+router.get('/vt-saldo/schema', async (req, res) => {
+    if (!req.permissoesUsuario?.includes('acessar-central-pagamentos')) {
+        return res.status(403).json({ error: 'Permissão negada.' });
+    }
+    let dbClient;
+    try {
+        dbClient = await pool.connect();
+        const ok = await schemaVtDisponivel(dbClient);
+        res.json({ schema_ok: ok });
+    } catch (error) {
+        res.status(500).json({ error: 'Erro ao checar schema VT.', details: error.message });
+    } finally {
+        if (dbClient) dbClient.release();
+    }
+});
+
+// POST /api/pagamentos/vt-saldo/definir-saldo
+// Go-live / correção: grava o saldo real do cartão físico no livro (valor livre).
+router.post('/vt-saldo/definir-saldo', async (req, res) => {
+    if (!req.permissoesUsuario?.includes('ajustar-consumo-vt')) {
+        return res.status(403).json({
+            error: 'Permissão negada. É necessário a permissão de ajustar consumo VT.',
+            codigo: 'SEM_PERMISSAO_AJUSTAR_VT',
+        });
+    }
+
+    const {
+        usuario_id,
+        saldo_alvo,
+        justificativa_fato,
+        zerar_livro = true,
+    } = req.body || {};
+
+    let dbClient;
+    try {
+        dbClient = await pool.connect();
+        await carregarVinculoEmpregado(dbClient, usuario_id, req.empresaId, { exigirAtivo: true });
+        await dbClient.query('BEGIN');
+        const resultado = await definirSaldoCartaoVt(dbClient, {
+            empresaId: req.empresaId,
+            usuarioId: Number(usuario_id),
+            saldoAlvo: Number(saldo_alvo),
+            justificativaFato: justificativa_fato,
+            zerarLivro: zerar_livro !== false,
+            autorId: req.usuarioLogado.id,
+            autorNome: req.usuarioLogado.nome,
+        });
+        await dbClient.query('COMMIT');
+        res.status(200).json(resultado);
+    } catch (error) {
+        if (dbClient) {
+            try { await dbClient.query('ROLLBACK'); } catch { /* ignore */ }
+        }
+        console.error('[API /vt-saldo/definir-saldo]', error);
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao definir saldo VT.',
+            codigo: error.codigo || undefined,
+            details: error.message,
         });
     } finally {
         if (dbClient) dbClient.release();

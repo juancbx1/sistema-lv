@@ -20,6 +20,24 @@
 
 export const changelog = [
     {
+        versao: '1.43.0',
+        versao_dashboard: '1.30.0',
+        data: '03/08/2026',
+        admin: [
+            'Cartão VT na Central de Pagamentos: painel de saldo, extrato, definir saldo do cartão e ajuste de consumo (carona / ida-volta) com justificativas e teto de 60 dias',
+            'Nova permissão: Ajustar consumo de passagem (VT) — carona / retroativo',
+            'Motor de saldo VT: recargas provisionadas (48h), consumo por jornada (E1 soft / S3+1h real), transferência por falta e isolamento por empresa',
+            'Calendário: Falta Individual substituída por Falta justificada e Falta injustificada (impactam o VT)',
+            'Previsão de pagamento de comissões: 1 dia útil após o 5º dia útil (seg–sáb, calendário da empresa) — salário permanece no 5º dia útil',
+        ],
+        dashboard: [
+            'Novo bloco Meu cartão VT no menu (acima do ranking): veja o saldo da passagem e quanto ainda dá para ir e voltar',
+            'Durante o dia, se a ida já contou, o valor do cartão aparece riscado e ao lado o disponível agora (estilo banco)',
+            'Na carteira (Comissões), a data de recebimento aparece como Previsão e pode ser antecipada pela empresa',
+            'Menu da dashboard no PC: removida a marca fixa; avatar e espaçamento da página corrigidos',
+        ],
+    },
+    {
         versao: '1.42.0',
         versao_dashboard: '1.29.0',
         data: '01/08/2026',

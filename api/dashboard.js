@@ -514,11 +514,14 @@ router.get('/desempenho', async (req, res) => {
         const listaRes = await dbClient.query(queryLista, [usuario.id, empresaId]);
         const atividadesParaLista = listaRes.rows;
 
-        // 10. DATA EXATA DE PAGAMENTO DO CICLO FECHADO
-        // Sempre calculada com base em fimCicloAnterior (ciclo que já encerrou).
-        // Dois mundos distintos: ciclo aberto (acumulando) vs ciclo fechado (a pagar).
+        // 10. PREVISÃO DE PAGAMENTO DO CICLO FECHADO (comissões)
+        // Base: fimCicloAnterior → mês seguinte.
+        // 5º dia útil CLT (seg–sáb) + 1 dia útil = previsão (pode ser antecipada).
         let dataPagamentoExata = null;
         let dataPagamentoFormatada = null;
+        let quintoDiaUtilComissao = null;
+        let quintoDiaUtilComissaoFormatado = null;
+        let pagamentoComissaoIsPrevisao = true;
 
         {
             const fimStr = fimCicloAnterior.toISOString().slice(0, 10);
@@ -527,35 +530,28 @@ router.get('/desempenho', async (req, res) => {
             if (mesRef > 12) { mesRef = 1; anoRef++; }
 
             const primeiroDiaPgto = new Date(Date.UTC(anoRef, mesRef - 1, 1));
-            const ultimoDiaPgto   = new Date(Date.UTC(anoRef, mesRef, 0));
+            // Margem após o fim do mês: a previsão pode cair no mês seguinte ao 5º dia útil
+            const fimBuscaPgto = new Date(Date.UTC(anoRef, mesRef - 1, 1));
+            fimBuscaPgto.setUTCDate(fimBuscaPgto.getUTCDate() + 45);
 
-            // Feriados do mês de pagamento visíveis na dashboard
+            // Feriados do mês de pagamento (calendário da empresa)
             const feriadosPgtoRes = await dbClient.query(`
                 SELECT data::text AS data FROM calendario_empresa
                 WHERE data BETWEEN $1 AND $2
                   AND tipo IN ('feriado_nacional', 'feriado_regional', 'folga_empresa')
                   AND funcionario_id IS NULL
                   AND empresa_id = $3
-            `, [primeiroDiaPgto.toISOString().slice(0, 10), ultimoDiaPgto.toISOString().slice(0, 10), empresaId]);
+            `, [primeiroDiaPgto.toISOString().slice(0, 10), fimBuscaPgto.toISOString().slice(0, 10), empresaId]);
 
-            const datasExcluidasPgto = new Set(feriadosPgtoRes.rows.map(r => r.data.slice(0, 10)));
+            const datasExcluidasPgto = new Set(feriadosPgtoRes.rows.map(r => String(r.data).slice(0, 10)));
 
-            // 5º dia útil — CLT Art. 459: Seg–Sab contam, domingo não
-            let diasContados = 0;
-            let cursorPgto = new Date(primeiroDiaPgto);
-            while (diasContados < 5) {
-                const dow = cursorPgto.getUTCDay();
-                const dateStr = cursorPgto.toISOString().slice(0, 10);
-                if (dow !== 0 && !datasExcluidasPgto.has(dateStr)) {
-                    diasContados++;
-                    if (diasContados === 5) break;
-                }
-                cursorPgto.setUTCDate(cursorPgto.getUTCDate() + 1);
-            }
-
-            dataPagamentoExata = cursorPgto.toISOString().slice(0, 10);
-            dataPagamentoFormatada = new Date(dataPagamentoExata + 'T12:00:00Z')
-                .toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
+            const { previsaoPagamentoComissao } = await import('./lib/dias-uteis-pagamento.js');
+            const prev = previsaoPagamentoComissao(anoRef, mesRef, datasExcluidasPgto);
+            dataPagamentoExata = prev.dataPagamento;
+            dataPagamentoFormatada = prev.dataFormatada;
+            quintoDiaUtilComissao = prev.quintoDiaUtil;
+            quintoDiaUtilComissaoFormatado = prev.quintoDiaUtilFormatado;
+            pagamentoComissaoIsPrevisao = true;
         }
 
         res.status(200).json({
@@ -584,13 +580,18 @@ router.get('/desempenho', async (req, res) => {
                 periodoInicio: periodo.inicio.toISOString().split('T')[0],
                 periodoFim: periodo.fim.toISOString().split('T')[0],
             },
-            // Ciclo fechado: o que vai ser PAGO no próximo 5º dia útil
+            // Ciclo fechado: previsão de pagamento (1 dia útil após o 5º dia útil)
             pagamentoCicloFechado: {
                 valor: valorCicloAnterior,
                 periodoInicio: inicioCicloAnterior.toISOString().split('T')[0],
                 periodoFim: fimCicloAnterior.toISOString().split('T')[0],
                 dataPagamentoExata,
                 dataPagamentoFormatada,
+                quintoDiaUtil: quintoDiaUtilComissao,
+                quintoDiaUtilFormatado: quintoDiaUtilComissaoFormatado,
+                isPrevisao: pagamentoComissaoIsPrevisao,
+                notaPrevisao:
+                    'Data prevista de pagamento. Pode ser antecipada pela empresa — não é data garantida.',
             },
             // Mantido para retrocompatibilidade (não usado na wallet redesenhada)
             pagamentoPendente: (() => {
@@ -1284,7 +1285,10 @@ router.get('/streak', async (req, res) => {
         const feriadosRes = await dbClient.query(`
             SELECT data::date AS dia FROM calendario_empresa
             WHERE data BETWEEN $1 AND $2
-              AND tipo IN ('feriado_nacional', 'feriado_regional', 'folga_empresa', 'falta')
+              AND tipo IN (
+                    'feriado_nacional', 'feriado_regional', 'folga_empresa',
+                    'falta', 'falta_justificada', 'falta_injustificada'
+                  )
               AND (funcionario_id IS NULL OR funcionario_id = $3)
         `, [ini50.toISOString().slice(0, 10), hojeStr, usuarioId]);
         const diasNaoUteis = new Set(
@@ -1455,6 +1459,79 @@ router.get('/conquistas-ciclo', async (req, res) => {
     } catch (error) {
         console.error('[API Conquistas] Erro:', error);
         res.status(500).json({ error: 'Erro ao calcular conquistas.' });
+    } finally {
+        if (dbClient) dbClient.release();
+    }
+});
+
+// GET /api/dashboard/meu-vt — saldo do cartão de passagem da empregada logada
+// Query opcional (só visualização / smoke):
+//   ?vt_soft=1          força o soft-desconto da ida na UI
+//   ?vt_hora=08:00      simula o horário atual em America/Sao_Paulo
+router.get('/meu-vt', async (req, res) => {
+    let dbClient;
+    try {
+        dbClient = await pool.connect();
+        const empresaId = req.empresaId;
+        const usuarioId = req.usuarioLogado.id;
+        if (!empresaId) {
+            return res.status(400).json({ error: 'Empresa ativa não resolvida.' });
+        }
+
+        const forcarSoftIda =
+            req.query.vt_soft === '1' ||
+            req.query.vt_soft === 'true' ||
+            req.query.forcar_soft_ida === '1';
+
+        let agora = new Date();
+        const horaSim = String(req.query.vt_hora || req.query.simular_hora || '').trim();
+        if (/^\d{1,2}:\d{2}$/.test(horaSim)) {
+            // Monta um instante "hoje em SP" com a hora pedida (aproximação estável p/ soft)
+            const diaSp = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+            const [hh, mm] = horaSim.split(':').map(Number);
+            // SP é UTC-3 (sem horário de verão desde 2019)
+            agora = new Date(Date.UTC(
+                Number(diaSp.slice(0, 4)),
+                Number(diaSp.slice(5, 7)) - 1,
+                Number(diaSp.slice(8, 10)),
+                hh + 3,
+                mm,
+                0,
+                0
+            ));
+        }
+
+        const { obterSaldoVt } = await import('./vt-cartao-motor.js');
+        const saldo = await obterSaldoVt(dbClient, empresaId, usuarioId, {
+            reconciliar: true,
+            agora,
+            forcarSoftIda,
+        });
+
+        // Dashboard: esconder se sem valor de passagem
+        if (!saldo.schema_ok || !(Number(saldo.valor_passagem_diaria) > 0)) {
+            return res.json({
+                ...saldo,
+                visivel: false,
+                mensagem: !saldo.schema_ok
+                    ? 'Saldo de passagem ainda não disponível.'
+                    : 'Passagem não configurada para o seu vínculo.',
+            });
+        }
+
+        res.json({
+            ...saldo,
+            visivel: true,
+            simulacao: forcarSoftIda || Boolean(horaSim)
+                ? { vt_soft: forcarSoftIda, vt_hora: horaSim || null }
+                : null,
+        });
+    } catch (error) {
+        console.error('[API /dashboard/meu-vt]', error);
+        res.status(error.statusCode || 500).json({
+            error: error.statusCode ? error.message : 'Erro ao carregar saldo de passagem.',
+            details: error.message,
+        });
     } finally {
         if (dbClient) dbClient.release();
     }

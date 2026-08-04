@@ -26,6 +26,7 @@ import type {
     CalendarioTipoEvento,
     CalendarioTipoOpcao,
 } from '../utils/calendario-types';
+import { calendarioEhFalta } from '../utils/calendario-types';
 
 const TOKEN = (): string | null => localStorage.getItem('token');
 
@@ -33,12 +34,16 @@ const TIPOS: CalendarioTipoOpcao[] = [
     { value: 'feriado_nacional', label: 'Feriado Nacional', cor: '#e74c3c' },
     { value: 'feriado_regional', label: 'Feriado Regional', cor: '#c0392b' },
     { value: 'folga_empresa', label: 'Folga Coletiva', cor: '#e67e22' },
-    { value: 'falta', label: 'Falta Individual', cor: '#f39c12' },
+    { value: 'falta_justificada', label: 'Falta justificada', cor: '#3498db' },
+    { value: 'falta_injustificada', label: 'Falta injustificada', cor: '#e67e22' },
     { value: 'dia_util_especial', label: 'Dia Útil Especial', cor: '#2980b9' },
 ];
 
 const corPorTipo: Record<string, string> = Object.fromEntries(TIPOS.map((t) => [t.value, t.cor]));
 const labelPorTipo: Record<string, string> = Object.fromEntries(TIPOS.map((t) => [t.value, t.label]));
+// Compatibilidade com eventos legados ainda não migrados
+corPorTipo.falta = corPorTipo.falta_injustificada || '#e67e22';
+labelPorTipo.falta = 'Falta (legado)';
 
 const FORM_VAZIO: CalendarioFormEstado = {
     id: null,
@@ -222,7 +227,7 @@ export default function CalendarioCompleto() {
         const body = {
             data: form.data,
             tipo: form.tipo,
-            funcionario_id: form.tipo === 'falta' ? (form.funcionario_id || null) : null,
+            funcionario_id: calendarioEhFalta(form.tipo) ? (form.funcionario_id || null) : null,
             descricao: form.descricao.trim(),
             conta_como_dia_util_pagamento: form.conta_como_dia_util_pagamento,
             visivel_dashboard: form.visivel_dashboard,
@@ -458,14 +463,15 @@ export default function CalendarioCompleto() {
                                 </select>
                             </div>
 
-                            {form.tipo === 'falta' && (
+                            {calendarioEhFalta(form.tipo) && (
                                 <div className="cal-form-grupo">
                                     <label>Funcionário</label>
                                     <select
                                         value={form.funcionario_id}
                                         onChange={(e) => atualizarForm('funcionario_id', e.target.value)}
+                                        required
                                     >
-                                        <option value="">— Todos os funcionários —</option>
+                                        <option value="">— Selecione o funcionário —</option>
                                         {funcionarios.map((f) => (
                                             <option key={f.id} value={f.id}>{f.nome}</option>
                                         ))}

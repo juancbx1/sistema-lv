@@ -6149,9 +6149,21 @@ body.ds-body.autenticado {
     display: flex; align-items: center; gap: 7px;
 }
 .prox-pag-topo i { color: rgba(255,255,255,.85); font-size: 0.82rem; }
-.prox-pag-topo span {
+.prox-pag-topo > span:not(.prox-pag-badge-previsao) {
     font-size: 0.70rem; font-weight: 700; color: #fff;
     text-transform: uppercase; letter-spacing: .8px;
+}
+.prox-pag-badge-previsao {
+    margin-left: auto;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    background: rgba(255, 255, 255, 0.18);
+    color: #fff !important;
+    font-size: 0.62rem !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.04em !important;
+    text-transform: uppercase !important;
 }
 .prox-pag-corpo {
     padding: 12px 14px;
@@ -6170,6 +6182,40 @@ body.ds-body.autenticado {
 }
 .prox-pag-data i { color: #16a34a; font-size: 0.80rem; }
 .prox-pag-data strong { color: #15803d; }
+.prox-pag-data--previsao {
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px 14px;
+    background: #ecfdf5;
+}
+.prox-pag-data--previsao > i {
+    margin-top: 2px;
+    color: #0f766e;
+}
+.prox-pag-data-texto {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.prox-pag-data-label {
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #0f766e;
+}
+.prox-pag-data-texto strong {
+    font-size: 0.84rem;
+    line-height: 1.25;
+    color: #14532d;
+    text-transform: capitalize;
+}
+.prox-pag-data-texto small {
+    font-size: 0.68rem;
+    line-height: 1.35;
+    color: #3f6212;
+}
 .prox-pag-data--vazio { color: #6b7280; }
 .prox-pag-data--vazio i { color: #9ca3af; }
 .chip-ciclo {
@@ -9422,6 +9468,13 @@ body.ds-body.autenticado {
    NAVEGAÇÃO DA DASHBOARD V3 — sidebar fixa + ranking em galeria
    ============================================================================ */
 
+/* global-style.css aplica body { margin-left: 250px } para o menu admin.
+   A dashboard usa sidebar própria (fixed 250px) + margin no main —
+   sem zerar o body, o conteúdo ganha gap duplo (~500px). */
+body {
+    margin-left: 0;
+}
+
 body.ds-body {
     margin-left: 0;
 }
@@ -9465,31 +9518,7 @@ body.ds-body {
     scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
 }
 
-.ds-menu-desktop-marca {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 0 6px;
-}
-
-.ds-menu-desktop-marca > div:last-child {
-    min-width: 0;
-}
-
-.ds-menu-desktop-marca strong {
-    display: block;
-    color: var(--ds-cor-branco);
-    font-size: 0.78rem;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-}
-
-.ds-menu-desktop-marca span {
-    display: block;
-    margin-top: 1px;
-    color: rgba(255, 255, 255, 0.52);
-    font-size: 0.62rem;
-}
+/* Marca legada removida do JSX — empresa fica no ml-company-compact */
 
 .ds-menu-lateral-desktop .ds-menu-avatar {
     display: flex;
@@ -9497,7 +9526,7 @@ body.ds-body {
     height: auto;
     align-items: center;
     gap: 10px;
-    margin-top: 20px;
+    margin-top: 0;
     padding: 10px;
     border: 1px solid rgba(255, 255, 255, 0.13);
     border-radius: 16px;
@@ -9519,6 +9548,11 @@ body.ds-body {
     flex: 0 0 40px;
     border: 2px solid rgba(255, 255, 255, 0.28);
     border-radius: 50%;
+    /* anula .ds-menu-avatar span { position:absolute; right/bottom } do layout compacto */
+    right: auto;
+    bottom: auto;
+    place-items: unset;
+    background: transparent;
 }
 
 .ds-menu-lateral-desktop .ds-menu-avatar-imagem img {
@@ -9544,35 +9578,53 @@ body.ds-body {
     font-size: 0.52rem;
 }
 
+/* Base .ds-menu-avatar span { position:absolute; right; bottom } bagunçava o texto no desktop */
 .ds-menu-lateral-desktop .ds-menu-avatar > .ds-menu-avatar-copy {
-    display: block;
+    position: static;
+    right: auto;
+    bottom: auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 2px;
     min-width: 0;
-    flex: 1;
+    flex: 1 1 auto;
     width: auto;
     height: auto;
     border: 0;
     border-radius: 0;
     background: transparent;
+    place-items: unset;
 }
 
 .ds-menu-lateral-desktop .ds-menu-avatar-copy strong {
     display: block;
     overflow: hidden;
+    max-width: 100%;
     color: var(--ds-cor-branco);
     font-size: 0.76rem;
     font-weight: 800;
+    line-height: 1.2;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
 .ds-menu-lateral-desktop .ds-menu-avatar-copy small {
     display: block;
-    margin-top: 1px;
+    overflow: hidden;
+    max-width: 100%;
+    margin-top: 0;
     color: rgba(255, 255, 255, 0.54);
     font-size: 0.59rem;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .ds-menu-lateral-desktop .ds-menu-avatar > i {
+    flex: 0 0 auto;
+    align-self: center;
     color: rgba(255, 255, 255, 0.46);
     font-size: 0.68rem;
 }
@@ -11795,5 +11847,165 @@ body.ds-body {
 
     .ds-dashboard-intro-copy .ds-status-live-metric strong {
         font-size: .75rem;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   Saldo VT — menu lateral dashboard (acima do ranking)
+   Largura alinhada ao .ds-ranking-menu (mesma caixa do menu/drawer).
+   -------------------------------------------------------------------------- */
+.ds-vt-card {
+    position: relative;
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    flex: 0 0 auto;
+    overflow: visible;
+    margin: 15px 0 0;
+    padding: 13px 12px 12px;
+    border-radius: 18px;
+    background:
+        radial-gradient(circle at 100% 0%, rgba(56, 189, 248, 0.22), transparent 40%),
+        linear-gradient(155deg, rgba(14, 165, 233, 0.18), rgba(13, 38, 68, 0.94) 52%, rgba(10, 24, 44, 0.98));
+    border: 1px solid rgba(125, 211, 252, 0.22);
+    box-shadow: 0 12px 24px rgba(13, 27, 62, 0.15);
+    color: #e2e8f0;
+}
+
+.ds-vt-card-borda {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 5px;
+    height: 100%;
+    border-radius: 18px 0 0 18px;
+    background: #38bdf8;
+    pointer-events: none;
+}
+
+.ds-vt-card--baixo .ds-vt-card-borda { background: #fbbf24; }
+.ds-vt-card--zerado .ds-vt-card-borda { background: #f87171; }
+
+.ds-vt-card-cabecalho {
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+    padding-left: 4px;
+}
+
+.ds-vt-card-cabecalho strong {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 0.92rem;
+    font-weight: 800;
+    color: #f8fafc;
+}
+
+.ds-vt-card-cabecalho strong i {
+    color: #7dd3fc;
+    font-size: 0.85rem;
+}
+
+.ds-vt-card-saldo {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding-left: 4px;
+}
+
+.ds-vt-card-saldo-label {
+    font-size: 0.72rem;
+    color: rgba(226, 232, 240, 0.7);
+}
+
+.ds-vt-card-saldo-valor {
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: #f0f9ff;
+    letter-spacing: -0.02em;
+}
+
+/* Estilo “banco”: valor do cartão riscado → disponível agora (ida em uso) */
+.ds-vt-card-valores {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px 8px;
+    min-width: 0;
+}
+
+.ds-vt-card-valor-livro {
+    font-size: 0.95rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: rgba(148, 163, 184, 0.88);
+    text-decoration: line-through;
+    text-decoration-thickness: 1.5px;
+    text-decoration-color: rgba(248, 113, 113, 0.75);
+}
+
+.ds-vt-card-valor-seta {
+    color: rgba(125, 211, 252, 0.55);
+    font-size: 0.68rem;
+}
+
+.ds-vt-card-saldo-valor--agora {
+    color: #e0f2fe;
+    text-shadow: 0 0 18px rgba(56, 189, 248, 0.25);
+}
+
+.ds-vt-card-dias {
+    font-size: 0.78rem;
+    line-height: 1.4;
+    color: rgba(186, 230, 253, 0.92);
+}
+
+.ds-vt-card-prov,
+.ds-vt-card-devolucao {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-top: 10px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    font-size: 0.78rem;
+    line-height: 1.4;
+}
+
+.ds-vt-card-prov {
+    background: rgba(251, 191, 36, 0.12);
+    border: 1px solid rgba(251, 191, 36, 0.28);
+    color: #fde68a;
+}
+
+.ds-vt-card-devolucao {
+    background: rgba(74, 222, 128, 0.12);
+    border: 1px solid rgba(74, 222, 128, 0.28);
+    color: #bbf7d0;
+}
+
+.ds-vt-card-alerta {
+    margin: 10px 0 0;
+    padding: 0 2px;
+    font-size: 0.78rem;
+    color: #fde68a;
+    line-height: 1.45;
+    white-space: normal;
+    overflow: visible;
+}
+
+.ds-vt-card-alerta--critico {
+    color: #fecaca;
+}
+
+.ds-menu-drawer .ds-vt-card {
+    margin: 16px 0 0;
+    width: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ds-vt-card {
+        transition: none;
     }
 }

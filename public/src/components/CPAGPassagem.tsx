@@ -8,6 +8,7 @@ import UICarregando from './UICarregando';
 import CPAGMultiDatePicker from './CPAGMultiDatePicker.tsx';
 import CPAGModalHistoricoVT from './CPAGModalHistoricoVT.tsx';
 import CPAGGerenciadorRecibosVT from './CPAGGerenciadorRecibosVT.tsx';
+import CPAGVtSaldoPainel from './CPAGVtSaldoPainel';
 import type {
   CpagConcessionaria,
   CpagConcessionariaOption,
@@ -408,7 +409,9 @@ export default function CPAGPassagem({ usuarios, contas }: Props) {
 
   return (
     <div className="cpg-card cpg-passagem">
-      <div className="cpg-passagem__header">
+      <CPAGVtSaldoPainel usuarios={usuarios} />
+
+      <div className="cpg-passagem__header" style={{ marginTop: 20 }}>
         <h2 className="cpg-section-title" style={{ border: 'none', margin: 0, padding: 0 }}>
           Lote de Vale Transporte
         </h2>

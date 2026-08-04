@@ -3,6 +3,7 @@ import imgDefaultAvatar from '../assets/default-avatar.png';
 // @ts-expect-error módulo JS legado sem tipos
 import { fetchAPI } from '/js/utils/api-utils';
 import DashRankingMenu from './DashRankingMenu';
+import DashVtSaldoCard from './DashVtSaldoCard';
 import DashVersionFooter from './DashVersionFooter';
 import MenuEmpresaAtiva from './MenuEmpresaAtiva';
 import MenuEmpresaSeletor from './MenuEmpresaSeletor';
@@ -193,14 +194,6 @@ export default function DashMenuLateral({
     return (
         <>
             <aside className="ds-menu-lateral-desktop" aria-label="Menu da dashboard">
-                <div className="ds-menu-desktop-marca">
-                    <div className="ds-menu-marca" aria-label="Lojas Variara">LV</div>
-                    <div>
-                        <strong>Lojas Variara</strong>
-                        <span>Meu painel</span>
-                    </div>
-                </div>
-
                 <button
                     type="button"
                     className="ds-menu-avatar"
@@ -226,6 +219,7 @@ export default function DashMenuLateral({
                     <MenuItem icone="fa-vault" label="Banco de resgate" onClick={aoAbrirCofre} />
                 </nav>
 
+                <DashVtSaldoCard variante="desktop" />
                 <DashRankingMenu dados={rankingDados} variante="desktop" />
 
                 <div className="ds-menu-rodape">
@@ -307,6 +301,7 @@ export default function DashMenuLateral({
                     <MenuItem icone="fa-vault" label="Banco de resgate" onClick={() => acaoDrawer(aoAbrirCofre)} />
                 </nav>
 
+                <DashVtSaldoCard variante="mobile" />
                 <DashRankingMenu dados={rankingDados} variante="mobile" />
 
                 <div className="ds-menu-drawer-rodape">

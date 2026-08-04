@@ -4,8 +4,21 @@ export type CalendarioTipoEvento =
     | 'feriado_nacional'
     | 'feriado_regional'
     | 'folga_empresa'
-    | 'falta'
+    | 'falta' // legado (migrado para falta_injustificada)
+    | 'falta_justificada'
+    | 'falta_injustificada'
     | 'dia_util_especial';
+
+/** Tipos que exigem seleção de funcionário e impactam VT. */
+export const CALENDARIO_TIPOS_FALTA: CalendarioTipoEvento[] = [
+    'falta_justificada',
+    'falta_injustificada',
+    'falta',
+];
+
+export function calendarioEhFalta(tipo: string | null | undefined): boolean {
+    return CALENDARIO_TIPOS_FALTA.includes(tipo as CalendarioTipoEvento);
+}
 
 export interface CalendarioTipoOpcao {
     value: CalendarioTipoEvento;

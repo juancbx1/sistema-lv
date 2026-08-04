@@ -20,6 +20,16 @@
 
 export const changelog = [
     {
+        versao: '1.43.3',
+        versao_dashboard: '1.31.1',
+        data: '03/08/2026',
+        admin: [],
+        dashboard: [
+            'O card decorado de celebração voltou a aparecer para a maior meta atingida, com mensagem, emoji e confetes sem acumular níveis',
+            'O aviso de pontos restantes agora acompanha corretamente a meta selecionada entre Bronze, Prata e Ouro',
+        ],
+    },
+    {
         versao: '1.43.2',
         versao_dashboard: '1.31.0',
         data: '03/08/2026',

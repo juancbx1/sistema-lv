@@ -222,7 +222,7 @@ export default function DashFocoHoje({
         indiceMetaSelecionada < 0 ? metasValidas.length - 1 : indiceMetaSelecionada,
         metasValidas.length,
     );
-    const nivelCelebracao = metaCelebrando && MENSAGENS_META[metaCelebrando] ? metaCelebrando : null;
+    const nivelCelebracao = nivelAtingido === 'nao_bateu' ? null : nivelAtingido;
     const nome = nomeUsuario?.trim().split(/\s+/)[0] || 'você';
     const mensagemCelebracao = nivelCelebracao ? MENSAGENS_META[nivelCelebracao] : null;
     const statusClasse = nivelAtingido === 'nao_bateu' ? 'em-progresso' : nivelAtingido;
@@ -261,6 +261,11 @@ export default function DashFocoHoje({
             : nivelAtingido === 'prata'
                 ? 'Próximo nível: Ouro'
                 : 'Nível máximo atingido';
+    const nomeMetaSelecionada = nivelMetaSelecionada === 'ouro'
+        ? 'Ouro'
+        : nivelMetaSelecionada === 'prata'
+            ? 'Prata'
+            : 'Bronze';
 
     let badgeTexto;
     if (pontosFeitos === 0) {
@@ -272,7 +277,7 @@ export default function DashFocoHoje({
     } else if (nivelAtingido === 'bronze') {
         badgeTexto = 'Bronze batida! Faltam ' + Math.max(0, prataPontos - pontosFeitos) + ' pts para a Prata';
     } else {
-        badgeTexto = 'Faltam ' + falta + ' pts para a Meta Bronze';
+        badgeTexto = 'Faltam ' + falta + ' pts para a Meta ' + nomeMetaSelecionada;
     }
 
     const coresMeta = [
@@ -379,10 +384,12 @@ export default function DashFocoHoje({
             )}
 
             <div className="ds-foco-stage-rodape">
-                <div className={'ds-foco-status-badge ' + statusClasse}>
-                    <i className="fas fa-bullseye" aria-hidden="true" />
-                    {badgeTexto}
-                </div>
+                {nivelAtingido === 'nao_bateu' && (
+                    <div className={'ds-foco-status-badge ' + statusClasse}>
+                        <i className="fas fa-bullseye" aria-hidden="true" />
+                        {badgeTexto}
+                    </div>
+                )}
 
                 <div className="ds-foco-meta-chips" aria-label="Escolha sua meta">
                     {metasValidas.map((meta, i) => {

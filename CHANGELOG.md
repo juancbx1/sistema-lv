@@ -18,6 +18,14 @@ Depois: `git push && git push --tags` → Vercel faz o deploy automaticamente.
 
 ---
 
+## [1.43.3] — 2026-08-03
+
+### Corrigido
+- Card decorado de celebração restaurado para a maior meta atingida, com mensagem, emoji e confetes sem acumular níveis.
+- Aviso de pontos restantes agora acompanha corretamente a meta selecionada entre Bronze, Prata e Ouro.
+
+---
+
 ## [1.43.2] — 2026-08-03
 
 ### Dashboard dos empregados

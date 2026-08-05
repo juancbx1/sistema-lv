@@ -41,7 +41,9 @@ async function auditarCofrePontos(
     empresaId,
     historicoDias,
     metasConfiguradas,
-    periodoInicio
+    periodoInicio,
+    tipoUsuario,
+    nivelUsuario
 ) {
     // A auditoria altera saldo e log. O lock por empresa + empregado evita
     // que duas aberturas da dashboard calculem o mesmo saldo a partir do
@@ -104,6 +106,38 @@ async function auditarCofrePontos(
         const metasOrdenadas = [...metasConfiguradas].sort((a, b) => a.pontos_meta - b.pontos_meta);
         const hojeStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
 
+        // O cofre audita dias passados. Portanto, a meta usada precisa ser a
+        // versão vigente na data de origem, e não a configuração vigente hoje.
+        // Sem isso, uma alteração de metas transforma sobras históricas em
+        // lançamentos indevidos quando a dashboard é aberta.
+        const regrasHistoricasRes = await dbClient.query(
+            `SELECT to_char(mv.data_inicio_vigencia, 'YYYY-MM-DD') AS data_inicio_vigencia,
+                    mr.pontos_meta, mr.valor_comissao, mr.descricao_meta
+               FROM metas_versoes mv
+               JOIN metas_regras mr
+                 ON mr.id_versao = mv.id
+                AND mr.empresa_id = mv.empresa_id
+              WHERE mv.empresa_id = $1
+                AND mr.tipo_usuario = $2
+                AND mr.nivel = $3
+              ORDER BY mv.data_inicio_vigencia DESC, mr.pontos_meta ASC`,
+            [empresaId, tipoUsuario, nivelUsuario]
+        );
+        const versoesMetas = [];
+        for (const regra of regrasHistoricasRes.rows) {
+            const dataInicio = String(regra.data_inicio_vigencia).slice(0, 10);
+            let versao = versoesMetas.find(item => item.dataInicio === dataInicio);
+            if (!versao) {
+                versao = { dataInicio, regras: [] };
+                versoesMetas.push(versao);
+            }
+            versao.regras.push(regra);
+        }
+        const metasParaData = (data) => {
+            const dataStr = String(data).slice(0, 10);
+            return versoesMetas.find(item => item.dataInicio <= dataStr)?.regras || metasOrdenadas;
+        };
+
         // Deploy e migration podem ocorrer em momentos diferentes. Enquanto
         // a coluna ainda não existe, mantemos compatibilidade com o banco
         // legado; depois da migration usamos a data funcional e o índice.
@@ -125,9 +159,11 @@ async function auditarCofrePontos(
             if (dataDia < periodoInicio) continue;
 
             const pontosFeitos = parseFloat(dia.pontos);
+            const metasDoDia = metasParaData(dia.data);
+            if (metasDoDia.length === 0) continue;
             let indiceMetaBatida = -1;
-            for (let i = metasOrdenadas.length - 1; i >= 0; i--) {
-                if (pontosFeitos >= metasOrdenadas[i].pontos_meta) {
+            for (let i = metasDoDia.length - 1; i >= 0; i--) {
+                if (pontosFeitos >= metasDoDia[i].pontos_meta) {
                     indiceMetaBatida = i;
                     break;
                 }
@@ -135,7 +171,7 @@ async function auditarCofrePontos(
 
             if (indiceMetaBatida < 1) continue;
 
-            const metaBatida = metasOrdenadas[indiceMetaBatida];
+            const metaBatida = metasDoDia[indiceMetaBatida];
             const sobra = pontosFeitos - metaBatida.pontos_meta;
             if (sobra <= 0) continue;
 
@@ -465,7 +501,16 @@ router.get('/desempenho', async (req, res) => {
         })();
 
         // 7. PROCESSA O COFRE AUTOMATICAMENTE
-        const dadosCofre = await auditarCofrePontos(dbClient, usuario.id, empresaId, historicoDiasCofre, metasConfiguradas, periodo.inicio);
+        const dadosCofre = await auditarCofrePontos(
+            dbClient,
+            usuario.id,
+            empresaId,
+            historicoDiasCofre,
+            metasConfiguradas,
+            periodo.inicio,
+            tipoUsuario,
+            nivelUsuario
+        );
 
         // 7. Blocos Semanais
         const blocos = gerarBlocosSemanais(periodo.inicio, periodo.fim);

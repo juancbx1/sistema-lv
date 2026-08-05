@@ -95,7 +95,7 @@ export interface DashCofre {
   [key: string]: unknown;
 }
 
-export type DashCofreMovimentoTipo = 'GANHO' | 'RESGATE' | 'RESET' | string;
+export type DashCofreMovimentoTipo = 'GANHO' | 'RESGATE' | 'RESET' | 'CORRECAO' | string;
 
 export interface DashCofreMovimento {
   tipo: DashCofreMovimentoTipo;

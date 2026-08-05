@@ -20,6 +20,15 @@
 
 export const changelog = [
     {
+        versao: '1.43.4',
+        versao_dashboard: '1.31.2',
+        data: '05/08/2026',
+        admin: [],
+        dashboard: [
+            'Correção de Bugs',
+        ],
+    },
+    {
         versao: '1.43.3',
         versao_dashboard: '1.31.1',
         data: '03/08/2026',

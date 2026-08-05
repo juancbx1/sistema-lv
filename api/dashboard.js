@@ -43,120 +43,194 @@ async function auditarCofrePontos(
     metasConfiguradas,
     periodoInicio
 ) {
-    // 0. Identifica o Ciclo Atual (Ex: "Janeiro/2026")
-    const periodoAtual = getPeriodoFiscalAtual(new Date());
-    const nomeCicloAtual = periodoAtual.nomeCompetencia; // Ex: "Janeiro 2026"
-    
-    // 1. Busca Saldo
-    let saldoRes = await dbClient.query(
-        'SELECT * FROM banco_pontos_saldo WHERE usuario_id = $1 AND empresa_id = $2',
-        [usuarioId, empresaId]
-    );
-    
-    if (saldoRes.rows.length === 0) {
-        // Cria novo com o ciclo atual marcado
-        saldoRes = await dbClient.query(
-            'INSERT INTO banco_pontos_saldo (empresa_id, usuario_id, ciclo_referencia) VALUES ($1, $2, $3) RETURNING *',
-            [empresaId, usuarioId, nomeCicloAtual]
-        );
-    }
-    
-    const saldoAtual = saldoRes.rows[0];
-    let novoSaldo = parseFloat(saldoAtual.saldo_atual);
-    let novosUsos = saldoAtual.usos_neste_ciclo;
-    
-    // 2. VERIFICAÇÃO DE VIRADA DE CICLO (RESET)
-    // Se o ciclo salvo no banco for diferente do atual, ZERA TUDO.
-    if (saldoAtual.ciclo_referencia !== nomeCicloAtual) {        
-        // Zera variáveis locais
-        novoSaldo = 0;
-        novosUsos = 0;
-        
-        // Registra o reset no log para auditoria
+    // A auditoria altera saldo e log. O lock por empresa + empregado evita
+    // que duas aberturas da dashboard calculem o mesmo saldo a partir do
+    // mesmo snapshot. O índice único da migration é a segunda barreira.
+    await dbClient.query('BEGIN');
+    try {
         await dbClient.query(
-            `INSERT INTO banco_pontos_log (empresa_id, usuario_id, tipo, quantidade, descricao) VALUES ($1, $2, 'RESET', 0, $3)`,
-            [empresaId, usuarioId, `Início do ciclo ${nomeCicloAtual}`]
+            'SELECT pg_advisory_xact_lock($1::integer, $2::integer)',
+            [empresaId, usuarioId]
         );
-        
-        // Atualiza a referência no banco imediatamente
-        await dbClient.query(
-            `UPDATE banco_pontos_saldo SET saldo_atual = 0, usos_neste_ciclo = 0, ciclo_referencia = $1, ultimo_calculo = NOW() WHERE usuario_id = $2 AND empresa_id = $3`,
-            [nomeCicloAtual, usuarioId, empresaId]
+
+        // 0. Identifica o Ciclo Atual (Ex: "Janeiro/2026")
+        const periodoAtual = getPeriodoFiscalAtual(new Date());
+        const nomeCicloAtual = periodoAtual.nomeCompetencia;
+
+        // 1. Busca Saldo
+        let saldoRes = await dbClient.query(
+            'SELECT * FROM banco_pontos_saldo WHERE usuario_id = $1 AND empresa_id = $2 FOR UPDATE',
+            [usuarioId, empresaId]
         );
-    }
 
-    // 3. Define a Meta Máxima (Para cálculo de sobras)
-    const metaMaxima = metasConfiguradas[metasConfiguradas.length - 1];
-    if (!metaMaxima) return { saldo: novoSaldo, usos: novosUsos };
-
-    // Ordena metas
-    const metasOrdenadas = [...metasConfiguradas].sort((a, b) => a.pontos_meta - b.pontos_meta);
-
-    // 4. Varredura de Dias (Auditoria de Ganhos)
-    const hojeStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
-    let houveAtualizacao = false;
-
-    for (const dia of historicoDias) {
-        if (dia.data >= hojeStr) continue;
-        const dataDia = new Date(dia.data);
-        if (dataDia < periodoInicio) continue;
-
-        const pontosFeitos = parseFloat(dia.pontos);
-        
-        let indiceMetaBatida = -1;
-        for (let i = metasOrdenadas.length - 1; i >= 0; i--) {
-            if (pontosFeitos >= metasOrdenadas[i].pontos_meta) {
-                indiceMetaBatida = i;
-                break;
-            }
+        if (saldoRes.rows.length === 0) {
+            saldoRes = await dbClient.query(
+                'INSERT INTO banco_pontos_saldo (empresa_id, usuario_id, ciclo_referencia) VALUES ($1, $2, $3) RETURNING *',
+                [empresaId, usuarioId, nomeCicloAtual]
+            );
         }
 
-        if (indiceMetaBatida >= 1) {
-            const metaBatida = metasOrdenadas[indiceMetaBatida];
-            const sobra = pontosFeitos - metaBatida.pontos_meta;
+        const saldoAtual = saldoRes.rows[0];
+        let novoSaldo = parseFloat(saldoAtual.saldo_atual);
+        let novosUsos = saldoAtual.usos_neste_ciclo;
 
-            if (sobra > 0) {
-                // Verifica se já foi pago
-                const logRes = await dbClient.query(
-                    `SELECT 1 FROM banco_pontos_log WHERE usuario_id = $1 AND empresa_id = $2 AND tipo = 'GANHO' AND descricao LIKE $3`,
-                    [usuarioId, empresaId, `%${dia.data}%`]
-                );
+        // 2. VERIFICAÇÃO DE VIRADA DE CICLO (RESET)
+        if (saldoAtual.ciclo_referencia !== nomeCicloAtual) {
+            novoSaldo = 0;
+            novosUsos = 0;
 
-                if (logRes.rowCount === 0) {
-                    await dbClient.query(
-                        `INSERT INTO banco_pontos_log (empresa_id, usuario_id, tipo, quantidade, descricao) VALUES ($1, $2, 'GANHO', $3, $4)`,
-                        [empresaId, usuarioId, sobra, `Sobra do dia ${dia.data} (${metaBatida.descricao_meta})`]
-                    );
-                    novoSaldo += sobra;
-                    houveAtualizacao = true;
+            await dbClient.query(
+                `INSERT INTO banco_pontos_log (empresa_id, usuario_id, tipo, quantidade, descricao)
+                 VALUES ($1, $2, 'RESET', 0, $3)`,
+                [empresaId, usuarioId, `Início do ciclo ${nomeCicloAtual}`]
+            );
+
+            await dbClient.query(
+                `UPDATE banco_pontos_saldo
+                    SET saldo_atual = 0, usos_neste_ciclo = 0,
+                        ciclo_referencia = $1, ultimo_calculo = NOW()
+                  WHERE usuario_id = $2 AND empresa_id = $3`,
+                [nomeCicloAtual, usuarioId, empresaId]
+            );
+        }
+
+        // 3. Define a Meta Máxima (Para cálculo de sobras)
+        const metaMaxima = metasConfiguradas[metasConfiguradas.length - 1];
+        if (!metaMaxima) {
+            await dbClient.query('COMMIT');
+            return { saldo: novoSaldo, usos: novosUsos };
+        }
+
+        const metasOrdenadas = [...metasConfiguradas].sort((a, b) => a.pontos_meta - b.pontos_meta);
+        const hojeStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+
+        // Deploy e migration podem ocorrer em momentos diferentes. Enquanto
+        // a coluna ainda não existe, mantemos compatibilidade com o banco
+        // legado; depois da migration usamos a data funcional e o índice.
+        const colunaDataReferenciaRes = await dbClient.query(`
+            SELECT EXISTS (
+                SELECT 1
+                  FROM information_schema.columns
+                 WHERE table_schema = 'public'
+                   AND table_name = 'banco_pontos_log'
+                   AND column_name = 'data_referencia'
+            ) AS existe
+        `);
+        const suportaDataReferencia = colunaDataReferenciaRes.rows[0]?.existe === true;
+
+        // 4. Varredura de Dias (Auditoria de Ganhos)
+        for (const dia of historicoDias) {
+            if (dia.data >= hojeStr) continue;
+            const dataDia = new Date(dia.data);
+            if (dataDia < periodoInicio) continue;
+
+            const pontosFeitos = parseFloat(dia.pontos);
+            let indiceMetaBatida = -1;
+            for (let i = metasOrdenadas.length - 1; i >= 0; i--) {
+                if (pontosFeitos >= metasOrdenadas[i].pontos_meta) {
+                    indiceMetaBatida = i;
+                    break;
                 }
             }
-        }
-    }
 
-    if (houveAtualizacao) {
+            if (indiceMetaBatida < 1) continue;
+
+            const metaBatida = metasOrdenadas[indiceMetaBatida];
+            const sobra = pontosFeitos - metaBatida.pontos_meta;
+            if (sobra <= 0) continue;
+
+            let logRes;
+            if (suportaDataReferencia) {
+                // A data de origem é a chave funcional. Não dependemos mais
+                // de LIKE na descrição quando a coluna já existe.
+                logRes = await dbClient.query(
+                    `SELECT 1
+                       FROM banco_pontos_log
+                      WHERE usuario_id = $1
+                        AND empresa_id = $2
+                        AND data_referencia = $3::date
+                        AND tipo IN ('GANHO', 'CORRECAO')
+                      LIMIT 1`,
+                    [usuarioId, empresaId, dia.data]
+                );
+            } else {
+                // Antes da migration, o advisory lock acima serializa a
+                // leitura/inserção e impede a corrida do fluxo antigo.
+                logRes = await dbClient.query(
+                    `SELECT 1
+                       FROM banco_pontos_log
+                      WHERE usuario_id = $1
+                        AND empresa_id = $2
+                        AND tipo = 'GANHO'
+                        AND descricao LIKE $3
+                      LIMIT 1`,
+                    [usuarioId, empresaId, `%${dia.data}%`]
+                );
+            }
+
+            if (logRes.rowCount > 0) continue;
+
+            const ganhoRes = suportaDataReferencia
+                ? await dbClient.query(
+                    `INSERT INTO banco_pontos_log
+                        (empresa_id, usuario_id, tipo, quantidade, descricao, data_referencia)
+                     VALUES ($1, $2, 'GANHO', $3, $4, $5::date)
+                     ON CONFLICT DO NOTHING
+                     RETURNING id`,
+                    [
+                        empresaId,
+                        usuarioId,
+                        sobra,
+                        `Sobra do dia ${dia.data} (${metaBatida.descricao_meta})`,
+                        dia.data,
+                    ]
+                )
+                : await dbClient.query(
+                    `INSERT INTO banco_pontos_log
+                        (empresa_id, usuario_id, tipo, quantidade, descricao)
+                     VALUES ($1, $2, 'GANHO', $3, $4)
+                     RETURNING id`,
+                    [
+                        empresaId,
+                        usuarioId,
+                        sobra,
+                        `Sobra do dia ${dia.data} (${metaBatida.descricao_meta})`,
+                    ]
+                );
+
+            // Só altera o saldo se esta chamada realmente criou o ganho.
+            if (ganhoRes.rowCount > 0) novoSaldo += sobra;
+        }
+
         await dbClient.query(
-            `UPDATE banco_pontos_saldo SET saldo_atual = $1, ultimo_calculo = NOW() WHERE usuario_id = $2 AND empresa_id = $3`,
+            `UPDATE banco_pontos_saldo
+                SET saldo_atual = $1, ultimo_calculo = NOW()
+              WHERE usuario_id = $2 AND empresa_id = $3`,
             [novoSaldo, usuarioId, empresaId]
         );
+
+        // Conta resgates da semana atual (Seg–Dom, horário SP)
+        const agoraSP = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+        const diaSemana = agoraSP.getDay();
+        const diasDesdeSegunda = diaSemana === 0 ? 6 : diaSemana - 1;
+        const inicioSemanaAtual = new Date(agoraSP);
+        inicioSemanaAtual.setDate(agoraSP.getDate() - diasDesdeSegunda);
+        inicioSemanaAtual.setHours(0, 0, 0, 0);
+
+        const resgatesSemanaisRes = await dbClient.query(
+            `SELECT COUNT(*)::int as total FROM banco_pontos_log
+              WHERE usuario_id = $1 AND empresa_id = $2
+                AND tipo = 'RESGATE' AND data_evento >= $3`,
+            [usuarioId, empresaId, inicioSemanaAtual]
+        );
+        const usosEssaSemana = resgatesSemanaisRes.rows[0].total;
+
+        await dbClient.query('COMMIT');
+        return { saldo: novoSaldo, usos: novosUsos, usosEssaSemana };
+    } catch (error) {
+        await dbClient.query('ROLLBACK');
+        throw error;
     }
-
-    // Conta resgates da semana atual (Seg–Dom, horário SP)
-    const agoraSP = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-    const diaSemana = agoraSP.getDay();
-    const diasDesdeSegunda = diaSemana === 0 ? 6 : diaSemana - 1;
-    const inicioSemanaAtual = new Date(agoraSP);
-    inicioSemanaAtual.setDate(agoraSP.getDate() - diasDesdeSegunda);
-    inicioSemanaAtual.setHours(0, 0, 0, 0);
-
-    const resgatesSemanaisRes = await dbClient.query(
-        `SELECT COUNT(*)::int as total FROM banco_pontos_log
-         WHERE usuario_id = $1 AND empresa_id = $2 AND tipo = 'RESGATE' AND data_evento >= $3`,
-        [usuarioId, empresaId, inicioSemanaAtual]
-    );
-    const usosEssaSemana = resgatesSemanaisRes.rows[0].total;
-
-    return { saldo: novoSaldo, usos: novosUsos, usosEssaSemana };
 }
 
 router.get('/desempenho', async (req, res) => {
@@ -237,6 +311,21 @@ router.get('/desempenho', async (req, res) => {
 
         const atividadesRes = await dbClient.query(queryText, [usuario.id, periodo.inicio, periodo.fim, empresaId]);
         const atividades = atividadesRes.rows;
+
+        // O bônus do supervisor participa da meta visual do dia, mas não é
+        // produção da empregada e nunca pode gerar sobra para o cofre.
+        // Mantemos uma série separada para impedir que resgates ou pontos
+        // extras contaminem a auditoria automática.
+        const pontosProduzidosPorDia = {};
+        atividades
+            .filter(atv => atv.tipo_origem !== 'PontosExtra')
+            .forEach(atv => {
+                const diaStr = new Date(atv.data).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+                if (!pontosProduzidosPorDia[diaStr]) pontosProduzidosPorDia[diaStr] = 0;
+                pontosProduzidosPorDia[diaStr] += parseFloat(atv.pontos_gerados || 0);
+            });
+        const historicoDiasCofre = Object.entries(pontosProduzidosPorDia)
+            .map(([data, pontos]) => ({ data, pontos }));
 
         // Total de peças produzidas no ciclo (exclui Pontos Extras que têm quantidade = 0)
         const totalPecasCiclo = atividades
@@ -376,7 +465,7 @@ router.get('/desempenho', async (req, res) => {
         })();
 
         // 7. PROCESSA O COFRE AUTOMATICAMENTE
-        const dadosCofre = await auditarCofrePontos(dbClient, usuario.id, empresaId, historicoDias, metasConfiguradas, periodo.inicio);
+        const dadosCofre = await auditarCofrePontos(dbClient, usuario.id, empresaId, historicoDiasCofre, metasConfiguradas, periodo.inicio);
 
         // 7. Blocos Semanais
         const blocos = gerarBlocosSemanais(periodo.inicio, periodo.fim);

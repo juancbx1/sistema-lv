@@ -91,6 +91,7 @@ export default function DashCofreModal({ dadosCofre, metaDoDia, pontosHoje, aoRe
             const saldoMomento = saldoVolatil;
             if (item.tipo === 'GANHO') saldoVolatil -= qtd;
             else if (item.tipo === 'RESGATE') saldoVolatil += qtd;
+            else if (item.tipo === 'CORRECAO') saldoVolatil += qtd;
             return { ...item, saldoApos: saldoMomento };
         });
     })();
@@ -251,13 +252,14 @@ export default function DashCofreModal({ dadosCofre, metaDoDia, pontosHoje, aoRe
                             );
                             const item = entrada.item!;
                             const isGanho = item.tipo === 'GANHO';
+                            const isCorrecao = item.tipo === 'CORRECAO';
                             return (
                                 <div key={`i${idx}`} className="ds-cofre-extrato-item">
                                     <div className={`ds-cofre-extrato-icone ${isGanho ? 'ds-cofre-extrato-icone--ganho' : 'ds-cofre-extrato-icone--resgate'}`}>
-                                        <i className={`fas ${isGanho ? 'fa-arrow-up' : 'fa-arrow-down'}`} aria-hidden="true" />
+                                        <i className={`fas ${isGanho ? 'fa-arrow-up' : isCorrecao ? 'fa-rotate-left' : 'fa-arrow-down'}`} aria-hidden="true" />
                                     </div>
                                     <div className="ds-cofre-extrato-info">
-                                        <span className="ds-cofre-extrato-tipo">{isGanho ? 'Depósito' : 'Saque'}</span>
+                                        <span className="ds-cofre-extrato-tipo">{isGanho ? 'Depósito' : isCorrecao ? 'Correção' : 'Saque'}</span>
                                         <span className="ds-cofre-extrato-hora">
                                             {new Date(item.data_evento).toLocaleTimeString('pt-BR', {
                                                 hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo'

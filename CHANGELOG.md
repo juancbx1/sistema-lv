@@ -18,6 +18,11 @@ Depois: `git push && git push --tags` → Vercel faz o deploy automaticamente.
 
 ---
 
+## [1.43.4] — 2026-08-05
+
+### Corrigido
+- Correção de Bugs
+
 ## [1.43.3] — 2026-08-03
 
 ### Corrigido

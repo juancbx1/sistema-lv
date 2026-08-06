@@ -677,44 +677,76 @@ body {
 
 .ml-module-groups {
     display: grid;
-    gap: 3px;
+    gap: 8px;
 }
 
 .ml-module-group {
-    padding-bottom: 3px;
-    border-bottom: 1px solid #edf1f5;
+    overflow: hidden;
+    border: 1px solid #e5ebf2;
+    border-radius: 14px;
+    background: #ffffff;
+    box-shadow: 0 2px 7px rgba(15, 23, 42, 0.035);
+    transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.ml-module-group.is-current {
+    border-color: #bfdbfe;
+    box-shadow: 0 5px 14px rgba(37, 99, 235, 0.08);
 }
 
 .ml-module-group-trigger {
     display: grid;
     width: 100%;
-    min-height: 42px;
-    grid-template-columns: 22px minmax(0, 1fr) 18px;
+    min-height: 48px;
+    grid-template-columns: 28px minmax(0, 1fr) 18px;
     align-items: center;
     gap: 9px;
-    padding: 7px 10px;
+    padding: 8px 10px 8px 9px;
     border: 0;
-    border-radius: 9px;
-    color: #475569;
-    background: transparent;
+    border-radius: 13px;
+    color: #334155;
+    background: linear-gradient(135deg, #f8fafc, #f1f5f9);
     font: inherit;
-    font-size: 0.76rem;
-    font-weight: 700;
+    font-size: 0.79rem;
+    font-weight: 760;
     text-align: left;
     cursor: pointer;
+    transition: color 140ms ease, background 140ms ease;
 }
 
 .ml-module-group-trigger:hover,
 .ml-module-group-trigger:focus-visible {
     color: var(--ml-text);
-    background: var(--ml-surface);
+    background: linear-gradient(135deg, #f1f5f9, #eaf0f6);
     outline: none;
 }
 
 .ml-module-group-trigger > i:first-child {
-    width: 22px;
-    color: #64748b;
+    display: grid;
+    width: 28px;
+    height: 28px;
+    place-items: center;
+    border-radius: 8px;
+    color: #475569;
+    background: #e5ebf2;
+    font-size: 0.72rem;
     text-align: center;
+    transition: color 140ms ease, background 140ms ease;
+}
+
+.ml-module-group.is-current .ml-module-group-trigger {
+    color: #1e40af;
+    background: linear-gradient(135deg, #eff6ff, #f5f8ff);
+    box-shadow: inset 3px 0 0 #3b82f6;
+}
+
+.ml-module-group.is-current .ml-module-group-trigger > i:first-child {
+    color: #1d4ed8;
+    background: #dbeafe;
+}
+
+.ml-module-group.is-current .ml-group-chevron {
+    color: #3b82f6;
 }
 
 .ml-group-chevron {
@@ -728,7 +760,13 @@ body {
 }
 
 .ml-module-group ul {
-    padding: 1px 0 5px 10px;
+    margin: 0 8px 9px 17px;
+    padding: 5px 0 1px 9px;
+    border-left: 2px solid #e2e8f0;
+}
+
+.ml-module-group.is-current > ul {
+    border-left-color: #bfdbfe;
 }
 
 .ml-module-group ul[hidden] {
@@ -736,7 +774,11 @@ body {
 }
 
 .ml-module-group li .ml-nav-link {
-    padding-right: 41px;
+    min-height: 40px;
+    padding: 7px 9px 7px 10px;
+    border-radius: 8px;
+    font-size: 0.74rem;
+    font-weight: 600;
 }
 
 .ml-favorite-toggle {

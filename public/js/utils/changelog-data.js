@@ -20,6 +20,14 @@
 
 export const changelog = [
     {
+        versao: '1.43.5',
+        data: '05/08/2026',
+        admin: [
+            'Menu lateral administrativo agora diferencia visualmente as áreas-pai, como Produtividade, Produção e Estoque, dos itens internos, com hierarquia, recuo e destaque da área ativa',
+        ],
+        dashboard: [],
+    },
+    {
         versao: '1.43.4',
         versao_dashboard: '1.31.2',
         data: '05/08/2026',

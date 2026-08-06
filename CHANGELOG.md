@@ -18,6 +18,11 @@ Depois: `git push && git push --tags` → Vercel faz o deploy automaticamente.
 
 ---
 
+## [1.43.5] — 2026-08-05
+
+### Alterado
+- Menu lateral administrativo agora diferencia visualmente as áreas-pai, como Produtividade, Produção e Estoque, dos itens internos, com hierarquia, recuo e destaque da área ativa.
+
 ## [1.43.4] — 2026-08-05
 
 ### Corrigido

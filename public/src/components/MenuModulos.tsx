@@ -41,8 +41,12 @@ export default function MenuModulos({
           const itensGrupo = itens.filter((item) => item.grupo === grupo.id);
           if (itensGrupo.length === 0) return null;
           const aberto = gruposAbertos.has(grupo.id);
+          const atual = grupoAtivo === grupo.id;
           return (
-            <div className={`ml-module-group${aberto ? ' is-open' : ''}`} key={grupo.id}>
+            <div
+              className={`ml-module-group${aberto ? ' is-open' : ''}${atual ? ' is-current' : ''}`}
+              key={grupo.id}
+            >
               <button
                 className="ml-module-group-trigger"
                 type="button"

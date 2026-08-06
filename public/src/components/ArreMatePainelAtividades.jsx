@@ -8,8 +8,8 @@ import ReactDOM from 'react-dom';
 import ArremateStatusCard from './ArremateStatusCard.jsx';
 import ArremateAtribuicaoModal from './ArremateAtribuicaoModal.jsx';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import { mostrarMensagem, mostrarConfirmacao, mostrarPromptNumerico, mostrarPromptFinalizarLote, mostrarPromptTexto, mostrarPromptHorario } from '/js/utils/popups.js';
-import { obterEmpresaAtivaLocal } from '/js/utils/auth.js';
 
 export default function ArreMatePainelAtividades({ permissoes = [] }) {
     const [tiktiks, setTiktiks] = useState([]);
@@ -37,12 +37,6 @@ export default function ArreMatePainelAtividades({ permissoes = [] }) {
 
     // --- 1. BUSCA DE DADOS ---
     const buscarDadosPainel = useCallback(async () => {
-        if (obterEmpresaAtivaLocal()?.eh_legada === false) {
-            setCadeiaBloqueada(true);
-            setTiktiks([]);
-            setCarregando(false);
-            return;
-        }
         setCadeiaBloqueada(false);
         try {
             const token = localStorage.getItem('token');
@@ -90,7 +84,7 @@ export default function ArreMatePainelAtividades({ permissoes = [] }) {
     // --- 2. POLLING (20s) + VISIBILITYCHANGE ---
     const agendarProximoPoll = useCallback(() => {
         clearTimeout(pollingTimeoutRef.current);
-        if (obterEmpresaAtivaLocal()?.eh_legada === false) return;
+        if (cadeiaBloqueada) return;
         pollingTimeoutRef.current = setTimeout(() => {
             if (!document.hidden) {
                 buscarDadosPainel().then(agendarProximoPoll);
@@ -98,7 +92,7 @@ export default function ArreMatePainelAtividades({ permissoes = [] }) {
                 agendarProximoPoll();
             }
         }, 20000);
-    }, [buscarDadosPainel]);
+    }, [buscarDadosPainel, cadeiaBloqueada]);
 
     useEffect(() => {
         buscarDadosPainel().then(agendarProximoPoll);
@@ -656,11 +650,12 @@ export default function ArreMatePainelAtividades({ permissoes = [] }) {
                     )}
 
                     {tiktiksAtivos.length === 0 ? (
-                        <div className="oa-empty-state">
-                            <i className="fas fa-cut oa-empty-state-icon"></i>
-                            <p className="oa-empty-state-titulo">Nenhuma tiktik em atividade</p>
-                            <p className="oa-empty-state-subtitulo">Aguardando início das atividades</p>
-                        </div>
+                        <UIFeedbackNotFound
+                            variante="compacto"
+                            icon="fa-cut"
+                            titulo="Nenhuma tiktik em atividade"
+                            mensagem="Aguardando o início das atividades."
+                        />
                     ) : (
                         <div className="oa-painel-status-grid">
                             {tiktiksAtivos.map(t => (

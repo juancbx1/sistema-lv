@@ -59,14 +59,6 @@ router.use(async (req, res, next) => {
     }
 });
 
-router.use((req, res, next) => {
-    if (req.empresaAtiva?.eh_legada === true) return next();
-    return res.status(403).json({
-        error: 'A cadeia produtiva ainda não está disponível para a empresa ativa.',
-        codigo: 'CADEIA_PRODUTIVA_NAO_MIGRADA',
-    });
-});
-
 // GET /api/ordens-de-producao/ (Listar OPs com filtros e paginação)
 router.get('/', async (req, res) => {
     const { usuarioLogado } = req;

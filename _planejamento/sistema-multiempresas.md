@@ -1425,16 +1425,16 @@ com evidências e próximos ensaios, fica em
 | G5 | Fluxo ponta a ponta de tarefa e quantidade aprovado pelos supervisores | Blocos principais aprovados; fechamento ponta a ponta ainda precisa ser registrado |
 | G6 | Integridade de produção, perdas, arremates e comissões validada | Aprovado localmente na bateria v5 em 12/12; G6.7 mantém a exceção documentada dos eventos append-only no clone candidato |
 | G7 | Escritores e consumidores da cadeia auditados | Concluído como auditoria; matriz por rota, proprietários, chaves e backlog de correções fechados em `_planejamento/auditoria-cadeia-produtiva-fase8.md` |
-| G8 | Restauração local fresca e migration aditiva da cadeia ensaiada | Produtos/Demandas, OPs/Cortes, Produção, Arremates, Embalagem, Estoque/Inventário e consumidores transversais aprovados em clones locais, com aplicação idempotente e rollback; nenhuma migration produtiva executada |
-| G9 | Isolamento empresarial validado com duas empresas | Todos os blocos da Fase 8 foram aprovados localmente com contexto legado funcionando, empresa secundária bloqueada quando o domínio ainda não está liberado, body spoof rejeitado e acesso cruzado isolado; liberação produtiva permanece pendente |
-| G10 | Backfill, rollback e ativação gradual revisados | Backfills, constraints, hashes, rollback e marcadores dos blocos da cadeia foram aprovados nos clones preservados; falta somente a revisão da bateria integrada e da estratégia de ativação produtiva |
-| G11 | Worktree separado em diff reproduzível e correções publicadas | Preparado para aceite manual, com pendência estrutural registrada; a matriz de 28 arquivos puros e 6 arquivos mistos e os checks estáticos estão aprovados, mas constraints globais legadas precisam de decisão antes da liberação secundária |
-| G12 | Autorização explícita para execução em produção | Pendente |
+| G8 | Restauração local fresca e migration aditiva da cadeia ensaiada | Aprovado nos clones locais, com aplicação idempotente e rollback |
+| G9 | Isolamento empresarial validado com duas empresas | Aprovado na bateria integrada local e habilitado na Neon para todas as empresas ativas |
+| G10 | Backfill, rollback e ativação gradual revisados | Aprovado nos clones preservados e protegido pela migration transacional de liberação |
+| G11 | Worktree separado em diff reproduzível e correções publicadas | Aceito localmente; pacote seletivo revisado com diffs paralelos e hunk equivalente fora |
+| G12 | Autorização explícita para execução em produção | Concluído em 2026-08-06; migration `multiempresas-fase8-liberacao-v1` validada com 11 módulos e todas as empresas ativas |
 
 Os gates G1–G10 são técnicos e funcionais. O G11 é o gate de reprodutibilidade
-da entrega e o G12 é a autorização operacional. Nenhuma migration da cadeia,
-liberação de módulo ou abertura de empresa secundária pode ocorrer antes do
-fechamento dos doze gates.
+da entrega e o G12 registra a autorização operacional já executada. A
+liberação produtiva fica limitada aos módulos aprovados na migration; módulos
+fora do escopo continuam bloqueados.
 
 ## Fase 8 — OPs e cadeia produtiva
 
@@ -1580,23 +1580,23 @@ Revisar índices compostos, conforme cada consulta:
 
 ## Estado atual
 
-**Fase em andamento:** preparação da Fase 8 — OPs e cadeia produtiva. A Fase 8
-multiempresa ainda não foi iniciada; seus gates estão sendo fechados antes da
-primeira migration da cadeia.
+**Fase em andamento:** operação da Fase 8 — OPs e cadeia produtiva. A Fase 8
+multiempresa foi liberada no escopo dos 11 módulos aprovados após o fechamento
+dos gates G1–G12.
 
 **Checkpoint atual:** Fases 0–7 concluídas e aprovadas dentro do escopo atual.
 A dashboard da Fase 7 foi publicada e aprovada em smoke autenticado; a
 preparação estrutural foi executada e validada na Neon.
 
-**Próxima frente funcional:** fechar os gates G1–G12 e, somente depois, iniciar
-a migração da cadeia produtiva para permitir a futura liberação da dashboard
-completa em empresas secundárias.
+**Próxima frente funcional:** acompanhar a operação multiempresa liberada,
+validar o deploy do pacote e planejar os módulos restantes da Fase 9.
 
-**Situação operacional:** o sistema publicado possui infraestrutura
-multiempresa e o Financeiro foi liberado para Lojas Variara e Neila Confecções;
-os demais módulos de negócio continuam bloqueados na empresa secundária.
+**Situação operacional:** o sistema possui infraestrutura multiempresa e a
+cadeia produtiva aprovada foi habilitada para `Lojas Variara`, `Neila
+Confecções` e futuras empresas ativas; módulos fora da Fase 8 continuam
+bloqueados conforme seus próprios flags.
 
-**Última atualização:** 2026-08-03.
+**Última atualização:** 2026-08-06.
 
 **Handoff da retomada:** o próximo Codex deve ler
 `_planejamento/RETOMADA-FASE8-MULTIEMPRESAS-2026-08-03.md`. Produtos/Demandas,
@@ -1610,7 +1610,8 @@ e todas as bases locais existentes.
 **Banco alterado:** sim. Fundação multiempresa, schema financeiro final e
 preparação estrutural da Fase 7 executados e validados em produção.
 
-**Empresa secundária liberada:** sim, somente no Financeiro.
+**Empresa secundária liberada:** sim, no Financeiro e nos 11 módulos aprovados
+da Fase 8.
 
 **Empresa inicial confirmada:** `Lojas Variara` (`lojas-variara`).
 

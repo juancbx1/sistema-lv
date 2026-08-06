@@ -94,12 +94,6 @@ router.use(async (req, res, next) => {
     try {
         req.usuarioLogado = verificarTokenInterna(req); 
         req.empresaId = obterEmpresaIdDoContexto(req);
-        if (req.empresaAtiva?.eh_legada !== true) {
-            return res.status(403).json({
-                error: 'A cadeia de arremates ainda nao esta disponivel para a empresa ativa.',
-                codigo: 'CADEIA_PRODUTIVA_NAO_MIGRADA',
-            });
-        }
         next(); 
     } catch (error) {
         console.error('[router/arremates MID] Erro no middleware:', error.message, error.stack ? error.stack.substring(0,500) : '');

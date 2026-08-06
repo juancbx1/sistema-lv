@@ -51,16 +51,9 @@ function AgentesGlobais() {
             // O menu ainda pode estar carregando o contexto na primeira pintura.
             // Falhar fechado evita que o agente consulte a cadeia com um contexto
             // indefinido e transforme uma transição normal em erro de API visível.
-            if (!empresaAtiva?.id || typeof empresaAtiva.eh_legada !== 'boolean') {
+            if (!empresaAtiva?.id) {
                 setOpsProntas([]);
                 setTemPermissao(false);
-                return;
-            }
-
-            if (empresaAtiva?.eh_legada === false) {
-                setOpsProntas([]);
-                setTemPermissao(false);
-                localStorage.removeItem(PENDENTE_KEY);
                 return;
             }
 

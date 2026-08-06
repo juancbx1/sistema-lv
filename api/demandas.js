@@ -233,7 +233,6 @@ router.get('/', async (req, res) => {
 
 // GET /api/demandas/diagnostico-completo
 router.get('/diagnostico-completo', async (req, res) => {
-    if (!exigirCadeiaLegada(req, res)) return;
     const empresaId = obterEmpresaIdDoContexto(req);
     let dbClient;
     try {
@@ -559,7 +558,6 @@ router.get('/historico-arquivado', async (req, res) => {
 // Migrado de api/radar-producao.js (GET /buscar) — usado no modal de criação de demandas
 router.get('/buscar-produto', async (req, res) => {
     const { termo, page = 1, limit = 5 } = req.query;
-    if (!exigirCadeiaLegada(req, res)) return;
     const empresaId = obterEmpresaIdDoContexto(req);
     if (!termo) {
         return res.status(400).json({
@@ -672,7 +670,6 @@ router.get('/buscar-produto', async (req, res) => {
 // - Retorna nome do produto e nome da variação para display legível no dropdown
 router.get('/pendentes-por-produto', async (req, res) => {
     const { produto_id, variante } = req.query;
-    if (!exigirCadeiaLegada(req, res)) return;
     const empresaId = obterEmpresaIdDoContexto(req);
     if (!produto_id) return res.status(400).json({ error: 'produto_id obrigatório.' });
 
@@ -825,7 +822,6 @@ router.patch('/:id/concluir', async (req, res) => {
 // Inclui estagio_atual: AGUARDANDO | COSTURA | ARREMATE
 router.get('/verificar-duplicata', async (req, res) => {
     const { sku } = req.query;
-    if (!exigirCadeiaLegada(req, res)) return;
     const empresaId = obterEmpresaIdDoContexto(req);
     if (!sku) return res.status(400).json({ error: 'SKU obrigatório.' });
     let dbClient;

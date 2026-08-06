@@ -25,6 +25,16 @@ async function obterEmpresaLegadaId(dbClient) {
     return result.rows[0].id;
 }
 
+async function obterEmpresasAtivas(dbClient) {
+    const result = await dbClient.query(
+        `SELECT id
+           FROM empresas
+          WHERE ativa
+          ORDER BY id`
+    );
+    return result.rows.map((row) => row.id);
+}
+
 // Endpoint que a Vercel vai chamar
 router.get('/arquivar-concluidas', async (req, res) => {
     // SEGURANÇA: Verifica se quem chamou foi o Cron da Vercel
@@ -92,7 +102,7 @@ router.get('/registrar-intervalos', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const empresaId = await obterEmpresaLegadaId(dbClient);
+        const empresaIds = await obterEmpresasAtivas(dbClient);
 
         // Ativa o motor somente quando a fundação empresarial e o livro de
         // eventos estiverem presentes. Antes da migration, o caminho legado
@@ -119,7 +129,9 @@ router.get('/registrar-intervalos', async (req, res) => {
         if (motorAtivo) {
             const agora = new Date();
             const dataHojeSP = dataLocalSaoPaulo(agora);
-            const funcionariosResult = await dbClient.query(`
+            const resultados = [];
+            for (const empresaId of empresaIds) {
+                const funcionariosResult = await dbClient.query(`
                 SELECT u.id, u.nome
                 FROM usuarios u
                 JOIN usuarios_empresas ue
@@ -128,10 +140,9 @@ router.get('/registrar-intervalos', async (req, res) => {
                  AND ue.ativo
                 WHERE ue.tipos && ARRAY['costureira','tiktik']::text[]
                 ORDER BY u.id
-            `, [empresaId]);
+                `, [empresaId]);
 
-            const resultados = [];
-            for (const funcionario of funcionariosResult.rows) {
+                for (const funcionario of funcionariosResult.rows) {
                 try {
                     await dbClient.query('BEGIN');
                     const resultado = await reconciliarJornadaFuncionario(dbClient, {
@@ -142,6 +153,7 @@ router.get('/registrar-intervalos', async (req, res) => {
                     });
                     await dbClient.query('COMMIT');
                     resultados.push({
+                        empresa_id: empresaId,
                         funcionario_id: funcionario.id,
                         nome: funcionario.nome,
                         ...resultado,
@@ -149,12 +161,14 @@ router.get('/registrar-intervalos', async (req, res) => {
                 } catch (error) {
                     await dbClient.query('ROLLBACK').catch(() => undefined);
                     resultados.push({
+                        empresa_id: empresaId,
                         funcionario_id: funcionario.id,
                         nome: funcionario.nome,
                         aplicado: false,
                         erro: error.message,
                     });
                 }
+            }
             }
 
             const eventos = resultados.flatMap((resultado) => resultado.eventos || []);
@@ -166,6 +180,7 @@ router.get('/registrar-intervalos', async (req, res) => {
                 data_jornada: dataHojeSP,
                 total_eventos: eventos.length,
                 erros: erros.length,
+                empresas_processadas: empresaIds.length,
                 resultados,
             });
         }
@@ -201,6 +216,12 @@ router.get('/registrar-intervalos', async (req, res) => {
             return res.status(200).json({ success: true, ignorado: true, hora_sp: agoraSP, motivo: 'fora_do_horario' });
         }
 
+        const inserts = [];
+        const logAlmoco = [];
+        const logPausa = [];
+        const empresasIgnoradas = [];
+
+        for (const empresaId of empresaIds) {
         // Guarda de calendário: nenhum DSR, feriado, folga ou trabalho extra
         // recebe intervalo ordinário. O fluxo especial de trabalho nesses dias
         // é conduzido por blocos manuais de tarefas.
@@ -214,7 +235,8 @@ router.get('/registrar-intervalos', async (req, res) => {
 
         if (feriadoRows.length > 0) {
             console.log(`[CRON] registrar-intervalos ignorado — feriado/folga em ${dataHojeSP}`);
-            return res.status(200).json({ success: true, ignorado: true, hora_sp: agoraSP, motivo: 'feriado' });
+            empresasIgnoradas.push({ empresa_id: empresaId, motivo: 'feriado' });
+            continue;
         }
 
         // Busca todos os funcionários ativos com horários, ponto de hoje e sessões de hoje.
@@ -250,10 +272,6 @@ router.get('/registrar-intervalos', async (req, res) => {
             WHERE ue.tipos && ARRAY['costureira','tiktik']::text[]
               AND ue.status_atual NOT IN ('FALTOU','ALOCADO_EXTERNO')
         `, [dataHojeSP, empresaId]);
-
-        const inserts = [];
-        const logAlmoco = [];
-        const logPausa  = [];
 
         for (const f of funcionarios) {
             // 1. Só processa se é dia de trabalho hoje
@@ -308,6 +326,7 @@ router.get('/registrar-intervalos', async (req, res) => {
                 }
             }
         }
+        }
 
         if (inserts.length > 0) {
             // Promise.allSettled: uma falha não cancela os outros registros
@@ -321,6 +340,8 @@ router.get('/registrar-intervalos', async (req, res) => {
             success: true,
             hora_sp: agoraSP,
             total_registros: total,
+            empresas_processadas: empresaIds.length,
+            empresas_ignoradas: empresasIgnoradas,
             almoco: logAlmoco,
             pausa: logPausa,
         });

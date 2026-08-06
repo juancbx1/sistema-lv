@@ -51,14 +51,6 @@ router.use(async (req, res, next) => {
     }
 });
 
-router.use((req, res, next) => {
-    if (req.empresaAtiva?.eh_legada === true) return next();
-    return res.status(403).json({
-        error: 'A cadeia produtiva ainda não está disponível para a empresa ativa.',
-        codigo: 'CADEIA_PRODUTIVA_NAO_MIGRADA',
-    });
-});
-
 // GET /api/cortes/radar — Pulso do setor + déficit de estoque
 router.get('/radar', async (req, res) => {
     const empresaId = obterEmpresaIdDoContexto(req);

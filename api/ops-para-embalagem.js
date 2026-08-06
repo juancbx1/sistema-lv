@@ -50,12 +50,6 @@ router.use(async (req, res, next) => {
     let clienteConectado; // Cliente para o middleware
     try {
         req.empresaId = obterEmpresaIdDoContexto(req);
-        if (req.empresaAtiva?.eh_legada !== true) {
-            return res.status(403).json({
-                error: 'A fila de embalagem ainda nao esta disponivel para a empresa ativa.',
-                codigo: 'CADEIA_PRODUTIVA_NAO_MIGRADA',
-            });
-        }
         req.usuarioLogado = verificarTokenInterna(req); // req.usuarioLogado é o payload do token
 
         clienteConectado = await pool.connect(); // Conecta para buscar permissões

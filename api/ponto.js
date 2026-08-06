@@ -102,12 +102,9 @@ router.post('/falta', async (req, res) => {
             [funcionario_id, req.empresaId]
         );
 
-        // A tabela legada de arremates ainda não possui empresa_id. Só a
-        // tocamos no contexto da empresa legada, que é o único contexto em que
-        // a cadeia de arremates está habilitada.
+        // O cancelamento acompanha o contexto empresarial da jornada.
         let sessoesArremateCanceladas = { rows: [] };
-        if (req.empresaAtiva?.eh_legada === true) {
-            sessoesArremateCanceladas = await dbClient.query(
+        sessoesArremateCanceladas = await dbClient.query(
                 `UPDATE sessoes_trabalho_arremate
                  SET status = 'CANCELADA', data_fim = COALESCE(data_fim, NOW())
                  WHERE usuario_tiktik_id = $1
@@ -115,8 +112,7 @@ router.post('/falta', async (req, res) => {
                    AND status = 'EM_ANDAMENTO'
                  RETURNING id`,
                 [funcionario_id, req.empresaId]
-            );
-        }
+        );
 
         await dbClient.query(
             `INSERT INTO ponto_diario

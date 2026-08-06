@@ -215,12 +215,6 @@ router.post('/arquivar-item', async (req, res) => {
 // POST /api/estoque/entrada-producao
 // POST /api/estoque/entrada-producao - VERSÃO CORRIGIDA
 router.post('/entrada-producao', async (req, res) => {
-    if (req.empresaAtiva?.eh_legada !== true) {
-        return res.status(403).json({
-            error: 'A entrada de producao ainda nao esta disponivel para a empresa ativa.',
-            codigo: 'CADEIA_PRODUTIVA_NAO_MIGRADA',
-        });
-    }
     const { usuarioLogado } = req;
     const empresaId = obterEmpresaIdDoContexto(req);
     const idempotencyKey = String(req.get('Idempotency-Key') || req.body?.idempotency_key || '').trim() || null;

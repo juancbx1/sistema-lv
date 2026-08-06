@@ -11,12 +11,12 @@ import OPPaginacaoWrapper from './OPPaginacaoWrapper.tsx';
 import OPCortesRadar from './OPCortesRadar.tsx';
 import OPCortesAgente from './OPCortesAgente.tsx';
 import OPQuickLogModal from './OPQuickLogModal.tsx';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 // @ts-expect-error utilitÃ¡rio JS legado sem declaraÃ§Ã£o TypeScript
 import { obterProdutos as obterProdutosDoStorage } from '/js/utils/storage.js';
 // @ts-expect-error popups JS legados sem declaraÃ§Ã£o TypeScript
 import { mostrarMensagem, mostrarConfirmacao } from '/js/utils/popups.js';
-// @ts-expect-error utilitário JS legado sem declaração TypeScript
-import { obterEmpresaAtivaLocal } from '/js/utils/auth.js';
+// Componente local sem dependência de declaração externa
 import UICarregando from './UICarregando';
 
 interface OpProdutoGradeCorte {
@@ -150,7 +150,12 @@ async function fetchCortesEmEstoque(): Promise<OpCorte[]> {
   const response = await fetch('/api/cortes?status=cortados', {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!response.ok) throw new Error('Falha ao buscar cortes em estoque.');
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    const error = new Error(body.error || 'Falha ao buscar cortes em estoque.');
+    (error as Error & { codigo?: string }).codigo = body.codigo;
+    throw error;
+  }
   const cortes = (await response.json()) as unknown;
   return Array.isArray(cortes)
     ? (cortes as OpCorte[]).filter((corte) => corte.op === null)
@@ -238,11 +243,6 @@ export default function OPCortesTela() {
   const carregarDados = useCallback(async () => {
     setCarregando(true);
     setErro(null);
-    if (obterEmpresaAtivaLocal()?.eh_legada === false) {
-      setCadeiaBloqueada(true);
-      setCarregando(false);
-      return;
-    }
     setCadeiaBloqueada(false);
     try {
       const token = localStorage.getItem('token');
@@ -267,6 +267,10 @@ export default function OPCortesTela() {
       setPaginaCortes(1);
       setDemandasMap(criarDemandasMap(demandasData, produtosSimples));
     } catch (error) {
+      if ((error as { codigo?: string })?.codigo === 'MODULO_NAO_DISPONIVEL_EMPRESA'
+        || (error as { codigo?: string })?.codigo === 'CADEIA_PRODUTIVA_NAO_MIGRADA') {
+        setCadeiaBloqueada(true);
+      }
       setErro(`Falha ao carregar dados: ${mensagemDoErro(error, 'erro desconhecido')}`);
     } finally {
       setCarregando(false);
@@ -278,7 +282,6 @@ export default function OPCortesTela() {
   }, [carregarDados]);
 
   const refreshSilencioso = useCallback(async () => {
-    if (obterEmpresaAtivaLocal()?.eh_legada === false) return;
     try {
       const token = localStorage.getItem('token');
       if (!token) return;
@@ -524,11 +527,11 @@ export default function OPCortesTela() {
                   );
                 })
               ) : (
-                <div className="op-cortes-estoque-vazio">
-                  <i className="fas fa-cut"></i>
-                  <p>Nenhum corte em estoque no momento.</p>
-                  <span>Use "Registrar Corte" acima para adicionar peças ao estoque.</span>
-                </div>
+                <UIFeedbackNotFound
+                  icon="fa-cut"
+                  titulo="Nenhum corte em estoque"
+                  mensagem="Use “Registrar Corte” acima para adicionar peças ao estoque."
+                />
               )}
             </div>
 

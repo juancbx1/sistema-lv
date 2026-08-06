@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import UIHeaderPagina from './UIHeaderPagina';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import PGFiltrosPeriodo from './PGFiltrosPeriodo.jsx';
 import PGKpiBar from './PGKpiBar.jsx';
 import PGEquipeCard from './PGEquipeCard.jsx';
@@ -9,7 +10,6 @@ import PGFuncionarioModal from './PGFuncionarioModal.jsx';
 import PGTimeline from './PGTimeline.jsx';
 import PGPontosExtrasModal from './PGPontosExtrasModal.jsx';
 import PGHistoricoPontosExtras from './PGHistoricoPontosExtras.jsx';
-import { obterEmpresaAtivaLocal } from '/js/utils/auth.js';
 
 function hojeEmSP() {
     return new Date().toLocaleDateString('sv', { timeZone: 'America/Sao_Paulo' });
@@ -34,13 +34,6 @@ function PGPainelPage() {
     const [cadeiaBloqueada, setCadeiaBloqueada]     = useState(false);
 
     const buscarDados = useCallback(async () => {
-        if (obterEmpresaAtivaLocal()?.eh_legada === false) {
-            setCadeiaBloqueada(true);
-            setDados(null);
-            setErro(null);
-            setLoading(false);
-            return;
-        }
         setCadeiaBloqueada(false);
         try {
             const token = localStorage.getItem('token');
@@ -57,6 +50,10 @@ function PGPainelPage() {
             setErro(null);
             setUltimaAtt(new Date());
         } catch (e) {
+            if (e?.codigo === 'MODULO_NAO_DISPONIVEL_EMPRESA' || e?.codigo === 'CADEIA_PRODUTIVA_NAO_MIGRADA') {
+                setCadeiaBloqueada(true);
+                setDados(null);
+            }
             setErro(e.message);
         } finally {
             setLoading(false);
@@ -67,10 +64,6 @@ function PGPainelPage() {
         setLoading(true);
         buscarDados();
         const id = setInterval(() => {
-            if (obterEmpresaAtivaLocal()?.eh_legada === false) {
-                clearInterval(id);
-                return;
-            }
             buscarDados();
         }, 3 * 60 * 1000);
         const onFocus = () => buscarDados();
@@ -295,10 +288,12 @@ function PGPainelPage() {
                 />
 
                 {funcionariosFiltrados.length === 0 ? (
-                    <div className="pg-vazio">
-                        <i className="fas fa-inbox"></i>
-                        <span>Nenhuma produção registrada {filtroDia ? 'hoje' : 'neste período'}.</span>
-                    </div>
+                    <UIFeedbackNotFound
+                        variante="compacto"
+                        icon="fa-inbox"
+                        titulo="Nenhuma produção registrada"
+                        mensagem={`Não há produção registrada ${filtroDia ? 'hoje' : 'neste período'}.`}
+                    />
                 ) : (
                     <div className="pg-grid-cards">
                         {funcionariosFiltrados.map((f, i) => (

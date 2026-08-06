@@ -15,7 +15,7 @@ const pool = new Pool({
 const SECRET_KEY = process.env.JWT_SECRET;
 
 function exigirCadeiaProdutivaLegada(req, res) {
-    if (req.empresaAtiva?.eh_legada === true) return true;
+    if (req.moduloEmpresa?.multiempresa_pronto && req.moduloEmpresa?.habilitado) return true;
     res.status(403).json({
         error: 'A cadeia de produÃ§Ã£o ainda nÃ£o estÃ¡ disponÃ­vel para a empresa ativa.',
         codigo: 'CADEIA_PRODUTIVA_NAO_MIGRADA',
@@ -31,7 +31,6 @@ router.use(async (req, res, next) => {
         const token = authHeader.split(' ')[1];
         req.usuarioLogado = jwt.verify(token, SECRET_KEY);
         req.empresaId = obterEmpresaIdDoContexto(req);
-        if (!exigirCadeiaProdutivaLegada(req, res)) return;
         next();
     } catch (error) {
         res.status(401).json({ error: 'Token inválido ou expirado.' });

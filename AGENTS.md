@@ -16,11 +16,13 @@ O sistema está em transição planejada de empresa única para **multiempresas*
 
 `_planejamento/sistema-multiempresas.md`
 
-**Estado atual:** Fases 6, 6.1 e 7 concluídas no escopo aprovado; os ensaios
-locais da Fase 8 multiempresas, de Produtos/Demandas até consumidores
-transversais, também foram concluídos nos clones preservados. A migration da
-cadeia ainda não foi executada na produção. O projeto está fechando os gates
-G1–G12 definidos em `_planejamento/sistema-multiempresas.md` e detalhados em
+**Estado atual:** Fases 6, 6.1 e 7 concluídas no escopo aprovado; a Fase 8 da
+cadeia produtiva foi liberada para todas as empresas ativas no escopo dos 11
+módulos aprovados. A migration `multiempresas-fase8-liberacao-v1` foi
+executada e validada na Neon em 2026-08-06, habilitando os módulos aprovados
+para as empresas existentes e deixando o provisionamento de novas empresas
+automático para módulos já marcados como prontos. O fechamento dos gates
+G1–G12 fica registrado em `_planejamento/sistema-multiempresas.md` e
 `_planejamento/plano-op-reorganizacao-ponto-jornada-e-redesign.md`.
 A fundação multiempresa e a Gestão Organizacional já estão em produção. A
 migration de preparação do Financeiro foi executada e validada na Neon em
@@ -43,8 +45,9 @@ calendário foi implementado e aprovado em HTTP na restauração local em
 01/08/2026. O limite transitório da dashboard foi aprovado por 6 cenários HTTP,
 mantendo a dashboard legada disponível e a cadeia fechada na secundária. O
 redesign completo da dashboard foi publicado e aprovado pelo usuário em smoke
-autenticado de produção. A cadeia produtiva permanece bloqueada para empresas
-secundárias porque sua migração pertence à Fase 8.
+autenticado de produção. A cadeia produtiva está liberada para empresas ativas
+no escopo aprovado da Fase 8; módulos fora desse escopo continuam sujeitos aos
+próprios gates.
 
 O primeiro ensaio aditivo da cadeia foi aprovado apenas localmente em
 03/08/2026: Produtos e Demandas receberam `empresa_id`, as demandas receberam
@@ -281,7 +284,8 @@ Neon, commit ou deploy.
 | Fase 6 — Financeiro como piloto | Concluída, publicada e aprovada nas duas empresas |
 | Fase 6.1 — Redesign dos modais do Financeiro | Concluída, publicada e aprovada em produção na release 1.39.0 |
 | Fase 7 — Empregados, dashboard e pagamentos | Concluída, publicada e aprovada em produção no escopo atual; produção e arremates permanecem na Fase 8 |
-| Fase 8 em diante | Não iniciada |
+| Fase 8 — cadeia produtiva multiempresa | Concluída no escopo dos 11 módulos aprovados; liberação validada na Neon |
+| Fase 9 em diante | Não iniciada |
 
 Situação operacional:
 
@@ -404,6 +408,12 @@ O prefixo do nome do componente é sempre a **abreviação da página/área** à
 | `Permissoes*` | Tela de Gerenciar Permissões |
 
 **Componentes reutilizados entre páginas:** quando um componente precisar ser usado em mais de uma área, o prefixo deve deixar claro que é compartilhado — a forma exata será definida caso a caso conforme o projeto avança, evoluindo o prefixo `UI*` para algo mais semântico.
+
+### Estados vazios padronizados
+
+`UIFeedbackNotFound` é o componente oficial para estados de listas, tabelas, buscas e resultados sem dados em toda a aplicação. Usar `variante="compacto"` em modais, tabelas, dropdowns e regiões internas. Não usar para carregamento, erros, bloqueios de módulo, placeholders de avatar/imagem ou mensagens de status operacional; esses estados mantêm seus componentes e tratamentos próprios.
+
+As páginas legadas que ainda montam HTML diretamente usam `htmlUIFeedbackNotFound` em `public/js/utils/ui-feedback.js`, que reproduz a mesma marcação e as mesmas classes visuais até a migração definitiva para React.
 
 ### APIs
 
@@ -2365,3 +2375,13 @@ O proximo trabalho e preparar, sem staging, a composicao seletiva do pacote e
 aguardar autorizacao do usuario. G12 permanece pendente: commit, push, deploy,
 migration na Neon, smoke produtivo e liberacao de empresa secundaria sao
 decisoes separadas e nao recebem autorizacao implicita do fechamento local.
+
+Fechamento do G12 em 2026-08-06: após autorização explícita, a migration
+`multiempresas-fase8-liberacao-v1` foi ensaiada duas vezes no clone descartável
+`sistema_lv_g12_liberacao_test` e validada localmente com `aprovado: true`. O
+preflight da Neon confirmou os dez marcadores estruturais e os onze módulos do
+escopo. A migration foi executada e validada na Neon com `aprovado: true`,
+deixando 11 módulos habilitados em cada empresa ativa. O cadastro de novas
+empresas agora habilita automaticamente os módulos cujo catálogo esteja
+marcado como `multiempresa_pronto`; módulos fora do escopo da Fase 8 continuam
+bloqueados.

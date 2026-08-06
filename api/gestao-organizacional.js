@@ -514,9 +514,9 @@ router.post('/empresas', async (req, res) => {
              SELECT
                 $1,
                 codigo,
-                codigo = 'gestao-organizacional' AND multiempresa_pronto,
+                COALESCE(multiempresa_pronto, FALSE),
                 CASE
-                    WHEN codigo = 'gestao-organizacional' AND multiempresa_pronto THEN NOW()
+                    WHEN COALESCE(multiempresa_pronto, FALSE) THEN NOW()
                     ELSE NULL
                 END
              FROM modulos_sistema

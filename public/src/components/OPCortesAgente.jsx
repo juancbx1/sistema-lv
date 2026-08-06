@@ -7,7 +7,7 @@ import useTypewriter from '../hooks/useTypewriter';
 import useContador from '../hooks/useContador.js';
 import OPAgenteFaseScan from './OPAgenteFaseScan.jsx';
 import UIBloqueio from './UIBloqueio';
-import { obterEmpresaAtivaLocal } from '/js/utils/auth.js';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 
 // ── Frases de repouso ─────────────────────────────────────────────────────────
 
@@ -125,16 +125,12 @@ export default function OPCortesAgente({ produtos, onCortarAgora, rescanKey, cor
     const [voltouParcial, setVoltouParcial] = useState(false);
     const [sondagemSilenciosa, setSondagemSilenciosa] = useState(null);
     const [memoriaCortes, setMemoriaCortes] = useState(() => lerMemoria('agente_cortes_memoria'));
-    const [cadeiaBloqueada, setCadeiaBloqueada] = useState(() => obterEmpresaAtivaLocal()?.eh_legada === false);
+    const [cadeiaBloqueada, setCadeiaBloqueada] = useState(false);
 
     const ultimaSondagemRef  = useRef(null);
     const avaliandoTimerRef  = useRef(null);
 
     const iniciarScan = useCallback(async () => {
-        if (obterEmpresaAtivaLocal()?.eh_legada === false) {
-            setCadeiaBloqueada(true);
-            return;
-        }
         setSondagemSilenciosa(null);
         setAgentState('scanning');
         setMensagensVisiveis([]);
@@ -145,7 +141,15 @@ export default function OPCortesAgente({ produtos, onCortarAgora, rescanKey, cor
 
             const fetchPromise = fetch('/api/cortes/radar', {
                 headers: { 'Authorization': `Bearer ${token}` }
-            }).then(r => r.json());
+            }).then(async (r) => {
+                const body = await r.json();
+                if (!r.ok) {
+                    const error = new Error(body.error || 'Falha ao consultar o radar de cortes.');
+                    error.codigo = body.codigo;
+                    throw error;
+                }
+                return body;
+            });
 
             for (let i = 0; i < MENSAGENS_SCAN.length; i++) {
                 if (i > 0) await new Promise(r => setTimeout(r, 580));
@@ -193,6 +197,9 @@ export default function OPCortesAgente({ produtos, onCortarAgora, rescanKey, cor
             avaliandoTimerRef.current = setTimeout(() => setAgentState('done'), 1800);
 
         } catch (err) {
+            if (err?.codigo === 'MODULO_NAO_DISPONIVEL_EMPRESA' || err?.codigo === 'CADEIA_PRODUTIVA_NAO_MIGRADA') {
+                setCadeiaBloqueada(true);
+            }
             setMensagensVisiveis(prev => [...prev, `Erro: ${err.message}`]);
             setTimeout(() => setAgentState('idle'), 2500);
         }
@@ -253,12 +260,9 @@ export default function OPCortesAgente({ produtos, onCortarAgora, rescanKey, cor
 
     useEffect(() => {
         const handleEmpresaAlterada = () => {
-            const bloqueada = obterEmpresaAtivaLocal()?.eh_legada === false;
-            setCadeiaBloqueada(bloqueada);
-            if (bloqueada) {
-                clearTimeout(avaliandoTimerRef.current);
-                setAgentState('idle');
-            }
+            setCadeiaBloqueada(false);
+            clearTimeout(avaliandoTimerRef.current);
+            setAgentState('idle');
         };
         window.addEventListener('lv:empresa-contexto-alterado', handleEmpresaAlterada);
         return () => window.removeEventListener('lv:empresa-contexto-alterado', handleEmpresaAlterada);
@@ -473,15 +477,12 @@ export default function OPCortesAgente({ produtos, onCortarAgora, rescanKey, cor
                     </div>
 
                     {plano.length === 0 && (
-                        <div className="op-agente-vazio">
-                            <div className="op-agente-vazio-icone">
-                                <i className="fas fa-check-circle"></i>
-                            </div>
-                            <div className="op-agente-vazio-texto">
-                                <strong>Estoque de cortes em dia!</strong>
-                                <span>Todas as demandas pendentes têm corte disponível.</span>
-                            </div>
-                        </div>
+                <UIFeedbackNotFound
+                    variante="compacto"
+                    icon="fa-check-circle"
+                    titulo="Estoque de cortes em dia"
+                    mensagem="Todas as demandas pendentes têm corte disponível."
+                />
                     )}
 
                     {plano.length > 0 && (

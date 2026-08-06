@@ -52,7 +52,7 @@ router.use(async (req, res, next) => {
 });
 
 router.use(async (req, res, next) => {
-    if (req.empresaAtiva?.eh_legada === true) return next();
+    if (req.moduloEmpresa?.multiempresa_pronto && req.moduloEmpresa?.habilitado) return next();
 
     let dbClient;
     try {
@@ -63,7 +63,7 @@ router.use(async (req, res, next) => {
               WHERE id = 'multiempresas-fase8-producao-ensaio-v1'
               LIMIT 1`
         );
-        if (migration.rowCount !== 1) {
+        if (!req.moduloEmpresa?.multiempresa_pronto || !req.moduloEmpresa?.habilitado) {
             return res.status(403).json({
                 error: 'A cadeia produtiva ainda não está disponível para a empresa ativa.',
                 codigo: 'CADEIA_PRODUTIVA_NAO_MIGRADA',

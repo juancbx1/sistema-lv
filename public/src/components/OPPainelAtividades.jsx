@@ -4,12 +4,12 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import OPStatusCard from './OPStatusCard.jsx';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import { mostrarMensagem, mostrarConfirmacao, mostrarPromptNumerico, mostrarPromptTexto, mostrarPromptHorario } from '/js/utils/popups.js';
 import OPAtribuicaoModal from './OPAtribuicaoModal.jsx';
 import UIBloqueio from './UIBloqueio';
 import OPPontoPopup from './OPPontoPopup.jsx';
 import OPPainelResumo from './OPPainelResumo.jsx';
-import { obterEmpresaAtivaLocal } from '/js/utils/auth.js';
 
 export default function OPPainelAtividades() {
     const [funcionarios, setFuncionarios] = useState([]);
@@ -48,19 +48,18 @@ export default function OPPainelAtividades() {
 
     // --- 1. BUSCA DE DADOS ---
     const buscarDadosPainel = useCallback(async () => {
-        if (obterEmpresaAtivaLocal()?.eh_legada === false) {
-            setCadeiaBloqueada(true);
-            setFuncionarios([]);
-            setCarregando(false);
-            return;
-        }
         setCadeiaBloqueada(false);
         try {
             const token = localStorage.getItem('token');
             const [dataFuncionarios, dataTempos] = await Promise.all([
-                fetch('/api/producao/status-funcionarios', { headers: { 'Authorization': `Bearer ${token}` } }).then(res => {
-                    if (!res.ok) throw new Error('Falha ao carregar status.');
-                    return res.json();
+                fetch('/api/producao/status-funcionarios', { headers: { 'Authorization': `Bearer ${token}` } }).then(async res => {
+                    const body = await res.json();
+                    if (!res.ok) {
+                        const error = new Error(body.error || 'Falha ao carregar status.');
+                        error.codigo = body.codigo;
+                        throw error;
+                    }
+                    return body;
                 }),
                 fetch('/api/producao/tempos-padrao', { headers: { 'Authorization': `Bearer ${token}` } }).then(res => {
                     if (!res.ok) return {};
@@ -79,6 +78,10 @@ export default function OPPainelAtividades() {
             setTemposPadraoProducao(dataTempos);
             setErro(null);
         } catch (err) {
+            if (err?.codigo === 'MODULO_NAO_DISPONIVEL_EMPRESA' || err?.codigo === 'CADEIA_PRODUTIVA_NAO_MIGRADA') {
+                setCadeiaBloqueada(true);
+                setFuncionarios([]);
+            }
             console.error("Erro no polling:", err);
         } finally {
             setCarregando(false);
@@ -715,15 +718,12 @@ export default function OPPainelAtividades() {
 
                     {funcionariosPrincipaisFiltrados.length === 0 ? (
                         funcionariosInativosFiltrados.length === 0 && (
-                            <div className="oa-empty-state">
-                                <i className="fas fa-tshirt oa-empty-state-icon"></i>
-                                <p className="oa-empty-state-titulo">
-                                    {funcionarios.length > 0 ? 'Nenhuma pessoa corresponde a este filtro' : 'Nenhum colaborador em atividade'}
-                                </p>
-                                <p className="oa-empty-state-subtitulo">
-                                    {funcionarios.length > 0 ? 'Selecione outra visão para continuar acompanhando a jornada.' : 'Aguardando início das atividades ou verifique as escalas'}
-                                </p>
-                            </div>
+                            <UIFeedbackNotFound
+                                variante="compacto"
+                                icon="fa-tshirt"
+                                titulo={funcionarios.length > 0 ? 'Nenhuma pessoa corresponde a este filtro' : 'Nenhum colaborador em atividade'}
+                                mensagem={funcionarios.length > 0 ? 'Selecione outra visão para continuar acompanhando a jornada.' : 'Aguardando o início das atividades ou verifique as escalas.'}
+                            />
                         )
                     ) : (
                         <>

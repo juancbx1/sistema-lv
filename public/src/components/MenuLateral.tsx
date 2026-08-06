@@ -119,16 +119,13 @@ export default function MenuLateral() {
     const modulos = new Set(contexto.modulosHabilitados || []);
     return MENU_ITENS.filter((item) => {
       const permitido = !item.permissao || permissoes.has(item.permissao);
-      const moduloDisponivel =
-        contexto.empresaAtiva.eh_legada ||
-        !item.modulo ||
-        modulos.has(item.modulo);
+      const moduloDisponivel = !item.modulo || modulos.has(item.modulo);
       return permitido && moduloDisponivel;
     });
   }, [contexto, usuario]);
 
   const moduloAtualIndisponivel = useMemo(() => {
-    if (!contexto || contexto.empresaAtiva.eh_legada) return false;
+    if (!contexto) return false;
     const itemAtual = MENU_ITENS.find((item) => itemMenuEstaAtivo(item));
     if (!itemAtual?.modulo) return false;
     return !new Set(contexto.modulosHabilitados || []).has(itemAtual.modulo);

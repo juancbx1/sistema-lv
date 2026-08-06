@@ -25,7 +25,7 @@ function formatarMinutos(totalMinutos) {
 }
 
 function exigirCadeiaProdutivaLegada(req, res) {
-    if (req.empresaAtiva?.eh_legada === true) return true;
+    if (req.moduloEmpresa?.multiempresa_pronto && req.moduloEmpresa?.habilitado) return true;
     res.status(403).json({
         error: 'Os alertas da cadeia produtiva ainda nao estao disponiveis para a empresa ativa.',
         codigo: 'CADEIA_PRODUTIVA_NAO_MIGRADA',
@@ -65,7 +65,6 @@ router.use(async (req, res, next) => {
         const token = authHeader.split(' ')[1];
         req.usuarioLogado = jwt.verify(token, SECRET_KEY);
         req.empresaId = obterEmpresaIdDoContexto(req);
-        if (!exigirCadeiaProdutivaLegada(req, res)) return;
         next();
     } catch (error) {
         res.status(401).json({ error: 'Token inválido ou expirado.' });

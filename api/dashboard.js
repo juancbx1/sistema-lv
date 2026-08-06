@@ -14,7 +14,7 @@ const pool = new Pool({
 const SECRET_KEY = process.env.JWT_SECRET;
 
 function exigirCadeiaProdutivaLegada(req, res) {
-    if (req.empresaAtiva?.eh_legada === true) return true;
+    if (req.moduloEmpresa?.multiempresa_pronto && req.moduloEmpresa?.habilitado) return true;
     res.status(403).json({
         error: 'A cadeia de produção da dashboard ainda não está disponível para a empresa ativa.',
         codigo: 'CADEIA_PRODUTIVA_NAO_MIGRADA',
@@ -1492,7 +1492,7 @@ router.get('/streak', async (req, res) => {
 router.get('/conquistas-ciclo', async (req, res) => {
     const { id: usuarioId } = req.usuarioLogado;
     const empresaId = req.empresaId;
-    if (!req.empresaAtiva?.eh_legada) {
+    if (!req.moduloEmpresa?.multiempresa_pronto || !req.moduloEmpresa?.habilitado) {
         return res.status(403).json({
             error: 'As conquistas dependentes da cadeia produtiva ainda não estão disponíveis para a empresa ativa.',
             codigo: 'CADEIA_PRODUTIVA_NAO_MIGRADA',

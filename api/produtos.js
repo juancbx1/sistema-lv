@@ -326,7 +326,7 @@ router.get('/search-arremate', async (req, res) => {
         return res.json([]); // Retorna vazio se a busca for muito curta
     }
 
-    if (req.empresaAtiva?.eh_legada !== true) {
+    if (!req.moduloEmpresa?.multiempresa_pronto || !req.moduloEmpresa?.habilitado) {
         return res.status(403).json({
             error: 'A busca de arremate ainda não está disponível para a empresa ativa.',
             codigo: 'CADEIA_PRODUTIVA_NAO_MIGRADA',

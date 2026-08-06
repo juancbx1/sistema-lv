@@ -7,6 +7,7 @@ import express from 'express';
 
 // Importar a função de buscar permissões completas
 import { getPermissoesCompletasUsuarioDB } from './usuarios.js';
+import { obterEmpresaIdDoContexto } from './contexto-empresa.js';
 
 const router = express.Router();
 const pool = new Pool({
@@ -25,11 +26,12 @@ router.use(async (req, res, next) => {
 
         const decoded = jwt.verify(token, SECRET_KEY);
         req.usuarioLogado = decoded;
+        req.empresaId = obterEmpresaIdDoContexto(req);
 
         // VERIFICAÇÃO DE PERMISSÃO CENTRALIZADA
         const dbClient = await pool.connect();
         try {
-            const permissoesUsuario = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id);
+            const permissoesUsuario = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id, req.empresaId);
             if (!permissoesUsuario.includes('fazer-inventario')) { // A permissão que definimos!
                 return res.status(403).json({ error: 'Permissão negada para gerenciar inventários.' });
             }
@@ -49,15 +51,40 @@ router.use(async (req, res, next) => {
 
 // Rota para iniciar uma nova sessão de inventário
 router.post('/iniciar', async (req, res) => {
-    const { usuarioLogado, dbClient } = req;
+    const { usuarioLogado, dbClient, empresaId } = req;
+    const idempotencyKey = String(req.get('Idempotency-Key') || req.body?.idempotency_key || '').trim() || null;
+
+    if (idempotencyKey && idempotencyKey.length > 200) {
+        return res.status(400).json({ error: 'Idempotency-Key excede o limite de 200 caracteres.' });
+    }
     const { observacoes } = req.body; // Permite que o frontend envie uma observação inicial
 
     try {
         await dbClient.query('BEGIN'); // Inicia a transação
 
         // 1. Verifica se já existe um inventário em andamento para evitar duplicidade
+        if (idempotencyKey) {
+            await dbClient.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${empresaId}:${idempotencyKey}`]);
+            const repeticao = await dbClient.query(
+                `SELECT id, status, data_inicio
+                   FROM inventario_sessoes
+                  WHERE empresa_id = $1 AND idempotency_key = $2
+                  FOR UPDATE`,
+                [empresaId, idempotencyKey],
+            );
+            if (repeticao.rowCount > 0) {
+                await dbClient.query('COMMIT');
+                return res.status(200).json({
+                    message: 'Sessao de inventario ja iniciada anteriormente.',
+                    sessao: repeticao.rows[0],
+                    idempotente: true,
+                });
+            }
+        }
+
         const checkExistente = await dbClient.query(
-            "SELECT id FROM inventario_sessoes WHERE status = 'EM_ANDAMENTO' LIMIT 1"
+            "SELECT id FROM inventario_sessoes WHERE empresa_id = $1 AND status = 'EM_ANDAMENTO' LIMIT 1",
+            [empresaId]
         );
 
         if (checkExistente.rows.length > 0) {
@@ -69,10 +96,10 @@ router.post('/iniciar', async (req, res) => {
 
         // 2. Cria a nova sessão de inventário
         const novaSessaoResult = await dbClient.query(
-            `INSERT INTO inventario_sessoes (usuario_responsavel_id, status, observacoes) 
-             VALUES ($1, 'EM_ANDAMENTO', $2) 
+            `INSERT INTO inventario_sessoes (empresa_id, idempotency_key, usuario_responsavel_id, status, observacoes)
+             VALUES ($1, $2, $3, 'EM_ANDAMENTO', $4)
              RETURNING id, status, data_inicio`,
-            [usuarioLogado.id, observacoes || null]
+            [empresaId, idempotencyKey, usuarioLogado.id, observacoes || null]
         );
         const novaSessao = novaSessaoResult.rows[0];
 
@@ -91,6 +118,7 @@ router.post('/iniciar', async (req, res) => {
                         END
                     ) AS saldo_atual
                 FROM estoque_movimentos
+                WHERE empresa_id = $1
                 GROUP BY produto_id, variante_nome
             )
             SELECT
@@ -100,23 +128,25 @@ router.post('/iniciar', async (req, res) => {
                 s.saldo_atual,
                 COALESCE(g.sku, p.sku, p.id::text) AS produto_ref_id
             FROM SaldosAgregados s
-            JOIN produtos p ON s.produto_id = p.id
+            JOIN produtos p ON s.produto_id = p.id AND p.empresa_id = $1
             LEFT JOIN jsonb_to_recordset(p.grade) AS g(sku TEXT, variacao TEXT) ON g.variacao = s.variante_nome
-            WHERE COALESCE(g.sku, p.sku, p.id::text) NOT IN (SELECT produto_ref_id FROM estoque_itens_arquivados)
+            WHERE COALESCE(g.sku, p.sku, p.id::text) NOT IN (
+                SELECT produto_ref_id FROM estoque_itens_arquivados WHERE empresa_id = $1
+            )
               AND s.saldo_atual IS NOT NULL;
         `;
         
-        const saldoResult = await dbClient.query(querySaldoText);
+        const saldoResult = await dbClient.query(querySaldoText, [empresaId]);
         const itensEmEstoque = saldoResult.rows;
 
         // 4. Insere cada item na tabela 'inventario_itens' como a "fotografia" inicial
         if (itensEmEstoque.length > 0) {
             // Monta uma única query de inserção em lote para performance
             const insertItensQuery = `
-                INSERT INTO inventario_itens (id_sessao_inventario, produto_ref_id, quantidade_sistema, quantidade_contada)
-                VALUES ${itensEmEstoque.map((_, i) => `($${i*3 + 1}, $${i*3 + 2}, $${i*3 + 3}, NULL)`).join(', ')}
+                INSERT INTO inventario_itens (empresa_id, id_sessao_inventario, produto_ref_id, quantidade_sistema, quantidade_contada)
+                VALUES ${itensEmEstoque.map((_, i) => `($${i*4 + 1}, $${i*4 + 2}, $${i*4 + 3}, $${i*4 + 4}, NULL)`).join(', ')}
             `;
-            const insertItensValues = itensEmEstoque.flatMap(item => [novaSessao.id, item.produto_ref_id, item.saldo_atual]);
+            const insertItensValues = itensEmEstoque.flatMap(item => [empresaId, novaSessao.id, item.produto_ref_id, item.saldo_atual]);
             
             await dbClient.query(insertItensQuery, insertItensValues);
         }
@@ -131,7 +161,7 @@ router.post('/iniciar', async (req, res) => {
         });
 
     } catch (error) {
-        await dbClient.query('ROLLBACK'); // Desfaz tudo em caso de erro
+        await dbClient.query('ROLLBACK').catch(() => undefined); // Desfaz tudo em caso de erro
         console.error('[API POST /inventario/iniciar] Erro:', error);
         res.status(error.statusCode || 500).json({ error: error.message || 'Erro ao iniciar nova sessão de inventário.' });
     } finally {
@@ -142,7 +172,7 @@ router.post('/iniciar', async (req, res) => {
 
 // Rota para listar sessões de inventário existentes
 router.get('/sessoes', async (req, res) => {
-    const { dbClient } = req;
+    const { dbClient, empresaId } = req;
     try {
         // Query para buscar as sessões e juntar com a tabela de usuários para pegar o nome do responsável
         const query = `
@@ -154,10 +184,11 @@ router.get('/sessoes', async (req, res) => {
                 u.nome_usuario AS usuario_responsavel
             FROM inventario_sessoes s
             JOIN usuarios u ON s.usuario_responsavel_id = u.id
+            WHERE s.empresa_id = $1
             ORDER BY s.id DESC;
         `;
 
-        const result = await dbClient.query(query);
+        const result = await dbClient.query(query, [empresaId]);
 
         // Opcional: Separar a sessão em andamento das demais para facilitar no frontend
         const sessaoEmAndamento = result.rows.find(s => s.status === 'EM_ANDAMENTO') || null;
@@ -179,7 +210,7 @@ router.get('/sessoes', async (req, res) => {
 
 // Rota para buscar os detalhes de UMA sessão de inventário
 router.get('/sessoes/:id', async (req, res) => {
-    const { dbClient } = req;
+    const { dbClient, empresaId } = req;
     const { id } = req.params;
 
     try {
@@ -190,9 +221,9 @@ router.get('/sessoes/:id', async (req, res) => {
             SELECT s.*, u.nome_usuario AS usuario_responsavel
             FROM inventario_sessoes s
             JOIN usuarios u ON s.usuario_responsavel_id = u.id
-            WHERE s.id = $1
+            WHERE s.id = $1 AND s.empresa_id = $2
         `;
-        const sessaoResult = await dbClient.query(sessaoQuery, [id]);
+        const sessaoResult = await dbClient.query(sessaoQuery, [id, empresaId]);
         if (sessaoResult.rows.length === 0) {
             const err = new Error('Sessão de inventário não encontrada.');
             err.statusCode = 404;
@@ -211,16 +242,16 @@ router.get('/sessoes/:id', async (req, res) => {
                 COALESCE(g.imagem, p.imagem, p_grade.imagem) as imagem
             FROM 
                 inventario_itens ii
-            LEFT JOIN produtos p ON p.sku = ii.produto_ref_id
+            LEFT JOIN produtos p ON p.sku = ii.produto_ref_id AND p.empresa_id = $2
             LEFT JOIN (
-                SELECT p_sub.id as produto_id, gr.sku, gr.variacao, gr.imagem
+                SELECT p_sub.id as produto_id, p_sub.empresa_id, gr.sku, gr.variacao, gr.imagem
                 FROM produtos p_sub, jsonb_to_recordset(p_sub.grade) AS gr(sku TEXT, variacao TEXT, imagem TEXT)
-            ) AS g ON g.sku = ii.produto_ref_id
-            LEFT JOIN produtos p_grade ON p_grade.id = g.produto_id
-            WHERE ii.id_sessao_inventario = $1
+            ) AS g ON g.sku = ii.produto_ref_id AND g.empresa_id = $2
+            LEFT JOIN produtos p_grade ON p_grade.id = g.produto_id AND p_grade.empresa_id = $2
+            WHERE ii.empresa_id = $2 AND ii.id_sessao_inventario = $1
             ORDER BY produto_nome, variante_nome;
         `;
-        const itensResult = await dbClient.query(itensQuery, [id]);
+        const itensResult = await dbClient.query(itensQuery, [id, empresaId]);
 
         await dbClient.query('COMMIT');
 
@@ -230,7 +261,7 @@ router.get('/sessoes/:id', async (req, res) => {
         });
 
     } catch (error) {
-        await dbClient.query('ROLLBACK');
+        await dbClient.query('ROLLBACK').catch(() => undefined);
         console.error(`[API GET /inventario/sessoes/${id}] Erro:`, error);
         res.status(error.statusCode || 500).json({ error: error.message || 'Erro ao buscar detalhes da sessão.' });
     } finally {
@@ -240,7 +271,7 @@ router.get('/sessoes/:id', async (req, res) => {
 
 // Rota para salvar a contagem de um ou mais itens
 router.post('/sessoes/:id/contar', async (req, res) => {
-    const { dbClient } = req;
+    const { dbClient, empresaId } = req;
     const { id: idSessao } = req.params;
     const { produto_ref_id, quantidade_contada } = req.body; // Recebe dados de um único item
 
@@ -263,10 +294,10 @@ router.post('/sessoes/:id/contar', async (req, res) => {
                 quantidade_contada = $1,
                 data_contagem = CURRENT_TIMESTAMP
             WHERE 
-                id_sessao_inventario = $2 AND produto_ref_id = $3;
+                empresa_id = $3 AND id_sessao_inventario = $2 AND produto_ref_id = $4;
         `;
 
-        const result = await dbClient.query(updateQuery, [qtd, idSessao, produto_ref_id]);
+        const result = await dbClient.query(updateQuery, [qtd, idSessao, empresaId, produto_ref_id]);
 
         if (result.rowCount === 0) {
             // Isso não deveria acontecer se a sessão foi criada corretamente, mas é uma boa verificação de segurança.
@@ -288,7 +319,7 @@ router.post('/sessoes/:id/contar', async (req, res) => {
 
 // Rota para finalizar e aplicar os ajustes do inventário
 router.post('/sessoes/:id/finalizar', async (req, res) => {
-    const { usuarioLogado, dbClient } = req;
+    const { usuarioLogado, dbClient, empresaId } = req;
     const { id: idSessao } = req.params;
 
     try {
@@ -296,16 +327,16 @@ router.post('/sessoes/:id/finalizar', async (req, res) => {
 
         // 1. Valida a sessão
         const sessaoResult = await dbClient.query(
-            "SELECT * FROM inventario_sessoes WHERE id = $1 FOR UPDATE", // 'FOR UPDATE' trava a linha para evitar finalizações simultâneas
-            [idSessao]
+            "SELECT * FROM inventario_sessoes WHERE id = $1 AND empresa_id = $2 FOR UPDATE", // 'FOR UPDATE' trava a linha para evitar finalizações simultâneas
+            [idSessao, empresaId]
         );
         if (sessaoResult.rows.length === 0) throw new Error('Sessão de inventário não encontrada.');
         if (sessaoResult.rows[0].status !== 'EM_ANDAMENTO') throw new Error('Esta sessão de inventário não está em andamento e não pode ser finalizada.');
 
         // 2. Busca todos os itens que foram contados na sessão
         const itensContadosResult = await dbClient.query(
-            `SELECT * FROM inventario_itens WHERE id_sessao_inventario = $1 AND quantidade_contada IS NOT NULL`,
-            [idSessao]
+            `SELECT * FROM inventario_itens WHERE empresa_id = $2 AND id_sessao_inventario = $1 AND quantidade_contada IS NOT NULL`,
+            [idSessao, empresaId]
         );
         const itensContados = itensContadosResult.rows;
 
@@ -328,14 +359,14 @@ router.post('/sessoes/:id/finalizar', async (req, res) => {
                         COALESCE(p.id, p_grade.id) AS produto_id,
                         COALESCE(g.variacao, NULL) AS variante_nome
                     FROM (SELECT 1) dummy -- Tabela dummy para garantir que sempre haja uma linha
-                    LEFT JOIN produtos p ON p.sku = $1
+                        LEFT JOIN produtos p ON p.sku = $1 AND p.empresa_id = $2
                     LEFT JOIN (
-                        SELECT p_sub.id as produto_id, gr.sku, gr.variacao
-                        FROM produtos p_sub, jsonb_to_recordset(p_sub.grade) AS gr(sku TEXT, variacao TEXT)
-                    ) AS g ON g.sku = $1
-                    LEFT JOIN produtos p_grade ON p_grade.id = g.produto_id;
+                            SELECT p_sub.id as produto_id, p_sub.empresa_id, gr.sku, gr.variacao
+                            FROM produtos p_sub, jsonb_to_recordset(p_sub.grade) AS gr(sku TEXT, variacao TEXT)
+                        ) AS g ON g.sku = $1 AND g.empresa_id = $2
+                        LEFT JOIN produtos p_grade ON p_grade.id = g.produto_id AND p_grade.empresa_id = $2;
                 `;
-                const produtoInfoResult = await dbClient.query(produtoInfoQuery, [item.produto_ref_id]);
+                const produtoInfoResult = await dbClient.query(produtoInfoQuery, [item.produto_ref_id, empresaId]);
                 if (!produtoInfoResult.rows[0].produto_id) {
                     // Se não encontrar o produto, lança um erro para cancelar a transação
                     throw new Error(`Produto com SKU ${item.produto_ref_id} não encontrado no sistema.`);
@@ -344,17 +375,17 @@ router.post('/sessoes/:id/finalizar', async (req, res) => {
                 
                 // Insere o movimento no estoque
                 await dbClient.query(
-                    `INSERT INTO estoque_movimentos (produto_id, variante_nome, quantidade, tipo_movimento, usuario_responsavel, observacao)
-                     VALUES ($1, $2, $3, $4, $5, $6)`,
-                    [produto_id, variante_nome, diferenca, tipoMovimento, usuarioResponsavelNome, observacao]
+                    `INSERT INTO estoque_movimentos (empresa_id, idempotency_key, produto_id, variante_nome, quantidade, tipo_movimento, usuario_responsavel, observacao)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+                    [empresaId, `inventario:${empresaId}:${idSessao}:${item.id}`, produto_id, variante_nome, diferenca, tipoMovimento, usuarioResponsavelNome, observacao]
                 );
             }
         }
 
         // 4. Atualiza o status e a data de fim da sessão de inventário
         await dbClient.query(
-            "UPDATE inventario_sessoes SET status = 'FINALIZADO', data_fim = CURRENT_TIMESTAMP WHERE id = $1",
-            [idSessao]
+            "UPDATE inventario_sessoes SET status = 'FINALIZADO', data_fim = CURRENT_TIMESTAMP WHERE id = $1 AND empresa_id = $2",
+            [idSessao, empresaId]
         );
 
         await dbClient.query('COMMIT');
@@ -367,7 +398,7 @@ router.post('/sessoes/:id/finalizar', async (req, res) => {
     } catch (error) {
         await dbClient.query('ROLLBACK');
         console.error(`[API POST /inventario/sessoes/${idSessao}/finalizar] Erro:`, error);
-        res.status(500).json({ error: 'Erro ao finalizar inventário.', details: error.message });
+        res.status(error.statusCode || 500).json({ error: 'Erro ao finalizar inventário.', details: error.message });
     } finally {
         if (dbClient) dbClient.release();
     }

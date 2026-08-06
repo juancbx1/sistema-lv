@@ -13,6 +13,7 @@ import {
     registrarEventoTarefa,
     TIPOS_EVENTO_TAREFA,
 } from './ponto-eventos.js';
+import { obterEmpresaIdDoContexto } from './contexto-empresa.js';
 
 // --- INÍCIO DA CORREÇÃO DE FUSO HORÁRIO ---
 types.setTypeParser(1114, str => str);
@@ -91,6 +92,7 @@ function calcularTempoDePausa(horariosUsuario, dataInicioTarefa, dataFimTarefa) 
 router.use(async (req, res, next) => {
     try {
         req.usuarioLogado = verificarTokenInterna(req); 
+        req.empresaId = obterEmpresaIdDoContexto(req);
         if (req.empresaAtiva?.eh_legada !== true) {
             return res.status(403).json({
                 error: 'A cadeia de arremates ainda nao esta disponivel para a empresa ativa.',
@@ -115,7 +117,7 @@ router.post('/', async (req, res) => {
 
     try {
         dbClient = await pool.connect();
-        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, req.empresaId);
         if (!permissoesCompletas.includes('lancar-arremate')) {
             return res.status(403).json({ error: 'Permissão negada para lançar arremate.' });
         }
@@ -140,9 +142,10 @@ router.post('/', async (req, res) => {
         let valorPontoAplicado = 1.00;
         const configPontosQuery = `
             SELECT pontos_padrao FROM configuracoes_pontos_processos
-            WHERE produto_id = $1 AND tipo_atividade = 'arremate_tiktik' AND ativo = TRUE LIMIT 1;
+            WHERE produto_id = $1 AND empresa_id = $2
+              AND tipo_atividade = 'arremate_tiktik' AND ativo = TRUE LIMIT 1;
         `;
-        const configResult = await dbClient.query(configPontosQuery, [produto_id]);
+        const configResult = await dbClient.query(configPontosQuery, [produto_id, req.empresaId]);
 
         if (configResult.rows.length > 0 && configResult.rows[0].pontos_padrao !== null) {
             valorPontoAplicado = parseFloat(configResult.rows[0].pontos_padrao);
@@ -152,10 +155,10 @@ router.post('/', async (req, res) => {
         const nomeDoLancador = usuarioLogado.nome || 'Sistema';
 
         const result = await dbClient.query(
-    `INSERT INTO arremates (op_numero, op_edit_id, produto_id, variante, quantidade_arrematada, usuario_tiktik, usuario_tiktik_id, lancado_por, valor_ponto_aplicado, pontos_gerados, tipo_lancamento)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+    `INSERT INTO arremates (empresa_id, op_numero, op_edit_id, produto_id, variante, quantidade_arrematada, usuario_tiktik, usuario_tiktik_id, lancado_por, valor_ponto_aplicado, pontos_gerados, tipo_lancamento)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
     [
-        op_numero, op_edit_id || null, parseInt(produto_id), variante || null,
+        req.empresaId, op_numero, op_edit_id || null, parseInt(produto_id), variante || null,
         quantidadeNum, usuario_tiktik, usuario_tiktik_id, nomeDoLancador,
         valorPontoAplicado, pontosGerados,
         'PRODUCAO'
@@ -195,9 +198,9 @@ router.get('/', async (req, res) => {
         
         // A base da query agora não tem mais o filtro de saldo,
         // pois fetchAll pode precisar de todos, e a paginação só dos com saldo.
-        let whereClauses = []; 
-        let queryParams = [];
-        let paramIndex = 1;
+        let whereClauses = ['a.empresa_id = $1'];
+        let queryParams = [req.empresaId];
+        let paramIndex = 2;
 
         if (produto_id) {
             whereClauses.push(`a.produto_id = $${paramIndex++}`);
@@ -222,7 +225,7 @@ router.get('/', async (req, res) => {
             const dataQuery = `
                 SELECT a.*, p.nome as produto 
                 FROM arremates a 
-                JOIN produtos p ON a.produto_id = p.id
+                JOIN produtos p ON a.produto_id = p.id AND p.empresa_id = a.empresa_id
                 ${whereString}
                 ORDER BY a.data_lancamento DESC
             `;
@@ -253,7 +256,7 @@ router.get('/', async (req, res) => {
                     a.*, 
                     COALESCE(op.numero, a.op_numero) as op_numero 
                 FROM arremates a 
-                LEFT JOIN ordens_de_producao op ON a.op_numero = op.numero
+                LEFT JOIN ordens_de_producao op ON a.empresa_id = op.empresa_id AND a.op_numero = op.numero
                 ${whereString}
                 ORDER BY a.data_lancamento DESC
                 LIMIT $${paramIndex++} OFFSET $${paramIndex++}
@@ -294,8 +297,8 @@ router.get('/historico', async (req, res) => {
     try {
         dbClient = await pool.connect();
         
-        let queryParams = [];
-        let whereClauses = [];
+        let queryParams = [req.empresaId];
+        let whereClauses = ['a.empresa_id = $1'];
 
         // Filtro de Período
         if (periodo === 'hoje') {
@@ -330,7 +333,7 @@ router.get('/historico', async (req, res) => {
         const whereString = `WHERE ${whereClauses.join(' AND ')}`;
 
         // Query de Contagem
-        const countQuery = `SELECT COUNT(*) FROM arremates a LEFT JOIN produtos p ON a.produto_id = p.id ${whereString}`;
+        const countQuery = `SELECT COUNT(*) FROM arremates a LEFT JOIN produtos p ON a.produto_id = p.id AND p.empresa_id = a.empresa_id ${whereString}`;
         const countResult = await dbClient.query(countQuery, queryParams);
         const totalItems = parseInt(countResult.rows[0].count, 10);
 
@@ -344,7 +347,7 @@ router.get('/historico', async (req, res) => {
         const dataQuery = `
             SELECT a.*, p.nome as produto, p.imagem as produto_imagem
             FROM arremates a
-            LEFT JOIN produtos p ON a.produto_id = p.id
+            LEFT JOIN produtos p ON a.produto_id = p.id AND p.empresa_id = a.empresa_id
             ${whereString}
             ORDER BY a.data_lancamento DESC
             LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}`;
@@ -375,7 +378,7 @@ router.put('/:id_arremate/registrar-embalagem', async (req, res) => {
     try {
 
         dbClient = await pool.connect(); // Obtém conexão para esta rota
-        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, req.empresaId);
 
         if (!permissoesCompletas.includes('lancar-embalagem')) { // Ou uma permissão mais específica se necessário
             return res.status(403).json({ error: 'Permissão negada para registrar embalagem de arremate.' });
@@ -396,8 +399,8 @@ router.put('/:id_arremate/registrar-embalagem', async (req, res) => {
         await dbClient.query('BEGIN'); 
 
         const arremateResult = await dbClient.query(
-            'SELECT id, quantidade_arrematada, quantidade_ja_embalada FROM arremates WHERE id = $1 FOR UPDATE',
-            [idArremateNum]
+            'SELECT id, quantidade_arrematada, quantidade_ja_embalada FROM arremates WHERE id = $1 AND empresa_id = $2 FOR UPDATE',
+            [idArremateNum, req.empresaId]
         );
 
         if (arremateResult.rows.length === 0) {
@@ -420,8 +423,8 @@ router.put('/:id_arremate/registrar-embalagem', async (req, res) => {
         const novaQtdJaEmbalada = quantidade_ja_embalada + qtdEmbaladaNestaVez;
         // ***** CORREÇÃO AQUI: Removido data_atualizacao *****
         const updateResult = await dbClient.query(
-            'UPDATE arremates SET quantidade_ja_embalada = $1 WHERE id = $2 RETURNING *',
-            [novaQtdJaEmbalada, idArremateNum]
+            'UPDATE arremates SET quantidade_ja_embalada = $1 WHERE id = $2 AND empresa_id = $3 RETURNING *',
+            [novaQtdJaEmbalada, idArremateNum, req.empresaId]
         );
 
         await dbClient.query('COMMIT'); 
@@ -465,7 +468,7 @@ router.put('/assinar-lote', async (req, res) => {
 
     try {
         dbClient = await pool.connect();
-        const permissoesUsuario = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoesUsuario = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, req.empresaId);
 
         // Assumi que você criará esta permissão
         if (!permissoesUsuario.includes('assinar-arremate-tiktik')) {
@@ -479,10 +482,11 @@ router.put('/assinar-lote', async (req, res) => {
         const updateResult = await dbClient.query(
             `UPDATE arremates SET assinada = TRUE 
              WHERE id = ANY($1::int[]) 
+             AND empresa_id = $3
              AND usuario_tiktik = $2 
              AND assinada = FALSE -- Garante que não estamos re-assinando
              RETURNING id, assinada`,
-            [ids_arremates, usuarioLogado.nome] 
+            [ids_arremates, usuarioLogado.nome, req.empresaId]
         );
 
         if (updateResult.rowCount === 0) {
@@ -499,8 +503,8 @@ router.put('/assinar-lote', async (req, res) => {
         const idsAtualizados = updateResult.rows.map(r => r.id);
         const logInsertPromises = idsAtualizados.map(arremateId => {
             return dbClient.query(
-                `INSERT INTO log_assinaturas (id_usuario, id_arremate, dados_coletados) VALUES ($1, $2, $3)`,
-                [usuarioLogado.id, arremateId, dadosColetados || null]
+                `INSERT INTO log_assinaturas (empresa_id, id_usuario, id_arremate, dados_coletados) VALUES ($1, $2, $3, $4)`,
+                [req.empresaId, usuarioLogado.id, arremateId, dadosColetados || null]
             );
         });
 
@@ -532,7 +536,7 @@ router.post('/registrar-perda', async (req, res) => {
 
     try {
         dbClient = await pool.connect();
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, req.empresaId);
         if (!permissoes.includes('registrar-perda-arremate')) {
             return res.status(403).json({ error: 'Permissão negada para registrar perdas.' });
         }
@@ -543,7 +547,7 @@ router.post('/registrar-perda', async (req, res) => {
             return res.status(400).json({ error: "Dados para registro de perda estão incompletos (produto_id, motivo, quantidade, opsOrigem)." });
         }
         
-        const produtoInfo = await dbClient.query('SELECT nome FROM produtos WHERE id = $1', [produto_id]);
+        const produtoInfo = await dbClient.query('SELECT nome FROM produtos WHERE id = $1 AND empresa_id = $2', [produto_id, req.empresaId]);
         if (produtoInfo.rows.length === 0) {
             throw new Error(`Produto com ID ${produto_id} não encontrado.`);
         }
@@ -553,11 +557,11 @@ router.post('/registrar-perda', async (req, res) => {
 
         // 1. Insere o registro na tabela de perdas
         const perdaQuery = `
-            INSERT INTO arremate_perdas (produto_nome, variante_nome, quantidade_perdida, motivo, observacao, usuario_responsavel)
-            VALUES ($1, $2, $3, $4, $5, $6) RETURNING id;
+            INSERT INTO arremate_perdas (empresa_id, produto_nome, variante_nome, quantidade_perdida, motivo, observacao, usuario_responsavel)
+            VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id;
         `;
         const perdaResult = await dbClient.query(perdaQuery, [
-            nomeDoProduto, variante, quantidadePerdida, motivo,
+            req.empresaId, nomeDoProduto, variante, quantidadePerdida, motivo,
             observacao, usuarioLogado.nome || 'Sistema'
         ]);
         const perdaId = perdaResult.rows[0].id;
@@ -576,11 +580,11 @@ router.post('/registrar-perda', async (req, res) => {
 
             if (qtdAbaterDaOP > 0) {
                 const lancamentoPerdaQuery = `
-                    INSERT INTO arremates (op_numero, produto_id, variante, quantidade_arrematada, usuario_tiktik, lancado_por, tipo_lancamento, id_perda_origem, assinada)
-                    VALUES ($1, $2, $3, $4, 'Sistema (Perda)', $5, 'PERDA', $6, TRUE);
+                    INSERT INTO arremates (empresa_id, op_numero, produto_id, variante, quantidade_arrematada, usuario_tiktik, lancado_por, tipo_lancamento, id_perda_origem, assinada)
+                    VALUES ($1, $2, $3, $4, $5, 'Sistema (Perda)', $6, 'PERDA', $7, TRUE);
                 `;
                 await dbClient.query(lancamentoPerdaQuery, [
-                    op.numero, produto_id, variante, qtdAbaterDaOP,
+                    req.empresaId, op.numero, produto_id, variante, qtdAbaterDaOP,
                     usuarioLogado.nome, perdaId
                 ]);
                 quantidadeRestanteParaAbater -= qtdAbaterDaOP;
@@ -620,10 +624,10 @@ router.get('/fila', async (req, res) => {
                 produto_id,
                 AVG((EXTRACT(EPOCH FROM (data_fim - data_inicio)) - tempo_pausado_segundos) / NULLIF(quantidade_finalizada, 0)) as media_tempo_por_peca
             FROM sessoes_trabalho_arremate
-            WHERE status = 'FINALIZADA' AND quantidade_finalizada > 0
+            WHERE empresa_id = $1 AND status = 'FINALIZADA' AND quantidade_finalizada > 0
             GROUP BY produto_id;
         `;
-        const mediasResult = await dbClient.query(mediasQuery);
+        const mediasResult = await dbClient.query(mediasQuery, [req.empresaId]);
         const mapaDeMedias = new Map(mediasResult.rows.map(row => [row.produto_id, parseFloat(row.media_tempo_por_peca)]));
         
         const opsQuery = `
@@ -632,19 +636,19 @@ router.get('/fila', async (req, res) => {
                 p.imagem as imagem_produto, p.grade,
                 op.etapas, op.quantidade, op.data_final, op.numero, op.edit_id
             FROM ordens_de_producao op
-            JOIN produtos p ON op.produto_id = p.id
-            WHERE op.status = 'finalizado';
+            JOIN produtos p ON op.produto_id = p.id AND p.empresa_id = op.empresa_id
+            WHERE op.empresa_id = $1 AND op.status = 'finalizado';
         `;
-        const opsResult = await dbClient.query(opsQuery);
+        const opsResult = await dbClient.query(opsQuery, [req.empresaId]);
         const opsFinalizadas = opsResult.rows;
 
         const arrematesQuery = `
             SELECT produto_id, variante, op_numero, SUM(quantidade_arrematada) as total_arrematado
             FROM arremates
-            WHERE tipo_lancamento IN ('PRODUCAO', 'PERDA')
+            WHERE empresa_id = $1 AND tipo_lancamento IN ('PRODUCAO', 'PERDA')
             GROUP BY produto_id, variante, op_numero;
         `;
-        const arrematesResult = await dbClient.query(arrematesQuery);
+        const arrematesResult = await dbClient.query(arrematesQuery, [req.empresaId]);
         
         const arrematadoPorOp = new Map();
         arrematesResult.rows.forEach(arr => {
@@ -661,9 +665,9 @@ router.get('/fila', async (req, res) => {
                 u.nome as tiktik_nome
             FROM sessoes_trabalho_arremate s
             JOIN usuarios u ON s.usuario_tiktik_id = u.id
-            WHERE s.status = 'EM_ANDAMENTO'
+            WHERE s.empresa_id = $1 AND s.status = 'EM_ANDAMENTO'
         `;
-        const sessoesAtivasResult = await dbClient.query(sessoesAtivasQuery);
+        const sessoesAtivasResult = await dbClient.query(sessoesAtivasQuery, [req.empresaId]);
         const emTrabalhoAgregado = new Map();
         
         sessoesAtivasResult.rows.forEach(sessao => {
@@ -814,7 +818,7 @@ router.get('/status-tiktiks', async (req, res) => {
                 AND status_data_modificacao < (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
         `, [req.empresaId]);
         
-        const temposResult = await dbClient.query('SELECT produto_id, tempo_segundos_por_peca FROM tempos_padrao_arremate');
+        const temposResult = await dbClient.query('SELECT produto_id, tempo_segundos_por_peca FROM tempos_padrao_arremate WHERE empresa_id = $1', [req.empresaId]);
         const temposMap = new Map(temposResult.rows.map(row => [row.produto_id, parseFloat(row.tempo_segundos_por_peca)]));
 
 
@@ -855,7 +859,7 @@ router.get('/status-tiktiks', async (req, res) => {
                 p.nome as produto_nome,
                 COALESCE(g.imagem, p.imagem) as imagem
             FROM sessoes_trabalho_arremate s
-            LEFT JOIN produtos p ON s.produto_id = p.id
+            LEFT JOIN produtos p ON s.produto_id = p.id AND p.empresa_id = s.empresa_id
             LEFT JOIN LATERAL (
                 SELECT gr.imagem
                 FROM jsonb_to_recordset(
@@ -864,8 +868,9 @@ router.get('/status-tiktiks', async (req, res) => {
                 WHERE gr.variacao = s.variante
                 LIMIT 1
             ) g ON true
-            WHERE s.status = 'EM_ANDAMENTO' AND s.usuario_tiktik_id = ANY($1::int[])
-        `, [tiktiksBase.map(t => t.id)]);
+            WHERE s.empresa_id = $2
+              AND s.status = 'EM_ANDAMENTO' AND s.usuario_tiktik_id = ANY($1::int[])
+        `, [tiktiksBase.map(t => t.id), req.empresaId]);
 
         // Agrupamos as sessões por usuário para o caso de lotes
         const sessoesPorUsuario = sessoesAtivasResult.rows.reduce((acc, sessao) => {
@@ -902,13 +907,14 @@ router.get('/status-tiktiks', async (req, res) => {
                         ) ORDER BY s.data_inicio
                     ) AS sessoes
                 FROM sessoes_trabalho_arremate s
-                LEFT JOIN produtos p ON s.produto_id = p.id
+                LEFT JOIN produtos p ON s.produto_id = p.id AND p.empresa_id = s.empresa_id
                 WHERE (s.data_inicio AT TIME ZONE 'America/Sao_Paulo')::date
                           = (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
+                  AND s.empresa_id = $2
                   AND s.status IN ('FINALIZADA', 'EM_ANDAMENTO')
                   AND s.usuario_tiktik_id = ANY($1::int[])
                 GROUP BY s.usuario_tiktik_id
-            `, [tiktikIds])
+            `, [tiktikIds, req.empresaId])
         ]);
         const pontoDiarioMap = new Map(pontoDiarioResult.rows.map(p => [p.funcionario_id, p]));
         const sessoesHojeMap = new Map(sessoesHojeResult.rows.map(r => [r.usuario_tiktik_id, r.sessoes || []]));
@@ -1034,11 +1040,11 @@ router.post('/sessoes/iniciar', async (req, res) => {
         const opNumeros = dados_ops.map(op => op.numero);
         
         // 1. Pega o total produzido das OPs
-        const opsResult = await dbClient.query(`SELECT numero, etapas, quantidade FROM ordens_de_producao WHERE numero = ANY($1::varchar[])`, [opNumeros]);
+        const opsResult = await dbClient.query(`SELECT numero, etapas, quantidade FROM ordens_de_producao WHERE empresa_id = $2 AND numero = ANY($1::varchar[])`, [opNumeros, req.empresaId]);
         
         
         // 2. Pega o total já arrematado (finalizado)
-        const arrematadoResult = await dbClient.query(`SELECT op_numero, SUM(quantidade_arrematada) as total_arrematado FROM arremates WHERE op_numero = ANY($1::varchar[]) AND tipo_lancamento IN ('PRODUCAO', 'PERDA') GROUP BY op_numero`, [opNumeros]);
+        const arrematadoResult = await dbClient.query(`SELECT op_numero, SUM(quantidade_arrematada) as total_arrematado FROM arremates WHERE empresa_id = $2 AND op_numero = ANY($1::varchar[]) AND tipo_lancamento IN ('PRODUCAO', 'PERDA') GROUP BY op_numero`, [opNumeros, req.empresaId]);
 
         const arrematadoMap = new Map(arrematadoResult.rows.map(r => [r.op_numero, parseInt(r.total_arrematado, 10)]));
         
@@ -1046,10 +1052,10 @@ router.post('/sessoes/iniciar', async (req, res) => {
         const sessoesAtivasResult = await dbClient.query(
             `SELECT quantidade_entregue 
              FROM sessoes_trabalho_arremate 
-             WHERE status = 'EM_ANDAMENTO' 
+             WHERE empresa_id = $3 AND status = 'EM_ANDAMENTO'
              AND produto_id = $1 
              AND (variante = $2 OR (variante IS NULL AND $2 IS NULL))`, 
-            [produto_id, variante]
+            [produto_id, variante, req.empresaId]
         );
 
         // Somamos diretamente a quantidade entregue de cada sessão ativa.
@@ -1091,8 +1097,8 @@ router.post('/sessoes/iniciar', async (req, res) => {
         const op_numero_ref = dados_ops[0].numero;
         const op_edit_id_ref = dados_ops[0].edit_id;
         
-        const sessaoQuery = `INSERT INTO sessoes_trabalho_arremate (usuario_tiktik_id, produto_id, variante, quantidade_entregue, op_numero, op_edit_id, dados_ops) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb) RETURNING id`;
-        const sessaoParams = [usuario_tiktik_id, produto_id, variante, qtdEntregueNum, op_numero_ref, op_edit_id_ref, JSON.stringify(dados_ops)];
+        const sessaoQuery = `INSERT INTO sessoes_trabalho_arremate (empresa_id, usuario_tiktik_id, produto_id, variante, quantidade_entregue, op_numero, op_edit_id, dados_ops) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb) RETURNING id`;
+        const sessaoParams = [req.empresaId, usuario_tiktik_id, produto_id, variante, qtdEntregueNum, op_numero_ref, op_edit_id_ref, JSON.stringify(dados_ops)];
         const sessaoResult = await dbClient.query(sessaoQuery, sessaoParams);
         const novaSessaoId = sessaoResult.rows[0].id;
 
@@ -1169,8 +1175,8 @@ router.post('/sessoes/finalizar', async (req, res) => {
         const idsParaFinalizar = detalhes_finalizacao.map(d => d.id_sessao);
 
         const sessoesResult = await dbClient.query(
-            `SELECT * FROM sessoes_trabalho_arremate WHERE id = ANY($1::int[]) FOR UPDATE`,
-            [idsParaFinalizar]
+            `SELECT * FROM sessoes_trabalho_arremate WHERE empresa_id = $2 AND id = ANY($1::int[]) FOR UPDATE`,
+            [idsParaFinalizar, req.empresaId]
         );
 
         if (sessoesResult.rows.length !== idsParaFinalizar.length) {
@@ -1215,8 +1221,9 @@ router.post('/sessoes/finalizar', async (req, res) => {
                 // Busca a configuração de pontos para este produto específico
                 const configPontosResult = await dbClient.query(
                     `SELECT pontos_padrao FROM configuracoes_pontos_processos
-                     WHERE produto_id = $1 AND tipo_atividade = 'arremate_tiktik' AND ativo = TRUE LIMIT 1`,
-                    [sessaoCorrespondente.produto_id]
+                     WHERE produto_id = $1 AND empresa_id = $2
+                       AND tipo_atividade = 'arremate_tiktik' AND ativo = TRUE LIMIT 1`,
+                    [sessaoCorrespondente.produto_id, req.empresaId]
                 );
 
                 if (configPontosResult.rows.length > 0 && configPontosResult.rows[0].pontos_padrao !== null) {
@@ -1237,9 +1244,10 @@ router.post('/sessoes/finalizar', async (req, res) => {
 
                         // CORREÇÃO: ADICIONADO valor_ponto_aplicado E pontos_gerados NO INSERT
                         await dbClient.query(
-                            `INSERT INTO arremates (op_numero, op_edit_id, produto_id, variante, quantidade_arrematada, usuario_tiktik_id, usuario_tiktik, lancado_por, tipo_lancamento, id_sessao_origem, valor_ponto_aplicado, pontos_gerados)
-                             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'PRODUCAO', $9, $10, $11)`,
+                            `INSERT INTO arremates (empresa_id, op_numero, op_edit_id, produto_id, variante, quantidade_arrematada, usuario_tiktik_id, usuario_tiktik, lancado_por, tipo_lancamento, id_sessao_origem, valor_ponto_aplicado, pontos_gerados)
+                             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'PRODUCAO', $10, $11, $12)`,
                             [
+                                req.empresaId,
                                 op.numero, 
                                 op.edit_id, 
                                 sessaoCorrespondente.produto_id, 
@@ -1260,8 +1268,8 @@ router.post('/sessoes/finalizar', async (req, res) => {
             
             const tempoPausaSegundos = calcularTempoDePausa(userTiktikResult.rows[0], new Date(sessaoCorrespondente.data_inicio), dataFim);
             await dbClient.query(
-                `UPDATE sessoes_trabalho_arremate SET data_fim = $1, status = 'FINALIZADA', quantidade_finalizada = $2, tempo_pausado_segundos = $3 WHERE id = $4`,
-                [dataFim, qtdFinalizadaNestaSessao, tempoPausaSegundos, sessaoCorrespondente.id]
+                `UPDATE sessoes_trabalho_arremate SET data_fim = $1, status = 'FINALIZADA', quantidade_finalizada = $2, tempo_pausado_segundos = $3 WHERE id = $4 AND empresa_id = $5`,
+                [dataFim, qtdFinalizadaNestaSessao, tempoPausaSegundos, sessaoCorrespondente.id, req.empresaId]
             );
 
             if (eventosPontoAtivos) {
@@ -1285,8 +1293,8 @@ router.post('/sessoes/finalizar', async (req, res) => {
         }
 
         const outraSessaoAtivaResult = await dbClient.query(
-            `SELECT 1 FROM sessoes_trabalho_arremate WHERE usuario_tiktik_id = $1 AND status = 'EM_ANDAMENTO' LIMIT 1`,
-            [usuarioTiktikId]
+            `SELECT 1 FROM sessoes_trabalho_arremate WHERE usuario_tiktik_id = $1 AND empresa_id = $2 AND status = 'EM_ANDAMENTO' LIMIT 1`,
+            [usuarioTiktikId, req.empresaId]
         );
 
         if (outraSessaoAtivaResult.rowCount === 0) {
@@ -1305,12 +1313,22 @@ router.post('/sessoes/finalizar', async (req, res) => {
 
         // --- LÓGICA DE ALERTA DE META BATIDA (VERSÃO CORRIGIDA) ---
         try {
-            const configsAtivasResult = await dbClient.query("SELECT * FROM configuracoes_alertas WHERE ativo = TRUE");
+            const configsAtivasResult = await dbClient.query(`
+                SELECT ca.id, ca.tipo_alerta, ca.descricao,
+                       cea.ativo, cea.gatilho_minutos, cea.acao_popup,
+                       cea.acao_notificacao, cea.intervalo_repeticao_minutos,
+                       cea.peso_risco, cea.atualizado_em
+                  FROM configuracoes_alertas ca
+                  JOIN configuracoes_alertas_empresas cea
+                    ON cea.configuracao_id = ca.id
+                   AND cea.empresa_id = $1
+                 WHERE cea.ativo = TRUE
+            `, [req.empresaId]);
             const configMetaBatida = configsAtivasResult.rows.find(c => c.tipo_alerta === 'META_BATIDA_ARREMATE');
 
             if (configMetaBatida) {
                 for (const sessao of sessoes) {
-                    const tpeResult = await dbClient.query("SELECT tempo_segundos_por_peca FROM tempos_padrao_arremate WHERE produto_id = $1", [sessao.produto_id]);
+                    const tpeResult = await dbClient.query("SELECT tempo_segundos_por_peca FROM tempos_padrao_arremate WHERE produto_id = $1 AND empresa_id = $2", [sessao.produto_id, req.empresaId]);
                     const tpe = tpeResult.rows[0]?.tempo_segundos_por_peca;
                     
                     const detalheDaSessao = detalhes_finalizacao.find(d => d.id_sessao === sessao.id);
@@ -1324,7 +1342,11 @@ router.post('/sessoes/finalizar', async (req, res) => {
 
                         if (eficiencia >= 1.25) {
                             const mensagem = `🚀 Excelente Performance! ${nomeTiktik} concluiu a tarefa de ${sessao.produto_nome || 'produto'} com ${Math.round(eficiencia * 100)}% de eficiência!`;
-                            await dbClient.query(`INSERT INTO eventos_sistema (tipo_evento, mensagem) VALUES ($1, $2)`, ['META_BATIDA_ARREMATE', mensagem]);
+                            await dbClient.query(
+                                `INSERT INTO eventos_sistema (empresa_id, tipo_evento, mensagem)
+                                 VALUES ($1, $2, $3)`,
+                                [req.empresaId, 'META_BATIDA_ARREMATE', mensagem]
+                            );
                         }
                     }
                 }
@@ -1359,7 +1381,7 @@ router.post('/sessoes/cancelar', async (req, res) => {
 
     try {
         dbClient = await pool.connect();
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, req.empresaId);
         if (!permissoes.includes('cancelar-tarefa-arremate')) {
             return res.status(403).json({ error: 'Permissão negada para cancelar tarefas.' });
         }
@@ -1367,8 +1389,8 @@ router.post('/sessoes/cancelar', async (req, res) => {
         await dbClient.query('BEGIN');
 
         const sessoesResult = await dbClient.query(
-            `SELECT id, usuario_tiktik_id, status FROM sessoes_trabalho_arremate WHERE id = ANY($1::int[]) FOR UPDATE`,
-            [idsParaCancelar]
+            `SELECT id, usuario_tiktik_id, status FROM sessoes_trabalho_arremate WHERE empresa_id = $2 AND id = ANY($1::int[]) FOR UPDATE`,
+            [idsParaCancelar, req.empresaId]
         );
 
         if (sessoesResult.rows.length === 0) {
@@ -1385,8 +1407,8 @@ router.post('/sessoes/cancelar', async (req, res) => {
         }
         
         const updateResult = await dbClient.query(
-            `UPDATE sessoes_trabalho_arremate SET status = 'CANCELADA', data_fim = NOW() WHERE id = ANY($1::int[])`,
-            [idsParaCancelar]
+            `UPDATE sessoes_trabalho_arremate SET status = 'CANCELADA', data_fim = NOW() WHERE empresa_id = $2 AND id = ANY($1::int[])`,
+            [idsParaCancelar, req.empresaId]
         );
 
         if (await pontoEventosDisponivel(dbClient)) {
@@ -1417,8 +1439,8 @@ router.post('/sessoes/cancelar', async (req, res) => {
         }
 
         const outraSessaoAtivaResult = await dbClient.query(
-            `SELECT 1 FROM sessoes_trabalho_arremate WHERE usuario_tiktik_id = $1 AND status = 'EM_ANDAMENTO' LIMIT 1`,
-            [usuarioTiktikId]
+            `SELECT 1 FROM sessoes_trabalho_arremate WHERE usuario_tiktik_id = $1 AND empresa_id = $2 AND status = 'EM_ANDAMENTO' LIMIT 1`,
+            [usuarioTiktikId, req.empresaId]
         );
         
         if (outraSessaoAtivaResult.rowCount === 0) {
@@ -1457,7 +1479,7 @@ router.post('/sessoes/estornar', async (req, res) => {
     try {
         dbClient = await pool.connect();
 
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, req.empresaId);
         // Vamos usar a mesma permissão de estorno geral
         if (!permissoes.includes('estornar-arremate')) {
             return res.status(403).json({ error: 'Permissão negada para estornar lançamentos.' });
@@ -1468,8 +1490,8 @@ router.post('/sessoes/estornar', async (req, res) => {
         // 1. Mudar o status da sessão para 'ESTORNADA'
         // Isso a remove dos cálculos de performance imediatamente.
         const updateSessaoResult = await dbClient.query(
-            `UPDATE sessoes_trabalho_arremate SET status = 'ESTORNADA' WHERE id = $1 AND status = 'FINALIZADA' RETURNING *`,
-            [id_sessao]
+            `UPDATE sessoes_trabalho_arremate SET status = 'ESTORNADA' WHERE id = $1 AND empresa_id = $2 AND status = 'FINALIZADA' RETURNING *`,
+            [id_sessao, req.empresaId]
         );
 
         if (updateSessaoResult.rowCount === 0) {
@@ -1479,8 +1501,8 @@ router.post('/sessoes/estornar', async (req, res) => {
 
         // 2. Encontrar todos os lançamentos de arremate gerados por esta sessão
         const arrematesOriginaisResult = await dbClient.query(
-            `SELECT * FROM arremates WHERE id_sessao_origem = $1 AND tipo_lancamento = 'PRODUCAO'`,
-            [id_sessao]
+            `SELECT * FROM arremates WHERE empresa_id = $2 AND id_sessao_origem = $1 AND tipo_lancamento = 'PRODUCAO'`,
+            [id_sessao, req.empresaId]
         );
 
         const arrematesParaEstornar = arrematesOriginaisResult.rows;
@@ -1489,9 +1511,10 @@ router.post('/sessoes/estornar', async (req, res) => {
         for (const arremateOriginal of arrematesParaEstornar) {
             // 3a. Cria um novo registro de log do tipo 'ESTORNO'
             await dbClient.query(
-                `INSERT INTO arremates (op_numero, produto_id, variante, quantidade_arrematada, usuario_tiktik, usuario_tiktik_id, lancado_por, tipo_lancamento, assinada)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, 'ESTORNO', true)`,
+                `INSERT INTO arremates (empresa_id, op_numero, produto_id, variante, quantidade_arrematada, usuario_tiktik, usuario_tiktik_id, lancado_por, tipo_lancamento, assinada)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ESTORNO', true)`,
                 [
+                    req.empresaId,
                     arremateOriginal.op_numero,
                     arremateOriginal.produto_id,
                     arremateOriginal.variante,
@@ -1503,7 +1526,7 @@ router.post('/sessoes/estornar', async (req, res) => {
             );
 
             // 3b. APAGA o registro de arremate original
-            await dbClient.query(`DELETE FROM arremates WHERE id = $1`, [arremateOriginal.id]);
+            await dbClient.query(`DELETE FROM arremates WHERE id = $1 AND empresa_id = $2`, [arremateOriginal.id, req.empresaId]);
         }
 
         await dbClient.query('COMMIT');
@@ -1532,7 +1555,7 @@ router.post('/estornar', async (req, res) => {
 
     try {
         dbClient = await pool.connect();
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, req.empresaId);
         if (!permissoes.includes('estornar-arremate')) {
             return res.status(403).json({ error: 'Permissão negada para estornar arremates.' });
         }
@@ -1540,7 +1563,7 @@ router.post('/estornar', async (req, res) => {
         await dbClient.query('BEGIN');
 
         // 1. Busca o registro original.
-        const arremateResult = await dbClient.query(`SELECT * FROM arremates WHERE id = $1`, [id_arremate]);
+        const arremateResult = await dbClient.query(`SELECT * FROM arremates WHERE id = $1 AND empresa_id = $2`, [id_arremate, req.empresaId]);
         if (arremateResult.rows.length === 0) {
             await dbClient.query('ROLLBACK');
             return res.status(404).json({ error: 'Lançamento de arremate não encontrado.' });
@@ -1552,13 +1575,14 @@ router.post('/estornar', async (req, res) => {
         // 2. CRIA UM NOVO REGISTRO DE LOG DO TIPO 'ESTORNO'
         const logEstornoQuery = `
             INSERT INTO arremates 
-                (op_numero, op_edit_id, produto_id, variante, quantidade_arrematada, 
+                (empresa_id, op_numero, op_edit_id, produto_id, variante, quantidade_arrematada,
                  usuario_tiktik, usuario_tiktik_id, lancado_por, tipo_lancamento, assinada, id_perda_origem)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ESTORNO', true, $9)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'ESTORNO', true, $10)
         `;
 
         // <<< A CORREÇÃO ESTÁ AQUI >>>
         await dbClient.query(logEstornoQuery, [
+            req.empresaId,
             arremateOriginal.op_numero,
             arremateOriginal.op_edit_id,
             arremateOriginal.produto_id,
@@ -1571,7 +1595,7 @@ router.post('/estornar', async (req, res) => {
         ]);
         
         // 3. APAGA o registro de arremate original.
-        const deleteResult = await dbClient.query(`DELETE FROM arremates WHERE id = $1`, [id_arremate]);
+        const deleteResult = await dbClient.query(`DELETE FROM arremates WHERE id = $1 AND empresa_id = $2`, [id_arremate, req.empresaId]);
         if (deleteResult.rowCount === 0) {
             throw new Error("Falha ao apagar o registro de arremate original.");
         }
@@ -1606,12 +1630,13 @@ router.get('/contagem-hoje', async (req, res) => {
             SELECT COALESCE(SUM(quantidade_arrematada), 0) as total
             FROM arremates
             WHERE 
+                empresa_id = $1 AND
                 tipo_lancamento = 'PRODUCAO' AND
                 data_lancamento >= date_trunc('day', NOW() AT TIME ZONE 'America/Sao_Paulo') AND
                 data_lancamento < date_trunc('day', NOW() AT TIME ZONE 'America/Sao_Paulo') + interval '1 day';
         `;
         
-        const result = await dbClient.query(query);
+        const result = await dbClient.query(query, [req.empresaId]);
         const totalArrematadoHoje = parseInt(result.rows[0].total) || 0;
 
         res.status(200).json({ total: totalArrematadoHoje });
@@ -1643,9 +1668,9 @@ router.get('/historico-produto', async (req, res) => {
     try {
         dbClient = await pool.connect();
         
-        let whereClauses = ['produto_id = $1'];
-        const params = [parseInt(produto_id)];
-        let paramIndex = 2;
+        let whereClauses = ['empresa_id = $1', 'produto_id = $2'];
+        const params = [req.empresaId, parseInt(produto_id)];
+        let paramIndex = 3;
 
         if (varianteDecodificada && varianteDecodificada !== '-') {
             whereClauses.push(`variante = $${paramIndex++}`);
@@ -1713,21 +1738,29 @@ router.get('/desempenho-diario/:usuarioId', async (req, res) => {
                 s.*,
                 p.nome as produto_nome
             FROM sessoes_trabalho_arremate s
-            JOIN produtos p ON s.produto_id = p.id
+            JOIN produtos p ON s.produto_id = p.id AND p.empresa_id = s.empresa_id
             WHERE 
                 s.usuario_tiktik_id = $1 AND
+                s.empresa_id = $3 AND
                 s.data_inicio::date = $2::date
             ORDER BY s.data_inicio ASC;
         `;
-        const sessoesResult = await dbClient.query(sessoesQuery, [usuarioId, dataReferencia]);
+        const sessoesResult = await dbClient.query(sessoesQuery, [usuarioId, dataReferencia, req.empresaId]);
         const sessoesDoDia = sessoesResult.rows;
 
         // 2. Busca os horários de jornada do usuário
         const usuarioQuery = `
-            SELECT nome, horario_entrada_1, horario_saida_1, horario_entrada_2, horario_saida_2, horario_entrada_3, horario_saida_3 
-            FROM usuarios WHERE id = $1;
+            SELECT u.nome, ue.horario_entrada_1, ue.horario_saida_1,
+                   ue.horario_entrada_2, ue.horario_saida_2,
+                   ue.horario_entrada_3, ue.horario_saida_3
+              FROM usuarios u
+              JOIN usuarios_empresas ue
+                ON ue.usuario_id = u.id
+               AND ue.empresa_id = $2
+               AND ue.ativo
+             WHERE u.id = $1;
         `;
-        const usuarioResult = await dbClient.query(usuarioQuery, [usuarioId]);
+        const usuarioResult = await dbClient.query(usuarioQuery, [usuarioId, req.empresaId]);
         if (usuarioResult.rows.length === 0) {
             return res.status(404).json({ error: 'Usuário não encontrado.' });
         }
@@ -1816,7 +1849,7 @@ router.post('/sessoes/iniciar-lote', async (req, res) => {
 
     try {
         dbClient = await pool.connect();
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, req.empresaId);
         if (!permissoes.includes('lancar-arremate')) {
             return res.status(403).json({ error: 'Permissão negada para atribuir tarefas.' });
         }
@@ -1827,9 +1860,9 @@ router.post('/sessoes/iniciar-lote', async (req, res) => {
             const { produto_id, variante, saldo_para_arrematar, ops_detalhe, produto_nome } = item;
             
             const opNumeros = ops_detalhe.map(op => op.numero);
-            const opsResult = await dbClient.query(`SELECT numero, etapas, quantidade FROM ordens_de_producao WHERE numero = ANY($1::varchar[])`, [opNumeros]);
-            const arrematadoResult = await dbClient.query(`SELECT op_numero, SUM(quantidade_arrematada) as total_arrematado FROM arremates WHERE op_numero = ANY($1::varchar[]) AND tipo_lancamento IN ('PRODUCAO', 'PERDA') GROUP BY op_numero`, [opNumeros]);
-            const sessoesAtivasResult = await dbClient.query(`SELECT quantidade_entregue FROM sessoes_trabalho_arremate WHERE status = 'EM_ANDAMENTO' AND produto_id = $1 AND (variante = $2 OR (variante IS NULL AND $2 IS NULL))`, [produto_id, variante === '-' ? null : variante]);
+            const opsResult = await dbClient.query(`SELECT numero, etapas, quantidade FROM ordens_de_producao WHERE empresa_id = $2 AND numero = ANY($1::varchar[])`, [opNumeros, req.empresaId]);
+            const arrematadoResult = await dbClient.query(`SELECT op_numero, SUM(quantidade_arrematada) as total_arrematado FROM arremates WHERE empresa_id = $2 AND op_numero = ANY($1::varchar[]) AND tipo_lancamento IN ('PRODUCAO', 'PERDA') GROUP BY op_numero`, [opNumeros, req.empresaId]);
+            const sessoesAtivasResult = await dbClient.query(`SELECT quantidade_entregue FROM sessoes_trabalho_arremate WHERE empresa_id = $3 AND status = 'EM_ANDAMENTO' AND produto_id = $1 AND (variante = $2 OR (variante IS NULL AND $2 IS NULL))`, [produto_id, variante === '-' ? null : variante, req.empresaId]);
 
             const arrematadoMap = new Map(arrematadoResult.rows.map(r => [r.op_numero, parseInt(r.total_arrematado, 10)]));
             const quantidadeEmTrabalho = sessoesAtivasResult.rows.reduce((total, sessao) => total + (sessao.quantidade_entregue || 0), 0);
@@ -1850,8 +1883,8 @@ router.post('/sessoes/iniciar-lote', async (req, res) => {
                 });
             }
 
-            const sessaoQuery = `INSERT INTO sessoes_trabalho_arremate (usuario_tiktik_id, produto_id, variante, quantidade_entregue, op_numero, op_edit_id, dados_ops) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb) RETURNING id`;
-            await dbClient.query(sessaoQuery, [tiktikId, produto_id, variante === '-' ? null : variante, saldo_para_arrematar, ops_detalhe[0].numero, ops_detalhe[0].edit_id, JSON.stringify(ops_detalhe)]);
+            const sessaoQuery = `INSERT INTO sessoes_trabalho_arremate (empresa_id, usuario_tiktik_id, produto_id, variante, quantidade_entregue, op_numero, op_edit_id, dados_ops) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb) RETURNING id`;
+            await dbClient.query(sessaoQuery, [req.empresaId, tiktikId, produto_id, variante === '-' ? null : variante, saldo_para_arrematar, ops_detalhe[0].numero, ops_detalhe[0].edit_id, JSON.stringify(ops_detalhe)]);
         }
 
         await atualizarStatusUsuarioDB(
@@ -1881,13 +1914,13 @@ router.get('/tempos-padrao', async (req, res) => {
         // Conecta ao banco no início da rota
         dbClient = await pool.connect(); 
         
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id, req.empresaId);
         if (!permissoes.includes('acesso-ordens-de-arremates')) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
 
-        const query = `SELECT produto_id, tempo_segundos_por_peca FROM tempos_padrao_arremate`;
-        const result = await dbClient.query(query);
+        const query = `SELECT produto_id, tempo_segundos_por_peca FROM tempos_padrao_arremate WHERE empresa_id = $1`;
+        const result = await dbClient.query(query, [req.empresaId]);
         
         const temposMap = result.rows.reduce((acc, row) => {
             acc[row.produto_id] = parseFloat(row.tempo_segundos_por_peca);
@@ -1919,7 +1952,7 @@ router.post('/tempos-padrao', async (req, res) => {
         // Conecta ao banco
         dbClient = await pool.connect(); 
         
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id, req.empresaId);
         if (!permissoes.includes('gerenciar-permissoes')) {
             return res.status(403).json({ error: 'Permissão negada para configurar tempos padrão.' });
         }
@@ -1927,9 +1960,10 @@ router.post('/tempos-padrao', async (req, res) => {
         await dbClient.query('BEGIN');
 
         const query = `
-            INSERT INTO tempos_padrao_arremate (produto_id, tempo_segundos_por_peca)
-            SELECT * FROM UNNEST($1::int[], $2::numeric[])
-            ON CONFLICT (produto_id) 
+            INSERT INTO tempos_padrao_arremate (empresa_id, produto_id, tempo_segundos_por_peca)
+            SELECT $1, u.produto_id, u.tempo_segundos_por_peca
+              FROM UNNEST($2::int[], $3::numeric[]) AS u(produto_id, tempo_segundos_por_peca)
+            ON CONFLICT (empresa_id, produto_id)
             DO UPDATE SET 
                 tempo_segundos_por_peca = EXCLUDED.tempo_segundos_por_peca,
                 atualizado_em = CURRENT_TIMESTAMP;
@@ -1944,7 +1978,7 @@ router.post('/tempos-padrao', async (req, res) => {
             return res.status(400).json({ error: 'Dados de tempos inválidos. Verifique se todos os valores são números positivos.' });
         }
         
-        await dbClient.query(query, [produtoIds, temposValores]);
+        await dbClient.query(query, [req.empresaId, produtoIds, temposValores]);
         
         await dbClient.query('COMMIT');
         
@@ -1970,15 +2004,21 @@ router.get('/externos-recentes', async (req, res) => {
                 a.id, a.op_numero, a.variante,
                 a.quantidade_arrematada, a.data_lancamento, a.lancado_por,
                 p.nome AS produto_nome,
-                u.nome AS freelance_nome, u.tipos AS freelance_tipos
+                u.nome AS freelance_nome, ue.tipos AS freelance_tipos
             FROM arremates a
-            JOIN usuarios u ON u.id = a.usuario_tiktik_id AND 'prestador_externo' = ANY(u.tipos)
-            LEFT JOIN produtos p ON p.id = a.produto_id
-            WHERE a.data_lancamento >= NOW() - INTERVAL '24 hours'
+            JOIN usuarios u ON u.id = a.usuario_tiktik_id
+            JOIN usuarios_empresas ue
+              ON ue.usuario_id = u.id
+             AND ue.empresa_id = a.empresa_id
+             AND ue.ativo
+             AND 'prestador_externo' = ANY(ue.tipos)
+            LEFT JOIN produtos p ON p.id = a.produto_id AND p.empresa_id = a.empresa_id
+            WHERE a.empresa_id = $1
+              AND a.data_lancamento >= NOW() - INTERVAL '24 hours'
               AND a.tipo_lancamento = 'PRODUCAO'
             ORDER BY a.data_lancamento DESC
             LIMIT 20
-        `);
+        `, [req.empresaId]);
         res.status(200).json(result.rows);
     } catch (error) {
         console.error('[API GET /arremates/externos-recentes] Erro:', error);
@@ -1993,9 +2033,7 @@ router.post('/externo', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
-        await dbClient.query('BEGIN');
-
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id, req.empresaId);
         if (!permissoes.includes('lancar-arremate')) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
@@ -2006,15 +2044,22 @@ router.post('/externo', async (req, res) => {
         }
 
         const freelanceRes = await dbClient.query(
-            `SELECT id, nome FROM usuarios
-             WHERE 'prestador_externo' = ANY(tipos)
-             ORDER BY (CASE WHEN 'tiktik' = ANY(tipos) THEN 0 ELSE 1 END), id
-             LIMIT 1`
+            `SELECT u.id, u.nome FROM usuarios u
+             JOIN usuarios_empresas ue
+               ON ue.usuario_id = u.id
+              AND ue.empresa_id = $1
+              AND ue.ativo
+             WHERE 'prestador_externo' = ANY(ue.tipos)
+             ORDER BY (CASE WHEN 'tiktik' = ANY(ue.tipos) THEN 0 ELSE 1 END), u.id
+             LIMIT 1`,
+            [req.empresaId]
         );
         if (freelanceRes.rows.length === 0) {
             throw new Error("Nenhum usuário do tipo 'prestador_externo' cadastrado. Verifique o cadastro de usuários.");
         }
         const freelance = freelanceRes.rows[0];
+
+        await dbClient.query('BEGIN');
 
         for (const item of itens) {
             const { op_numero, op_edit_id, produto_id, variante, quantidade_arrematada } = item;
@@ -2024,8 +2069,9 @@ router.post('/externo', async (req, res) => {
             let valorPontoAplicado = 1.00;
             const configRes = await dbClient.query(`
                 SELECT pontos_padrao FROM configuracoes_pontos_processos
-                WHERE produto_id = $1 AND tipo_atividade = 'arremate_tiktik' AND ativo = TRUE LIMIT 1
-            `, [produto_id]);
+                WHERE produto_id = $1 AND empresa_id = $2
+                  AND tipo_atividade = 'arremate_tiktik' AND ativo = TRUE LIMIT 1
+            `, [produto_id, req.empresaId]);
             if (configRes.rows.length > 0 && configRes.rows[0].pontos_padrao !== null) {
                 valorPontoAplicado = parseFloat(configRes.rows[0].pontos_padrao);
             }
@@ -2033,11 +2079,11 @@ router.post('/externo', async (req, res) => {
 
             await dbClient.query(
                 `INSERT INTO arremates
-                    (op_numero, op_edit_id, produto_id, variante, quantidade_arrematada,
+                    (empresa_id, op_numero, op_edit_id, produto_id, variante, quantidade_arrematada,
                      usuario_tiktik, usuario_tiktik_id, lancado_por, valor_ponto_aplicado, pontos_gerados, tipo_lancamento)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'PRODUCAO')`,
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'PRODUCAO')`,
                 [
-                    op_numero, op_edit_id || null, parseInt(produto_id), variante || null, qtd,
+                    req.empresaId, op_numero, op_edit_id || null, parseInt(produto_id), variante || null, qtd,
                     freelance.nome, freelance.id, req.usuarioLogado.nome || 'Sistema',
                     valorPontoAplicado, pontosGerados
                 ]

@@ -11,12 +11,22 @@ const router = express.Router();
 const pool = new Pool({ connectionString: process.env.POSTGRES_URL, timezone: 'UTC' });
 const SECRET_KEY = process.env.JWT_SECRET;
 
+function exigirCadeiaProdutivaLegada(req, res) {
+    if (req.empresaAtiva?.eh_legada === true) return true;
+    res.status(403).json({
+        error: 'A cadeia de produÃ§Ã£o ainda nÃ£o estÃ¡ disponÃ­vel para a empresa ativa.',
+        codigo: 'CADEIA_PRODUTIVA_NAO_MIGRADA',
+    });
+    return false;
+}
+
 router.use(async (req, res, next) => {
     try {
         const authHeader = req.headers.authorization;
         if (!authHeader?.startsWith('Bearer ')) return res.status(401).json({ error: 'Token ausente.' });
         req.usuarioLogado = jwt.verify(authHeader.split(' ')[1], SECRET_KEY);
         req.empresaId = obterEmpresaIdDoContexto(req);
+        if (!exigirCadeiaProdutivaLegada(req, res)) return;
         next();
     } catch {
         res.status(401).json({ error: 'Token inválido ou expirado.' });
@@ -69,12 +79,16 @@ router.get('/diaria', async (req, res) => {
                 FROM producoes
                 WHERE data AT TIME ZONE 'America/Sao_Paulo' <  $1::date
                   AND data AT TIME ZONE 'America/Sao_Paulo' >= ($1::date - INTERVAL '14 days')
+                  AND empresa_id = $2
                 UNION
                 SELECT DISTINCT (data_lancamento AT TIME ZONE 'America/Sao_Paulo')::date
-                FROM arremates
-                WHERE data_lancamento AT TIME ZONE 'America/Sao_Paulo' <  $1::date
-                  AND data_lancamento AT TIME ZONE 'America/Sao_Paulo' >= ($1::date - INTERVAL '14 days')
-                  AND tipo_lancamento = 'PRODUCAO'
+                FROM arremates a
+                JOIN produtos prod
+                  ON prod.id = a.produto_id
+                 AND prod.empresa_id = $2
+                WHERE a.data_lancamento AT TIME ZONE 'America/Sao_Paulo' <  $1::date
+                  AND a.data_lancamento AT TIME ZONE 'America/Sao_Paulo' >= ($1::date - INTERVAL '14 days')
+                  AND a.tipo_lancamento = 'PRODUCAO'
             ),
             nao_uteis AS (
                 SELECT data FROM calendario_empresa
@@ -139,8 +153,10 @@ router.get('/diaria', async (req, res) => {
                      AND ue.empresa_id = $2
                      AND ue.ativo = TRUE
                     JOIN produtos prod ON p.produto_id     = prod.id
+                                         AND prod.empresa_id = $2
                     WHERE p.data AT TIME ZONE 'America/Sao_Paulo' >= $1::date
                       AND p.data AT TIME ZONE 'America/Sao_Paulo' <  ($1::date + INTERVAL '1 day')
+                      AND p.empresa_id = $2
                       AND ue.tipos && ARRAY['costureira','tiktik']
                       AND ue.data_admissao IS NOT NULL
                       AND ue.data_admissao::date <= $1::date
@@ -166,7 +182,9 @@ router.get('/diaria', async (req, res) => {
                       ON ue.usuario_id = u.id
                      AND ue.empresa_id = $2
                      AND ue.ativo = TRUE
-                    JOIN produtos prod ON a.produto_id        = prod.id
+                    JOIN produtos prod
+                      ON a.produto_id = prod.id
+                     AND prod.empresa_id = $2
                     WHERE a.data_lancamento AT TIME ZONE 'America/Sao_Paulo' >= $1::date
                       AND a.data_lancamento AT TIME ZONE 'America/Sao_Paulo' <  ($1::date + INTERVAL '1 day')
                       AND a.tipo_lancamento = 'PRODUCAO'
@@ -216,15 +234,19 @@ router.get('/diaria', async (req, res) => {
                     FROM producoes
                     WHERE data AT TIME ZONE 'America/Sao_Paulo' >= $1::date
                       AND data AT TIME ZONE 'America/Sao_Paulo' <  ($1::date + INTERVAL '1 day')
+                      AND empresa_id = $2
                     UNION ALL
                     SELECT usuario_tiktik_id, quantidade_arrematada, pontos_gerados
-                    FROM arremates
-                    WHERE data_lancamento AT TIME ZONE 'America/Sao_Paulo' >= $1::date
-                      AND data_lancamento AT TIME ZONE 'America/Sao_Paulo' <  ($1::date + INTERVAL '1 day')
-                      AND tipo_lancamento = 'PRODUCAO'
+                    FROM arremates a
+                    JOIN produtos prod
+                      ON prod.id = a.produto_id
+                     AND prod.empresa_id = $2
+                    WHERE a.data_lancamento AT TIME ZONE 'America/Sao_Paulo' >= $1::date
+                      AND a.data_lancamento AT TIME ZONE 'America/Sao_Paulo' <  ($1::date + INTERVAL '1 day')
+                      AND a.tipo_lancamento = 'PRODUCAO'
                 ) t
                 GROUP BY funcionario_id
-            `, [ultimoDiaUtilSQL]),
+            `, [ultimoDiaUtilSQL, req.empresaId]),
 
             // 3. Totais globais do último dia útil com produção (KPI bar da equipe)
             dbClient.query(`
@@ -238,12 +260,16 @@ router.get('/diaria', async (req, res) => {
                     FROM producoes
                     WHERE data AT TIME ZONE 'America/Sao_Paulo' >= $1::date
                       AND data AT TIME ZONE 'America/Sao_Paulo' <  ($1::date + INTERVAL '1 day')
+                      AND empresa_id = $2
                     UNION ALL
                     SELECT usuario_tiktik_id, quantidade_arrematada, pontos_gerados, 'arremate' AS tipo_atividade
-                    FROM arremates
-                    WHERE data_lancamento AT TIME ZONE 'America/Sao_Paulo' >= $1::date
-                      AND data_lancamento AT TIME ZONE 'America/Sao_Paulo' <  ($1::date + INTERVAL '1 day')
-                      AND tipo_lancamento = 'PRODUCAO'
+                    FROM arremates a
+                    JOIN produtos prod
+                      ON prod.id = a.produto_id
+                     AND prod.empresa_id = $2
+                    WHERE a.data_lancamento AT TIME ZONE 'America/Sao_Paulo' >= $1::date
+                      AND a.data_lancamento AT TIME ZONE 'America/Sao_Paulo' <  ($1::date + INTERVAL '1 day')
+                      AND a.tipo_lancamento = 'PRODUCAO'
                 ) t
                 JOIN usuarios u ON t.funcionario_id = u.id
                 JOIN usuarios_empresas ue
@@ -295,16 +321,20 @@ router.get('/diaria', async (req, res) => {
                     FROM producoes
                     WHERE data AT TIME ZONE 'America/Sao_Paulo' >= ($1::date - INTERVAL '30 days')
                       AND data AT TIME ZONE 'America/Sao_Paulo' <  $1::date
+                      AND empresa_id = $2
                     UNION ALL
                     SELECT data_lancamento, pontos_gerados
-                    FROM arremates
-                    WHERE data_lancamento AT TIME ZONE 'America/Sao_Paulo' >= ($1::date - INTERVAL '30 days')
-                      AND data_lancamento AT TIME ZONE 'America/Sao_Paulo' <  $1::date
-                      AND tipo_lancamento = 'PRODUCAO'
+                    FROM arremates a
+                    JOIN produtos prod
+                      ON prod.id = a.produto_id
+                     AND prod.empresa_id = $2
+                    WHERE a.data_lancamento AT TIME ZONE 'America/Sao_Paulo' >= ($1::date - INTERVAL '30 days')
+                      AND a.data_lancamento AT TIME ZONE 'America/Sao_Paulo' <  $1::date
+                      AND a.tipo_lancamento = 'PRODUCAO'
                 ) t
                 GROUP BY (data AT TIME ZONE 'America/Sao_Paulo')::date
                 HAVING SUM(pontos_gerados) > 0
-            `, [dataFiltroSQL]),
+            `, [dataFiltroSQL, req.empresaId]),
 
             // 7. Comparativo semanal
             //    atual:   Mon desta semana → fim de hoje
@@ -328,14 +358,18 @@ router.get('/diaria', async (req, res) => {
                     FROM producoes
                     WHERE data AT TIME ZONE 'America/Sao_Paulo' >= $3::timestamp
                       AND data AT TIME ZONE 'America/Sao_Paulo' <  $2::timestamp
+                      AND empresa_id = $5
                     UNION ALL
                     SELECT data_lancamento, quantidade_arrematada, pontos_gerados
-                    FROM arremates
-                    WHERE data_lancamento AT TIME ZONE 'America/Sao_Paulo' >= $3::timestamp
-                      AND data_lancamento AT TIME ZONE 'America/Sao_Paulo' <  $2::timestamp
-                      AND tipo_lancamento = 'PRODUCAO'
+                    FROM arremates a
+                    JOIN produtos prod
+                      ON prod.id = a.produto_id
+                     AND prod.empresa_id = $5
+                    WHERE a.data_lancamento AT TIME ZONE 'America/Sao_Paulo' >= $3::timestamp
+                      AND a.data_lancamento AT TIME ZONE 'America/Sao_Paulo' <  $2::timestamp
+                      AND a.tipo_lancamento = 'PRODUCAO'
                 ) t
-            `, [mondayStr, tomorrowStr, lastMondayStr, lastWeekEndStr]),
+            `, [mondayStr, tomorrowStr, lastMondayStr, lastWeekEndStr, req.empresaId]),
 
             // 9. Verifica se o dia de referência é útil (feriado / folga / trabalho_extra)
             //    Filtra apenas eventos gerais (funcionario_id IS NULL).
@@ -602,10 +636,17 @@ router.get('/desempenho-historico', async (req, res) => {
         const { rows } = await dbClient.query(`
             WITH atividades AS (
                 SELECT data AS ts, pontos_gerados FROM producoes
-                WHERE funcionario_id = $1 AND data >= NOW() - INTERVAL '7 days'
+                WHERE funcionario_id = $1
+                  AND empresa_id = $2
+                  AND data >= NOW() - INTERVAL '7 days'
                 UNION ALL
-                SELECT data_lancamento, pontos_gerados FROM arremates
-                WHERE usuario_tiktik_id = $1 AND data_lancamento >= NOW() - INTERVAL '7 days'
+                SELECT a.data_lancamento, a.pontos_gerados
+                FROM arremates a
+                JOIN produtos prod
+                  ON prod.id = a.produto_id
+                 AND prod.empresa_id = $2
+                WHERE a.usuario_tiktik_id = $1
+                  AND a.data_lancamento >= NOW() - INTERVAL '7 days'
             ),
             por_dia AS (
                 SELECT
@@ -616,7 +657,7 @@ router.get('/desempenho-historico', async (req, res) => {
             )
             SELECT AVG(CASE WHEN horas > 0.1 THEN total_pts / horas END) AS media_pph
             FROM por_dia
-        `, [funcionarioId]);
+        `, [funcionarioId, req.empresaId]);
 
         res.status(200).json({
             funcionarioId,

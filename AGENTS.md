@@ -1823,3 +1823,357 @@ empresa secundaria porque a Fase 8 esta fora do escopo.
   O proximo passo e separar o diff seletivo do ponto, criar seu commit proprio
   e aguardar autorizacao explicita para publicar e executar o smoke autenticado,
   mantendo a cadeia produtiva bloqueada para empresas secundarias.
+
+Atualização em 2026-08-03: o bloco de Produção da Fase 8 foi ensaiado somente
+em clones PostgreSQL locais. A base `sistema_lv_cadeia_producao_test` foi
+derivada de `sistema_lv_ponto_motor_test`; Produtos/Demandas e OPs/Cortes foram
+reaplicados antes da migration de Produção. `producoes` e
+`producoes_solicitacoes_exclusao` receberam `empresa_id` obrigatório, o
+backfill preservou 7 lançamentos e 2 sessões sem OP pai, a aplicação foi
+idempotente e o rollback preservou hashes das oito tabelas. O smoke HTTP com
+duas empresas aprovou sessão, finalização, isolamento e solicitações de
+exclusão; as regressões anteriores também passaram sequencialmente. O fluxo
+não cria mais OP fictícia `0000`, normaliza variante ausente para `'-'`, monta
+Gerenciar Produção no índice serverless e mantém o bloqueio secundário até o
+marcador `multiempresas-fase8-producao-ensaio-v1` existir no banco. Nenhuma
+migration foi executada na Neon; não houve commit, push ou deploy.
+
+## Handoff obrigatório para a próxima sessão — 2026-08-03
+
+O estado detalhado da retomada da Fase 8 multiempresas está em
+`_planejamento/RETOMADA-FASE8-MULTIEMPRESAS-2026-08-03.md`. O próximo Codex
+deve ler esse arquivo junto com a seção 13.19 do plano operacional e a
+auditoria da cadeia produtiva. O bloco de Produção de lançamentos/sessões,
+assim como Produtos/Demandas e OPs/Cortes, já foi aprovado localmente com
+idempotência, rollback e smoke HTTP de dois contextos; não deve ser refeito sem
+regressão concreta. O próximo trabalho é fechar os consumidores restantes de
+Produção (`api/producao.js`, `api/real-producao.js`, promessas, cron, alertas,
+agentes e relatórios), depois migrar Arremates, Embalagem e Estoque e só então
+fechar G11/G12. Nenhuma migration na Neon, commit, push ou deploy está
+autorizado sem decisão explícita do usuário. O worktree e as bases locais
+existentes devem ser preservados.
+
+### AtualizaÃ§Ã£o operacional em 2026-08-04 â€” consumidores de ProduÃ§Ã£o
+
+- `api/producao.js` foi revisado rota por rota no clone local: status individual,
+  status coletivo, grupos, fila, sugestÃ£o, tempos padrÃ£o e cancelamento agora
+  qualificam produto, OP, produÃ§Ã£o, sessÃ£o, funcionÃ¡rio e configuraÃ§Ã£o pela
+  empresa ativa quando a tabela Ã© empresarial ou herda o vÃ­nculo do produto.
+- `api/real-producao.js` passou a falhar fechado para empresas secundÃ¡rias e
+  seus totais, histÃ³rico e comparativos filtram as produÃ§Ãµes pelo contexto; os
+  arremates continuam consumidos apenas no caminho legado atÃ© a migraÃ§Ã£o desse
+  domÃ­nio.
+- `producao_promessas` recebeu ensaio aditivo local em
+  `_planejamento/migration-cadeia-fase8-promessas-ensaio.sql`, com
+  `empresa_id NOT NULL`, unicidade `(empresa_id, produto_ref_id)`, backfill da
+  empresa legada, rollback e marcador
+  `multiempresas-fase8-promessas-ensaio-v1`. A API valida SKU/grade no produto
+  da empresa ativa, ignora `empresa_id` do body e bloqueia empresas secundÃ¡rias.
+- O índice serverless passou a montar `/producao`, garantindo paridade com o
+  Express local para os consumidores revisados.
+- O ensaio HTTP de consumidores foi aprovado em clone local com status, grupos,
+  fila, sugestÃ£o, tempos, promessas, histÃ³rico de desempenho e dashboard de
+  produÃ§Ã£o legados; os mesmos caminhos retornaram
+  `CADEIA_PRODUTIVA_NAO_MIGRADA` no contexto secundÃ¡rio. NÃ£o houve Neon,
+  commit, push ou deploy.
+
+### Atualizacao operacional em 2026-08-04 — cron e alertas da Fase 8
+
+- O cron de arquivamento agora atualiza somente demandas com `empresa_id` e
+  empresa ativa. A reconciliacao ordinaria de ponto continua limitada a uma
+  empresa legada enquanto a cadeia produtiva nao for migrada.
+- `eventos_sistema` e `historico_alertas` receberam ensaio aditivo local com
+  `empresa_id NOT NULL`, backfill para a empresa legada, indices empresariais,
+  FKs `NOT VALID` e marcador `multiempresas-fase8-alertas-ensaio-v1`.
+- `alertas_configuracoes_gerais` passou a usar chave primaria
+  `(empresa_id, chave)`. `configuracoes_alertas` permanece catalogo global;
+  seus valores operacionais foram separados para
+  `configuracoes_alertas_empresas`, com overrides por empresa.
+- O router de alertas agora filtra eventos, historico, demandas e parametros
+  pelo contexto ativo, grava eventos/historico com empresa e falha fechado para
+  empresas secundarias enquanto Arremates ainda nao foi migrado. Demandas e o
+  evento de meta de Arremates tambem passaram a gravar `empresa_id`.
+- O indice serverless passou a montar `/alertas` e `/cron`, garantindo paridade
+  com o Express local.
+- A migration foi aplicada duas vezes no clone `sistema_lv_cadeia_alertas_test`;
+  o rollback no clone `sistema_lv_cadeia_alertas_rollback_test` preservou os
+  hashes das 4.479 linhas originais e removeu tabela, colunas e marcador.
+- O smoke HTTP final foi aprovado no clone
+  `sistema_lv_cadeia_alertas_smoke_final`, cobrindo arquivamento, overrides,
+  dias/janela, eventos, historico, hora extra, body spoof e bloqueio
+  secundario. O clone terminou sem fixtures temporarios.
+- `npm run typecheck`, `npm run build`, `node --check` dos routers alterados e
+  `git diff --check` passaram. O build manteve somente o aviso conhecido de
+  chunk grande do Financeiro. Nenhuma migration foi executada na Neon; nao
+  houve commit, push ou deploy.
+- Proximo passo: fechar agentes, polling, dashboard e relatorios transversais;
+  depois iniciar a migration completa de Arremates.
+
+### Atualizacao operacional em 2026-08-04 - agentes, polling, dashboard e relatorios
+
+- A dashboard foi revisada rota por rota. Producoes, arremates, produtos,
+  ranking, calendario, streak, conquistas e tabela de pontos agora usam o
+  `empresa_id` do contexto ativo; a selecao do ranking usa
+  `usuarios_empresas`, nao a identidade global de `usuarios`.
+- Os consumidores React de OP, cortes e Arremates passaram a consultar o
+  contexto local antes de iniciar buscas ou polling. Em empresa secundaria,
+  os timers sao interrompidos e a UI exibe bloqueio neutro sem dados de outra
+  empresa. A mudanca cobre o monitor de OP, painel de producao, painel de
+  cortes, radar/agente de cortes e painel de atividades de Arremates.
+- Producao Geral passou a interpretar `CADEIA_PRODUTIVA_NAO_MIGRADA`, parar a
+  atualizacao automatica e renderizar bloqueio neutro. O helper
+  `obterEmpresaAtivaLocal` foi centralizado em `public/js/utils/auth.js`.
+- O smoke `tools/testar-consumidores-dashboard-http-local.mjs` foi aprovado no
+  clone `sistema_lv_cadeia_consumidores_dashboard_test`. As rotas de dashboard
+  e os relatorios de `real-producao` retornaram 200 na empresa legada e 403
+  com `CADEIA_PRODUTIVA_NAO_MIGRADA` na empresa secundaria. O smoke habilitou
+  temporariamente os modulos necessarios no clone e restaurou os flags ao fim.
+- Comandos executados: `npm run typecheck`, `npm run build`, `git diff --check`
+  e `node tools/testar-consumidores-dashboard-http-local.mjs
+  postgresql://postgres@127.0.0.1:55432/sistema_lv_cadeia_consumidores_dashboard_test`.
+  Todos passaram; o build manteve somente o aviso conhecido de chunk grande do
+  Financeiro. Nenhuma migration foi executada na Neon; nao houve commit, push
+  ou deploy.
+- Proximo passo: iniciar Arremates, preservando o gate secundario ate a
+  migration e os consumidores do dominio serem aprovados localmente.
+## Atualizacao operacional em 2026-08-04 - Arremates
+
+O bloco local de Arremates foi concluido sem alterar a base fonte
+`sistema_lv_cadeia_producao_test`. O clone `sistema_lv_cadeia_arremates_test`
+recebeu migration aditiva para `arremates`, `arremate_perdas`,
+`sessoes_trabalho_arremate`, `tempos_padrao_arremate`, `log_assinaturas` e
+`log_divergencias`.
+
+- 9.607 arremates e 4.290 sessoes herdaram empresa da OP; as 202 perdas e os
+  7 tempos receberam empresa, com duas perdas sem arremate de origem
+  preservadas na empresa legada.
+- `api/arremates.js` foi revisada rota a rota; leituras, buscas por ID,
+  estornos, sessoes, perdas, tempos, logs, fila, status e relatorios usam o
+  contexto empresarial. O body nao escolhe empresa.
+- Os dois writers compartilhados de `log_assinaturas` em `api/producoes.js`
+  foram ajustados para acompanhar o novo `NOT NULL`; `api/alertas.js` e
+  `api/ponto.js` qualificam sessoes e tempos de Arremates.
+- O gate secundario foi preservado: a empresa secundaria retorna
+  `CADEIA_PRODUTIVA_NAO_MIGRADA`.
+
+Evidencias: migration aplicada duas vezes; rollback no clone
+`sistema_lv_cadeia_arremates_rollback_test` com hashes iguais nas seis tabelas;
+smoke HTTP de nove rotas legadas e nove bloqueios secundarios; body spoof e
+tres FKs de isolamento aprovados. A primeira execucao encontrou e corrigiu a
+falta do parametro empresarial em `contagem-hoje`; a segunda passou. Nao houve
+Neon, commit, push ou deploy.
+
+Proximo passo recomendado: iniciar Embalagem, incluindo
+`embalagens_realizadas`, `api/embalagens.js`, fila de OPs e o consumo de
+Arremates por embalagem.
+
+## Atualizacao operacional em 2026-08-04 - Embalagem
+
+O bloco local de Embalagem foi concluido sem alterar a base fonte
+`sistema_lv_cadeia_arremates_test`. O clone principal foi
+`sistema_lv_cadeia_embalagem_test`; os clones de baseline e rollback foram
+preservados.
+
+- `embalagens_realizadas` recebeu `empresa_id NOT NULL`, backfill das 4.781
+  linhas pelo produto, FKs/indices empresariais e `idempotency_key` opcional
+  com unicidade por empresa.
+- `api/embalagens.js` e `api/ops-para-embalagem.js` qualificam as rotas pelo
+  contexto. `api/kits.js`, `api/estoque.js` e o consumidor de Embalagens em
+  `api/demandas.js` foram ajustados; writers secundários permanecem fechados
+  porque `estoque_movimentos` ainda e global.
+- Entrada unitária e montagem de kit usam lock transacional e
+  `Idempotency-Key`; body spoof nao escolhe empresa.
+- A migration foi aplicada duas vezes, o rollback preservou hashes e os
+  smokes HTTP/constraints foram aprovados. `node --check`, `git diff --check`,
+  `npm run typecheck` e `npm run build` passaram; o build manteve apenas o
+  aviso conhecido de chunk grande do Financeiro.
+- Nenhuma migration foi executada na Neon; nao houve commit, push ou deploy.
+
+Proximo passo recomendado: Estoque e Inventario, cobrindo movimentos,
+arquivados, niveis, inventario e consumidores de saldo global.
+
+## Atualizacao operacional em 2026-08-04 - Estoque e Inventario
+
+O bloco local de Estoque e Inventario foi concluido sem alterar a base fonte
+`sistema_lv_cadeia_embalagem_test`. O clone limpo de trabalho foi
+`sistema_lv_cadeia_estoque_clean_test`; o clone antigo
+`sistema_lv_cadeia_estoque_test`, criado antes da limpeza de um resíduo de
+smoke, foi preservado e não foi usado como fonte de evidência.
+
+- `estoque_movimentos` (13.235), `estoque_itens_arquivados` (10),
+  `produto_niveis_estoque_alerta` (163), `inventario_sessoes` (36),
+  `inventario_itens` (5.399) e `log_montagem_kits` (145) receberam
+  `empresa_id NOT NULL`; o backfill terminou com zero nulos e todos os dados
+  locais classificados na empresa legada.
+- Movimentos receberam `idempotency_key` opcional com unicidade por empresa;
+  sessões de inventário também receberam chave idempotente empresarial.
+  FKs compostas validam empresa/produto, empresa/arremate,
+  empresa/sessão, empresa/vínculo e embalagem/movimento.
+- `api/estoque.js`, `api/inventario.js` e `api/niveis-estoque.js` foram
+  revisadas rota a rota. Kits, estorno de Embalagem e o consumidor de saldo em
+  `api/demandas.js` passaram a gravar/consultar por empresa. O body não troca
+  contexto; produto, origem e sessão são validados pelo backend.
+- `auditoria_eventos` permanece global e foi explicitamente mantida no bloco
+  transversal seguinte. A rota de auditoria do Estoque falha fechada para
+  empresas secundárias e writers secundários não gravam eventos globais até
+  essa migração.
+
+Evidências locais: migration aplicada duas vezes no clone limpo; rollback em
+`sistema_lv_cadeia_estoque_rollback2_test` devolveu hashes e colunas idênticos
+ao baseline; `tools/testar-estoque-constraints-local.mjs` aprovou zero nulos,
+FK cruzada rejeitada e unicidade de idempotência; o smoke
+`tools/testar-estoque-inventario-http-local.mjs` aprovou cinco leituras
+isoladas, body spoof, movimento manual/lote/estorno idempotentes e inventário
+isolado. `node --check`, `npm run typecheck` e `npm run build` passaram; o
+build manteve apenas o aviso conhecido de chunk grande.
+
+Comandos executados ficaram registrados nos scripts locais de inspeção,
+migration, rollback, constraints e HTTP. Nenhuma migration foi executada na
+Neon; não houve commit, push ou deploy.
+
+Próximo passo recomendado: fechar os consumidores transversais, começando por
+`auditoria_eventos`, `eventos_sistema`, `historico_alertas`, cron, alertas,
+agentes, dashboard e relatórios; depois revisar os gates G11/G12.
+
+## Atualizacao operacional em 2026-08-04 - Consumidores transversais
+
+O bloco transversal foi concluido somente em clones PostgreSQL locais. O clone
+principal foi `sistema_lv_cadeia_transversal_test`, derivado do clone limpo de
+Estoque; baseline e rollback foram criados e preservados. A base principal de
+Produção e todos os clones anteriores permaneceram intactos.
+
+- A migration de Alertas aprovada foi reaplicada na nova linhagem, e
+  `comissoes_pagas`, `audit_log` e `auditoria_eventos` receberam
+  `empresa_id NOT NULL`, FKs `NOT VALID`, unicidades compostas e índices.
+  O backfill preservou 6, 3.457 e 295 registros, respectivamente, todos na
+  empresa legada.
+- A unicidade global antiga de `comissoes_pagas` por nome/ciclo foi trocada por
+  unicidade empresarial; a regressão foi encontrada e corrigida no smoke de
+  constraints antes do rollback final.
+- `api/audit.js` grava o contexto empresarial no `audit_log`; `api/audit-log.js`
+  filtra histórico e usuários pela empresa ativa; `api/estoque.js` grava e lê
+  `auditoria_eventos` por empresa. O endpoint `audit-log` foi montado também
+  em `api/index.js`.
+- O HTTP transversal aprovou isolamento de audit-log, usuários e auditoria de
+  Estoque em dois contextos, inclusive writer empresarial. Os smokes de cron/
+  alertas e Estoque/Inventário foram repetidos na nova linhagem como regressão
+  e retornaram `aprovado: true`.
+- Constraints, backfill e rollback conjunto foram aprovados; typecheck, build,
+  checagens sintáticas e diff check passaram. O build mantém somente o aviso
+  conhecido de chunks grandes.
+- Não houve migration na Neon, commit, push ou deploy. O próximo passo é
+  preparar o diff reproduzível do G11; G12 continua condicionado à autorização
+  operacional explícita.
+
+## Plano de fechamento da Fase 8 — decisão operacional em 2026-08-05
+
+Os ensaios locais da cadeia produtiva até consumidores transversais estão
+aprovados nos clones PostgreSQL preservados. Antes de qualquer commit, o
+worktree será congelado e uma bateria integrada de G1–G6 será executada somente
+em clones locais, cobrindo invariantes de quantidade, perdas, arremates,
+embalagem, estoque, inventário, comissões, retry, concorrência, idempotência,
+auditoria e isolamento entre empresas.
+
+O staging permanece fora do fluxo. G11 só será fechado após essa bateria e a
+revisão do diff reproduzível. G12 continuará pendente até autorização explícita
+para commit, deploy, migration na Neon, smoke produtivo controlado e eventual
+liberação de empresa secundária.
+Na primeira rodada da bateria integrada, o clone preservado
+`sistema_lv_g6_integrada_test` aprovou os fluxos de Producao, Arremates,
+Estoque/Inventario, Transversais, Cron/Alertas, consumidores da Dashboard,
+constraints empresariais e, apos migration local de Promessas aplicada somente
+nesse clone, os consumidores de Producao. A rodada nao fechou G6: `api/estoque.js`
+tem uma query de `entrada-producao` com os placeholders deslocados, o clone
+transversal principal nao contem `empresa_id` em `producao_promessas`, e o script
+de cadeia deixou no clone G6 a empresa temporaria 70 com dois registros de
+`audit_log`. `npm run typecheck` e `git diff --check` passaram. Esses bloqueios
+devem ser resolvidos e revalidados antes do congelamento G11; nenhuma correcao
+de codigo, commit, push, deploy ou migration na Neon foi feita nesta auditoria.
+
+Atualizacao da bateria v5: as correcoes de `api/estoque.js`, do guard
+secundario de `entrada-producao` e dos cleanups de Embalagem, Estoque e cadeia
+foram validadas no clone local preservado
+`sistema_lv_g6_integrada_v5_test`. A bateria completa G6 passou 12/12, as
+contagens dos dominios mutaveis retornaram iguais as da origem, `npm run
+typecheck`, build e `git diff --check` passaram. Permanecem somente tres
+eventos de tarefa em `ponto_eventos` da empresa temporaria: o livro e
+append-only e o trigger impede sua exclusao. Esses eventos, a empresa e o
+vinculo correspondente foram mantidos como evidencia no clone candidato; nao
+houve desativacao de trigger, alteracao dos clones protegidos, migration na
+Neon, commit, push ou deploy. G6 funcional e G6.8 estao aprovados; G6.7 possui
+essa excecao documentada para revisao durante G11.
+
+Atualizacao do G11 em 2026-08-05: a matriz seletiva foi consolidada no
+`_planejamento/multiempresas-controle-de-arquivos.md`, com 28 arquivos puros,
+seis arquivos mistos e os diffs paralelos explicitamente fora do pacote. O
+typecheck, o build e o `git diff --check` passaram novamente; a bateria G6 v5
+nao foi repetida porque nao houve regressao concreta. O G11 esta preparado
+para aceite manual do diff, mas continua sem commit, push, deploy, migration
+na Neon ou liberacao de empresa secundaria.
+
+Achado adicional do G11 em 2026-08-05: a auditoria estrutural read-only do
+clone local confirmou zero nulos, orfaos ou duplicidades de idempotencia nos
+dados empresariais verificados, mas os probes transacionais confirmaram que
+`demandas_componentes_atribuidos` ainda aceita `empresa_id` nulo e conserva
+`UNIQUE (componente_chave)` global. Tambem permanecem unicidades globais
+legadas para nome de produto, numero de OP e PN de corte. Isso decorre do
+ensaio aditivo com `constraints_legadas_preservadas = true`; nao houve escrita
+persistente, migration na Neon ou alteracao de runtime. A migration final deve
+substituir essas unicidades quando a regra empresarial exigir e normalizar os
+campos obrigatorios antes da liberacao de empresa secundaria.
+
+Atualizacao estrutural do G11 em 2026-08-05: a pendencia foi ensaiada e
+corrigida somente em `sistema_lv_g11_constraints_test`, derivado do clone G6 v5.
+A migration local
+`_planejamento/migration-cadeia-fase8-finalizacao-chaves-empresariais-ensaio.sql`
+tornou `empresa_id` obrigatorio em Produtos, Demandas, componentes atribuidos,
+OPs e Cortes, removeu as sete unicidades globais conflitantes e preservou as
+chaves empresariais compostas. A aplicacao repetida foi idempotente. O teste
+estrutural passou 5/5 probes; o rollback em
+`sistema_lv_g11_constraints_rollback_test` passou 2/2 probes e restaurou a
+estrutura aditiva anterior com snapshots identicos. As ferramentas de teste e
+os dois SQLs sao evidencias de ensaio local e nao autorizam migration na Neon.
+O G11 segue preparado para aceite manual da separacao seletiva do worktree; o
+G12 continua pendente. Nao houve staging, commit, push, deploy ou alteracao dos
+clones protegidos.
+
+Atualizacao operacional local em 2026-08-05: os erros HTTP 500 observados ao
+abrir Ordens de Producao foram reproduzidos quando o servidor local carregou o
+`.env` apontado para a Neon, que ainda nao recebeu a Fase 8. O `.env` permanece
+intocado por decisao do projeto. O desenvolvimento e os smokes locais devem
+usar `tools/iniciar-dev-clone-local.ps1`, que sobrescreve `POSTGRES_URL` apenas
+nos processos filhos com o clone PostgreSQL local escolhido. O agente global de
+OP agora falha fechado enquanto o contexto empresarial ainda nao estiver
+carregado e volta a consultar somente apos o evento de contexto carregado.
+Essa protecao evita 500 transitivo durante a primeira pintura sem alterar a
+regra de staging, Neon ou producao.
+
+Validacao final do iniciador: com um clone local novo, a API respondeu HTTP 200
+em `/api/ping` e o Vite entregou HTTP 200 para
+`/admin/ordens-de-producao.html`. O argumento da porta do Vite foi ajustado
+para a forma compativel com `Start-Process` no PowerShell do Windows.
+
+Aceite manual local do G11 em 2026-08-05: o usuario confirmou que nao encontrou
+erros e que os fluxos estao funcionando corretamente. O G11 fica aceito no
+escopo local, mas qualquer commit, push, deploy, migration na Neon, smoke
+produtivo, liberacao secundaria ou abertura do G12 continua dependendo de
+autorizacao explicita.
+
+Revisao seletiva final em 2026-08-05: o hunk de `api/dashboard.js:1209-1210`
+que apenas reescreve `paramsPontos` foi identificado como paralelo e deve ficar
+fora do pacote da Fase 8. As alteracoes de pontos em `api/producoes.js` e
+`api/real-producao.js` foram confirmadas como filtros e escritores empresariais
+da cadeia. Nenhum staging ou commit foi feito.
+
+Fechamento final do G11 em 2026-08-05: o usuario confirmou console limpo no
+ambiente local iniciado por `tools/iniciar-dev-clone-local.ps1` com o clone
+`sistema_lv_cadeia_transversal_test`. Typecheck, build e diff-check passaram
+novamente, as referencias dos blocos `op-redesign-kpis` e
+`op-redesign-leitura` nao existem mais, e o staging continua vazio. O G11 esta
+aceito no escopo local. O handoff operacional para o proximo Codex esta em
+`_planejamento/RETOMADA-G12-FASE8-MULTIEMPRESAS-2026-08-05.md`.
+
+O proximo trabalho e preparar, sem staging, a composicao seletiva do pacote e
+aguardar autorizacao do usuario. G12 permanece pendente: commit, push, deploy,
+migration na Neon, smoke produtivo e liberacao de empresa secundaria sao
+decisoes separadas e nao recebem autorizacao implicita do fechamento local.

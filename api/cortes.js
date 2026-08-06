@@ -4,6 +4,7 @@ import pkg from 'pg';
 const { Pool } = pkg;
 import jwt from 'jsonwebtoken';
 import express from 'express';
+import { obterEmpresaIdDoContexto } from './contexto-empresa.js';
 
 // Importar a função de buscar permissões completas
 import { getPermissoesCompletasUsuarioDB } from './usuarios.js';
@@ -34,7 +35,14 @@ const verificarTokenOriginal = (reqOriginal) => {
 // Middleware para este router: Apenas autentica o token.
 router.use(async (req, res, next) => {
     try {
-        req.usuarioLogado = verificarTokenOriginal(req);
+        const tokenClaims = verificarTokenOriginal(req);
+        req.usuarioLogado = {
+            ...tokenClaims,
+            ...(req.usuarioLogado || {}),
+            id: req.usuarioLogado?.id || tokenClaims.id,
+            nome: req.usuarioLogado?.nome || tokenClaims.nome,
+        };
+        obterEmpresaIdDoContexto(req);
         next();
     } catch (error) {
         console.error('[router/cortes MID] Erro no middleware:', error.message);
@@ -43,12 +51,21 @@ router.use(async (req, res, next) => {
     }
 });
 
+router.use((req, res, next) => {
+    if (req.empresaAtiva?.eh_legada === true) return next();
+    return res.status(403).json({
+        error: 'A cadeia produtiva ainda não está disponível para a empresa ativa.',
+        codigo: 'CADEIA_PRODUTIVA_NAO_MIGRADA',
+    });
+});
+
 // GET /api/cortes/radar — Pulso do setor + déficit de estoque
 router.get('/radar', async (req, res) => {
+    const empresaId = obterEmpresaIdDoContexto(req);
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id);
+        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id, empresaId);
 
         if (!permissoesCompletas.includes('acesso-ordens-de-producao')) {
             return res.status(403).json({ error: 'Permissão negada.' });
@@ -63,18 +80,20 @@ router.get('/radar', async (req, res) => {
                 COUNT(*) FILTER (WHERE status = 'cortados' AND op IS NULL)::int AS total_cortes_disponiveis,
                 COUNT(*) FILTER (WHERE data::date = CURRENT_DATE AND status != 'excluido')::int AS lancamentos_hoje
             FROM cortes
-            WHERE status != 'excluido'
-        `);
+            WHERE empresa_id = $1
+              AND status != 'excluido'
+        `, [empresaId]);
 
         // 2. Último lançamento — ordena por id DESC para pegar o mais recente mesmo sem data_atualizacao
         const ultimoResult = await dbClient.query(`
             SELECT c.cortador, c.data, p.nome AS produto_nome
             FROM cortes c
-            LEFT JOIN produtos p ON c.produto_id = p.id
-            WHERE c.status != 'excluido'
+            LEFT JOIN produtos p ON c.produto_id = p.id AND p.empresa_id = c.empresa_id
+            WHERE c.empresa_id = $1
+              AND c.status != 'excluido'
             ORDER BY c.id DESC
             LIMIT 1
-        `);
+        `, [empresaId]);
 
         // 3. Alertas de déficit: demandas ativas sem corte suficiente em estoque
         // Wrapped in try/catch — se a estrutura da tabela demandas_producao mudar, não quebra o endpoint
@@ -87,7 +106,8 @@ router.get('/radar', async (req, res) => {
                         COALESCE(variante, '') AS variante,
                         SUM(quantidade)::int AS disponiveis
                     FROM cortes
-                    WHERE status = 'cortados' AND op IS NULL
+                    WHERE empresa_id = $1
+                      AND status = 'cortados' AND op IS NULL
                     GROUP BY produto_id, variante
                 ),
                 demandas_ativas AS (
@@ -105,7 +125,7 @@ router.get('/radar', async (req, res) => {
                         ) AS variante,
                         SUM(dp.quantidade_solicitada)::int AS necessarias
                     FROM demandas_producao dp
-                    JOIN produtos p ON (
+                     JOIN produtos p ON p.empresa_id = dp.empresa_id AND (
                         p.sku = dp.produto_sku
                         OR EXISTS (
                             SELECT 1 FROM jsonb_array_elements(
@@ -114,7 +134,8 @@ router.get('/radar', async (req, res) => {
                             WHERE g->>'sku' = dp.produto_sku
                         )
                     )
-                    WHERE p.is_kit = false
+                     WHERE dp.empresa_id = $1
+                       AND p.is_kit = false
                       AND dp.status NOT IN ('em_producao', 'concluida', 'cancelada', 'arquivada', 'finalizada')
                     GROUP BY p.id, p.nome, variante
                 )
@@ -130,7 +151,7 @@ router.get('/radar', async (req, res) => {
                     AND e.variante = d.variante
                 WHERE COALESCE(e.disponiveis, 0) < d.necessarias
                 ORDER BY d.produto_nome
-            `);
+            `, [empresaId]);
             alertasDeficit = deficitResult.rows;
         } catch (deficitErr) {
             console.warn('[Radar/cortes] Erro ao calcular déficit:', deficitErr.message);
@@ -160,6 +181,7 @@ router.get('/radar', async (req, res) => {
 });
 
 router.get('/next-pc-number', async (req, res) => {
+    const empresaId = obterEmpresaIdDoContexto(req);
     let dbClient;
     try {
         dbClient = await pool.connect();
@@ -170,12 +192,13 @@ router.get('/next-pc-number', async (req, res) => {
         // Isso impede que erros ou timestamps entrem na conta.
         const query = `
             SELECT pn FROM cortes 
-            WHERE pn ~ '^[0-9]+$' 
+            WHERE empresa_id = $1
+              AND pn ~ '^[0-9]+$'
             AND LENGTH(pn) < 10
             ORDER BY pn::integer DESC
             LIMIT 1;
         `;
-        const result = await dbClient.query(query);
+        const result = await dbClient.query(query, [empresaId]);
 
         let nextNumber = 10000; // Começa em 10.000 se não tiver nada
         
@@ -200,10 +223,11 @@ router.get('/next-pc-number', async (req, res) => {
 // GET /api/cortes
 router.get('/', async (req, res) => {
     const { usuarioLogado } = req;
+    const empresaId = obterEmpresaIdDoContexto(req);
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, empresaId);
         
         if (!permissoesCompletas.includes('acesso-ordens-de-producao')) {
             return res.status(403).json({ error: 'Permissão negada para visualizar cortes.' });
@@ -218,14 +242,14 @@ router.get('/', async (req, res) => {
                 p.nome AS produto,
                 p.imagem AS imagem_produto
             FROM cortes c
-            LEFT JOIN produtos p ON c.produto_id = p.id
+            LEFT JOIN produtos p ON c.produto_id = p.id AND p.empresa_id = c.empresa_id
         `;
 
-        let queryText = `${baseSelect} WHERE c.status != $1`;
-        let queryParams = ['excluido'];
+        let queryText = `${baseSelect} WHERE c.empresa_id = $1 AND c.status != $2`;
+        let queryParams = [empresaId, 'excluido'];
 
         if (status) {
-            queryText += ' AND c.status = $2';
+            queryText += ' AND c.status = $3';
             queryParams.push(status);
         }
 
@@ -245,10 +269,11 @@ router.get('/', async (req, res) => {
 // POST /api/cortes
 router.post('/', async (req, res) => {
     const { usuarioLogado } = req;
+    const empresaId = obterEmpresaIdDoContexto(req);
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, empresaId);
 
         // Permite criar corte se tiver permissão específica ou se estiver criando uma OP
         if (!permissoesCompletas.includes('registrar-corte') && !permissoesCompletas.includes('criar-op')) {
@@ -278,13 +303,40 @@ router.post('/', async (req, res) => {
 
         const varianteFinal = (variante === undefined || variante === null || String(variante).trim() === '') ? null : String(variante).trim();
 
+        const produtoVinculo = await dbClient.query(
+            'SELECT id FROM produtos WHERE id = $1 AND empresa_id = $2',
+            [parseInt(produto_id), empresaId]
+        );
+        if (produtoVinculo.rowCount === 0) {
+            return res.status(404).json({ error: 'Produto não encontrado na empresa ativa.' });
+        }
+        if (demanda_id !== undefined && demanda_id !== null) {
+            const demandaVinculo = await dbClient.query(
+                'SELECT id FROM demandas_producao WHERE id = $1 AND empresa_id = $2',
+                [demanda_id, empresaId]
+            );
+            if (demandaVinculo.rowCount === 0) {
+                return res.status(404).json({ error: 'Demanda não encontrada na empresa ativa.' });
+            }
+        }
+        if (op !== undefined && op !== null && String(op).trim() !== '') {
+            const opVinculo = await dbClient.query(
+                'SELECT id FROM ordens_de_producao WHERE numero = $1 AND empresa_id = $2',
+                [String(op), empresaId]
+            );
+            if (opVinculo.rowCount === 0) {
+                return res.status(404).json({ error: 'OP não encontrada na empresa ativa.' });
+            }
+        }
+
         // pn gerado atomicamente pela sequence quando não enviado pelo cliente
         const queryText = `
-            INSERT INTO cortes (produto_id, variante, quantidade, data, status, op, pn, cortador, demanda_id)
-            VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, nextval('cortes_pn_seq')::text), $8, $9)
+            INSERT INTO cortes (empresa_id, produto_id, variante, quantidade, data, status, op, pn, cortador, demanda_id)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, nextval('cortes_pn_seq')::text), $9, $10)
             RETURNING *
         `;
         const values = [
+            empresaId,
             parseInt(produto_id),
             varianteFinal,
             parsedQuantidade,
@@ -321,10 +373,11 @@ router.post('/', async (req, res) => {
 // PUT /api/cortes
 router.put('/', async (req, res) => {
     const { usuarioLogado } = req;
+    const empresaId = obterEmpresaIdDoContexto(req);
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, empresaId);
         
         if (!permissoesCompletas.includes('marcar-como-cortado') && !permissoesCompletas.includes('editar-op')) {
             return res.status(403).json({ error: 'Permissão negada para atualizar este corte.' });
@@ -353,8 +406,11 @@ router.put('/', async (req, res) => {
 
         fieldsToUpdate.push(`data_atualizacao = CURRENT_TIMESTAMP`);
         updateValues.push(id);
+        const idPlaceholder = paramCount++;
+        const empresaPlaceholder = paramCount++;
+        updateValues.push(empresaId);
         
-        const queryText = `UPDATE cortes SET ${fieldsToUpdate.join(', ')} WHERE id = $${paramCount} RETURNING *`;
+        const queryText = `UPDATE cortes SET ${fieldsToUpdate.join(', ')} WHERE id = $${idPlaceholder} AND empresa_id = $${empresaPlaceholder} RETURNING *`;
 
         const result = await dbClient.query(queryText, updateValues);
         if (result.rows.length === 0) {
@@ -373,18 +429,19 @@ router.put('/', async (req, res) => {
 // DELETE /api/cortes
 router.delete('/', async (req, res) => {
     const { usuarioLogado } = req;
+    const empresaId = obterEmpresaIdDoContexto(req);
     const { id } = req.body;
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, empresaId);
         
         if (!id) return res.status(400).json({ error: 'ID do corte é obrigatório.' });
 
         // 1. "Soft delete" do corte e pega seus dados completos
         const result = await dbClient.query(
-            `UPDATE cortes SET status = 'excluido' WHERE id = $1 RETURNING *`,
-            [id]
+            `UPDATE cortes SET status = 'excluido' WHERE id = $1 AND empresa_id = $2 RETURNING *`,
+            [id, empresaId]
         );
 
         if (result.rowCount === 0) return res.status(404).json({ error: 'Corte não encontrado.' });
@@ -395,8 +452,8 @@ router.delete('/', async (req, res) => {
 
         if (opNumeroParaCancelar) {            
             const opCancelResult = await dbClient.query(
-                `UPDATE ordens_de_producao SET status = 'cancelada' WHERE numero = $1 AND status NOT IN ('finalizado', 'cancelada')`,
-                [String(opNumeroParaCancelar)] // Força para string por segurança
+                `UPDATE ordens_de_producao SET status = 'cancelada' WHERE numero = $1 AND empresa_id = $2 AND status NOT IN ('finalizado', 'cancelada')`,
+                [String(opNumeroParaCancelar), empresaId] // Força para string por segurança
             );
 
             if (opCancelResult.rowCount > 0) {
@@ -418,6 +475,7 @@ router.delete('/', async (req, res) => {
 
 router.delete('/', async (req, res) => {
     const { usuarioLogado } = req;
+    const empresaId = obterEmpresaIdDoContexto(req);
     const { id } = req.body;
     let dbClient;
 
@@ -429,8 +487,8 @@ router.delete('/', async (req, res) => {
 
         // 1. FAZEMOS O "SOFT DELETE" E PEGAMOS OS DADOS DO CORTE
         const result = await dbClient.query(
-            `UPDATE cortes SET status = 'excluido' WHERE id = $1 RETURNING *`,
-            [id]
+            `UPDATE cortes SET status = 'excluido' WHERE id = $1 AND empresa_id = $2 RETURNING *`,
+            [id, empresaId]
         );
 
         if (result.rowCount === 0) {
@@ -451,8 +509,8 @@ router.delete('/', async (req, res) => {
             const opCancelResult = await dbClient.query(
                 `UPDATE ordens_de_producao 
                  SET status = 'cancelada' 
-                 WHERE numero = $1 AND status NOT IN ('finalizado', 'cancelada')`,
-                [opNumeroParaCancelar]
+                 WHERE numero = $1 AND empresa_id = $2 AND status NOT IN ('finalizado', 'cancelada')`,
+                 [opNumeroParaCancelar, empresaId]
             );
 
             if(opCancelResult.rowCount > 0) {

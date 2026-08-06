@@ -5,6 +5,7 @@ import pg from 'pg';
 const { Pool } = pg;
 import jwt from 'jsonwebtoken';
 import express from 'express';
+import { obterEmpresaIdDoContexto } from './contexto-empresa.js';
 import { gerarDiagnosticoCompleto, limparAtribuicoesOrfas } from './utils/diagnosticoProducao.js';
 
 
@@ -27,17 +28,34 @@ router.use((req, res, next) => {
         return res.status(401).json({ error: 'Token mal formatado' });
     }
     try {
-        req.usuarioLogado = jwt.verify(token, SECRET_KEY);
+        const tokenClaims = jwt.verify(token, SECRET_KEY);
+        req.usuarioLogado = {
+            ...tokenClaims,
+            ...(req.usuarioLogado || {}),
+            id: req.usuarioLogado?.id || tokenClaims.id,
+            nome: req.usuarioLogado?.nome || tokenClaims.nome,
+        };
+        obterEmpresaIdDoContexto(req);
         next();
     } catch (err) {
         res.status(401).json({ error: 'Token inválido ou expirado' });
     }
 });
 
+function exigirCadeiaLegada(req, res) {
+    if (req.empresaAtiva?.eh_legada === true) return true;
+    res.status(403).json({
+        error: 'A cadeia produtiva ainda não está disponível para a empresa ativa.',
+        codigo: 'CADEIA_PRODUTIVA_NAO_MIGRADA',
+    });
+    return false;
+}
+
 
 // POST /api/demandas/
 router.post('/', async (req, res) => {
     const { usuarioLogado } = req;
+    const empresaId = obterEmpresaIdDoContexto(req);
     let dbClient;
 
     try {
@@ -52,20 +70,43 @@ router.post('/', async (req, res) => {
         // Conversão forçada para garantir
         const prioridadeFinal = (parseInt(prioridade) === 1) ? 1 : 2; 
         
+        const produtoResult = await dbClient.query(`
+            SELECT id, nome, imagem, grade
+            FROM produtos
+            WHERE empresa_id = $1
+              AND (
+                    sku = $2
+                    OR EXISTS (
+                        SELECT 1
+                        FROM jsonb_array_elements(COALESCE(grade, '[]'::jsonb)) g
+                        WHERE g->>'sku' = $2
+                    )
+                )
+        `, [empresaId, produto_sku]);
+        if (produtoResult.rowCount === 0) {
+            return res.status(404).json({ error: 'Produto não encontrado na empresa ativa.' });
+        }
+        if (produtoResult.rowCount > 1) {
+            return res.status(409).json({ error: 'O SKU informado corresponde a mais de um produto na empresa ativa.' });
+        }
+        const produtoId = produtoResult.rows[0].id;
+
         const insertQuery = `
             INSERT INTO demandas_producao
-                (produto_sku, quantidade_solicitada, solicitado_por, observacoes, prioridade)
+                (empresa_id, produto_id, produto_sku, quantidade_solicitada, solicitado_por, observacoes, prioridade)
             VALUES
-                ($1, $2, $3, $4, $5)
+                ($1, $2, $3, $4, $5, $6, $7)
             RETURNING *;
         `;
 
         const result = await dbClient.query(insertQuery, [
+            empresaId,
+            produtoId,
             produto_sku,
             parseInt(quantidade_solicitada),
             usuarioLogado.nome,
             observacoes || null,
-            prioridadeFinal // Agora vai salvar 1 ou 2 corretamente
+            prioridadeFinal
         ]);
 
         const novaDemanda = result.rows[0];
@@ -82,10 +123,11 @@ router.post('/', async (req, res) => {
                     ) AS imagem,
                     (SELECT g->>'variacao' FROM jsonb_array_elements(p.grade) g WHERE g->>'sku' = $1 LIMIT 1) AS variante
                 FROM produtos p
-                WHERE p.sku = $1
-                   OR EXISTS (SELECT 1 FROM jsonb_array_elements(p.grade) g WHERE g->>'sku' = $1)
+                WHERE p.empresa_id = $2
+                  AND (p.sku = $1
+                   OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(p.grade, '[]'::jsonb)) g WHERE g->>'sku' = $1))
                 LIMIT 1
-            `, [produto_sku]);
+            `, [produto_sku, empresaId]);
 
             const pv = produtoVisualResult.rows[0];
             const nomeLegivel = pv
@@ -93,6 +135,8 @@ router.post('/', async (req, res) => {
                 : produto_sku; // fallback para o SKU se produto não encontrado
             const qtd = parseInt(quantidade_solicitada);
             const dadosExtras = pv ? {
+                empresa_id: empresaId,
+                demanda_id: novaDemanda.id,
                 sku:          produto_sku,
                 produto_nome: pv.nome,
                 variante:     pv.variante || null,
@@ -101,22 +145,40 @@ router.post('/', async (req, res) => {
             } : null;
 
             const configNova = await dbClient.query(
-                `SELECT ativo FROM configuracoes_alertas WHERE tipo_alerta = 'DEMANDA_NORMAL' LIMIT 1`
+                `SELECT cea.ativo
+                   FROM configuracoes_alertas ca
+                   JOIN configuracoes_alertas_empresas cea
+                     ON cea.configuracao_id = ca.id
+                    AND cea.empresa_id = $1
+                  WHERE ca.tipo_alerta = 'DEMANDA_NORMAL'
+                  LIMIT 1`,
+                [empresaId]
             );
             if (configNova.rows[0]?.ativo) {
                 await dbClient.query(
-                    `INSERT INTO eventos_sistema (tipo_evento, mensagem, lido, dados_extras) VALUES ($1, $2, false, $3)`,
-                    ['DEMANDA_NORMAL', `Nova demanda: ${nomeLegivel} — ${qtd} peça${qtd !== 1 ? 's' : ''} aguardando início.`, dadosExtras]
+                    `INSERT INTO eventos_sistema
+                        (empresa_id, tipo_evento, mensagem, lido, dados_extras)
+                     VALUES ($1, $2, $3, false, $4)`,
+                    [empresaId, 'DEMANDA_NORMAL', `Nova demanda: ${nomeLegivel} — ${qtd} peça${qtd !== 1 ? 's' : ''} aguardando início.`, dadosExtras]
                 );
             }
             if (prioridadeFinal === 1) {
                 const configPrioritaria = await dbClient.query(
-                    `SELECT ativo FROM configuracoes_alertas WHERE tipo_alerta = 'DEMANDA_PRIORITARIA' LIMIT 1`
+                    `SELECT cea.ativo
+                       FROM configuracoes_alertas ca
+                       JOIN configuracoes_alertas_empresas cea
+                         ON cea.configuracao_id = ca.id
+                        AND cea.empresa_id = $1
+                      WHERE ca.tipo_alerta = 'DEMANDA_PRIORITARIA'
+                      LIMIT 1`,
+                    [empresaId]
                 );
                 if (configPrioritaria.rows[0]?.ativo) {
                     await dbClient.query(
-                        `INSERT INTO eventos_sistema (tipo_evento, mensagem, lido, dados_extras) VALUES ($1, $2, false, $3)`,
-                        ['DEMANDA_PRIORITARIA', `Demanda PRIORITÁRIA: ${nomeLegivel} — ${qtd} peça${qtd !== 1 ? 's' : ''}.`, dadosExtras]
+                        `INSERT INTO eventos_sistema
+                            (empresa_id, tipo_evento, mensagem, lido, dados_extras)
+                         VALUES ($1, $2, $3, false, $4)`,
+                        [empresaId, 'DEMANDA_PRIORITARIA', `Demanda PRIORITÁRIA: ${nomeLegivel} — ${qtd} peça${qtd !== 1 ? 's' : ''}.`, dadosExtras]
                     );
                 }
             }
@@ -145,13 +207,15 @@ router.get('/', async (req, res) => {
         // A ordenação é a chave para o nosso painel de prioridades:
         // 1. Ordena pelo campo 'prioridade' em ordem crescente (1, 2, 3...).
         // 2. Se duas demandas tiverem a mesma prioridade, a mais antiga (data_solicitacao) aparece primeiro.
+        const empresaId = obterEmpresaIdDoContexto(req);
         const selectQuery = `
             SELECT * FROM demandas_producao
-            WHERE status IN ('pendente', 'em_atendimento', 'concluida')
+            WHERE empresa_id = $1
+              AND status IN ('pendente', 'em_atendimento', 'concluida')
             ORDER BY prioridade ASC, data_solicitacao ASC;
         `;
 
-        const result = await dbClient.query(selectQuery);
+        const result = await dbClient.query(selectQuery, [empresaId]);
 
         // Retorna o status 200 (OK) e a lista de demandas encontradas em formato JSON
         res.status(200).json(result.rows);
@@ -169,12 +233,14 @@ router.get('/', async (req, res) => {
 
 // GET /api/demandas/diagnostico-completo
 router.get('/diagnostico-completo', async (req, res) => {
+    if (!exigirCadeiaLegada(req, res)) return;
+    const empresaId = obterEmpresaIdDoContexto(req);
     let dbClient;
     try {
         dbClient = await pool.connect();
 
         // 1. Chama a função centralizada (Balanço Hídrico)
-        const diagnostico = await gerarDiagnosticoCompleto(dbClient);
+        const diagnostico = await gerarDiagnosticoCompleto(dbClient, empresaId);
 
         // 2. REMOVEMOS A AUTO-CONCLUSÃO AUTOMÁTICA AQUI.
         // A lógica antiga estava baseada em estoque estático e causava sumiço de demandas.
@@ -199,6 +265,7 @@ router.get('/diagnostico-completo', async (req, res) => {
 // DELETE /api/demandas/:id
 router.delete('/:id', async (req, res) => {
     const { id } = req.params;
+    const empresaId = obterEmpresaIdDoContexto(req);
     let dbClient;
 
     try {
@@ -206,7 +273,10 @@ router.delete('/:id', async (req, res) => {
         await dbClient.query('BEGIN');
 
         // 1. Deleta a demanda
-        const deleteResult = await dbClient.query('DELETE FROM demandas_producao WHERE id = $1', [id]);
+        const deleteResult = await dbClient.query(
+            'DELETE FROM demandas_producao WHERE id = $1 AND empresa_id = $2',
+            [id, empresaId]
+        );
 
         if (deleteResult.rowCount === 0) {
             await dbClient.query('ROLLBACK');
@@ -223,8 +293,10 @@ router.delete('/:id', async (req, res) => {
             SET lido = true
             WHERE tipo_evento IN ('DEMANDA_NORMAL', 'DEMANDA_PRIORITARIA')
               AND lido = false
+              AND empresa_id = $1
               AND criado_em >= NOW() - INTERVAL '2 hours'
-        `);
+              AND dados_extras->>'demanda_id' = $2
+        `, [empresaId, String(id)]);
 
         await dbClient.query('COMMIT');
         res.status(200).json({ message: 'Demanda removida e atribuições limpas com sucesso.' });
@@ -242,6 +314,7 @@ router.delete('/:id', async (req, res) => {
 // Agora ela também "congela" a meta de produção no momento da atribuição.
 router.put('/assumir-producao-componente', async (req, res) => {
     const { usuarioLogado } = req;
+    const empresaId = obterEmpresaIdDoContexto(req);
     // Recebe a chave do componente E a necessidade de produção calculada pelo frontend
     const { componente_chave, necessidade_producao } = req.body;
 
@@ -262,9 +335,9 @@ router.put('/assumir-producao-componente', async (req, res) => {
         // Query de inserção/atualização na tabela de atribuições
         const insertQuery = `
             INSERT INTO demandas_componentes_atribuidos 
-                (componente_chave, atribuida_a, necessidade_producao_no_momento)
-            VALUES ($1, $2, $3)
-            ON CONFLICT (componente_chave) DO UPDATE SET
+                (empresa_id, componente_chave, atribuida_a, necessidade_producao_no_momento)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (empresa_id, componente_chave) DO UPDATE SET
                 atribuida_a = EXCLUDED.atribuida_a,
                 data_atribuicao = NOW();
                 -- Propositalmente NÃO atualizamos a 'necessidade_producao_no_momento' em um conflito (ON CONFLICT).
@@ -273,6 +346,7 @@ router.put('/assumir-producao-componente', async (req, res) => {
         `;
 
         await dbClient.query(insertQuery, [
+            empresaId,
             componente_chave,
             usuarioLogado.nome,
             necessidadeNum
@@ -287,7 +361,9 @@ router.put('/assumir-producao-componente', async (req, res) => {
                 FROM demandas_producao d
                 JOIN produtos p ON p.sku = d.produto_sku OR EXISTS (SELECT 1 FROM jsonb_to_recordset(p.grade) as gr(sku TEXT) WHERE gr.sku = d.produto_sku)
                 LEFT JOIN jsonb_to_recordset(p.grade) as g(sku TEXT, variacao TEXT) ON g.sku = d.produto_sku
-                WHERE d.status = 'pendente' AND p.is_kit = FALSE
+                WHERE d.empresa_id = $3
+                  AND p.empresa_id = $3
+                  AND d.status = 'pendente' AND p.is_kit = FALSE
                 
                 UNION
                 
@@ -296,18 +372,20 @@ router.put('/assumir-producao-componente', async (req, res) => {
                 JOIN produtos p ON p.sku = d.produto_sku OR EXISTS (SELECT 1 FROM jsonb_to_recordset(p.grade) as gr(sku TEXT) WHERE gr.sku = d.produto_sku)
                 JOIN jsonb_to_recordset(p.grade) as g(composicao JSONB) ON p.is_kit = TRUE
                 CROSS JOIN jsonb_array_elements(g.composicao) as comp
-                WHERE d.status = 'pendente'
+                WHERE d.empresa_id = $3
+                  AND p.empresa_id = $3
+                  AND d.status = 'pendente'
             ) as subquery
             WHERE subquery.produto_id = $1 AND (subquery.variacao = $2 OR (subquery.variacao IS NULL AND $2 IS NULL));
         `;
         const [produtoId, variacao] = componente_chave.split('|');
-        const resDemandas = await dbClient.query(demandasAfetadasQuery, [produtoId, variacao === '-' ? null : variacao]);
+        const resDemandas = await dbClient.query(demandasAfetadasQuery, [produtoId, variacao === '-' ? null : variacao, empresaId]);
         const idsDemandasAfetadas = resDemandas.rows.map(r => r.id);
 
         if (idsDemandasAfetadas.length > 0) {
             await dbClient.query(
-                `UPDATE demandas_producao SET status = 'em_producao' WHERE id = ANY($1::int[])`,
-                [idsDemandasAfetadas]
+                `UPDATE demandas_producao SET status = 'em_producao' WHERE id = ANY($1::int[]) AND empresa_id = $2`,
+                [idsDemandasAfetadas, empresaId]
             );
         }
 
@@ -326,6 +404,7 @@ router.put('/assumir-producao-componente', async (req, res) => {
 // ROTA PARA ATUALIZAR A META DE PRODUÇÃO DE UM COMPONENTE JÁ ASSUMIDO
 router.put('/atualizar-meta-componente', async (req, res) => {
     const { usuarioLogado } = req;
+    const empresaId = obterEmpresaIdDoContexto(req);
     const { componente_chave, valor_a_adicionar } = req.body;
 
     if (!componente_chave || valor_a_adicionar === undefined) {
@@ -344,11 +423,12 @@ router.put('/atualizar-meta-componente', async (req, res) => {
         const updateQuery = `
             UPDATE demandas_componentes_atribuidos
             SET necessidade_producao_no_momento = necessidade_producao_no_momento + $1
-            WHERE componente_chave = $2
+            WHERE empresa_id = $2
+              AND componente_chave = $3
             RETURNING *;
         `;
 
-        const result = await dbClient.query(updateQuery, [valorNum, componente_chave]);
+        const result = await dbClient.query(updateQuery, [valorNum, empresaId, componente_chave]);
 
         if (result.rowCount === 0) {
             return res.status(404).json({ error: 'Atribuição para este componente não encontrada. Não foi possível atualizar a meta.' });
@@ -372,6 +452,7 @@ router.put('/atualizar-meta-componente', async (req, res) => {
 // - totalUrgentes: prioridade=1 E status='pendente' (ninguém começou ainda → alerta escandaloso)
 // - totalAtivas: todas as demandas não concluídas/canceladas (pipeline rodando → badge discreto)
 router.get('/tem-prioridade', async (req, res) => {
+    const empresaId = obterEmpresaIdDoContexto(req);
     let dbClient;
     try {
         dbClient = await pool.connect();
@@ -384,7 +465,8 @@ router.get('/tem-prioridade', async (req, res) => {
                     WHERE status NOT IN ('concluida', 'cancelada')
                 )::int AS total_ativas
             FROM demandas_producao
-        `);
+            WHERE empresa_id = $1
+        `, [empresaId]);
         const { total_urgentes, total_ativas } = result.rows[0];
         res.status(200).json({
             totalUrgentes: total_urgentes,
@@ -403,6 +485,7 @@ router.get('/tem-prioridade', async (req, res) => {
 // Body: { itens: [{ id: number, status_final: 'CONCLUIDO' | 'DIVERGENCIA' }] }
 router.patch('/arquivar-lote', async (req, res) => {
     const { itens } = req.body;
+    const empresaId = obterEmpresaIdDoContexto(req);
     if (!Array.isArray(itens) || itens.length === 0) {
         return res.status(400).json({ error: 'Nenhum item para arquivar.' });
     }
@@ -414,8 +497,8 @@ router.patch('/arquivar-lote', async (req, res) => {
             await dbClient.query(
                 `UPDATE demandas_producao
                  SET arquivada_em = NOW(), status_final = $1
-                 WHERE id = $2 AND arquivada_em IS NULL`,
-                [item.status_final, item.id]
+                 WHERE id = $2 AND empresa_id = $3 AND arquivada_em IS NULL`,
+                [item.status_final, item.id, empresaId]
             );
         }
         await dbClient.query('COMMIT');
@@ -432,6 +515,7 @@ router.patch('/arquivar-lote', async (req, res) => {
 // GET /api/demandas/historico-arquivado
 // Retorna demandas já arquivadas com info básica do produto, ordenadas por data de arquivamento.
 router.get('/historico-arquivado', async (req, res) => {
+    const empresaId = obterEmpresaIdDoContexto(req);
     let dbClient;
     try {
         dbClient = await pool.connect();
@@ -452,14 +536,16 @@ router.get('/historico-arquivado', async (req, res) => {
                 ) AS imagem,
                 (SELECT g->>'variacao' FROM jsonb_array_elements(p.grade) g WHERE g->>'sku' = d.produto_sku LIMIT 1) AS variante
             FROM demandas_producao d
-            LEFT JOIN produtos p ON p.sku = d.produto_sku
+            LEFT JOIN produtos p ON p.empresa_id = d.empresa_id
+                AND (p.sku = d.produto_sku
                 OR EXISTS (
                     SELECT 1 FROM jsonb_array_elements(p.grade) g WHERE g->>'sku' = d.produto_sku
-                )
-            WHERE d.arquivada_em IS NOT NULL
+                ))
+            WHERE d.empresa_id = $1
+              AND d.arquivada_em IS NOT NULL
             ORDER BY d.arquivada_em DESC
             LIMIT 200
-        `);
+        `, [empresaId]);
         res.status(200).json({ itens: result.rows });
     } catch (error) {
         console.error('[GET /demandas/historico-arquivado] Erro:', error);
@@ -473,6 +559,8 @@ router.get('/historico-arquivado', async (req, res) => {
 // Migrado de api/radar-producao.js (GET /buscar) — usado no modal de criação de demandas
 router.get('/buscar-produto', async (req, res) => {
     const { termo, page = 1, limit = 5 } = req.query;
+    if (!exigirCadeiaLegada(req, res)) return;
+    const empresaId = obterEmpresaIdDoContexto(req);
     if (!termo) {
         return res.status(400).json({
             rows: [],
@@ -496,19 +584,36 @@ router.get('/buscar-produto', async (req, res) => {
         const limitNum = parseInt(limit);
         const offset = (parseInt(page) - 1) * limitNum;
 
+        const params = [termoPrincipal];
+        if (termoAlternativo) params.push(termoAlternativo);
+        const empresaParamIndex = params.length + 1;
+        params.push(empresaId);
+
         const baseQuery = `
             FROM produtos p
             INNER JOIN (
-                SELECT DISTINCT produto_id, variante FROM arremates
+                SELECT DISTINCT produto_id, variante
+                  FROM arremates
+                 WHERE empresa_id = $${empresaParamIndex}
                 UNION
-                SELECT DISTINCT produto_embalado_id as produto_id, variante_embalada_nome as variante FROM embalagens_realizadas
+                SELECT DISTINCT produto_embalado_id as produto_id, variante_embalada_nome as variante
+                  FROM embalagens_realizadas
+                 WHERE empresa_id = $${empresaParamIndex}
                 UNION
-                SELECT DISTINCT produto_id, variante_nome as variante FROM estoque_movimentos
+                SELECT DISTINCT produto_id, variante_nome as variante
+                  FROM estoque_movimentos
+                 WHERE empresa_id = $${empresaParamIndex}
             ) AS ativos ON p.id = ativos.produto_id
             LEFT JOIN jsonb_to_recordset(p.grade) AS g(sku TEXT, variacao TEXT, imagem TEXT)
                 ON (g.variacao = ativos.variante OR (g.variacao IS NULL AND ativos.variante IS NULL))
             WHERE
-                g.sku NOT IN (SELECT produto_ref_id FROM estoque_itens_arquivados)
+                p.empresa_id = $${empresaParamIndex}
+                AND
+                g.sku NOT IN (
+                    SELECT produto_ref_id
+                      FROM estoque_itens_arquivados
+                     WHERE empresa_id = $${empresaParamIndex}
+                )
                 AND (
                     (
                         unaccent(g.variacao) ILIKE unaccent($1)
@@ -524,9 +629,6 @@ router.get('/buscar-produto', async (req, res) => {
                     ` : ''}
                 )
         `;
-
-        const params = [termoPrincipal];
-        if (termoAlternativo) params.push(termoAlternativo);
 
         const countQuery = `SELECT COUNT(*) ${baseQuery}`;
         const countResult = await dbClient.query(countQuery, params);
@@ -570,6 +672,8 @@ router.get('/buscar-produto', async (req, res) => {
 // - Retorna nome do produto e nome da variação para display legível no dropdown
 router.get('/pendentes-por-produto', async (req, res) => {
     const { produto_id, variante } = req.query;
+    if (!exigirCadeiaLegada(req, res)) return;
+    const empresaId = obterEmpresaIdDoContexto(req);
     if (!produto_id) return res.status(400).json({ error: 'produto_id obrigatório.' });
 
     // Normaliza a variante: null / undefined / '-' / '' → null
@@ -581,7 +685,7 @@ router.get('/pendentes-por-produto', async (req, res) => {
 
         // Busca nome do produto para o display
         const produtoResult = await dbClient.query(
-            `SELECT nome, grade FROM produtos WHERE id = $1`, [produto_id]
+            `SELECT nome, grade FROM produtos WHERE id = $1 AND empresa_id = $2`, [produto_id, empresaId]
         );
         if (produtoResult.rows.length === 0) return res.json([]);
         const produto = produtoResult.rows[0];
@@ -606,7 +710,7 @@ router.get('/pendentes-por-produto', async (req, res) => {
         // (produtos sem variantes podem ter demandas pelo sku principal)
         let skusProdutoPrincipal = [];
         if (skusAlvo.length === 0 && varianteAlvo === null) {
-            const skuPrinc = await dbClient.query(`SELECT sku FROM produtos WHERE id = $1`, [produto_id]);
+            const skuPrinc = await dbClient.query(`SELECT sku FROM produtos WHERE id = $1 AND empresa_id = $2`, [produto_id, empresaId]);
             if (skuPrinc.rows[0]?.sku) skusProdutoPrincipal = [skuPrinc.rows[0].sku];
         }
 
@@ -624,7 +728,8 @@ router.get('/pendentes-por-produto', async (req, res) => {
                 $2::text  AS produto_nome,
                 $3::text  AS variacao
             FROM demandas_producao dp
-            WHERE dp.produto_sku = ANY($1::text[])
+              WHERE dp.empresa_id = $4
+                AND dp.produto_sku = ANY($1::text[])
               AND dp.status IN ('pendente', 'em_atendimento')
               AND dp.arquivada_em IS NULL
               AND NOT EXISTS (
@@ -632,7 +737,7 @@ router.get('/pendentes-por-produto', async (req, res) => {
                   WHERE op.demanda_id = dp.id
               )
             ORDER BY dp.prioridade ASC, dp.data_solicitacao ASC
-        `, [todosSkus, produto.nome, varianteAlvo]);
+        `, [todosSkus, produto.nome, varianteAlvo, empresaId]);
 
         res.json(result.rows);
     } catch (err) {
@@ -648,6 +753,7 @@ router.get('/pendentes-por-produto', async (req, res) => {
 // Usa Promise.allSettled por item — uma falha não cancela as outras.
 router.post('/lote', async (req, res) => {
     const { usuarioLogado } = req;
+    const empresaId = obterEmpresaIdDoContexto(req);
     const { itens } = req.body;
     if (!Array.isArray(itens) || itens.length === 0) {
         return res.status(400).json({ error: 'Nenhum item no lote.' });
@@ -660,10 +766,18 @@ router.post('/lote', async (req, res) => {
             if (!produto_sku || !qtd || qtd < 1) throw new Error('Dados inválidos.');
             const prioridadeFinal = parseInt(prioridade) === 1 ? 1 : 2;
             const r = await pool.query(
-                `INSERT INTO demandas_producao (produto_sku, quantidade_solicitada, solicitado_por, prioridade)
-                 VALUES ($1, $2, $3, $4) RETURNING id`,
-                [produto_sku.trim(), qtd, usuarioLogado.nome, prioridadeFinal]
+                `INSERT INTO demandas_producao (empresa_id, produto_id, produto_sku, quantidade_solicitada, solicitado_por, prioridade)
+                 SELECT $1, p.id, $2, $3, $4, $5
+                 FROM produtos p
+                 WHERE p.empresa_id = $1
+                   AND (p.sku = $2 OR EXISTS (
+                       SELECT 1 FROM jsonb_array_elements(COALESCE(p.grade, '[]'::jsonb)) g
+                       WHERE g->>'sku' = $2
+                   ))
+                 RETURNING id`,
+                [empresaId, produto_sku.trim(), qtd, usuarioLogado.nome, prioridadeFinal]
             );
+            if (r.rowCount !== 1) throw new Error('Produto não encontrado na empresa ativa.');
             return { sku: produto_sku, id: r.rows[0].id };
         })
     );
@@ -684,6 +798,7 @@ router.post('/lote', async (req, res) => {
 router.patch('/:id/concluir', async (req, res) => {
     const { id } = req.params;
     const { usuarioLogado } = req;
+    const empresaId = obterEmpresaIdDoContexto(req);
     let dbClient;
     try {
         dbClient = await pool.connect();
@@ -692,9 +807,9 @@ router.patch('/:id/concluir', async (req, res) => {
             SET status = 'concluida',
                 data_conclusao = NOW(),
                 concluida_manualmente_por = $1
-            WHERE id = $2
+            WHERE id = $2 AND empresa_id = $3
             RETURNING *
-        `, [usuarioLogado.nome, id]);
+        `, [usuarioLogado.nome, id, empresaId]);
         if (result.rowCount === 0) return res.status(404).json({ error: 'Demanda não encontrada.' });
         res.status(200).json({ message: 'Demanda concluída manualmente.', demanda: result.rows[0] });
     } catch (error) {
@@ -710,6 +825,8 @@ router.patch('/:id/concluir', async (req, res) => {
 // Inclui estagio_atual: AGUARDANDO | COSTURA | ARREMATE
 router.get('/verificar-duplicata', async (req, res) => {
     const { sku } = req.query;
+    if (!exigirCadeiaLegada(req, res)) return;
+    const empresaId = obterEmpresaIdDoContexto(req);
     if (!sku) return res.status(400).json({ error: 'SKU obrigatório.' });
     let dbClient;
     try {
@@ -731,12 +848,13 @@ router.get('/verificar-duplicata', async (req, res) => {
                      ELSE 'AGUARDANDO'
                    END as estagio_atual
             FROM demandas_producao dp
-            WHERE dp.produto_sku = $1
+             WHERE dp.empresa_id = $2
+               AND dp.produto_sku = $1
               AND dp.status NOT IN ('concluida', 'cancelada')
               AND dp.arquivada_em IS NULL
             ORDER BY dp.data_solicitacao DESC
             LIMIT 5
-        `, [sku.trim()]);
+        `, [sku.trim(), empresaId]);
         res.status(200).json({
             temDuplicata: result.rows.length > 0,
             demandasAtivas: result.rows
@@ -752,22 +870,25 @@ router.get('/verificar-duplicata', async (req, res) => {
 // PATCH /api/demandas/:id/prioridade
 router.patch('/:id/prioridade', async (req, res) => {
     const { id } = req.params;
+    const empresaId = obterEmpresaIdDoContexto(req);
     const { nova_prioridade } = req.body;
     const prioridade = parseInt(nova_prioridade) === 1 ? 1 : 2;
     let dbClient;
     try {
         dbClient = await pool.connect();
         const result = await dbClient.query(
-            `UPDATE demandas_producao SET prioridade = $1 WHERE id = $2 RETURNING *`,
-            [prioridade, id]
+            `UPDATE demandas_producao SET prioridade = $1 WHERE id = $2 AND empresa_id = $3 RETURNING *`,
+            [prioridade, id, empresaId]
         );
         if (result.rowCount === 0) return res.status(404).json({ error: 'Demanda não encontrada.' });
         // Registra evento de alerta (best-effort — não falha se a tabela não existir)
         if (prioridade === 1) {
             dbClient.query(
-                `INSERT INTO eventos_sistema (tipo_evento, mensagem, lido)
-                 VALUES ('DEMANDA_PRIORITARIA', $1, false)`,
-                [`Demanda #${id} promovida a PRIORIDADE — verificar painel imediatamente!`]
+                `INSERT INTO eventos_sistema
+                    (empresa_id, tipo_evento, mensagem, lido, dados_extras)
+                 VALUES ($1, 'DEMANDA_PRIORITARIA', $2, false,
+                         jsonb_build_object('empresa_id', $1, 'demanda_id', $3))`,
+                [empresaId, `Demanda #${id} promovida a PRIORIDADE — verificar painel imediatamente!`, Number(id)]
             ).catch(() => {});
         }
         res.status(200).json({ message: 'Prioridade atualizada.', demanda: result.rows[0] });
@@ -782,14 +903,15 @@ router.patch('/:id/prioridade', async (req, res) => {
 // PATCH /api/demandas/:id/quantidade
 router.patch('/:id/quantidade', async (req, res) => {
     const { id } = req.params;
+    const empresaId = obterEmpresaIdDoContexto(req);
     const qtd = parseInt(req.body.nova_quantidade);
     if (!qtd || qtd < 1) return res.status(400).json({ error: 'Quantidade inválida.' });
     let dbClient;
     try {
         dbClient = await pool.connect();
         const result = await dbClient.query(
-            `UPDATE demandas_producao SET quantidade_solicitada = $1 WHERE id = $2 RETURNING *`,
-            [qtd, id]
+            `UPDATE demandas_producao SET quantidade_solicitada = $1 WHERE id = $2 AND empresa_id = $3 RETURNING *`,
+            [qtd, id, empresaId]
         );
         if (result.rowCount === 0) return res.status(404).json({ error: 'Demanda não encontrada.' });
         res.status(200).json({ message: 'Quantidade atualizada.', demanda: result.rows[0] });

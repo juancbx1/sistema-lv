@@ -9,6 +9,7 @@ import PGFuncionarioModal from './PGFuncionarioModal.jsx';
 import PGTimeline from './PGTimeline.jsx';
 import PGPontosExtrasModal from './PGPontosExtrasModal.jsx';
 import PGHistoricoPontosExtras from './PGHistoricoPontosExtras.jsx';
+import { obterEmpresaAtivaLocal } from '/js/utils/auth.js';
 
 function hojeEmSP() {
     return new Date().toLocaleDateString('sv', { timeZone: 'America/Sao_Paulo' });
@@ -30,15 +31,29 @@ function PGPainelPage() {
     const [funcionarioSelId, setFuncionarioSelId]   = useState(null);
     const [ultimaAtt, setUltimaAtt]                 = useState(null);
     const [modalPontosExtras, setModalPontosExtras] = useState(false);
+    const [cadeiaBloqueada, setCadeiaBloqueada]     = useState(false);
 
     const buscarDados = useCallback(async () => {
+        if (obterEmpresaAtivaLocal()?.eh_legada === false) {
+            setCadeiaBloqueada(true);
+            setDados(null);
+            setErro(null);
+            setLoading(false);
+            return;
+        }
+        setCadeiaBloqueada(false);
         try {
             const token = localStorage.getItem('token');
             const res = await fetch(`/api/real-producao/diaria?data=${dataReferencia}`, {
                 headers: { 'Authorization': `Bearer ${token}` },
             });
-            if (!res.ok) throw new Error((await res.json()).error || 'Erro ao buscar dados');
-            setDados(await res.json());
+            const body = await res.json();
+            if (!res.ok) {
+                const error = new Error(body.error || 'Erro ao buscar dados');
+                error.codigo = body.codigo;
+                throw error;
+            }
+            setDados(body);
             setErro(null);
             setUltimaAtt(new Date());
         } catch (e) {
@@ -51,7 +66,13 @@ function PGPainelPage() {
     useEffect(() => {
         setLoading(true);
         buscarDados();
-        const id = setInterval(buscarDados, 3 * 60 * 1000);
+        const id = setInterval(() => {
+            if (obterEmpresaAtivaLocal()?.eh_legada === false) {
+                clearInterval(id);
+                return;
+            }
+            buscarDados();
+        }, 3 * 60 * 1000);
         const onFocus = () => buscarDados();
         window.addEventListener('focus', onFocus);
         return () => { clearInterval(id); window.removeEventListener('focus', onFocus); };
@@ -172,6 +193,17 @@ function PGPainelPage() {
     }, [dados, filtroDia, isHoje]);
 
     // ── Render ───────────────────────────────────────────────────────────
+    if (cadeiaBloqueada) return (
+        <>
+            <UIHeaderPagina titulo="Produção Geral" />
+            <div className="pg-bloqueio" role="status" aria-live="polite">
+                <i className="fas fa-industry" aria-hidden="true"></i>
+                <strong>A cadeia de produção ainda não está disponível neste ambiente.</strong>
+                <span>Nenhum dado de outro ambiente foi carregado.</span>
+            </div>
+        </>
+    );
+
     if (loading) return (
         <>
             <UIHeaderPagina titulo="Produção Geral" />

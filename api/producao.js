@@ -342,9 +342,9 @@ router.get('/status-funcionarios', async (req, res) => {
             // O safety-net só pode existir em jornada ordinária. DSR, feriado,
             // trabalho extra e dias desmarcados usam o fluxo especial de blocos.
             const diasTrabalho = diasTrabalhoNormalizados(row.dias_trabalho);
-            const diaMarcado = diaSemanaHoje !== null && diasTrabalho[diaSemanaHoje] === true;
             const diaComCalendarioEspecial = calendarioHoje.possui_dia_nao_ordinario === true
                 || calendarioHoje.possui_trabalho_extra === true;
+            const diaMarcado = diaSemanaHoje !== null && diasTrabalho[diaSemanaHoje] === true;
             if (!diaMarcado || diaComCalendarioEspecial) continue;
 
             // Só aplica safety net se há evidência de atividade hoje
@@ -524,7 +524,10 @@ router.get('/grupos-unificaveis', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const prodRes = await dbClient.query('SELECT etapas FROM produtos WHERE id = $1', [produto_id]);
+        const prodRes = await dbClient.query(
+            'SELECT etapas FROM produtos WHERE id = $1 AND empresa_id = $2',
+            [produto_id, req.empresaId]
+        );
         const etapas = prodRes.rows[0]?.etapas || [];
 
         const grupos = [];
@@ -573,10 +576,21 @@ router.get('/fila-de-tarefas', async (req, res) => {
         // 1. "Pegar as Prateleiras de Dados" - Buscamos tudo em paralelo
         const [opsResult, producoesResult, sessoesResult, produtosResult] = await Promise.all([
             // Prateleira 1: Todas as OPs ativas (FIFO: Ordenadas por número para consumir as antigas primeiro)
-            dbClient.query(`SELECT numero, produto_id, variante, quantidade, etapas FROM ordens_de_producao WHERE status IN ('em-aberto', 'produzindo') ORDER BY numero ASC`),
+            dbClient.query(`
+                SELECT numero, produto_id, variante, quantidade, etapas
+                FROM ordens_de_producao
+                WHERE empresa_id = $1
+                  AND status IN ('em-aberto', 'produzindo')
+                ORDER BY numero ASC
+            `, [req.empresaId]),
             
             // Prateleira 2: Todos os lançamentos de produção já feitos
-            dbClient.query(`SELECT op_numero, etapa_index, SUM(quantidade) as total_lancado FROM producoes GROUP BY op_numero, etapa_index`),
+            dbClient.query(`
+                SELECT op_numero, etapa_index, SUM(quantidade) as total_lancado
+                FROM producoes
+                WHERE empresa_id = $1
+                GROUP BY op_numero, etapa_index
+            `, [req.empresaId]),
             
             // Prateleira 3: Sessões EM ANDAMENTO — inclui etapas_unificadas para abatimento correto
             dbClient.query(`
@@ -587,7 +601,11 @@ router.get('/fila-de-tarefas', async (req, res) => {
             `, [req.empresaId]),
             
             // Prateleira 4: Produtos (com grade para buscar imagem da variante)
-            dbClient.query(`SELECT id, nome, imagem, grade FROM produtos`)
+            dbClient.query(`
+                SELECT id, nome, imagem, grade
+                FROM produtos
+                WHERE empresa_id = $1
+            `, [req.empresaId])
         ]);
 
         // 2. Mapas de Acesso Rápido
@@ -714,6 +732,17 @@ router.post('/sugestao-tarefa', async (req, res) => {
 
         // 1. Histórico de especialidade: sessões deste funcionário por produto+processo (últimos 90 dias)
         // funcionario_id em sessoes_trabalho_producao é INTEGER — sem cast
+        const funcionarioVinculoResult = await dbClient.query(`
+            SELECT 1
+            FROM usuarios_empresas
+            WHERE usuario_id = $1
+              AND empresa_id = $2
+              AND ativo = TRUE
+        `, [funcionario_id, req.empresaId]);
+        if (funcionarioVinculoResult.rowCount === 0) {
+            return res.status(404).json({ error: 'FuncionÃ¡rio nÃ£o encontrado na empresa ativa.' });
+        }
+
         const historicoResult = await dbClient.query(`
             SELECT produto_id, processo, COUNT(*) AS contagem
             FROM sessoes_trabalho_producao
@@ -730,13 +759,29 @@ router.post('/sugestao-tarefa', async (req, res) => {
 
         // 2. Datas de abertura das OPs (data_entrega = data de criação, conforme AGENTS.md)
         // numero em ordens_de_producao é character varying — cast ::text[]
+        const produtoIds = [...new Set(
+            candidatas
+                .map((candidata) => Number(candidata.produto_id))
+                .filter(Number.isSafeInteger)
+        )];
+        const produtosContextoResult = produtoIds.length > 0
+            ? await dbClient.query(
+                `SELECT id FROM produtos WHERE id = ANY($1::int[]) AND empresa_id = $2`,
+                [produtoIds, req.empresaId]
+            )
+            : { rows: [] };
+        const produtosContexto = new Set(produtosContextoResult.rows.map((row) => Number(row.id)));
+
         const todasOps = [...new Set(candidatas.flatMap(c => c.origem_ops || []).map(String))];
         const opDatesMap = new Map(); // chave = string do numero da OP
 
         if (todasOps.length > 0) {
             const opDatesResult = await dbClient.query(
-                'SELECT numero, data_entrega FROM ordens_de_producao WHERE numero = ANY($1::text[])',
-                [todasOps]
+                `SELECT numero, data_entrega
+                 FROM ordens_de_producao
+                 WHERE numero = ANY($1::text[])
+                   AND empresa_id = $2`,
+                [todasOps, req.empresaId]
             );
             opDatesResult.rows.forEach(row => {
                 opDatesMap.set(String(row.numero), new Date(row.data_entrega));
@@ -746,7 +791,17 @@ router.post('/sugestao-tarefa', async (req, res) => {
         const agora = new Date();
 
         // 3. Pontuar cada candidata
-        const scoradas = candidatas.map(tarefa => {
+        const candidatasContexto = candidatas
+            .filter((tarefa) => produtosContexto.has(Number(tarefa.produto_id)))
+            .map((tarefa) => ({
+                ...tarefa,
+                origem_ops: Array.isArray(tarefa.origem_ops)
+                    ? tarefa.origem_ops.filter((numero) => opDatesMap.has(String(numero)))
+                    : [],
+            }))
+            .filter((tarefa) => tarefa.origem_ops.length > 0);
+
+        const scoradas = candidatasContexto.map(tarefa => {
             const chave = `${tarefa.produto_id}-${tarefa.processo}`;
 
             // Especialidade: normalizado 0–1 (10 sessões = especialista pleno)
@@ -794,7 +849,13 @@ router.get('/tempos-padrao', async (req, res) => {
         // Não precisa de permissão específica, pois é um dado de configuração geral
         // para quem já tem acesso à página.
 
-        const result = await dbClient.query('SELECT produto_id, processo, tempo_segundos FROM tempos_padrao_producao');
+        const result = await dbClient.query(`
+            SELECT tpp.produto_id, tpp.processo, tpp.tempo_segundos
+            FROM tempos_padrao_producao tpp
+            JOIN produtos p
+              ON p.id = tpp.produto_id
+             AND p.empresa_id = $1
+        `, [req.empresaId]);
         
         // Transforma o array em um objeto para fácil acesso no frontend
         // Ex: { "1-Fechamento": 30.00, "1-Finalização": 25.50 }
@@ -820,7 +881,11 @@ router.post('/tempos-padrao', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(
+            dbClient,
+            req.usuarioLogado.id,
+            req.empresaId
+        );
         // Requer uma permissão específica para evitar que qualquer um altere os tempos
         if (!permissoes.includes('gerenciar-permissoes')) { // Usando uma permissão de admin/supervisor
             return res.status(403).json({ error: 'Permissão negada para configurar tempos padrão.' });
@@ -831,8 +896,7 @@ router.post('/tempos-padrao', async (req, res) => {
             return res.status(400).json({ error: 'Formato de dados inválido.' });
         }
 
-        await dbClient.query('BEGIN');
-
+        const entradas = [];
         for (const chave in tempos) {
             const [produto_id_str, ...processoParts] = chave.split('-');
             const processo = processoParts.join('-'); // Junta o resto, caso o processo tenha hífens
@@ -840,6 +904,25 @@ router.post('/tempos-padrao', async (req, res) => {
             const tempo_segundos = parseFloat(tempos[chave]);
 
             if (!isNaN(produto_id) && processo && !isNaN(tempo_segundos) && tempo_segundos >= 0) {
+                entradas.push({ produto_id, processo, tempo_segundos });
+            }
+        }
+
+        if (entradas.length === 0) {
+            return res.status(400).json({ error: 'Nenhum tempo padrÃ£o vÃ¡lido foi informado.' });
+        }
+
+        const produtoIds = [...new Set(entradas.map((entrada) => entrada.produto_id))];
+        const produtosResult = await dbClient.query(
+            `SELECT id FROM produtos WHERE id = ANY($1::int[]) AND empresa_id = $2`,
+            [produtoIds, req.empresaId]
+        );
+        if (produtosResult.rowCount !== produtoIds.length) {
+            return res.status(404).json({ error: 'Um ou mais produtos nÃ£o pertencem Ã  empresa ativa.' });
+        }
+
+        await dbClient.query('BEGIN');
+        for (const entrada of entradas) {
                 // ON CONFLICT (produto_id, processo) DO UPDATE -> Isso é um "UPSERT".
                 // Se a combinação já existe, ele atualiza (UPDATE). Se não, ele insere (INSERT).
                 await dbClient.query(`
@@ -847,8 +930,7 @@ router.post('/tempos-padrao', async (req, res) => {
                     VALUES ($1, $2, $3)
                     ON CONFLICT (produto_id, processo)
                     DO UPDATE SET tempo_segundos = EXCLUDED.tempo_segundos;
-                `, [produto_id, processo, tempo_segundos]);
-            }
+                `, [entrada.produto_id, entrada.processo, entrada.tempo_segundos]);
         }
 
         await dbClient.query('COMMIT');
@@ -880,10 +962,13 @@ router.put('/sessoes/cancelar', async (req, res) => {
         await dbClient.query('BEGIN');
 
         const sessaoResult = await dbClient.query(
-            `SELECT *
-               FROM sessoes_trabalho_producao
-              WHERE id = $1
-                AND empresa_id = $2
+            `SELECT s.*
+               FROM sessoes_trabalho_producao s
+               JOIN produtos p
+                 ON p.id = s.produto_id
+                AND p.empresa_id = s.empresa_id
+              WHERE s.id = $1
+                AND s.empresa_id = $2
               FOR UPDATE`,
             [id_sessao, req.empresaId]
         );

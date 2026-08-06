@@ -8029,3 +8029,17 @@ font-weight: 500;
         font-size: 1.2rem;
     }
 }
+/* Bloqueio neutro da cadeia produtiva em consumidores ainda nao migrados. */
+.op-cadeia-bloqueada {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    min-height: 180px;
+    padding: 32px 20px;
+    color: var(--gs-texto-secundario);
+    text-align: center;
+}
+.op-cadeia-bloqueada i { font-size: 2rem; color: var(--gs-primaria); }
+.op-cadeia-bloqueada strong { color: var(--gs-texto); }

@@ -16,7 +16,7 @@ import UIBloqueio from './components/UIBloqueio';
 import UICarregando from './components/UICarregando';
 
 // @ts-expect-error módulo JS legado sem declaração TypeScript
-import { verificarAutenticacao } from '/js/utils/auth.js';
+import { obterEmpresaAtivaLocal, verificarAutenticacao } from '/js/utils/auth.js';
 import type {
   BotaoBuscaFunilProps,
   OpCriarModalDados,
@@ -117,6 +117,10 @@ function App() {
 
   const verificarOpsProntas = useCallback(async () => {
     if (!estaAutenticado) return;
+    if (obterEmpresaAtivaLocal()?.eh_legada === false) {
+      setQtdOpsPendentes(0);
+      return;
+    }
     try {
       const data = await fetchSimples<OpListResponse>('/api/ordens-de-producao?status=produzindo&limit=100');
       const rows = Array.isArray(data.rows) ? data.rows : [];

@@ -8,6 +8,7 @@ import { mostrarMensagem, mostrarConfirmacao, mostrarPromptNumerico, mostrarProm
 import OPAtribuicaoModal from './OPAtribuicaoModal.jsx';
 import UIBloqueio from './UIBloqueio';
 import OPPontoPopup from './OPPontoPopup.jsx';
+import { obterEmpresaAtivaLocal } from '/js/utils/auth.js';
 
 export default function OPPainelAtividades() {
     const [funcionarios, setFuncionarios] = useState([]);
@@ -44,6 +45,13 @@ export default function OPPainelAtividades() {
 
     // --- 1. BUSCA DE DADOS ---
     const buscarDadosPainel = useCallback(async () => {
+        if (obterEmpresaAtivaLocal()?.eh_legada === false) {
+            setCadeiaBloqueada(true);
+            setFuncionarios([]);
+            setCarregando(false);
+            return;
+        }
+        setCadeiaBloqueada(false);
         try {
             const token = localStorage.getItem('token');
             const [dataFuncionarios, dataTempos] = await Promise.all([
@@ -83,11 +91,16 @@ export default function OPPainelAtividades() {
         const handleFocus = () => {
             buscarDadosPainel();
         };
+        const handleEmpresaAlterada = () => {
+            buscarDadosPainel();
+        };
 
         window.addEventListener('focus', handleFocus);
+        window.addEventListener('lv:empresa-contexto-alterado', handleEmpresaAlterada);
 
         return () => {
             window.removeEventListener('focus', handleFocus);
+            window.removeEventListener('lv:empresa-contexto-alterado', handleEmpresaAlterada);
         };
     }, [buscarDadosPainel]);
 
@@ -545,6 +558,13 @@ export default function OPPainelAtividades() {
     }, [buscarDadosPainel]);
 
     
+    if (cadeiaBloqueada) return (
+        <div className="op-cadeia-bloqueada" role="status" aria-live="polite">
+            <i className="fas fa-industry" aria-hidden="true"></i>
+            <strong>A cadeia de produção ainda não está disponível neste ambiente.</strong>
+            <span>Nenhum dado de outro ambiente foi carregado.</span>
+        </div>
+    );
     if (carregando) return <UICarregando variante="bloco" />;
     if (erro) return <p style={{ color: 'red', textAlign: 'center' }}>Erro: {erro}</p>;
 

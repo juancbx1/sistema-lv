@@ -4,6 +4,7 @@ import pkg from 'pg';
 const { Pool } = pkg;
 import jwt from 'jsonwebtoken';
 import express from 'express';
+import { obterEmpresaIdDoContexto } from './contexto-empresa.js';
 
 // Importar a função de buscar permissões completas
 import { getPermissoesCompletasUsuarioDB } from './usuarios.js'; 
@@ -48,6 +49,13 @@ const verificarTokenInterna = (reqOriginal) => {
 router.use(async (req, res, next) => {
     try {
         req.usuarioLogado = verificarTokenInterna(req);
+        req.empresaId = obterEmpresaIdDoContexto(req);
+        if (req.empresaAtiva?.eh_legada !== true) {
+            return res.status(403).json({
+                error: 'A montagem de kits ainda nao esta disponivel para a empresa ativa.',
+                codigo: 'CADEIA_PRODUTIVA_NAO_MIGRADA',
+            });
+        }
         next();
     } catch (error) {
         console.error('[router/kits MID] Erro no middleware:', error.message);
@@ -61,6 +69,8 @@ router.use(async (req, res, next) => {
 // POST /api/kits/montar
 router.post('/montar', async (req, res) => {
     const { usuarioLogado } = req;
+    const empresaId = obterEmpresaIdDoContexto(req);
+    const idempotencyKey = String(req.get('Idempotency-Key') || req.body?.idempotency_key || '').trim() || null;
     const {
         kit_produto_id,
         kit_variante,
@@ -68,13 +78,17 @@ router.post('/montar', async (req, res) => {
         componentes_consumidos_de_arremates,
         observacao
     } = req.body;
+
+    if (idempotencyKey && idempotencyKey.length > 200) {
+        return res.status(400).json({ error: 'Idempotency-Key excede o limite de 200 caracteres.' });
+    }
     
     let dbClient;
 
     try {
         dbClient = await pool.connect();
         
-        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, empresaId);
         if (!permissoesCompletas.includes('lancar-embalagem')) {
             return res.status(403).json({ error: 'Permissão negada para montar kits.' });
         }
@@ -86,6 +100,37 @@ router.post('/montar', async (req, res) => {
 
         await dbClient.query('BEGIN');
 
+        if (idempotencyKey) {
+            await dbClient.query(
+                'SELECT pg_advisory_xact_lock(hashtext($1))',
+                [`${empresaId}:${idempotencyKey}`]
+            );
+            const repeticao = await dbClient.query(
+                `SELECT id, produto_embalado_id, variante_embalada_nome, quantidade_embalada
+                   FROM embalagens_realizadas
+                  WHERE empresa_id = $1 AND idempotency_key = $2
+                  FOR UPDATE`,
+                [empresaId, idempotencyKey]
+            );
+            if (repeticao.rowCount > 0) {
+                const existente = repeticao.rows[0];
+                if (
+                    existente.produto_embalado_id !== Number(kit_produto_id)
+                    || existente.variante_embalada_nome !== (kit_variante || null)
+                    || existente.quantidade_embalada !== Number(quantidade_kits_montados)
+                ) {
+                    await dbClient.query('ROLLBACK');
+                    return res.status(409).json({ error: 'Idempotency-Key ja utilizada com outro payload.' });
+                }
+                await dbClient.query('COMMIT');
+                return res.status(200).json({
+                    message: 'Montagem de kit ja registrada anteriormente.',
+                    embalagem_id: existente.id,
+                    idempotente: true,
+                });
+            }
+        }
+
         const componentesComSkuParaSalvar = [];
 
         for (const componente of componentes_consumidos_de_arremates) {
@@ -95,21 +140,33 @@ router.post('/montar', async (req, res) => {
             const comp_variacao = componente.variacao;
             const quantidade_usada = componente.quantidade_usada;
             
-            const arremateResult = await dbClient.query('SELECT quantidade_arrematada, quantidade_ja_embalada FROM arremates WHERE id = $1 FOR UPDATE', [id_arremate]);
+            const arremateResult = await dbClient.query(
+                'SELECT produto_id, quantidade_arrematada, quantidade_ja_embalada FROM arremates WHERE id = $1 AND empresa_id = $2 FOR UPDATE',
+                [id_arremate, req.empresaId]
+            );
             if (arremateResult.rows.length === 0) throw new Error(`Arremate de origem (ID: ${id_arremate}) não encontrado.`);
             
             const arremate = arremateResult.rows[0];
+            if (arremate.produto_id !== Number(comp_produto_id)) {
+                throw new Error(`O arremate ${id_arremate} nao pertence ao produto componente informado.`);
+            }
             const saldoAtual = arremate.quantidade_arrematada - arremate.quantidade_ja_embalada;
             if (saldoAtual < quantidade_usada) {
                 throw new Error(`Saldo insuficiente no arremate ${id_arremate}. Saldo: ${saldoAtual}, Necessário: ${quantidade_usada}.`);
             }
             
-        await dbClient.query('UPDATE arremates SET quantidade_ja_embalada = quantidade_ja_embalada + $1 WHERE id = $2', [quantidade_usada, id_arremate]);
+            await dbClient.query(
+                'UPDATE arremates SET quantidade_ja_embalada = quantidade_ja_embalada + $1 WHERE id = $2 AND empresa_id = $3',
+                [quantidade_usada, id_arremate, req.empresaId]
+            );
 
             // LÓGICA PARA ENCONTRAR E ADICIONAR O SKU
             let skuComponente = null;
             // Usa a variável correta 'comp_produto_id'
-            const produtoComponenteInfo = await dbClient.query('SELECT sku, grade FROM produtos WHERE id = $1', [comp_produto_id]);
+            const produtoComponenteInfo = await dbClient.query(
+                'SELECT sku, grade FROM produtos WHERE id = $1 AND empresa_id = $2',
+                [comp_produto_id, req.empresaId]
+            );
             if (produtoComponenteInfo.rows.length > 0) {
                 const prod = produtoComponenteInfo.rows[0];
                 if (comp_variacao && comp_variacao !== '-') {
@@ -127,7 +184,10 @@ router.post('/montar', async (req, res) => {
 
         // Busca o SKU do kit montado
         let skuDoKitMontado = null;
-        const infoDoKitMontado = await dbClient.query('SELECT sku, grade FROM produtos WHERE id = $1', [kit_produto_id]);
+        const infoDoKitMontado = await dbClient.query(
+            'SELECT sku, grade FROM produtos WHERE id = $1 AND empresa_id = $2',
+            [kit_produto_id, req.empresaId]
+        );
         if (infoDoKitMontado.rows.length > 0) {
             const kitProd = infoDoKitMontado.rows[0];
             if(kit_variante && kit_variante !== '-') {
@@ -142,26 +202,30 @@ router.post('/montar', async (req, res) => {
         // Registra a embalagem
          const embalagemRealizadaQuery = `
             INSERT INTO embalagens_realizadas 
-                (tipo_embalagem, produto_embalado_id, variante_embalada_nome, produto_ref_id, quantidade_embalada, 
+                (empresa_id, idempotency_key, tipo_embalagem, produto_embalado_id, variante_embalada_nome, produto_ref_id, quantidade_embalada,
                 usuario_responsavel_id, observacao, status, componentes_consumidos) 
-            VALUES ('KIT', $1, $2, $3, $4, $5, $6, 'ATIVO', $7) RETURNING id;
+            VALUES ($1, $2, 'KIT', $3, $4, $5, $6, $7, $8, 'ATIVO', $9) RETURNING id;
         `;
         const embalagemResult = await dbClient.query(embalagemRealizadaQuery, [
-            kit_produto_id, 
-            kit_variante || null, 
-            skuDoKitMontado, 
-            quantidade_kits_montados, 
-            usuarioLogado.id, 
-            observacao || null, 
+            req.empresaId,
+            idempotencyKey,
+            kit_produto_id,
+            kit_variante || null,
+            skuDoKitMontado,
+            quantidade_kits_montados,
+            usuarioLogado.id,
+            observacao || null,
             // Salva o JSON que agora contém o SKU de cada componente
-            JSON.stringify(componentesComSkuParaSalvar) 
+            JSON.stringify(componentesComSkuParaSalvar)
         ]);
         const novaEmbalagemId = embalagemResult.rows[0].id;
 
         // Registra a entrada no estoque
         await dbClient.query(
-        `INSERT INTO estoque_movimentos (produto_id, variante_nome, quantidade, tipo_movimento, usuario_responsavel, observacao) VALUES ($1, $2, $3, 'ENTRADA_KIT', $4, $5);`,
+        `INSERT INTO estoque_movimentos (empresa_id, idempotency_key, produto_id, variante_nome, quantidade, tipo_movimento, usuario_responsavel, observacao) VALUES ($1, $2, $3, $4, $5, 'ENTRADA_KIT', $6, $7);`,
         [
+            req.empresaId,
+            idempotencyKey,
             kit_produto_id,
             kit_variante || null,
             quantidade_kits_montados,

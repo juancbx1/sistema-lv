@@ -5,6 +5,7 @@ const { Pool } = pkg;
 import jwt from 'jsonwebtoken';
 import express from 'express';
 import { getPermissoesCompletasUsuarioDB } from './usuarios.js';
+import { obterEmpresaIdDoContexto } from './contexto-empresa.js';
 
 const router = express.Router();
 const pool = new Pool({
@@ -30,18 +31,19 @@ router.use(async (req, res, next) => {
 // Permissão: acesso-permissoes-usuarios
 router.get('/', async (req, res) => {
     const { usuarioLogado } = req;
+    const empresaId = obterEmpresaIdDoContexto(req);
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, empresaId);
         if (!permissoes.includes('acesso-permissoes-usuarios')) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
 
         const { usuario_id, acao, entidade, data_inicio, data_fim, page = 1, limit = 50 } = req.query;
-        const params = [];
-        const where = [];
-        let i = 1;
+        const params = [empresaId];
+        const where = ['empresa_id = $1'];
+        let i = 2;
 
         if (usuario_id) { where.push(`usuario_id = $${i++}`); params.push(parseInt(usuario_id)); }
         if (acao)        { where.push(`acao = $${i++}`); params.push(acao); }
@@ -78,20 +80,27 @@ router.get('/', async (req, res) => {
 // GET /api/audit-log/usuarios — lista todos os usuários ativos (para o filtro de select)
 router.get('/usuarios', async (req, res) => {
     const { usuarioLogado } = req;
+    const empresaId = obterEmpresaIdDoContexto(req);
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, empresaId);
         if (!permissoes.includes('acesso-permissoes-usuarios')) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
         const result = await dbClient.query(
-            `SELECT id AS usuario_id, nome AS usuario_nome
-             FROM usuarios
-             WHERE data_demissao IS NULL
-               AND NOT ('is_test' = ANY(COALESCE(tipos, '{}')))
-               AND NOT ('prestador_externo' = ANY(COALESCE(tipos, '{}')))
-             ORDER BY nome`
+            `SELECT DISTINCT u.id AS usuario_id, u.nome AS usuario_nome
+             FROM usuarios u
+             JOIN usuarios_empresas ue
+               ON ue.usuario_id = u.id
+              AND ue.empresa_id = $1
+              AND ue.ativo
+             JOIN empresas e ON e.id = ue.empresa_id AND e.ativa
+             WHERE COALESCE(u.arquivado, FALSE) = FALSE
+               AND NOT ('is_test' = ANY(COALESCE(ue.tipos, '{}')))
+               AND NOT ('prestador_externo' = ANY(COALESCE(ue.tipos, '{}')))
+             ORDER BY u.nome`,
+            [empresaId]
         );
         res.status(200).json(result.rows);
     } catch (error) {

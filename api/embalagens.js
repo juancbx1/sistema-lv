@@ -5,6 +5,7 @@ import pkg from 'pg';
 const { Pool } = pkg;
 import jwt from 'jsonwebtoken';
 import express from 'express';
+import { obterEmpresaIdDoContexto } from './contexto-empresa.js';
 import { getPermissoesCompletasUsuarioDB } from './usuarios.js'; // Ajuste o caminho se necessário
 
 const router = express.Router();
@@ -42,6 +43,13 @@ const verificarToken = (req) => {
 router.use(async (req, res, next) => {
     try {
         req.usuarioLogado = verificarToken(req);
+        req.empresaId = obterEmpresaIdDoContexto(req);
+        if (req.empresaAtiva?.eh_legada !== true) {
+            return res.status(403).json({
+                error: 'A cadeia de embalagem ainda nao esta disponivel para a empresa ativa.',
+                codigo: 'CADEIA_PRODUTIVA_NAO_MIGRADA',
+            });
+        }
         next();
     } catch (error) {
         const statusCode = error.statusCode || 500;
@@ -63,7 +71,7 @@ router.get('/historico', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, req.empresaId);
         if (!permissoes.includes('acesso-embalagem-de-produtos')) {
             return res.status(403).json({ error: 'Permissão negada para visualizar o histórico.' });
         }
@@ -74,19 +82,19 @@ router.get('/historico', async (req, res) => {
         const queryBase = `
             -- Parte 1: Embalagens DESTE produto (apenas se for UNIDADE)
             SELECT id FROM embalagens_realizadas
-            WHERE produto_ref_id = $1 AND tipo_embalagem = 'UNIDADE'
+            WHERE produto_ref_id = $1 AND empresa_id = $2 AND tipo_embalagem = 'UNIDADE'
 
             UNION
 
             -- Parte 2: Embalagens de KITS que usaram este produto como COMPONENTE
             SELECT id FROM embalagens_realizadas
-            WHERE tipo_embalagem = 'KIT' AND
+            WHERE empresa_id = $2 AND tipo_embalagem = 'KIT' AND
                   jsonb_path_exists(componentes_consumidos, '$[*] ? (@.sku == $sku)', jsonb_build_object('sku', $1))
         `;
 
         // Query de Contagem
         const countQuery = `SELECT COUNT(*) as total_count FROM (${queryBase}) as subquery`;
-        const countResult = await dbClient.query(countQuery, [produto_ref_id]);
+        const countResult = await dbClient.query(countQuery, [produto_ref_id, req.empresaId]);
         const total = parseInt(countResult.rows[0].total_count) || 0;
         const totalPages = Math.ceil(total / parseInt(limit)) || 1;
 
@@ -99,11 +107,12 @@ router.get('/historico', async (req, res) => {
             JOIN produtos p ON er.produto_embalado_id = p.id
             LEFT JOIN usuarios u ON er.usuario_responsavel_id = u.id
             WHERE er.id IN (${queryBase}) -- Filtra pelos IDs encontrados nas duas condições
+              AND er.empresa_id = $2
             ORDER BY er.data_embalagem DESC
-            LIMIT $2 OFFSET $3;
+            LIMIT $3 OFFSET $4;
         `;
         
-        const result = await dbClient.query(dataQuery, [produto_ref_id, parseInt(limit), offset]);
+        const result = await dbClient.query(dataQuery, [produto_ref_id, req.empresaId, parseInt(limit), offset]);
         
         res.status(200).json({ rows: result.rows, total: total, page: parseInt(page), pages: totalPages });
 
@@ -126,7 +135,7 @@ router.post('/estornar', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, req.empresaId);
         
         // A permissão para estornar pode ser a mesma de lançar uma embalagem
         if (!permissoes.includes('lancar-embalagem')) {
@@ -139,8 +148,8 @@ router.post('/estornar', async (req, res) => {
         // 1. Busca os detalhes da embalagem que será estornada.
         //    Trava a linha (FOR UPDATE) para evitar que a mesma embalagem seja estornada duas vezes simultaneamente.
         const embalagemOriginalRes = await dbClient.query(
-            `SELECT * FROM embalagens_realizadas WHERE id = $1 FOR UPDATE`,
-            [id_embalagem_realizada]
+            `SELECT * FROM embalagens_realizadas WHERE id = $1 AND empresa_id = $2 FOR UPDATE`,
+            [id_embalagem_realizada, req.empresaId]
         );
 
         if (embalagemOriginalRes.rows.length === 0) {
@@ -163,10 +172,12 @@ router.post('/estornar', async (req, res) => {
         
         const estornoMovimentoQuery = `
             INSERT INTO estoque_movimentos 
-                (produto_id, variante_nome, quantidade, tipo_movimento, usuario_responsavel, observacao)
-            VALUES ($1, $2, $3, $4, $5, $6)
+                (empresa_id, idempotency_key, produto_id, variante_nome, quantidade, tipo_movimento, usuario_responsavel, observacao)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         `;
         await dbClient.query(estornoMovimentoQuery, [
+            req.empresaId,
+            `embalagem-estorno:${req.empresaId}:${id_embalagem_realizada}`,
             produto_embalado_id,
             variante_embalada_nome,
             -Math.abs(quantidade_embalada), // Garante que a quantidade seja negativa
@@ -177,12 +188,19 @@ router.post('/estornar', async (req, res) => {
 
         // 4. ATUALIZA OS ARREMATES para "devolver" a quantidade ao saldo "Pronto para Embalar".
         if (tipo_embalagem === 'UNIDADE') {
-            const movEstoqueOriginalRes = await dbClient.query('SELECT origem_arremate_id FROM estoque_movimentos WHERE id = $1', [movimento_estoque_id]);
+            const movEstoqueOriginalRes = await dbClient.query(
+                `SELECT em.origem_arremate_id
+                   FROM estoque_movimentos em
+                   JOIN arremates a ON a.id = em.origem_arremate_id
+                                      AND a.empresa_id = $2
+                  WHERE em.id = $1`,
+                [movimento_estoque_id, req.empresaId]
+            );
             if (movEstoqueOriginalRes.rows.length > 0 && movEstoqueOriginalRes.rows[0].origem_arremate_id) {
                 const arremateOrigemId = movEstoqueOriginalRes.rows[0].origem_arremate_id;
                 await dbClient.query(
-                    `UPDATE arremates SET quantidade_ja_embalada = quantidade_ja_embalada - $1 WHERE id = $2`,
-                    [quantidade_embalada, arremateOrigemId]
+                    `UPDATE arremates SET quantidade_ja_embalada = quantidade_ja_embalada - $1 WHERE id = $2 AND empresa_id = $3`,
+                    [quantidade_embalada, arremateOrigemId, req.empresaId]
                 );
             } else {
                 throw new Error(`Não foi possível rastrear o arremate de origem para a embalagem de UNIDADE #${id_embalagem_realizada}.`);
@@ -195,8 +213,8 @@ router.post('/estornar', async (req, res) => {
                     throw new Error(`Componente malformado no JSON da embalagem de KIT #${id_embalagem_realizada}.`);
                 }
                 await dbClient.query(
-                    `UPDATE arremates SET quantidade_ja_embalada = quantidade_ja_embalada - $1 WHERE id = $2`,
-                    [componente.quantidade_usada, componente.id_arremate]
+                    `UPDATE arremates SET quantidade_ja_embalada = quantidade_ja_embalada - $1 WHERE id = $2 AND empresa_id = $3`,
+                    [componente.quantidade_usada, componente.id_arremate, req.empresaId]
                 );
             }
         } else {
@@ -205,7 +223,10 @@ router.post('/estornar', async (req, res) => {
         }
 
         // 5. Marca a embalagem original como estornada.
-        await dbClient.query(`UPDATE embalagens_realizadas SET status = 'ESTORNADO' WHERE id = $1`, [id_embalagem_realizada]);
+        await dbClient.query(
+            `UPDATE embalagens_realizadas SET status = 'ESTORNADO' WHERE id = $1 AND empresa_id = $2`,
+            [id_embalagem_realizada, req.empresaId]
+        );
 
         // 6. Confirma a transação
         await dbClient.query('COMMIT');
@@ -240,13 +261,14 @@ router.get('/contagem-hoje', async (req, res) => {
         const query = `
             SELECT COALESCE(SUM(quantidade_embalada), 0) as total
             FROM embalagens_realizadas
-            WHERE 
+            WHERE empresa_id = $1
+              AND
                 data_embalagem >= date_trunc('day', NOW()) AND
                 data_embalagem < date_trunc('day', NOW()) + interval '1 day' AND
                 status = 'ATIVO'; -- Conta apenas embalagens que não foram estornadas
         `;
         
-        const result = await dbClient.query(query);
+        const result = await dbClient.query(query, [req.empresaId]);
         const totalEmbaladoHoje = parseInt(result.rows[0].total) || 0;
 
         res.status(200).json({ total: totalEmbaladoHoje });
@@ -274,20 +296,23 @@ router.get('/fila', async (req, res) => {
     try {
         dbClient = await pool.connect();
         
-        let queryParams = [];
-        let paramIndex = 1;
+        let queryParams = [req.empresaId];
+        let paramIndex = 2;
         
         // --- ETAPA 1: Construir a Query Base ---
         let baseQuery = `
             WITH ArrematesComSaldo AS (
                 -- Primeiro, encontramos os arremates que ainda têm saldo
-                SELECT 
+                SELECT
+                    empresa_id,
                     produto_id, 
                     variante, 
                     op_numero,
                     (quantidade_arrematada - quantidade_ja_embalada) as saldo
                 FROM arremates
-                WHERE tipo_lancamento = 'PRODUCAO' AND (quantidade_arrematada - quantidade_ja_embalada) > 0
+                WHERE empresa_id = $1
+                  AND tipo_lancamento = 'PRODUCAO'
+                  AND (quantidade_arrematada - quantidade_ja_embalada) > 0
             )
             -- Agora, usamos esses arremates para buscar as informações corretas
             SELECT
@@ -299,10 +324,10 @@ router.get('/fila', async (req, res) => {
                 MIN(op.data_final) as data_lancamento_mais_antiga,
                 MAX(op.data_final) as data_lancamento_mais_recente
             FROM ArrematesComSaldo ars
-            JOIN produtos p ON ars.produto_id = p.id
+            JOIN produtos p ON ars.produto_id = p.id AND p.empresa_id = ars.empresa_id
             -- Usamos LEFT JOIN para o caso de uma OP ter sido deletada mas o arremate ainda existir
-            LEFT JOIN ordens_de_producao op ON ars.op_numero = op.numero
-            GROUP BY ars.produto_id, p.nome, ars.variante
+            LEFT JOIN ordens_de_producao op ON ars.op_numero = op.numero AND op.empresa_id = ars.empresa_id
+            GROUP BY ars.empresa_id, ars.produto_id, p.nome, ars.variante
         `;
         let fromClause = `FROM (${baseQuery}) as subquery`;
 
@@ -336,12 +361,13 @@ router.get('/fila', async (req, res) => {
             finalQuery = `SELECT * ${fromClause} ${whereClause} ${orderByClause} LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
         }
 
+        const filtrosParams = [...queryParams];
         const dataResult = await dbClient.query(finalQuery, queryParams);
         
         // A contagem total é feita DEPOIS, de forma separada, para garantir consistência
         const countQuery = `SELECT COUNT(*) ${fromClause} ${whereClause}`;
         // Usamos os parâmetros de filtro (se houver), mas não os de paginação
-        const countResult = await dbClient.query(countQuery, queryParams.slice(0, paramIndex - 1));
+        const countResult = await dbClient.query(countQuery, filtrosParams);
         const totalItems = parseInt(countResult.rows[0].count, 10);
 
         res.status(200).json({
@@ -392,7 +418,10 @@ router.get('/historico-geral', async (req, res) => {
                 er.status
             FROM embalagens_realizadas er
             JOIN produtos p ON er.produto_embalado_id = p.id
+                           AND p.empresa_id = er.empresa_id
+                             AND p.empresa_id = er.empresa_id
             JOIN usuarios u ON er.usuario_responsavel_id = u.id
+            WHERE er.empresa_id = ${req.empresaId}
         `;
 
         // 2. Estornos de Arremate (feitos a partir da página de embalagem, da tabela 'arremates')
@@ -409,7 +438,9 @@ router.get('/historico-geral', async (req, res) => {
                 'ATIVO' as status
             FROM arremates a
             JOIN produtos p ON a.produto_id = p.id
-            WHERE a.tipo_lancamento = 'ESTORNO'
+                             AND p.empresa_id = a.empresa_id
+            WHERE a.empresa_id = ${req.empresaId}
+              AND a.tipo_lancamento = 'ESTORNO'
         `;
 
         // 3. Estornos de Estoque (da tabela 'estoque_movimentos')
@@ -425,8 +456,9 @@ router.get('/historico-geral', async (req, res) => {
                 em.observacao,
                 'ATIVO' as status
             FROM estoque_movimentos em
-            JOIN produtos p ON em.produto_id = p.id
-            WHERE em.tipo_movimento LIKE 'ESTORNO_%'
+            JOIN produtos p ON em.produto_id = p.id AND p.empresa_id = em.empresa_id
+            WHERE em.empresa_id = ${req.empresaId}
+              AND em.tipo_movimento LIKE 'ESTORNO_%'
         `;
 
         // Junta tudo em uma única query
@@ -465,7 +497,15 @@ router.get('/historico-geral', async (req, res) => {
         // Filtro por Usuário
         if (usuarioId !== 'todos') {
             // Precisamos buscar o nome do usuário a partir do ID
-            const userResult = await dbClient.query('SELECT nome FROM usuarios WHERE id = $1', [usuarioId]);
+            const userResult = await dbClient.query(
+                `SELECT u.nome
+                   FROM usuarios u
+                   JOIN usuarios_empresas ue
+                     ON ue.usuario_id = u.id
+                    AND ue.empresa_id = $2
+                  WHERE u.id = $1`,
+                [usuarioId, req.empresaId]
+            );
             if (userResult.rows.length > 0) {
                 whereClauses.push(`usuario_nome = $${paramIndex++}`);
                 queryParams.push(userResult.rows[0].nome);
@@ -516,14 +556,15 @@ router.get('/fila/contagem-antigos', async (req, res) => {
             FROM (
                 SELECT 1
                 FROM arremates a
-                WHERE a.tipo_lancamento = 'PRODUCAO'
+                WHERE a.empresa_id = $1
+                  AND a.tipo_lancamento = 'PRODUCAO'
                   AND a.data_lancamento < NOW() - INTERVAL '2 days'
                 GROUP BY a.produto_id, a.variante
                 HAVING SUM(a.quantidade_arrematada - a.quantidade_ja_embalada) > 0
             ) as subquery;
         `;
         
-        const result = await dbClient.query(query);
+        const result = await dbClient.query(query, [req.empresaId]);
         res.status(200).json({ total: parseInt(result.rows[0].count, 10) || 0 });
 
     } catch (error) {
@@ -563,12 +604,17 @@ router.get('/sugestao-estoque', async (req, res) => {
                 jsonb_to_recordset(p.grade) AS p_grade(sku TEXT, variacao TEXT, composicao JSONB)
             WHERE 
                 p.is_kit = TRUE AND
+                p.empresa_id = $3 AND
                 jsonb_path_exists(p_grade.composicao, 
                     '$[*] ? (@.produto_id == $prod_id && @.variacao == $prod_var)', 
                     jsonb_build_object('prod_id', $1::int, 'prod_var', $2::text)
                 );
         `;
-        const kitsResult = await dbClient.query(kitsQueUsamOComponenteQuery, [produto_id, varianteDecodificada]);        const kitsEncontrados = kitsResult.rows;
+        const kitsResult = await dbClient.query(
+            kitsQueUsamOComponenteQuery,
+            [produto_id, varianteDecodificada, req.empresaId]
+        );
+        const kitsEncontrados = kitsResult.rows;
 
         // 2. Coletar os SKUs de que precisamos: o item principal E os KITS relacionados.
             const todosSkusNecessarios = new Set([produto_ref_id]); // Começa com o SKU principal
@@ -591,6 +637,7 @@ router.get('/sugestao-estoque', async (req, res) => {
                     variante_nome,
                     SUM(quantidade) as saldo_atual
                 FROM estoque_movimentos
+                WHERE empresa_id = $2
                 GROUP BY produto_id, variante_nome
             )
             -- Agora, fazemos o JOIN para encontrar o SKU correspondente
@@ -601,9 +648,13 @@ router.get('/sugestao-estoque', async (req, res) => {
             JOIN produtos p ON s.produto_id = p.id
             LEFT JOIN jsonb_to_recordset(p.grade) AS g(sku TEXT, variacao TEXT) 
                 ON p.grade IS NOT NULL AND g.variacao = s.variante_nome
-            WHERE COALESCE(g.sku, p.sku) = ANY($1::text[]);
+            WHERE p.empresa_id = $2
+              AND COALESCE(g.sku, p.sku) = ANY($1::text[]);
         `;
-        const saldosResult = await dbClient.query(saldosQuery, [Array.from(todosSkusNecessarios)]);
+        const saldosResult = await dbClient.query(
+            saldosQuery,
+            [Array.from(todosSkusNecessarios), req.empresaId]
+        );
         // Preenche o mapa com os resultados
         saldosMap = new Map(saldosResult.rows.map(item => [item.produto_ref_id, parseInt(item.saldo_atual, 10) || 0]));
     }

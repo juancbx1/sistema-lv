@@ -26,9 +26,15 @@ import perfisRouter from './perfis.js';
 import historicoRouter from './historico.js'; 
 import metasRouter from './metas.js';
 import realProducaoRouter from './real-producao.js';
+import alertasRouter from './alertas.js';
+import cronRoutes from './cron.js';
 import contextoEmpresaRouter, { middlewareContextoEmpresa } from './contexto-empresa.js';
 import gestaoOrganizacionalRouter from './gestao-organizacional.js';
 import preferenciasMenuRouter from './preferencias-menu.js';
+import demandasRouter from './demandas.js';
+import gerenciarProducaoRouter from './gerenciar-producao.js';
+import producaoRouter from './producao.js';
+import auditLogRouter from './audit-log.js';
 
 const app = express();
 
@@ -42,6 +48,9 @@ app.use(middlewareContextoEmpresa);
 app.use('/contexto-empresa', contextoEmpresaRouter);
 app.use('/gestao-organizacional', gestaoOrganizacionalRouter);
 app.use('/preferencias-menu', preferenciasMenuRouter);
+app.use('/demandas', demandasRouter);
+app.use('/gerenciar-producao', gerenciarProducaoRouter);
+app.use('/producao', producaoRouter);
 app.use('/usuarios', usuariosRouter);
 app.use('/cortes', cortesRouter);
 app.use('/producoes', producoesRouter);
@@ -65,6 +74,9 @@ app.use('/perfis', perfisRouter);
 app.use('/historico', historicoRouter);
 app.use('/metas', metasRouter);
 app.use('/real-producao', realProducaoRouter);
+app.use('/alertas', alertasRouter);
+app.use('/cron', cronRoutes);
+app.use('/audit-log', auditLogRouter);
 
 // Exporta o app Express para a Vercel usar como uma única função serverless
 export default app;

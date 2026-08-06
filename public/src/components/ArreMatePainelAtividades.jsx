@@ -9,6 +9,7 @@ import ArremateStatusCard from './ArremateStatusCard.jsx';
 import ArremateAtribuicaoModal from './ArremateAtribuicaoModal.jsx';
 import UICarregando from './UICarregando';
 import { mostrarMensagem, mostrarConfirmacao, mostrarPromptNumerico, mostrarPromptFinalizarLote, mostrarPromptTexto, mostrarPromptHorario } from '/js/utils/popups.js';
+import { obterEmpresaAtivaLocal } from '/js/utils/auth.js';
 
 export default function ArreMatePainelAtividades({ permissoes = [] }) {
     const [tiktiks, setTiktiks] = useState([]);
@@ -16,6 +17,7 @@ export default function ArreMatePainelAtividades({ permissoes = [] }) {
     const [carregando, setCarregando] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [infoFeriado, setInfoFeriado] = useState(null);
+    const [cadeiaBloqueada, setCadeiaBloqueada] = useState(false);
 
     const [modalAtribuicaoAberto, setModalAtribuicaoAberto] = useState(false);
     const [tiktikSelecionado, setTiktikSelecionado] = useState(null);
@@ -35,13 +37,26 @@ export default function ArreMatePainelAtividades({ permissoes = [] }) {
 
     // --- 1. BUSCA DE DADOS ---
     const buscarDadosPainel = useCallback(async () => {
+        if (obterEmpresaAtivaLocal()?.eh_legada === false) {
+            setCadeiaBloqueada(true);
+            setTiktiks([]);
+            setCarregando(false);
+            return;
+        }
+        setCadeiaBloqueada(false);
         try {
             const token = localStorage.getItem('token');
             const [dataStatus, dataTempos] = await Promise.all([
                 fetch('/api/arremates/status-tiktiks', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 }).then(res => {
-                    if (!res.ok) throw new Error('Falha ao carregar status.');
+                    if (!res.ok) {
+                        return res.json().catch(() => ({})).then(body => {
+                            const error = new Error(body.error || 'Falha ao carregar status.');
+                            error.codigo = body.codigo;
+                            throw error;
+                        });
+                    }
                     return res.json();
                 }),
                 fetch('/api/arremates/tempos-padrao', {
@@ -61,7 +76,12 @@ export default function ArreMatePainelAtividades({ permissoes = [] }) {
             setInfoFeriado(feriadoInfo);
             setTemposPadraoArremate(dataTempos);
         } catch (err) {
-            console.error('[ArreMatePainelAtividades] Erro no polling:', err);
+            if (err?.codigo === 'CADEIA_PRODUTIVA_NAO_MIGRADA') {
+                setCadeiaBloqueada(true);
+                setTiktiks([]);
+            } else {
+                console.error('[ArreMatePainelAtividades] Erro no polling:', err);
+            }
         } finally {
             setCarregando(false);
         }
@@ -70,6 +90,7 @@ export default function ArreMatePainelAtividades({ permissoes = [] }) {
     // --- 2. POLLING (20s) + VISIBILITYCHANGE ---
     const agendarProximoPoll = useCallback(() => {
         clearTimeout(pollingTimeoutRef.current);
+        if (obterEmpresaAtivaLocal()?.eh_legada === false) return;
         pollingTimeoutRef.current = setTimeout(() => {
             if (!document.hidden) {
                 buscarDadosPainel().then(agendarProximoPoll);
@@ -86,16 +107,19 @@ export default function ArreMatePainelAtividades({ permissoes = [] }) {
             if (!document.hidden) buscarDadosPainel();
         };
         const handleExternalUpdate = () => buscarDadosPainel();
+        const handleEmpresaAlterada = () => buscarDadosPainel();
 
         document.addEventListener('visibilitychange', handleVisibility);
         window.addEventListener('atualizar-fila-react', handleExternalUpdate);
         window.addEventListener('forcarAtualizacaoPainelTiktik', handleExternalUpdate);
+        window.addEventListener('lv:empresa-contexto-alterado', handleEmpresaAlterada);
 
         return () => {
             clearTimeout(pollingTimeoutRef.current);
             document.removeEventListener('visibilitychange', handleVisibility);
             window.removeEventListener('atualizar-fila-react', handleExternalUpdate);
             window.removeEventListener('forcarAtualizacaoPainelTiktik', handleExternalUpdate);
+            window.removeEventListener('lv:empresa-contexto-alterado', handleEmpresaAlterada);
         };
     }, [buscarDadosPainel, agendarProximoPoll]);
 
@@ -514,6 +538,13 @@ export default function ArreMatePainelAtividades({ permissoes = [] }) {
         }
     }, [buscarDadosPainel]);
 
+    if (cadeiaBloqueada) return (
+        <div className="op-cadeia-bloqueada" role="status" aria-live="polite">
+            <i className="fas fa-industry" aria-hidden="true"></i>
+            <strong>A cadeia de produção ainda não está disponível neste ambiente.</strong>
+            <span>Nenhum dado de outro ambiente foi carregado.</span>
+        </div>
+    );
     if (carregando) return <UICarregando variante="bloco" />;
 
     // v3.0: ALMOCO e PAUSA ficam no grid principal (cards bloqueados)

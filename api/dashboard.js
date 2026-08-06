@@ -935,16 +935,16 @@ router.post('/resgatar-pontos', async (req, res) => {
 
         const pontosHojeProd = await dbClient.query(
             `SELECT COALESCE(SUM(pontos_gerados), 0)::float as total FROM producoes
-             WHERE funcionario_id = $1 AND data::date = $2::date`,
-            [usuarioId, hojeStrSP]
+             WHERE funcionario_id = $1 AND empresa_id = $3 AND data::date = $2::date`,
+            [usuarioId, hojeStrSP, empresaId]
         );
         let pontosHoje = pontosHojeProd.rows[0].total;
 
         if (tipoUsuario === 'tiktik') {
             const pontosHojeArr = await dbClient.query(
                 `SELECT COALESCE(SUM(pontos_gerados), 0)::float as total FROM arremates
-                 WHERE usuario_tiktik_id = $1 AND tipo_lancamento = 'PRODUCAO' AND data_lancamento::date = $2::date`,
-                [usuarioId, hojeStrSP]
+                 WHERE usuario_tiktik_id = $1 AND empresa_id = $3 AND tipo_lancamento = 'PRODUCAO' AND data_lancamento::date = $2::date`,
+                [usuarioId, hojeStrSP, empresaId]
             );
             pontosHoje += pontosHojeArr.rows[0].total;
         }
@@ -1154,7 +1154,11 @@ router.get('/ranking-semana', async (req, res) => {
         dbClient = await pool.connect();
 
         // 1. Tipo do usuário logado
-        const tipoRes = await dbClient.query('SELECT tipos FROM usuarios WHERE id = $1', [usuarioId]);
+        const tipoRes = await dbClient.query(
+            `SELECT tipos FROM usuarios_empresas
+             WHERE usuario_id = $1 AND empresa_id = $2 AND ativo`,
+            [usuarioId, empresaId]
+        );
         const tipoUsuario = tipoRes.rows[0]?.tipos?.[0] || 'costureira';
 
         // 2. Início da semana (domingo 00:00 SP → semana Dom–Sab)
@@ -1180,11 +1184,17 @@ router.get('/ranking-semana', async (req, res) => {
         // data_admissao NOT NULL = empregado formalmente admitido
         // data_demissao IS NULL  = ainda na empresa
         const usuariosRes = await dbClient.query(
-            `SELECT id FROM usuarios
-             WHERE $1 = ANY(tipos)
-               AND data_admissao IS NOT NULL
-               AND data_demissao IS NULL`,
-            [tipoUsuario]
+            `SELECT ue.usuario_id AS id
+             FROM usuarios_empresas ue
+             JOIN usuarios u ON u.id = ue.usuario_id
+             WHERE $1 = ANY(ue.tipos)
+               AND ue.empresa_id = $2
+               AND ue.ativo
+               AND ue.data_admissao IS NOT NULL
+               AND ue.data_demissao IS NULL
+               AND COALESCE(u.is_test, FALSE) = FALSE
+               AND COALESCE(u.arquivado, FALSE) = FALSE`,
+            [tipoUsuario, empresaId]
         );
         const todosIds = usuariosRes.rows.map(r => r.id);
 
@@ -1419,12 +1429,13 @@ router.get('/streak', async (req, res) => {
         const feriadosRes = await dbClient.query(`
             SELECT data::date AS dia FROM calendario_empresa
             WHERE data BETWEEN $1 AND $2
+              AND empresa_id = $4
               AND tipo IN (
                     'feriado_nacional', 'feriado_regional', 'folga_empresa',
                     'falta', 'falta_justificada', 'falta_injustificada'
                   )
               AND (funcionario_id IS NULL OR funcionario_id = $3)
-        `, [ini50.toISOString().slice(0, 10), hojeStr, usuarioId]);
+        `, [ini50.toISOString().slice(0, 10), hojeStr, usuarioId, empresaId]);
         const diasNaoUteis = new Set(
             feriadosRes.rows.map(r => new Date(r.dia).toLocaleDateString('en-CA', { timeZone: 'UTC' }))
         );

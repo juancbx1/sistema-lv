@@ -15,6 +15,19 @@ export function salvarContextoEmpresaLocal(usuario, storage = localStorage) {
   storage.setItem('empresaAtiva', JSON.stringify(usuario.empresa_ativa));
 }
 
+export function obterEmpresaAtivaLocal() {
+  const storages = [sessionStorage, localStorage];
+  for (const storage of storages) {
+    try {
+      const raw = storage.getItem('empresaAtiva');
+      if (raw) return JSON.parse(raw);
+    } catch {
+      // Contexto local corrompido: a autenticação continuará sendo a autoridade.
+    }
+  }
+  return null;
+}
+
 export async function sincronizarPermissoesUsuario(usuario) {
   if (!usuario) return null;
 

@@ -24,6 +24,39 @@ function formatarMinutos(totalMinutos) {
     return `${horas}h ${minutos}min`;
 }
 
+function exigirCadeiaProdutivaLegada(req, res) {
+    if (req.empresaAtiva?.eh_legada === true) return true;
+    res.status(403).json({
+        error: 'Os alertas da cadeia produtiva ainda nao estao disponiveis para a empresa ativa.',
+        codigo: 'CADEIA_PRODUTIVA_NAO_MIGRADA',
+    });
+    return false;
+}
+
+async function buscarConfiguracoesDaEmpresa(dbClient, empresaId, somenteAtivas = false) {
+    const filtroAtivo = somenteAtivas ? 'AND cea.ativo = TRUE' : '';
+    const result = await dbClient.query(`
+        SELECT
+            ca.id,
+            ca.tipo_alerta,
+            ca.descricao,
+            cea.ativo,
+            cea.gatilho_minutos,
+            cea.acao_popup,
+            cea.acao_notificacao,
+            cea.atualizado_em,
+            cea.intervalo_repeticao_minutos,
+            cea.peso_risco
+        FROM configuracoes_alertas ca
+        JOIN configuracoes_alertas_empresas cea
+          ON cea.configuracao_id = ca.id
+         AND cea.empresa_id = $1
+        WHERE TRUE ${filtroAtivo}
+        ORDER BY ca.id
+    `, [empresaId]);
+    return result.rows;
+}
+
 // Middleware de Autenticação (pode ser copiado de outros arquivos de API)
 router.use(async (req, res, next) => {
     try {
@@ -32,6 +65,7 @@ router.use(async (req, res, next) => {
         const token = authHeader.split(' ')[1];
         req.usuarioLogado = jwt.verify(token, SECRET_KEY);
         req.empresaId = obterEmpresaIdDoContexto(req);
+        if (!exigirCadeiaProdutivaLegada(req, res)) return;
         next();
     } catch (error) {
         res.status(401).json({ error: 'Token inválido ou expirado.' });
@@ -44,8 +78,7 @@ router.get('/configuracoes', async (req, res) => {
     try {
         dbClient = await pool.connect();
         // Qualquer usuário logado pode ler as configurações para o motor de alertas funcionar
-        const result = await dbClient.query('SELECT * FROM configuracoes_alertas ORDER BY id');
-        res.status(200).json(result.rows);
+        res.status(200).json(await buscarConfiguracoesDaEmpresa(dbClient, req.empresaId));
     } catch (error) {
         console.error('[API /alertas/configuracoes GET] Erro:', error);
         res.status(500).json({ error: 'Erro ao buscar configurações de alerta.' });
@@ -66,7 +99,7 @@ router.put('/configuracoes', async (req, res) => {
     try {
         dbClient = await pool.connect();
         // Apenas usuários com alta permissão podem alterar as configurações
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id, req.empresaId);
         if (!permissoes.includes('gerenciar-permissoes')) { // Reutilizando permissão de admin
             return res.status(403).json({ error: 'Permissão negada para alterar configurações de alerta.' });
         }
@@ -78,18 +111,24 @@ router.put('/configuracoes', async (req, res) => {
         const { id, ativo, gatilho_minutos, acao_popup, acao_notificacao, intervalo_repeticao_minutos, peso_risco } = config;
 
         const query = `
-            UPDATE configuracoes_alertas
-            SET
-                ativo = $1,
-                gatilho_minutos = $2,
-                acao_popup = $3,
-                acao_notificacao = $4,
-                intervalo_repeticao_minutos = $5,
-                peso_risco = $6,
+            INSERT INTO configuracoes_alertas_empresas
+                (empresa_id, configuracao_id, ativo, gatilho_minutos,
+                 acao_popup, acao_notificacao, intervalo_repeticao_minutos,
+                 peso_risco, atualizado_em)
+            SELECT $1, ca.id, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP
+              FROM configuracoes_alertas ca
+             WHERE ca.id = $8
+            ON CONFLICT (empresa_id, configuracao_id) DO UPDATE SET
+                ativo = EXCLUDED.ativo,
+                gatilho_minutos = EXCLUDED.gatilho_minutos,
+                acao_popup = EXCLUDED.acao_popup,
+                acao_notificacao = EXCLUDED.acao_notificacao,
+                intervalo_repeticao_minutos = EXCLUDED.intervalo_repeticao_minutos,
+                peso_risco = EXCLUDED.peso_risco,
                 atualizado_em = CURRENT_TIMESTAMP
-            WHERE id = $7
         `;
         await dbClient.query(query, [
+            req.empresaId,
             Boolean(ativo),
             parseInt(gatilho_minutos) || 5,
             Boolean(acao_popup),
@@ -120,8 +159,8 @@ router.get('/dias-trabalho', async (req, res) => {
         dbClient = await pool.connect();
         // Busca as duas chaves em paralelo
         const [diasResult, pollResult] = await Promise.all([
-            dbClient.query("SELECT valor, horario_inicio, horario_fim FROM alertas_configuracoes_gerais WHERE chave = 'dias_de_trabalho'"),
-            dbClient.query("SELECT horario_inicio, horario_fim FROM alertas_configuracoes_gerais WHERE chave = 'janela_polling'"),
+            dbClient.query("SELECT valor, horario_inicio, horario_fim FROM alertas_configuracoes_gerais WHERE empresa_id = $1 AND chave = 'dias_de_trabalho'", [req.empresaId]),
+            dbClient.query("SELECT horario_inicio, horario_fim FROM alertas_configuracoes_gerais WHERE empresa_id = $1 AND chave = 'janela_polling'", [req.empresaId]),
         ]);
 
         const diasRow = diasResult.rows[0];
@@ -151,7 +190,7 @@ router.put('/dias-trabalho', async (req, res) => {
     const { valor, horario_inicio, horario_fim, janela_poll_inicio, janela_poll_fim } = req.body;
     try {
         dbClient = await pool.connect();
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id, req.empresaId);
         if (!permissoes.includes('gerenciar-permissoes')) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
@@ -159,17 +198,24 @@ router.put('/dias-trabalho', async (req, res) => {
         await Promise.all([
             // Dias de trabalho + horário de expediente
             dbClient.query(`
-                INSERT INTO alertas_configuracoes_gerais (chave, valor, horario_inicio, horario_fim)
-                VALUES ('dias_de_trabalho', $1, $2, $3)
-                ON CONFLICT (chave) DO UPDATE SET valor = $1, horario_inicio = $2, horario_fim = $3
-            `, [valor, horario_inicio || '07:00', horario_fim || '18:00']),
+                INSERT INTO alertas_configuracoes_gerais
+                    (empresa_id, chave, valor, horario_inicio, horario_fim)
+                VALUES ($1, 'dias_de_trabalho', $2, $3, $4)
+                ON CONFLICT (empresa_id, chave) DO UPDATE SET
+                    valor = EXCLUDED.valor,
+                    horario_inicio = EXCLUDED.horario_inicio,
+                    horario_fim = EXCLUDED.horario_fim
+            `, [req.empresaId, valor, horario_inicio || '07:00', horario_fim || '18:00']),
 
             // Janela de polling
             dbClient.query(`
-                INSERT INTO alertas_configuracoes_gerais (chave, valor, horario_inicio, horario_fim)
-                VALUES ('janela_polling', '{}', $1, $2)
-                ON CONFLICT (chave) DO UPDATE SET horario_inicio = $1, horario_fim = $2
-            `, [janela_poll_inicio || '06:00', janela_poll_fim || '23:00']),
+                INSERT INTO alertas_configuracoes_gerais
+                    (empresa_id, chave, valor, horario_inicio, horario_fim)
+                VALUES ($1, 'janela_polling', '{}', $2, $3)
+                ON CONFLICT (empresa_id, chave) DO UPDATE SET
+                    horario_inicio = EXCLUDED.horario_inicio,
+                    horario_fim = EXCLUDED.horario_fim
+            `, [req.empresaId, janela_poll_inicio || '06:00', janela_poll_fim || '23:00']),
         ]);
 
         res.status(200).json({ message: 'Configurações de calendário atualizadas.' });
@@ -188,7 +234,10 @@ router.get('/verificar-status', async (req, res) => {
     try {
         dbClient = await pool.connect();
 
-        const diasTrabalhoResult = await dbClient.query("SELECT valor FROM alertas_configuracoes_gerais WHERE chave = 'dias_de_trabalho'");
+        const diasTrabalhoResult = await dbClient.query(
+            "SELECT valor FROM alertas_configuracoes_gerais WHERE empresa_id = $1 AND chave = 'dias_de_trabalho'",
+            [req.empresaId]
+        );
         const hoje = new Date();
         const diaDaSemana = hoje.getDay();
         const diasDeTrabalho = diasTrabalhoResult.rows[0]?.valor || {};
@@ -205,7 +254,12 @@ router.get('/verificar-status', async (req, res) => {
         let horaFimExpediente    = 18;
         try {
             const horarioResult = await dbClient.query(
-                `SELECT horario_inicio, horario_fim FROM alertas_configuracoes_gerais WHERE chave = 'dias_de_trabalho' LIMIT 1`
+                `SELECT horario_inicio, horario_fim
+                   FROM alertas_configuracoes_gerais
+                  WHERE empresa_id = $1
+                    AND chave = 'dias_de_trabalho'
+                  LIMIT 1`,
+                [req.empresaId]
             );
             const row = horarioResult.rows[0];
             if (row?.horario_inicio) horaInicioExpediente = parseInt(row.horario_inicio.toString().split(':')[0]);
@@ -228,8 +282,7 @@ router.get('/verificar-status', async (req, res) => {
         const fimExpedienteMin    = horaFimExpediente    * 60 + 59; // inclui toda a hora final
         const estaNoExpediente = horaAtualMinutos >= inicioExpedienteMin && horaAtualMinutos <= fimExpedienteMin;
 
-        const configResult = await dbClient.query('SELECT * FROM configuracoes_alertas WHERE ativo = TRUE');
-        const configs = configResult.rows;
+        const configs = await buscarConfiguracoesDaEmpresa(dbClient, req.empresaId, true);
 
         const alertasParaDisparar = [];
         const queriesDeAtualizacao = [];
@@ -253,6 +306,7 @@ router.get('/verificar-status', async (req, res) => {
                         SELECT MAX(s2.data_fim) 
                         FROM sessoes_trabalho_arremate s2 
                         WHERE s2.usuario_tiktik_id = u.id 
+                          AND s2.empresa_id = ue.empresa_id
                           AND s2.status = 'FINALIZADA'
                           AND s2.data_fim >= date_trunc('day', NOW() AT TIME ZONE 'America/Sao_Paulo')
                     ) as data_ultima_tarefa_finalizada_hoje
@@ -263,12 +317,13 @@ router.get('/verificar-status', async (req, res) => {
                  AND ue.ativo
                 LEFT JOIN sessoes_trabalho_arremate s
                   ON ue.id_sessao_trabalho_atual = s.id
+                 AND s.empresa_id = ue.empresa_id
                 WHERE 'tiktik' = ANY(ue.tipos)
                   AND ue.data_demissao IS NULL
             `, [req.empresaId]);
             const tiktiks = tiktiksResult.rows;
 
-            const temposResult = await dbClient.query('SELECT produto_id, tempo_segundos_por_peca FROM tempos_padrao_arremate');
+            const temposResult = await dbClient.query('SELECT produto_id, tempo_segundos_por_peca FROM tempos_padrao_arremate WHERE empresa_id = $1', [req.empresaId]);
             const temposMap = new Map(temposResult.rows.map(row => [row.produto_id, parseFloat(row.tempo_segundos_por_peca)]));
 
             for (const tiktik of tiktiks) {
@@ -519,8 +574,9 @@ router.get('/verificar-status', async (req, res) => {
                 SELECT COUNT(*) as total
                 FROM demandas_producao
                 WHERE status = 'pendente'
+                  AND empresa_id = $1
                   AND criado_em < NOW() - INTERVAL '${parseInt(configDemandaNaoIniciada.gatilho_minutos)} minutes'
-            `);
+            `, [req.empresaId]);
             const totalParadas = parseInt(demandasParadasResult.rows[0]?.total || 0);
 
             if (totalParadas > 0) {
@@ -545,7 +601,10 @@ router.get('/verificar-status', async (req, res) => {
         // ALERTAS DE EVENTOS — sempre disparam (independente do dia)
         // =====================================================================
         // Busca todos os eventos não lidos e os agrupa por tipo (evita flood de N alertas iguais)
-        const eventosResult = await dbClient.query("SELECT * FROM eventos_sistema WHERE lido = false ORDER BY criado_em ASC");
+        const eventosResult = await dbClient.query(
+            "SELECT * FROM eventos_sistema WHERE empresa_id = $1 AND lido = false ORDER BY criado_em ASC",
+            [req.empresaId]
+        );
         if (eventosResult.rows.length > 0) {
             console.log(`[LOG EVENTOS] ${eventosResult.rows.length} evento(s) não lido(s) encontrado(s).`);
             const idsEventosLidos = [];
@@ -588,7 +647,10 @@ router.get('/verificar-status', async (req, res) => {
             }
 
             if (idsEventosLidos.length > 0) {
-                await dbClient.query("UPDATE eventos_sistema SET lido = true WHERE id = ANY($1::int[])", [idsEventosLidos]);
+                await dbClient.query(
+                    "UPDATE eventos_sistema SET lido = true WHERE empresa_id = $1 AND id = ANY($2::int[])",
+                    [req.empresaId, idsEventosLidos]
+                );
             }
         }
 
@@ -601,8 +663,10 @@ router.get('/verificar-status', async (req, res) => {
             // Gravar no histórico (fire-and-forget — não bloqueia a resposta)
             Promise.all(alertasParaDisparar.map(a =>
                 dbClient.query(
-                    `INSERT INTO historico_alertas (tipo_alerta, mensagem, nivel) VALUES ($1, $2, $3)`,
-                    [a.tipo, a.mensagem, a.nivel]
+                    `INSERT INTO historico_alertas
+                        (empresa_id, tipo_alerta, mensagem, nivel)
+                     VALUES ($1, $2, $3, $4)`,
+                    [req.empresaId, a.tipo, a.mensagem, a.nivel]
                 ).catch(() => {}) // silencioso caso a tabela ainda não exista
             ));
         }
@@ -625,9 +689,10 @@ router.get('/historico', async (req, res) => {
         const result = await dbClient.query(`
             SELECT id, tipo_alerta, mensagem, nivel, disparado_em
             FROM historico_alertas
-            WHERE disparado_em >= date_trunc('day', NOW() AT TIME ZONE 'America/Sao_Paulo')
+            WHERE empresa_id = $1
+              AND disparado_em >= date_trunc('day', NOW() AT TIME ZONE 'America/Sao_Paulo')
             ORDER BY disparado_em DESC
-        `);
+        `, [req.empresaId]);
         res.status(200).json(result.rows);
     } catch (error) {
         console.error('[API /alertas/historico GET] Erro:', error);
@@ -649,14 +714,16 @@ router.post('/hora-extra', async (req, res) => {
 
         await Promise.all([
             dbClient.query(`
-                INSERT INTO eventos_sistema (tipo_evento, mensagem, lido, dados_extras, criado_em)
-                VALUES ('HORA_EXTRA_LANCADA', $1, false, $2, NOW())
-            `, [mensagem, JSON.stringify({ supervisor_id: supervisor.id, supervisor_nome: supervisor.nome, funcionario_id, funcionario_nome, produto_nome, processo, quantidade })]),
+                INSERT INTO eventos_sistema
+                    (empresa_id, tipo_evento, mensagem, lido, dados_extras, criado_em)
+                VALUES ($1, 'HORA_EXTRA_LANCADA', $2, false, $3, NOW())
+            `, [req.empresaId, mensagem, JSON.stringify({ empresa_id: req.empresaId, supervisor_id: supervisor.id, supervisor_nome: supervisor.nome, funcionario_id, funcionario_nome, produto_nome, processo, quantidade })]),
 
             dbClient.query(`
-                INSERT INTO historico_alertas (tipo_alerta, mensagem, nivel, disparado_em)
-                VALUES ('HORA_EXTRA_LANCADA', $1, 'critico', NOW())
-            `, [mensagem]),
+                INSERT INTO historico_alertas
+                    (empresa_id, tipo_alerta, mensagem, nivel, disparado_em)
+                VALUES ($1, 'HORA_EXTRA_LANCADA', $2, 'critico', NOW())
+            `, [req.empresaId, mensagem]),
         ]);
 
         res.status(200).json({ ok: true });

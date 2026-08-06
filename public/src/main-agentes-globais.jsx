@@ -48,6 +48,15 @@ function AgentesGlobais() {
             if (!token) return;
 
             const empresaAtiva = obterEmpresaAtivaLocal();
+            // O menu ainda pode estar carregando o contexto na primeira pintura.
+            // Falhar fechado evita que o agente consulte a cadeia com um contexto
+            // indefinido e transforme uma transição normal em erro de API visível.
+            if (!empresaAtiva?.id || typeof empresaAtiva.eh_legada !== 'boolean') {
+                setOpsProntas([]);
+                setTemPermissao(false);
+                return;
+            }
+
             if (empresaAtiva?.eh_legada === false) {
                 setOpsProntas([]);
                 setTemPermissao(false);
@@ -104,16 +113,19 @@ function AgentesGlobais() {
             }
             buscarOps();
         };
+        const handleEmpresaCarregada = handleEmpresaAlterada;
 
         document.addEventListener('visibilitychange', handleVisible);
         window.addEventListener('op-encerrada', handleOpEncerrada);
         window.addEventListener('lv:empresa-contexto-alterado', handleEmpresaAlterada);
+        window.addEventListener('lv:empresa-contexto-carregado', handleEmpresaCarregada);
 
         return () => {
             clearInterval(interval);
             document.removeEventListener('visibilitychange', handleVisible);
             window.removeEventListener('op-encerrada', handleOpEncerrada);
             window.removeEventListener('lv:empresa-contexto-alterado', handleEmpresaAlterada);
+            window.removeEventListener('lv:empresa-contexto-carregado', handleEmpresaCarregada);
         };
     }, [buscarOps]);
 

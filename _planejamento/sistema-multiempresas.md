@@ -1408,7 +1408,28 @@ validados primeiro; até lá, os endpoints permanecem fechados com
 essa liberação secundária. A liberação completa em empresas secundárias pertence
 à Fase 8 e não faz parte do ciclo atual.
 
+## Preparação para a Fase 8 — gates obrigatórios
+
+A Fase 8 multiempresas só será iniciada depois que os gates abaixo estiverem
+fechados. A existência de código local, simulação ou redesign não equivale à
+liberação da cadeia para uma empresa secundária. O plano operacional detalhado,
+com evidências e próximos ensaios, fica em
+`_planejamento/plano-op-reorganizacao-ponto-jornada-e-redesign.md`.
+
+| Gate | Critério de entrada | Estado atual |
+| G8 | Restauração local fresca e migration aditiva da cadeia ensaiada | Produtos/Demandas, OPs/Cortes, Produção, Arremates, Embalagem, Estoque/Inventário e consumidores transversais aprovados em clones locais, com aplicação idempotente e rollback; nenhuma migration produtiva executada |
+| G9 | Isolamento empresarial validado com duas empresas | Todos os blocos da Fase 8 foram aprovados localmente com contexto legado funcionando, empresa secundária bloqueada quando o domínio ainda não está liberado, body spoof rejeitado e acesso cruzado isolado; liberação produtiva permanece pendente |
+| G10 | Backfill, rollback e ativação gradual revisados | Backfills, constraints, hashes, rollback e marcadores dos blocos da cadeia foram aprovados nos clones preservados; falta somente a revisão da bateria integrada e da estratégia de ativação produtiva |
+| G11 | Worktree separado em diff reproduzível e correções publicadas | Preparado para aceite manual, com pendência estrutural registrada; a matriz de 28 arquivos puros e 6 arquivos mistos e os checks estáticos estão aprovados, mas constraints globais legadas precisam de decisão antes da liberação secundária |
+| G12 | Autorização explícita para execução em produção | Pendente |
+Os gates G1–G10 são técnicos e funcionais. O G11 é o gate de reprodutibilidade
+da entrega e o G12 é a autorização operacional. Nenhuma migration da cadeia,
+liberação de módulo ou abertura de empresa secundária pode ocorrer antes do
+fechamento dos doze gates.
 ## Fase 8 — OPs e cadeia produtiva
+
+Os itens abaixo pertencem à execução da Fase 8; eles não precisam estar
+implementados antes do início, mas só podem ser executados depois dos gates.
 
 ### Ordem
 
@@ -1549,22 +1570,32 @@ Revisar índices compostos, conforme cada consulta:
 
 ## Estado atual
 
-**Fase em andamento:** Fase 8 — OPs e cadeia produtiva. Ela não faz parte do
-escopo deste ciclo.
+**Fase em andamento:** preparação da Fase 8 — OPs e cadeia produtiva. A Fase 8
+multiempresa ainda não foi iniciada; seus gates estão sendo fechados antes da
+primeira migration da cadeia.
 
 **Checkpoint atual:** Fases 0–7 concluídas e aprovadas dentro do escopo atual.
 A dashboard da Fase 7 foi publicada e aprovada em smoke autenticado; a
 preparação estrutural foi executada e validada na Neon.
 
-**Próxima frente funcional:** Fase 8, quando for retomada pelo usuário, para
-migrar a cadeia produtiva e permitir a futura liberação da dashboard completa
-em empresas secundárias.
+**Próxima frente funcional:** fechar os gates G1–G12 e, somente depois, iniciar
+a migração da cadeia produtiva para permitir a futura liberação da dashboard
+completa em empresas secundárias.
 
 **Situação operacional:** o sistema publicado possui infraestrutura
 multiempresa e o Financeiro foi liberado para Lojas Variara e Neila Confecções;
 os demais módulos de negócio continuam bloqueados na empresa secundária.
 
-**Última atualização:** 2026-08-01.
+**Última atualização:** 2026-08-03.
+
+**Handoff da retomada:** o próximo Codex deve ler
+`_planejamento/RETOMADA-FASE8-MULTIEMPRESAS-2026-08-03.md`. Produtos/Demandas,
+OPs/Cortes e o bloco de lançamentos/sessões de Produção já foram aprovados
+localmente com idempotência, rollback e smoke HTTP de dois contextos. A próxima
+frente é fechar os consumidores restantes de Produção e depois migrar
+Arremates, Embalagem e Estoque; G11/G12 permanecem pendentes. Não executar
+Neon, commit, push ou deploy sem autorização explícita, e preservar o worktree
+e todas as bases locais existentes.
 
 **Banco alterado:** sim. Fundação multiempresa, schema financeiro final e
 preparação estrutural da Fase 7 executados e validados em produção.

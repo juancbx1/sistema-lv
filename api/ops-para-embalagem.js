@@ -4,6 +4,7 @@ import pkg from 'pg';
 const { Pool } = pkg;
 import jwt from 'jsonwebtoken';
 import express from 'express';
+import { obterEmpresaIdDoContexto } from './contexto-empresa.js';
 
 // Importar a função de buscar permissões completas
 import { getPermissoesCompletasUsuarioDB } from './usuarios.js'; // Verifique o caminho
@@ -48,13 +49,20 @@ const verificarTokenInterna = (reqOriginal) => {
 router.use(async (req, res, next) => {
     let clienteConectado; // Cliente para o middleware
     try {
+        req.empresaId = obterEmpresaIdDoContexto(req);
+        if (req.empresaAtiva?.eh_legada !== true) {
+            return res.status(403).json({
+                error: 'A fila de embalagem ainda nao esta disponivel para a empresa ativa.',
+                codigo: 'CADEIA_PRODUTIVA_NAO_MIGRADA',
+            });
+        }
         req.usuarioLogado = verificarTokenInterna(req); // req.usuarioLogado é o payload do token
 
         clienteConectado = await pool.connect(); // Conecta para buscar permissões
         // Não anexamos a req.dbCliente aqui, pois getPermissoesCompletasUsuarioDB gerencia seu cliente
         // E a rota GET / também vai pegar seu próprio cliente.
 
-        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(clienteConectado, req.usuarioLogado.id);
+        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(clienteConectado, req.usuarioLogado.id, req.empresaId);
         
         if (!permissoesCompletas.includes('acesso-embalagem-de-produtos')) {
             const err = new Error('Permissão negada para acessar OPs para embalagem.');
@@ -96,7 +104,9 @@ router.get('/', async (req, res) => {
         const baseQuery = `
             FROM ordens_de_producao op
             LEFT JOIN produtos p ON op.produto_id = p.id
+                                 AND p.empresa_id = op.empresa_id
             WHERE op.status = 'finalizado'
+              AND op.empresa_id = $1
         `;
         
         const selectFields = `
@@ -110,16 +120,16 @@ router.get('/', async (req, res) => {
         const orderBy = `ORDER BY op.data_final DESC NULLS LAST, op.id DESC`;
 
         let queryText = `${selectFields} ${baseQuery} ${orderBy}`;
-        let queryParams = [];
+        let queryParams = [req.empresaId];
         let totalQuery = `SELECT COUNT(op.id) AS count ${baseQuery}`;
 
         if (!fetchAll) {
-            queryText += ` LIMIT $1 OFFSET $2`;
-            queryParams = [limit, offset];
+            queryText += ` LIMIT $2 OFFSET $3`;
+            queryParams = [req.empresaId, limit, offset];
         }
 
         const result = await dbClienteRota.query(queryText, queryParams);
-        const totalResult = await dbClienteRota.query(totalQuery);
+        const totalResult = await dbClienteRota.query(totalQuery, [req.empresaId]);
         const total = parseInt(totalResult.rows[0].count);
         const totalPages = limit > 0 ? Math.ceil(total / limit) : 1;
 

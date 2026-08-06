@@ -23,10 +23,36 @@ export async function registrarAuditoria(dbClient, usuarioLogado, acao, entidade
         const useExternalClient = !!dbClient;
         const client = dbClient || await pool.connect();
         try {
+            const empresaInformada = Number(usuarioLogado?.empresa_id);
+            let empresaId = Number.isSafeInteger(empresaInformada) && empresaInformada > 0
+                ? empresaInformada
+                : null;
+
+            if (!empresaId && usuarioLogado?.id) {
+                const empresaResult = await client.query(`
+                    SELECT ue.empresa_id
+                      FROM usuarios_empresas ue
+                      JOIN empresas e ON e.id = ue.empresa_id
+                     WHERE ue.usuario_id = $1
+                       AND ue.ativo
+                       AND e.ativa
+                     ORDER BY e.eh_legada DESC, ue.empresa_principal DESC, ue.id
+                     LIMIT 1
+                `, [usuarioLogado.id]);
+                empresaId = empresaResult.rows[0]?.empresa_id || null;
+            }
+
+            if (!empresaId) {
+                console.warn('[audit_log] Contexto empresarial ausente; auditoria ignorada:', acao);
+                return;
+            }
+
             await client.query(
-                `INSERT INTO audit_log (usuario_id, usuario_nome, acao, entidade, entidade_id, detalhes)
-                 VALUES ($1, $2, $3, $4, $5, $6)`,
+                `INSERT INTO audit_log
+                    (empresa_id, usuario_id, usuario_nome, acao, entidade, entidade_id, detalhes)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
                 [
+                    empresaId,
                     usuarioLogado?.id ?? null,
                     usuarioLogado?.nome ?? 'Sistema',
                     acao,

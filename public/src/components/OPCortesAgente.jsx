@@ -7,6 +7,7 @@ import useTypewriter from '../hooks/useTypewriter';
 import useContador from '../hooks/useContador.js';
 import OPAgenteFaseScan from './OPAgenteFaseScan.jsx';
 import UIBloqueio from './UIBloqueio';
+import { obterEmpresaAtivaLocal } from '/js/utils/auth.js';
 
 // ── Frases de repouso ─────────────────────────────────────────────────────────
 
@@ -124,11 +125,16 @@ export default function OPCortesAgente({ produtos, onCortarAgora, rescanKey, cor
     const [voltouParcial, setVoltouParcial] = useState(false);
     const [sondagemSilenciosa, setSondagemSilenciosa] = useState(null);
     const [memoriaCortes, setMemoriaCortes] = useState(() => lerMemoria('agente_cortes_memoria'));
+    const [cadeiaBloqueada, setCadeiaBloqueada] = useState(() => obterEmpresaAtivaLocal()?.eh_legada === false);
 
     const ultimaSondagemRef  = useRef(null);
     const avaliandoTimerRef  = useRef(null);
 
     const iniciarScan = useCallback(async () => {
+        if (obterEmpresaAtivaLocal()?.eh_legada === false) {
+            setCadeiaBloqueada(true);
+            return;
+        }
         setSondagemSilenciosa(null);
         setAgentState('scanning');
         setMensagensVisiveis([]);
@@ -194,6 +200,7 @@ export default function OPCortesAgente({ produtos, onCortarAgora, rescanKey, cor
 
     // ── Sondagem silenciosa ───────────────────────────────────────────────────
     useEffect(() => {
+        if (cadeiaBloqueada) return undefined;
         if (agentState !== 'idle') return;
 
         const agora = Date.now();
@@ -222,7 +229,7 @@ export default function OPCortesAgente({ produtos, onCortarAgora, rescanKey, cor
 
         return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [agentState]);
+    }, [agentState, cadeiaBloqueada]);
 
     const resetar = useCallback(() => {
         clearTimeout(avaliandoTimerRef.current);
@@ -245,13 +252,27 @@ export default function OPCortesAgente({ produtos, onCortarAgora, rescanKey, cor
     }, [rescanKey]);
 
     useEffect(() => {
+        const handleEmpresaAlterada = () => {
+            const bloqueada = obterEmpresaAtivaLocal()?.eh_legada === false;
+            setCadeiaBloqueada(bloqueada);
+            if (bloqueada) {
+                clearTimeout(avaliandoTimerRef.current);
+                setAgentState('idle');
+            }
+        };
+        window.addEventListener('lv:empresa-contexto-alterado', handleEmpresaAlterada);
+        return () => window.removeEventListener('lv:empresa-contexto-alterado', handleEmpresaAlterada);
+    }, []);
+
+    useEffect(() => {
+        if (cadeiaBloqueada) return undefined;
         if (agentState !== 'done') return;
         const timer = setInterval(() => {
             if (document.visibilityState === 'visible') iniciarScan();
         }, INTERVALO_AO_VIVO_MS);
         return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [agentState]);
+    }, [agentState, cadeiaBloqueada]);
 
     useEffect(() => {
         const handlePainelFechado = () => {
@@ -334,6 +355,16 @@ export default function OPCortesAgente({ produtos, onCortarAgora, rescanKey, cor
     const horaUltimoScan = ultimoScan
         ? ultimoScan.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
         : null;
+
+    if (cadeiaBloqueada) {
+        return (
+            <div className="op-cadeia-bloqueada" role="status" aria-live="polite">
+                <i className="fas fa-industry" aria-hidden="true"></i>
+                <strong>A cadeia de produção ainda não está disponível neste ambiente.</strong>
+                <span>Nenhum dado de outro ambiente foi carregado.</span>
+            </div>
+        );
+    }
 
     return (
         <div className="op-cortes-agente">

@@ -45,6 +45,13 @@ router.get('/arquivar-concluidas', async (req, res) => {
             UPDATE demandas_producao 
             SET status = 'arquivada' 
             WHERE status = 'concluida' 
+              AND empresa_id IS NOT NULL
+              AND EXISTS (
+                    SELECT 1
+                      FROM empresas e
+                     WHERE e.id = demandas_producao.empresa_id
+                       AND e.ativa
+              )
               AND data_conclusao::date < (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
         `);
         

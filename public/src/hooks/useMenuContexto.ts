@@ -162,6 +162,9 @@ export default function useMenuContexto() {
           { empresa_ativa: contextoCarregado.empresaAtiva },
           sessao.storage,
         );
+        window.dispatchEvent(new CustomEvent('lv:empresa-contexto-carregado', {
+          detail: { empresaId: contextoCarregado.empresaAtiva.id },
+        }));
       } catch (error) {
         if (!ativo) return;
         sessionStorage.removeItem(CHAVE_TRANSICAO_EMPRESA);
@@ -253,6 +256,9 @@ export default function useMenuContexto() {
             { empresa_ativa: contextoAtualizado.empresaAtiva },
             sessao.storage,
           );
+          window.dispatchEvent(new CustomEvent('lv:empresa-contexto-carregado', {
+            detail: { empresaId: contextoAtualizado.empresaAtiva.id },
+          }));
 
           const financeiroPronto = aguardarFinanceiroPronto();
           window.dispatchEvent(new CustomEvent('lv:empresa-contexto-alterado', {

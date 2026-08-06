@@ -15,6 +15,8 @@ import OPQuickLogModal from './OPQuickLogModal.tsx';
 import { obterProdutos as obterProdutosDoStorage } from '/js/utils/storage.js';
 // @ts-expect-error popups JS legados sem declaraÃ§Ã£o TypeScript
 import { mostrarMensagem, mostrarConfirmacao } from '/js/utils/popups.js';
+// @ts-expect-error utilitário JS legado sem declaração TypeScript
+import { obterEmpresaAtivaLocal } from '/js/utils/auth.js';
 import UICarregando from './UICarregando';
 
 interface OpProdutoGradeCorte {
@@ -229,12 +231,19 @@ export default function OPCortesTela() {
   const [radarRefreshKey, setRadarRefreshKey] = useState(0);
   const [agenteRescanKey, setAgenteRescanKey] = useState(0);
   const [refreshingEstoque, setRefreshingEstoque] = useState(false);
+  const [cadeiaBloqueada, setCadeiaBloqueada] = useState(false);
 
   const ITENS_POR_PAGINA_CORTES = 6;
 
   const carregarDados = useCallback(async () => {
     setCarregando(true);
     setErro(null);
+    if (obterEmpresaAtivaLocal()?.eh_legada === false) {
+      setCadeiaBloqueada(true);
+      setCarregando(false);
+      return;
+    }
+    setCadeiaBloqueada(false);
     try {
       const token = localStorage.getItem('token');
       if (!token) throw new Error('Não autenticado');
@@ -269,6 +278,7 @@ export default function OPCortesTela() {
   }, [carregarDados]);
 
   const refreshSilencioso = useCallback(async () => {
+    if (obterEmpresaAtivaLocal()?.eh_legada === false) return;
     try {
       const token = localStorage.getItem('token');
       if (!token) return;
@@ -289,8 +299,13 @@ export default function OPCortesTela() {
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') void carregarDados();
     };
+    const handleEmpresaAlterada = () => void carregarDados();
     document.addEventListener('visibilitychange', handleVisibility);
-    return () => document.removeEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('lv:empresa-contexto-alterado', handleEmpresaAlterada);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('lv:empresa-contexto-alterado', handleEmpresaAlterada);
+    };
   }, [carregarDados]);
 
   useEffect(() => {
@@ -554,19 +569,26 @@ export default function OPCortesTela() {
         </div>
       )}
 
-      {carregando && <UICarregando variante="bloco" />}
-      {erro && <p style={{ color: 'red', textAlign: 'center' }}>{erro}</p>}
+      {cadeiaBloqueada && (
+        <div className="op-cadeia-bloqueada" role="status" aria-live="polite">
+          <i className="fas fa-industry" aria-hidden="true"></i>
+          <strong>A cadeia de produção ainda não está disponível neste ambiente.</strong>
+          <span>Nenhum dado de outro ambiente foi carregado.</span>
+        </div>
+      )}
+      {!cadeiaBloqueada && carregando && <UICarregando variante="bloco" />}
+      {!cadeiaBloqueada && erro && <p style={{ color: 'red', textAlign: 'center' }}>{erro}</p>}
 
-      {!carregando && !erro && passo === 0 && renderVistaPrincipal()}
+      {!cadeiaBloqueada && !carregando && !erro && passo === 0 && renderVistaPrincipal()}
 
-      {!carregando && !erro && passo === 1 && (
+      {!cadeiaBloqueada && !carregando && !erro && passo === 1 && (
         <>
           <h3 className="op-subtitulo-secao">Passo 1: Selecione o Produto</h3>
           <OPSelecaoProdutoCorteTipado produtos={produtos} onProdutoSelect={handleProdutoSelect} />
         </>
       )}
 
-      {!carregando && !erro && passo === 2 && (
+      {!cadeiaBloqueada && !carregando && !erro && passo === 2 && (
         <>
           <h3 className="op-subtitulo-secao">
             Selecione a Variação de "{produtoSelecionado?.nome}"
@@ -578,7 +600,7 @@ export default function OPCortesTela() {
         </>
       )}
 
-      {!carregando && !erro && passo === 3 && (
+      {!cadeiaBloqueada && !carregando && !erro && passo === 3 && (
         <>
           <h3 className="op-subtitulo-secao">Passo 3: Informe a Quantidade</h3>
           <OPRegistroCorteTipado
@@ -592,7 +614,7 @@ export default function OPCortesTela() {
         </>
       )}
 
-      {!carregando && !erro && passo === 4 && (
+      {!cadeiaBloqueada && !carregando && !erro && passo === 4 && (
         <>
           <h3 className="op-subtitulo-secao">Gerar Ordem de Produção</h3>
           <OPFormularioTipado

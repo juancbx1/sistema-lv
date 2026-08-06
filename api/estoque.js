@@ -6,16 +6,25 @@ import jwt from 'jsonwebtoken';
 import express from 'express';
 import { getPermissoesCompletasUsuarioDB } from './usuarios.js';
 import { verificarEAtualizarDemandasPorSKU } from './utils/diagnosticoProducao.js';
+import { obterEmpresaIdDoContexto } from './contexto-empresa.js';
 
 
 async function registrarEventoAuditoria(dbClient, evento) {
     const { usuarioLogado, tipo_evento, entidade, entidade_id, detalhes } = evento;
+    const empresaId = Number(evento.empresaId ?? usuarioLogado?.empresa_id);
+
+    if (!Number.isSafeInteger(empresaId) || empresaId <= 0) {
+        console.warn('[AUDITORIA] Contexto empresarial ausente; evento ignorado.');
+        return;
+    }
     
     try {
         await dbClient.query(
-            `INSERT INTO auditoria_eventos (usuario_id, usuario_nome, tipo_evento, entidade, entidade_id, detalhes)
-             VALUES ($1, $2, $3, $4, $5, $6)`,
+            `INSERT INTO auditoria_eventos
+                (empresa_id, usuario_id, usuario_nome, tipo_evento, entidade, entidade_id, detalhes)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
             [
+                empresaId,
                 usuarioLogado.id,
                 usuarioLogado.nome || usuarioLogado.nome_usuario,
                 tipo_evento,
@@ -59,6 +68,7 @@ router.use(async (req, res, next) => {
     // Apenas autentica o token. Permissões específicas são checadas nas rotas.
     try {
         req.usuarioLogado = verificarTokenInterna(req);
+        req.empresaId = obterEmpresaIdDoContexto(req);
         next();
     } catch (error) {
         console.error('[router/estoque MID] Erro no middleware:', error.message);
@@ -74,10 +84,11 @@ router.use(async (req, res, next) => {
 // GET /api/estoque/saldo
 router.get('/saldo', async (req, res) => {
     const { usuarioLogado } = req;
+    const empresaId = obterEmpresaIdDoContexto(req);
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, empresaId);
         if (!permissoesCompletas.includes('acesso-estoque')) {
             return res.status(403).json({ error: 'Permissão negada para visualizar saldo do estoque.' });
         }
@@ -97,6 +108,7 @@ router.get('/saldo', async (req, res) => {
                     ) AS saldo_atual,
                     MAX(data_movimento) as ultima_data_movimento
                 FROM estoque_movimentos
+                WHERE empresa_id = $1
                 GROUP BY produto_id, variante_nome
             )
             SELECT
@@ -107,16 +119,18 @@ router.get('/saldo', async (req, res) => {
                 s.ultima_data_movimento,
                 COALESCE(g.sku, p.sku, p.id::text) AS produto_ref_id
             FROM SaldosAgregados s
-            JOIN produtos p ON s.produto_id = p.id
+            JOIN produtos p ON s.produto_id = p.id AND p.empresa_id = $1
             LEFT JOIN jsonb_to_recordset(p.grade) AS g(sku TEXT, variacao TEXT) ON g.variacao = s.variante_nome
             
             -- ** A LÓGICA DE FILTRO É APLICADA AQUI ** --
-            WHERE COALESCE(g.sku, p.sku, p.id::text) NOT IN (SELECT produto_ref_id FROM estoque_itens_arquivados)
+            WHERE COALESCE(g.sku, p.sku, p.id::text) NOT IN (
+                SELECT produto_ref_id FROM estoque_itens_arquivados WHERE empresa_id = $1
+            )
 
             ORDER BY s.ultima_data_movimento DESC, p.nome ASC;
         `;
 
-        const result = await dbClient.query(queryText);
+        const result = await dbClient.query(queryText, [empresaId]);
         
         res.status(200).json(result.rows);
     } catch (error) {
@@ -130,6 +144,7 @@ router.get('/saldo', async (req, res) => {
 // NOVA ROTA: POST /api/estoque/arquivar-item
 router.post('/arquivar-item', async (req, res) => {
     const { usuarioLogado } = req;
+    const empresaId = obterEmpresaIdDoContexto(req);
     const { produto_ref_id } = req.body;
 
     if (!produto_ref_id) {
@@ -140,27 +155,47 @@ router.post('/arquivar-item', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, empresaId);
         
         if (!permissoesCompletas.includes('arquivar-produto-do-estoque')) { // Verifique se o nome da permissão está correto
             console.warn(`[API /arquivar-item] Permissão negada para o usuário ID ${usuarioLogado.id}.`);
             return res.status(403).json({ error: 'Permissão negada para arquivar itens do estoque.' });
         }
 
+        const produtoExiste = await dbClient.query(`
+            SELECT 1
+              FROM produtos p
+             WHERE p.empresa_id = $1
+               AND (
+                   p.sku = $2
+                   OR EXISTS (
+                       SELECT 1
+                         FROM jsonb_to_recordset(COALESCE(p.grade, '[]'::jsonb)) AS g(sku TEXT)
+                        WHERE g.sku = $2
+                   )
+               )
+             LIMIT 1
+        `, [empresaId, produto_ref_id]);
+        if (produtoExiste.rowCount === 0) {
+            return res.status(404).json({ error: 'Produto não encontrado na empresa ativa.' });
+        }
+
         const query = `
-            INSERT INTO estoque_itens_arquivados (produto_ref_id, usuario_responsavel_id)
-            VALUES ($1, $2)
-            ON CONFLICT (produto_ref_id) DO NOTHING;
+            INSERT INTO estoque_itens_arquivados (empresa_id, produto_ref_id, usuario_responsavel_id)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (empresa_id, produto_ref_id) DO NOTHING;
         `;
         
-        const result = await dbClient.query(query, [produto_ref_id, usuarioLogado.id]);
+        const result = await dbClient.query(query, [empresaId, produto_ref_id, usuarioLogado.id]);
 
         if (result.rowCount > 0) {
         await registrarEventoAuditoria(dbClient, {
             usuarioLogado,
+            empresaId,
             tipo_evento: 'ITEM_ARQUIVADO',
             entidade: 'EstoqueItem',
-            entidade_id: produto_ref_id
+            entidade_id: produto_ref_id,
+            empresaEhLegada: req.empresaAtiva?.eh_legada !== false,
         });
 
         res.status(200).json({ message: `Item com SKU ${produto_ref_id} foi arquivado...` });
@@ -180,11 +215,22 @@ router.post('/arquivar-item', async (req, res) => {
 // POST /api/estoque/entrada-producao
 // POST /api/estoque/entrada-producao - VERSÃO CORRIGIDA
 router.post('/entrada-producao', async (req, res) => {
+    if (req.empresaAtiva?.eh_legada !== true) {
+        return res.status(403).json({
+            error: 'A entrada de producao ainda nao esta disponivel para a empresa ativa.',
+            codigo: 'CADEIA_PRODUTIVA_NAO_MIGRADA',
+        });
+    }
     const { usuarioLogado } = req;
+    const empresaId = obterEmpresaIdDoContexto(req);
+    const idempotencyKey = String(req.get('Idempotency-Key') || req.body?.idempotency_key || '').trim() || null;
+    if (idempotencyKey && idempotencyKey.length > 200) {
+        return res.status(400).json({ error: 'Idempotency-Key excede o limite de 200 caracteres.' });
+    }
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, empresaId);
         if (!permissoesCompletas.includes('lancar-embalagem')) {
             return res.status(403).json({ error: 'Permissão negada para registrar entrada de produção.' });
         }
@@ -202,21 +248,72 @@ router.post('/entrada-producao', async (req, res) => {
         }
 
         const varianteParaDB = (variante_nome === '' || variante_nome === '-' || variante_nome === undefined) ? null : variante_nome;
+
+        const produtoResult = await dbClient.query(
+            'SELECT id FROM produtos WHERE id = $1 AND empresa_id = $2',
+            [parseInt(produto_id), empresaId]
+        );
+        if (produtoResult.rowCount === 0) {
+            return res.status(404).json({ error: 'Produto nao encontrado na empresa ativa.' });
+        }
+
+        if (id_arremate_origem) {
+            const arremateResult = await dbClient.query(
+                'SELECT produto_id FROM arremates WHERE id = $1 AND empresa_id = $2',
+                [id_arremate_origem, empresaId]
+            );
+            if (arremateResult.rowCount === 0 || arremateResult.rows[0].produto_id !== parseInt(produto_id)) {
+                return res.status(404).json({ error: 'Arremate de origem nao encontrado na empresa ativa.' });
+            }
+        }
         
         await dbClient.query('BEGIN');
+
+        if (idempotencyKey) {
+            await dbClient.query(
+                'SELECT pg_advisory_xact_lock(hashtext($1))',
+                [`${empresaId}:${idempotencyKey}`]
+            );
+            const repeticao = await dbClient.query(
+                `SELECT id, movimento_estoque_id, produto_embalado_id, variante_embalada_nome, quantidade_embalada
+                   FROM embalagens_realizadas
+                  WHERE empresa_id = $1 AND idempotency_key = $2
+                  FOR UPDATE`,
+                [empresaId, idempotencyKey]
+            );
+            if (repeticao.rowCount > 0) {
+                const existente = repeticao.rows[0];
+                if (
+                    existente.produto_embalado_id !== parseInt(produto_id)
+                    || existente.variante_embalada_nome !== varianteParaDB
+                    || existente.quantidade_embalada !== quantidade
+                ) {
+                    await dbClient.query('ROLLBACK');
+                    return res.status(409).json({ error: 'Idempotency-Key ja utilizada com outro payload.' });
+                }
+                await dbClient.query('COMMIT');
+                return res.status(200).json({
+                    message: 'Entrada de producao ja registrada anteriormente.',
+                    movimento_estoque_id: existente.movimento_estoque_id,
+                    idempotente: true,
+                });
+            }
+        }
 
         // <<< A CORREÇÃO ESTÁ AQUI >>>
         // A query agora tem 7 colunas e 7 placeholders ($1 a $7)
         const movimentoQueryText = `
             INSERT INTO estoque_movimentos 
-                (produto_id, variante_nome, quantidade, tipo_movimento, origem_arremate_id, usuario_responsavel, observacao)
-            VALUES ($1, $2, $3, 'ENTRADA_PRODUCAO', $4, $5, $6)
+                (empresa_id, idempotency_key, produto_id, variante_nome, quantidade, tipo_movimento, origem_arremate_id, usuario_responsavel, observacao)
+            VALUES ($1, $2, $3, $4, $5, 'ENTRADA_PRODUCAO', $6, $7, $8)
             RETURNING id;
         `;
         // O tipo de movimento pode ser simplesmente 'ENTRADA_PRODUCAO'
         const movimentoResult = await dbClient.query(movimentoQueryText, [
-            parseInt(produto_id), 
-            varianteParaDB, 
+            empresaId,
+            idempotencyKey,
+            parseInt(produto_id),
+            varianteParaDB,
             quantidade,
             id_arremate_origem || null, // Passando o ID do arremate
             (usuarioLogado.nome || usuarioLogado.nome_usuario),
@@ -231,11 +328,13 @@ router.post('/entrada-producao', async (req, res) => {
         // O resto da lógica para inserir em 'embalagens_realizadas' já está correta no seu código
         const embalagemQueryText = `
             INSERT INTO embalagens_realizadas
-                (tipo_embalagem, produto_embalado_id, variante_embalada_nome, produto_ref_id, quantidade_embalada, 
+                (empresa_id, idempotency_key, tipo_embalagem, produto_embalado_id, variante_embalada_nome, produto_ref_id, quantidade_embalada,
                 usuario_responsavel_id, observacao, movimento_estoque_id, status)
-            VALUES ('UNIDADE', $1, $2, $3, $4, $5, $6, $7, 'ATIVO');
+            VALUES ($1, $2, 'UNIDADE', $3, $4, $5, $6, $7, $8, $9, 'ATIVO');
         `;
         await dbClient.query(embalagemQueryText, [
+            empresaId,
+            idempotencyKey,
             parseInt(produto_id),
             varianteParaDB,
             produto_ref_id,
@@ -259,7 +358,7 @@ router.post('/entrada-producao', async (req, res) => {
         });
 
     } catch (error) {
-        if (dbClient) await dbClient.query('ROLLBACK');
+        if (dbClient) await dbClient.query('ROLLBACK').catch(() => undefined);
         console.error('[API /estoque/entrada-producao] Erro:', error);
         res.status(500).json({ error: 'Erro ao registrar entrada no estoque.', details: error.message });
     } finally {
@@ -270,10 +369,11 @@ router.post('/entrada-producao', async (req, res) => {
 // GET /api/estoque/movimentos
 router.get('/movimentos', async (req, res) => {
     const { usuarioLogado } = req;
+    const empresaId = obterEmpresaIdDoContexto(req);
     let dbCliente;
     try {
         dbCliente = await pool.connect();
-        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbCliente, usuarioLogado.id);
+        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbCliente, usuarioLogado.id, empresaId);
         
         if (!permissoesCompletas.includes('acesso-estoque')) {
             return res.status(403).json({ error: 'Permissão negada para visualizar histórico de movimentos.' });
@@ -284,12 +384,12 @@ router.get('/movimentos', async (req, res) => {
 
         let varianteNomeTratadaParaSQL = req.query.variante_nome ? req.query.variante_nome.replace(/\+/g, ' ') : null;
 
-        let queryText = `SELECT em.*, p.nome as produto_nome FROM estoque_movimentos em JOIN produtos p ON em.produto_id = p.id`;
-        let countQueryText = `SELECT COUNT(*) as count FROM estoque_movimentos em JOIN produtos p ON em.produto_id = p.id`;
+        let queryText = `SELECT em.*, p.nome as produto_nome FROM estoque_movimentos em JOIN produtos p ON em.produto_id = p.id AND p.empresa_id = em.empresa_id`;
+        let countQueryText = `SELECT COUNT(*) as count FROM estoque_movimentos em JOIN produtos p ON em.produto_id = p.id AND p.empresa_id = em.empresa_id`;
         
-        const queryParams = [];
-        const whereClauses = [];
-        let paramIndex = 1;
+        const queryParams = [empresaId];
+        const whereClauses = ['em.empresa_id = $1'];
+        let paramIndex = 2;
 
         if (produto_id) {
             whereClauses.push(`em.produto_id = $${paramIndex++}`); 
@@ -349,10 +449,15 @@ router.get('/movimentos', async (req, res) => {
 // POST /api/estoque/movimento-manual
 router.post('/movimento-manual', async (req, res) => {
     const { usuarioLogado } = req;
+    const empresaId = obterEmpresaIdDoContexto(req);
+    const idempotencyKey = String(req.get('Idempotency-Key') || req.body?.idempotency_key || '').trim() || null;
+    if (idempotencyKey && idempotencyKey.length > 200) {
+        return res.status(400).json({ error: 'Idempotency-Key excede o limite de 200 caracteres.' });
+    }
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, empresaId);
     
         if (!permissoesCompletas.includes('gerenciar-estoque')) {
             return res.status(403).json({ error: 'Permissão negada para realizar movimentos manuais de estoque.' });
@@ -382,6 +487,7 @@ router.post('/movimento-manual', async (req, res) => {
             return res.status(400).json({ error: 'A quantidade movimentada deve ser um número positivo.' });
         }
 
+        const produtoId = parseInt(produto_id);
         const varianteParaDB = (variante_nome === '' || variante_nome === '-' || variante_nome === undefined) ? null : variante_nome;
         let movimentoReal;
         let tipoMovimentoDB;
@@ -410,13 +516,50 @@ router.post('/movimento-manual', async (req, res) => {
                 return res.status(400).json({ error: 'Tipo de operação inválido.' });
         }
         
+        const produtoExiste = await dbClient.query(
+            'SELECT id FROM produtos WHERE id = $1 AND empresa_id = $2',
+            [produtoId, empresaId],
+        );
+        if (produtoExiste.rowCount === 0) {
+            return res.status(404).json({ error: 'Produto nÃ£o encontrado na empresa ativa.' });
+        }
+
+        await dbClient.query('BEGIN');
+        if (idempotencyKey) {
+            await dbClient.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${empresaId}:${idempotencyKey}`]);
+            const repeticao = await dbClient.query(
+                `SELECT * FROM estoque_movimentos
+                  WHERE empresa_id = $1 AND idempotency_key = $2
+                  FOR UPDATE`,
+                [empresaId, idempotencyKey],
+            );
+            if (repeticao.rowCount > 0) {
+                const existente = repeticao.rows[0];
+                if (existente.produto_id !== produtoId
+                    || existente.variante_nome !== varianteParaDB
+                    || existente.quantidade !== movimentoReal
+                    || existente.tipo_movimento !== tipoMovimentoDB) {
+                    await dbClient.query('ROLLBACK');
+                    return res.status(409).json({ error: 'Idempotency-Key ja utilizada com outro payload.' });
+                }
+                await dbClient.query('COMMIT');
+                return res.status(200).json({
+                    message: 'Movimento manual ja registrado anteriormente.',
+                    movimentoRegistrado: existente,
+                    idempotente: true,
+                });
+            }
+        }
+
         const result = await dbClient.query(
             `INSERT INTO estoque_movimentos 
-                (produto_id, variante_nome, quantidade, tipo_movimento, usuario_responsavel, observacao, data_movimento)
-             VALUES ($1, $2, $3, $4, $5, $6, NOW())
+                (empresa_id, idempotency_key, produto_id, variante_nome, quantidade, tipo_movimento, usuario_responsavel, observacao, data_movimento)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
              RETURNING *;`,
             [
-                produto_id, 
+                empresaId,
+                idempotencyKey,
+                produtoId,
                 varianteParaDB, 
                 movimentoReal, 
                 tipoMovimentoDB,
@@ -440,12 +583,16 @@ router.post('/movimento-manual', async (req, res) => {
 
         await registrarEventoAuditoria(dbClient, {
             usuarioLogado,
+            empresaId,
             tipo_evento: tipo_operacao,
+            empresaEhLegada: req.empresaAtiva?.eh_legada !== false,
             entidade: 'Estoque',
             entidade_id: `${movimentoRegistrado.produto_id}|${movimentoRegistrado.variante_nome || '-'}`,
             detalhes: detalhesAuditoria // Usamos nosso objeto construído dinamicamente
         });
         // --- FIM DO REGISTRO ---
+
+        await dbClient.query('COMMIT');
 
         res.status(201).json({
             message: `Movimento de '${tipo_operacao}' registrado com sucesso.`,
@@ -454,8 +601,9 @@ router.post('/movimento-manual', async (req, res) => {
 
 
     } catch (error) {
+        if (dbClient) await dbClient.query('ROLLBACK').catch(() => undefined);
         console.error('[API /estoque/movimento-manual] Erro:', error.message);
-        res.status(500).json({ error: 'Erro ao registrar movimento manual de estoque.', details: error.message });
+        res.status(error.statusCode || 500).json({ error: 'Erro ao registrar movimento manual de estoque.', details: error.message });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -464,6 +612,11 @@ router.post('/movimento-manual', async (req, res) => {
 //POST /api/estoque/movimento-em-lote
 router.post('/movimento-em-lote', async (req, res) => {
     const { usuarioLogado } = req;
+    const empresaId = obterEmpresaIdDoContexto(req);
+    const idempotencyKey = String(req.get('Idempotency-Key') || req.body?.idempotency_key || '').trim() || null;
+    if (idempotencyKey && idempotencyKey.length > 180) {
+        return res.status(400).json({ error: 'Idempotency-Key excede o limite de 180 caracteres para lotes.' });
+    }
     const { itens, tipo_operacao, observacao } = req.body;
 
     if (!Array.isArray(itens) || itens.length === 0 || !tipo_operacao) {
@@ -478,7 +631,7 @@ router.post('/movimento-em-lote', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, empresaId);
         
         if (!permissoesCompletas.includes('gerenciar-estoque')) {
             return res.status(403).json({ error: 'Permissão negada para realizar esta operação.' });
@@ -486,7 +639,8 @@ router.post('/movimento-em-lote', async (req, res) => {
 
         await dbClient.query('BEGIN'); // Inicia a transação
 
-        for (const item of itens) {
+        let novosMovimentos = 0;
+        for (const [indice, item] of itens.entries()) {
             if (!item.produto_id || !item.quantidade_movimentada || item.quantidade_movimentada <= 0) {
                 // Se algum item for inválido, desfaz a transação inteira.
                 throw new Error(`Item inválido no lote: ${item.produto_nome}. Verifique os dados.`);
@@ -495,25 +649,60 @@ router.post('/movimento-em-lote', async (req, res) => {
             const varianteParaDB = (item.variante_nome === '-' || !item.variante_nome) ? null : item.variante_nome;
             // Para saídas, a quantidade é sempre negativa
             const quantidadeNegativa = -Math.abs(parseInt(item.quantidade_movimentada));
+            const produtoId = parseInt(item.produto_id);
+            const movimentoKey = idempotencyKey ? `${idempotencyKey}:${indice}` : null;
+
+            const produtoExiste = await dbClient.query(
+                'SELECT id FROM produtos WHERE id = $1 AND empresa_id = $2',
+                [produtoId, empresaId],
+            );
+            if (produtoExiste.rowCount === 0) {
+                throw new Error(`Produto ${item.produto_id} nao encontrado na empresa ativa.`);
+            }
+
+            if (movimentoKey) {
+                const repeticao = await dbClient.query(
+                    `SELECT * FROM estoque_movimentos
+                      WHERE empresa_id = $1 AND idempotency_key = $2
+                      FOR UPDATE`,
+                    [empresaId, movimentoKey],
+                );
+                if (repeticao.rowCount > 0) {
+                    const existente = repeticao.rows[0];
+                    if (existente.produto_id !== produtoId
+                        || existente.variante_nome !== varianteParaDB
+                        || existente.quantidade !== quantidadeNegativa
+                        || existente.tipo_movimento !== tipo_operacao) {
+                        throw new Error('Idempotency-Key ja utilizada com outro payload.');
+                    }
+                    continue;
+                }
+            }
 
             const query = `
                 INSERT INTO estoque_movimentos 
-                    (produto_id, variante_nome, quantidade, tipo_movimento, usuario_responsavel, observacao, data_movimento)
-                VALUES ($1, $2, $3, $4, $5, $6, NOW());
+                    (empresa_id, idempotency_key, produto_id, variante_nome, quantidade, tipo_movimento, usuario_responsavel, observacao, data_movimento)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW());
             `;
             await dbClient.query(query, [
-                item.produto_id,
+                empresaId,
+                movimentoKey,
+                produtoId,
                 varianteParaDB,
                 quantidadeNegativa,
                 tipo_operacao,
                 (usuarioLogado.nome || usuarioLogado.nome_usuario),
                 observacao || null
             ]);
+            novosMovimentos += 1;
         }
 
         await dbClient.query('COMMIT'); // Confirma a transação se tudo deu certo
 
-        res.status(201).json({ message: `${itens.length} movimentações de estoque registradas com sucesso.` });
+        res.status(novosMovimentos === 0 ? 200 : 201).json({
+            message: `${itens.length} movimentações de estoque registradas com sucesso.`,
+            idempotente: novosMovimentos === 0,
+        });
 
     } catch (error) {
         if (dbClient) await dbClient.query('ROLLBACK'); // Desfaz tudo em caso de erro
@@ -527,6 +716,11 @@ router.post('/movimento-em-lote', async (req, res) => {
 
 router.post('/estornar-movimento', async (req, res) => {
     const { usuarioLogado } = req;
+    const empresaId = obterEmpresaIdDoContexto(req);
+    const idempotencyKey = String(req.get('Idempotency-Key') || req.body?.idempotency_key || '').trim() || null;
+    if (idempotencyKey && idempotencyKey.length > 200) {
+        return res.status(400).json({ error: 'Idempotency-Key excede o limite de 200 caracteres.' });
+    }
     const { id_movimento_original, quantidade_a_estornar } = req.body;
 
     if (!id_movimento_original || !quantidade_a_estornar) {
@@ -536,7 +730,7 @@ router.post('/estornar-movimento', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, empresaId);
         
         if (!permissoesCompletas.includes('gerenciar-estoque')) {
             return res.status(403).json({ error: 'Permissão negada para estornar movimentos.' });
@@ -544,10 +738,33 @@ router.post('/estornar-movimento', async (req, res) => {
 
         await dbClient.query('BEGIN');
 
+        const quantidadeEstorno = parseInt(quantidade_a_estornar);
+        if (!Number.isInteger(quantidadeEstorno) || quantidadeEstorno <= 0) {
+            throw new Error('Quantidade a estornar deve ser um nÃºmero positivo.');
+        }
+
+        if (idempotencyKey) {
+            await dbClient.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${empresaId}:${idempotencyKey}`]);
+            const repeticao = await dbClient.query(
+                `SELECT * FROM estoque_movimentos
+                  WHERE empresa_id = $1 AND idempotency_key = $2
+                  FOR UPDATE`,
+                [empresaId, idempotencyKey],
+            );
+            if (repeticao.rowCount > 0) {
+                await dbClient.query('COMMIT');
+                return res.status(200).json({
+                    message: 'Estorno ja registrado anteriormente.',
+                    movimentoDeEstorno: repeticao.rows[0],
+                    idempotente: true,
+                });
+            }
+        }
+
         // 1. Busca os dados do movimento original, incluindo o produto_id
         const movimentoOriginalRes = await dbClient.query(
-            'SELECT * FROM estoque_movimentos WHERE id = $1 FOR UPDATE', 
-            [id_movimento_original]
+            'SELECT * FROM estoque_movimentos WHERE id = $1 AND empresa_id = $2 FOR UPDATE',
+            [id_movimento_original, empresaId]
         );
         
         if (movimentoOriginalRes.rows.length === 0) throw new Error('Movimento original não encontrado.');
@@ -575,7 +792,7 @@ router.post('/estornar-movimento', async (req, res) => {
         }
 
         // 2d. Valida a quantidade solicitada
-        if (parseInt(quantidade_a_estornar) > saldoDisponivelParaEstorno) {
+        if (quantidadeEstorno > saldoDisponivelParaEstorno) {
             throw new Error(`Quantidade a estornar (${quantidade_a_estornar}) inválida. Saldo disponível para estorno: ${saldoDisponivelParaEstorno}.`);
         }
         
@@ -586,21 +803,23 @@ router.post('/estornar-movimento', async (req, res) => {
         // --- QUERY DE INSERT CORRIGIDA ---
         const insertQuery = `
             INSERT INTO estoque_movimentos 
-                (produto_id, variante_nome, quantidade, tipo_movimento, usuario_responsavel, observacao)
-            VALUES ($1, $2, $3, $4, $5, $6) RETURNING *;
+                (empresa_id, idempotency_key, produto_id, variante_nome, quantidade, tipo_movimento, usuario_responsavel, observacao)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *;
         `;
         const novoMovimentoRes = await dbClient.query(insertQuery, [
+            empresaId,
+            idempotencyKey,
             movOriginal.produto_id, // << USA O ID DO MOVIMENTO ORIGINAL
             movOriginal.variante_nome, 
-            parseInt(quantidade_a_estornar),
+            quantidadeEstorno,
             tipoMovimentoEstorno, 
             (usuarioLogado.nome || usuarioLogado.nome_usuario), 
             observacaoEstorno
         ]);
 
         // 4. Atualiza o movimento original com a nova quantidade estornada
-        const novaQtdTotalEstornada = (movOriginal.quantidade_estornada || 0) + parseInt(quantidade_a_estornar);
-        await dbClient.query('UPDATE estoque_movimentos SET quantidade_estornada = $1 WHERE id = $2', [novaQtdTotalEstornada, id_movimento_original]);
+        const novaQtdTotalEstornada = (movOriginal.quantidade_estornada || 0) + quantidadeEstorno;
+        await dbClient.query('UPDATE estoque_movimentos SET quantidade_estornada = $1 WHERE id = $2 AND empresa_id = $3', [novaQtdTotalEstornada, id_movimento_original, empresaId]);
 
         await dbClient.query('COMMIT');
 
@@ -621,10 +840,11 @@ router.post('/estornar-movimento', async (req, res) => {
 // 1. ROTA PARA LISTAR TODOS OS ITENS ARQUIVADOS
 router.get('/arquivados', async (req, res) => {
     const { usuarioLogado } = req;
+    const empresaId = obterEmpresaIdDoContexto(req);
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, empresaId);
         
         if (!permissoes.includes('gerenciar-estoque')) {
             return res.status(403).json({ error: 'Permissão negada para visualizar itens arquivados.' });
@@ -642,27 +862,30 @@ router.get('/arquivados', async (req, res) => {
             FROM 
                 estoque_itens_arquivados aia
             -- JOIN com produtos para SKUs que estão no produto principal
-            LEFT JOIN produtos p ON p.sku = aia.produto_ref_id
+            LEFT JOIN produtos p ON p.sku = aia.produto_ref_id AND p.empresa_id = aia.empresa_id
             -- JOIN com uma subquery que extrai dados da grade, INCLUINDO A IMAGEM
             LEFT JOIN (
                 SELECT 
                     p_sub.id as produto_id,
+                    p_sub.empresa_id,
                     gr.sku,
                     gr.variacao,
                     gr.imagem -- << CAMPO DE IMAGEM AGORA INCLUÍDO
                 FROM 
                     produtos p_sub, 
                     jsonb_to_recordset(p_sub.grade) AS gr(sku TEXT, variacao TEXT, imagem TEXT) -- << DEFINIÇÃO DA ESTRUTURA DO JSON
-            ) AS g ON g.sku = aia.produto_ref_id
+             ) AS g ON g.sku = aia.produto_ref_id AND g.empresa_id = aia.empresa_id
             -- JOIN secundário com produtos para obter o nome do produto pai quando o SKU é da grade
-            LEFT JOIN produtos p_grade ON p_grade.id = g.produto_id
+            LEFT JOIN produtos p_grade ON p_grade.id = g.produto_id AND p_grade.empresa_id = aia.empresa_id
             WHERE 
+                aia.empresa_id = $1
+                AND
                 COALESCE(p.nome, p_grade.nome) IS NOT NULL
             ORDER BY 
                 produto_nome, variante_nome;
         `;
         
-        const result = await dbClient.query(queryText);
+        const result = await dbClient.query(queryText, [empresaId]);
 
         // A query agora retorna uma única coluna de imagem, vamos ajustar o frontend para usar isso
         // Esta parte do backend está correta, mas vou notar a mudança para o frontend
@@ -687,6 +910,7 @@ router.get('/arquivados', async (req, res) => {
 // 2. ROTA PARA RESTAURAR (DESARQUIVAR) UM ITEM
 router.delete('/arquivados/:produto_ref_id', async (req, res) => {
     const { usuarioLogado } = req;
+    const empresaId = obterEmpresaIdDoContexto(req);
     const { produto_ref_id } = req.params; // Pega o SKU da URL
 
     if (!produto_ref_id) {
@@ -696,14 +920,14 @@ router.delete('/arquivados/:produto_ref_id', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, empresaId);
 
         if (!permissoes.includes('gerenciar-estoque')) {
             return res.status(403).json({ error: 'Permissão negada para restaurar itens.' });
         }
 
-        const queryText = 'DELETE FROM estoque_itens_arquivados WHERE produto_ref_id = $1';
-        const result = await dbClient.query(queryText, [produto_ref_id]);
+        const queryText = 'DELETE FROM estoque_itens_arquivados WHERE empresa_id = $1 AND produto_ref_id = $2';
+        const result = await dbClient.query(queryText, [empresaId, produto_ref_id]);
 
         if (result.rowCount === 0) {
             console.warn(`[API /estoque/arquivados DELETE] SKU ${produto_ref_id} não encontrado na tabela de arquivados para exclusão.`);
@@ -723,19 +947,20 @@ router.delete('/arquivados/:produto_ref_id', async (req, res) => {
 // BUSCA O HISTÓRICO GERAL (AUDITORIA) DO ESTOQUE
 router.get('/auditoria', async (req, res) => {
     const { usuarioLogado } = req;
+    const empresaId = obterEmpresaIdDoContexto(req);
     const { tipoEvento = 'todos', periodo = '7d', page = 1, limit = 15 } = req.query;
 
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, empresaId);
         if (!permissoes.includes('acesso-estoque')) { // Ou uma permissão mais específica
             return res.status(403).json({ error: 'Permissão negada para ver o histórico.' });
         }
 
-        let whereClauses = ["entidade LIKE 'Estoque%'"]; // Filtra apenas eventos do módulo de Estoque
-        let queryParams = [];
-        let paramIndex = 1;
+        let whereClauses = ['empresa_id = $1', "entidade LIKE 'Estoque%'"]; // Filtra apenas eventos do módulo de Estoque
+        let queryParams = [empresaId];
+        let paramIndex = 2;
 
         // Filtro de Período
         if (periodo === 'hoje') {

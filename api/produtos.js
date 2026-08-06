@@ -4,6 +4,7 @@ import pkg from 'pg';
 const { Pool } = pkg;
 import jwt from 'jsonwebtoken';
 import express from 'express';
+import { obterEmpresaIdDoContexto } from './contexto-empresa.js';
 
 // Importar a função de buscar permissões completas
 import { getPermissoesCompletasUsuarioDB } from './usuarios.js'; // Verifique o caminho
@@ -11,7 +12,11 @@ import { getPermissoesCompletasUsuarioDB } from './usuarios.js'; // Verifique o 
 const router = express.Router();
 const pool = new Pool({
     connectionString: process.env.POSTGRES_URL,
-    ssl: process.env.POSTGRES_URL ? { rejectUnauthorized: false } : undefined, // Configuração SSL para NeonDB
+    ssl: process.env.POSTGRES_URL
+        && !process.env.POSTGRES_URL.includes('127.0.0.1')
+        && !process.env.POSTGRES_URL.includes('localhost')
+        ? { rejectUnauthorized: false }
+        : undefined, // SSL somente para bancos remotos como a Neon
     timezone: 'UTC',
 });
 const SECRET_KEY = process.env.JWT_SECRET;
@@ -56,6 +61,9 @@ const verificarTokenOriginal = (reqOriginal) => {
 router.use(async (req, res, next) => {
     try {
         req.usuarioLogado = verificarTokenOriginal(req); // Define req.usuarioLogado (pode ser null para GETs)
+        if (!req.usuarioLogado?.id || !req.empresaId) {
+            return res.status(401).json({ error: 'Autenticação e empresa ativa são necessárias.' });
+        }
         next();
     } catch (error) { // Erro vindo de verificarTokenOriginal para métodos não-GET que exigem token
         console.error('[router/produtos MID] Erro no middleware (provavelmente token obrigatório ausente/inválido):', error.message);
@@ -67,6 +75,7 @@ router.use(async (req, res, next) => {
 // GET /api/produtos/
 router.get('/', async (req, res) => {
     const { usuarioLogado } = req;
+    const empresaId = obterEmpresaIdDoContexto(req);
     let dbClient;
 
     try {
@@ -75,7 +84,7 @@ router.get('/', async (req, res) => {
         }
 
         dbClient = await pool.connect();
-        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, empresaId);
 
         if (!permissoesCompletas.includes('ver-lista-produtos')) {
             return res.status(403).json({ error: 'Permissão negada para visualizar a lista de produtos.' });
@@ -88,9 +97,11 @@ router.get('/', async (req, res) => {
            grade, is_kit,
            criado_em AS "dataCriacao",
            data_atualizacao AS "dataAtualizacao"
-        FROM produtos ORDER BY nome ASC`;
+        FROM produtos
+        WHERE empresa_id = $1
+        ORDER BY nome ASC`;
             
-        const result = await dbClient.query(queryText);
+        const result = await dbClient.query(queryText, [empresaId]);
 
         // ***** ADICIONA HEADERS DE CACHE *****
         res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate'); // HTTP 1.1.
@@ -111,6 +122,7 @@ router.get('/', async (req, res) => {
 
 router.get('/por-nome', async (req, res) => {
     const { nome } = req.query;
+    const empresaId = obterEmpresaIdDoContexto(req);
 
     if (!nome) {
         return res.status(400).json({ error: 'O parâmetro "nome" é obrigatório.' });
@@ -119,8 +131,8 @@ router.get('/por-nome', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const queryText = `SELECT * FROM produtos WHERE nome = $1 LIMIT 1`;
-        const result = await dbClient.query(queryText, [nome]);
+        const queryText = `SELECT * FROM produtos WHERE empresa_id = $1 AND nome = $2 LIMIT 1`;
+        const result = await dbClient.query(queryText, [empresaId, nome]);
 
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Produto não encontrado.' });
@@ -139,6 +151,7 @@ router.get('/por-nome', async (req, res) => {
 // Rota POST /api/produtos/ (Criar ou Atualizar produto - UPSERT)
 router.post('/', async (req, res) => {
     const { usuarioLogado } = req;
+    const empresaId = obterEmpresaIdDoContexto(req);
     let dbClient;
 
     if (!usuarioLogado || !usuarioLogado.id) {
@@ -147,7 +160,7 @@ router.post('/', async (req, res) => {
 
     try {
         dbClient = await pool.connect();
-        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, empresaId);
 
         if (!permissoesCompletas.includes('gerenciar-produtos')) {
              return res.status(403).json({ error: 'Permissão negada para gerenciar produtos.' });
@@ -165,12 +178,12 @@ router.post('/', async (req, res) => {
         // Adicionado aliases no RETURNING para consistência com o GET
         const query = `
         INSERT INTO produtos (
-            nome, sku, gtin, unidade, estoque, imagem,
+            empresa_id, nome, sku, gtin, unidade, estoque, imagem,
             tipos, variacoes, estrutura, etapas, "etapastiktik", grade,
             is_kit 
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-        ON CONFLICT (nome) 
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        ON CONFLICT (empresa_id, nome)
         DO UPDATE SET
             sku = EXCLUDED.sku,
             gtin = EXCLUDED.gtin,
@@ -194,7 +207,7 @@ router.post('/', async (req, res) => {
             data_atualizacao AS "dataAtualizacao";
             `;
         const values = [
-            produto.nome, produto.sku || null, produto.gtin || null,
+            empresaId, produto.nome, produto.sku || null, produto.gtin || null,
             produto.unidade || null, produto.estoque || 0, produto.imagem || null,
             JSON.stringify(produto.tipos || []), JSON.stringify(produto.variacoes || []),
             JSON.stringify(produto.estrutura || []), JSON.stringify(produto.etapas || []),
@@ -247,6 +260,7 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
     const { id } = req.params;
     const { usuarioLogado } = req;
+    const empresaId = obterEmpresaIdDoContexto(req);
     let dbClient;
 
     if (!usuarioLogado || !usuarioLogado.id) {
@@ -255,7 +269,7 @@ router.put('/:id', async (req, res) => {
 
     try {
         dbClient = await pool.connect();
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, empresaId);
         if (!permissoes.includes('gerenciar-produtos')) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
@@ -273,7 +287,7 @@ router.put('/:id', async (req, res) => {
                 imagem = $6, tipos = $7, variacoes = $8, estrutura = $9, 
                 etapas = $10, "etapastiktik" = $11, grade = $12, is_kit = $13,
                 data_atualizacao = CURRENT_TIMESTAMP
-            WHERE id = $14
+            WHERE id = $14 AND empresa_id = $15
             RETURNING *;
         `;
         const values = [
@@ -283,7 +297,8 @@ router.put('/:id', async (req, res) => {
             JSON.stringify(produto.estrutura || []), JSON.stringify(produto.etapas || []),
             JSON.stringify(produto.etapasTiktik || []), JSON.stringify(produto.grade || []),
             isKitValue,
-            id
+            id,
+            empresaId
         ];
 
         const result = await dbClient.query(query, values);
@@ -306,8 +321,16 @@ router.put('/:id', async (req, res) => {
 // Busca produtos que têm saldo pendente de arremate.
 router.get('/search-arremate', async (req, res) => {
     const { q } = req.query;
+    const empresaId = obterEmpresaIdDoContexto(req);
     if (!q || q.length < 2) {
         return res.json([]); // Retorna vazio se a busca for muito curta
+    }
+
+    if (req.empresaAtiva?.eh_legada !== true) {
+        return res.status(403).json({
+            error: 'A busca de arremate ainda não está disponível para a empresa ativa.',
+            codigo: 'CADEIA_PRODUTIVA_NAO_MIGRADA',
+        });
     }
 
     let dbClient;
@@ -322,6 +345,7 @@ router.get('/search-arremate', async (req, res) => {
                     COALESCE((SELECT NULLIF(TRIM(etapa->>'quantidade'), '')::numeric FROM jsonb_array_elements(op.etapas) AS etapa WHERE etapa->>'lancado' = 'true' AND etapa->>'quantidade' IS NOT NULL AND TRIM(etapa->>'quantidade') <> '' ORDER BY etapa->>'data_lancamento' DESC LIMIT 1), op.quantidade)::numeric AS quantidade_produzida
                 FROM ordens_de_producao op
                 WHERE op.status = 'finalizado'
+                  AND op.empresa_id = $2
             ),
             op_arrematado_total AS (
                 SELECT op_numero, SUM(quantidade_arrematada) as total_arrematado
@@ -336,7 +360,7 @@ router.get('/search-arremate', async (req, res) => {
                 SUM(opf.quantidade_produzida - COALESCE(oat.total_arrematado, 0))::integer AS saldo
             FROM op_producao_final opf
             LEFT JOIN op_arrematado_total oat ON opf.numero = oat.op_numero
-            JOIN produtos p ON opf.produto_id = p.id
+            JOIN produtos p ON opf.produto_id = p.id AND p.empresa_id = $2
             WHERE (opf.quantidade_produzida - COALESCE(oat.total_arrematado, 0)) > 0
               AND (p.nome ILIKE $1 OR opf.variante ILIKE $1)
             GROUP BY opf.produto_id, p.nome, COALESCE(opf.variante, '-')
@@ -344,7 +368,7 @@ router.get('/search-arremate', async (req, res) => {
             LIMIT 10;
         `;
         
-        const result = await dbClient.query(query, [`%${q}%`]);
+        const result = await dbClient.query(query, [`%${q}%`, empresaId]);
         res.json(result.rows);
 
     } catch (error) {

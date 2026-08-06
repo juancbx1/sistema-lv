@@ -6,9 +6,18 @@ import jwt from 'jsonwebtoken';
 import express from 'express';
 import { getPermissoesCompletasUsuarioDB } from './usuarios.js';
 import { registrarAuditoria } from './audit.js';
+import { obterEmpresaIdDoContexto } from './contexto-empresa.js';
 
 const router = express.Router();
-const pool = new Pool({ connectionString: process.env.POSTGRES_URL, timezone: 'UTC' });
+const pool = new Pool({
+    connectionString: process.env.POSTGRES_URL,
+    ssl: process.env.POSTGRES_URL
+        && !process.env.POSTGRES_URL.includes('127.0.0.1')
+        && !process.env.POSTGRES_URL.includes('localhost')
+        ? { rejectUnauthorized: false }
+        : undefined,
+    timezone: 'UTC',
+});
 const SECRET_KEY = process.env.JWT_SECRET;
 
 const verificarToken = (req) => {
@@ -28,10 +37,47 @@ const verificarToken = (req) => {
 
 router.use(async (req, res, next) => {
     try {
-        req.usuarioLogado = verificarToken(req);
+        const tokenClaims = verificarToken(req);
+        req.usuarioLogado = {
+            ...tokenClaims,
+            ...(req.usuarioLogado || {}),
+            id: req.usuarioLogado?.id || tokenClaims.id,
+            nome: req.usuarioLogado?.nome || tokenClaims.nome,
+        };
+        req.empresaId = obterEmpresaIdDoContexto(req);
         next();
     } catch (error) {
         res.status(error.statusCode || 500).json({ error: error.message });
+    }
+});
+
+router.use(async (req, res, next) => {
+    if (req.empresaAtiva?.eh_legada === true) return next();
+
+    let dbClient;
+    try {
+        dbClient = await pool.connect();
+        const migration = await dbClient.query(
+            `SELECT 1
+               FROM sistema_migrations
+              WHERE id = 'multiempresas-fase8-producao-ensaio-v1'
+              LIMIT 1`
+        );
+        if (migration.rowCount !== 1) {
+            return res.status(403).json({
+                error: 'A cadeia produtiva ainda não está disponível para a empresa ativa.',
+                codigo: 'CADEIA_PRODUTIVA_NAO_MIGRADA',
+            });
+        }
+        next();
+    } catch (error) {
+        console.error('[router/gerenciar-producao GATE] Migration empresarial ausente:', error.message);
+        res.status(403).json({
+            error: 'A cadeia produtiva ainda não está disponível para a empresa ativa.',
+            codigo: 'CADEIA_PRODUTIVA_NAO_MIGRADA',
+        });
+    } finally {
+        if (dbClient) dbClient.release();
     }
 });
 
@@ -41,17 +87,21 @@ router.get('/funcionarios-ativos', async (req, res) => {
     try {
         dbClient = await pool.connect();
         const result = await dbClient.query(`
-            SELECT id, nome, tipos
-            FROM usuarios
-            WHERE data_demissao IS NULL
-              AND is_test = false
+            SELECT u.id, u.nome, ue.tipos
+            FROM usuarios u
+            JOIN usuarios_empresas ue
+              ON ue.usuario_id = u.id
+             AND ue.empresa_id = $1
+             AND ue.ativo
+            WHERE u.data_demissao IS NULL
+              AND u.is_test = false
               AND (
-                'costureira' = ANY(tipos)
-                OR 'tiktik'   = ANY(tipos)
-                OR 'cortador'  = ANY(tipos)
+                'costureira' = ANY(ue.tipos)
+                OR 'tiktik'   = ANY(ue.tipos)
+                OR 'cortador' = ANY(ue.tipos)
               )
-            ORDER BY nome ASC
-        `);
+            ORDER BY u.nome ASC
+        `, [req.empresaId]);
         res.status(200).json(result.rows);
     } catch (error) {
         console.error('[API GET /gerenciar-producao/funcionarios-ativos] Erro:', error);
@@ -74,16 +124,18 @@ router.post('/solicitar-exclusao', async (req, res) => {
         const producaoRes = await dbClient.query(`
             SELECT pr.*, p.nome AS produto
             FROM producoes pr
-            LEFT JOIN produtos p ON pr.produto_id = p.id
+            LEFT JOIN produtos p ON pr.produto_id = p.id AND p.empresa_id = pr.empresa_id
             WHERE pr.id = $1
-        `, [producao_id]);
+              AND pr.empresa_id = $2
+        `, [producao_id, req.empresaId]);
         if (producaoRes.rows.length === 0) {
             return res.status(404).json({ error: 'Registro de produção não encontrado.' });
         }
 
         const pendente = await dbClient.query(
-            `SELECT id FROM producoes_solicitacoes_exclusao WHERE producao_id = $1 AND status = 'pendente'`,
-            [producao_id]
+            `SELECT id FROM producoes_solicitacoes_exclusao
+              WHERE producao_id = $1 AND empresa_id = $2 AND status = 'pendente'`,
+            [producao_id, req.empresaId]
         );
         if (pendente.rows.length > 0) {
             return res.status(409).json({ error: 'Já existe uma solicitação pendente para este registro. Aguarde a decisão do aprovador.' });
@@ -111,9 +163,10 @@ router.post('/solicitar-exclusao', async (req, res) => {
 
         await dbClient.query(`
             INSERT INTO producoes_solicitacoes_exclusao
-                (producao_id, snapshot, solicitado_por_id, solicitado_por_nome, motivo)
-            VALUES ($1, $2, $3, $4, $5)
+                (empresa_id, producao_id, snapshot, solicitado_por_id, solicitado_por_nome, motivo)
+            VALUES ($1, $2, $3, $4, $5, $6)
         `, [
+            req.empresaId,
             producao_id,
             JSON.stringify(snapshot),
             usuarioLogado.id,
@@ -143,7 +196,8 @@ router.get('/solicitacoes/contagem', async (req, res) => {
     try {
         dbClient = await pool.connect();
         const result = await dbClient.query(
-            `SELECT COUNT(*) FROM producoes_solicitacoes_exclusao WHERE status = 'pendente'`
+            `SELECT COUNT(*) FROM producoes_solicitacoes_exclusao WHERE empresa_id = $1 AND status = 'pendente'`,
+            [req.empresaId]
         );
         res.status(200).json({ pendentes: parseInt(result.rows[0].count) });
     } catch (error) {
@@ -161,20 +215,21 @@ router.get('/solicitacoes', async (req, res) => {
         dbClient = await pool.connect();
         const { status, page, limit } = req.query;
 
-        let whereClause;
+        let whereClause = 'WHERE empresa_id = $1';
         if (status === 'pendente') {
-            whereClause = `WHERE status = 'pendente'`;
+            whereClause += ` AND status = 'pendente'`;
         } else if (status === 'aprovada' || status === 'rejeitada' || status === 'cancelada') {
-            whereClause = `WHERE status = '${status}'`;
+            whereClause += ` AND status = '${status}'`;
         } else {
             // historico = tudo que não é pendente
-            whereClause = `WHERE status != 'pendente'`;
+            whereClause += ` AND status != 'pendente'`;
         }
 
         if (!page) {
             // Sem paginação (usado para pendentes)
             const result = await dbClient.query(
-                `SELECT * FROM producoes_solicitacoes_exclusao ${whereClause} ORDER BY solicitado_em DESC`
+                `SELECT * FROM producoes_solicitacoes_exclusao ${whereClause} ORDER BY solicitado_em DESC`,
+                [req.empresaId]
             );
             return res.status(200).json({ rows: result.rows });
         }
@@ -184,11 +239,11 @@ router.get('/solicitacoes', async (req, res) => {
         const offset   = (pageNum - 1) * limitNum;
 
         const [countRes, dataRes] = await Promise.all([
-            dbClient.query(`SELECT COUNT(*) FROM producoes_solicitacoes_exclusao ${whereClause}`),
+            dbClient.query(`SELECT COUNT(*) FROM producoes_solicitacoes_exclusao ${whereClause}`, [req.empresaId]),
             dbClient.query(
                 `SELECT * FROM producoes_solicitacoes_exclusao ${whereClause}
-                 ORDER BY solicitado_em DESC LIMIT $1 OFFSET $2`,
-                [limitNum, offset]
+                 ORDER BY solicitado_em DESC LIMIT $2 OFFSET $3`,
+                [req.empresaId, limitNum, offset]
             ),
         ]);
 
@@ -222,8 +277,10 @@ router.post('/solicitacoes/:id/decidir', async (req, res) => {
         await dbClient.query('BEGIN');
 
         const solRes = await dbClient.query(
-            `SELECT * FROM producoes_solicitacoes_exclusao WHERE id = $1 FOR UPDATE`,
-            [id]
+            `SELECT * FROM producoes_solicitacoes_exclusao
+              WHERE id = $1 AND empresa_id = $2
+              FOR UPDATE`,
+            [id, req.empresaId]
         );
         if (solRes.rows.length === 0) {
             await dbClient.query('ROLLBACK');
@@ -241,8 +298,10 @@ router.post('/solicitacoes/:id/decidir', async (req, res) => {
         if (decisao === 'aprovada') {
             // Tenta deletar a produção
             const deleteRes = await dbClient.query(
-                `DELETE FROM producoes WHERE id = $1 RETURNING id, funcionario, quantidade, op_numero`,
-                [sol.producao_id]
+                `DELETE FROM producoes
+                  WHERE id = $1 AND empresa_id = $2
+                  RETURNING id, funcionario, quantidade, op_numero`,
+                [sol.producao_id, req.empresaId]
             );
 
             if (deleteRes.rowCount === 0) {
@@ -251,8 +310,8 @@ router.post('/solicitacoes/:id/decidir', async (req, res) => {
                     `UPDATE producoes_solicitacoes_exclusao
                      SET status = 'cancelada', decidido_por_id = $1, decidido_por_nome = $2,
                          decidido_em = NOW(), motivo_decisao = 'Registro já havia sido excluído'
-                     WHERE id = $3`,
-                    [usuarioLogado.id, usuarioLogado.nome || usuarioLogado.nome_usuario, id]
+                     WHERE id = $3 AND empresa_id = $4`,
+                    [usuarioLogado.id, usuarioLogado.nome || usuarioLogado.nome_usuario, id, req.empresaId]
                 );
                 await dbClient.query('COMMIT');
                 return res.status(200).json({ ok: true, aviso: 'O registro já havia sido excluído anteriormente. Solicitação marcada como cancelada.' });
@@ -267,8 +326,8 @@ router.post('/solicitacoes/:id/decidir', async (req, res) => {
             `UPDATE producoes_solicitacoes_exclusao
              SET status = $1, decidido_por_id = $2, decidido_por_nome = $3,
                  decidido_em = NOW(), motivo_decisao = $4
-             WHERE id = $5`,
-            [decisao, usuarioLogado.id, usuarioLogado.nome || usuarioLogado.nome_usuario, motivo_decisao || null, id]
+             WHERE id = $5 AND empresa_id = $6`,
+            [decisao, usuarioLogado.id, usuarioLogado.nome || usuarioLogado.nome_usuario, motivo_decisao || null, id, req.empresaId]
         );
 
         await dbClient.query('COMMIT');

@@ -4,6 +4,7 @@ import pkg from 'pg';
 const { Pool } = pkg;
 import jwt from 'jsonwebtoken';
 import express from 'express';
+import { obterEmpresaIdDoContexto } from './contexto-empresa.js';
 
 // Importar a função de buscar permissões completas
 import { getPermissoesCompletasUsuarioDB } from './usuarios.js';
@@ -43,12 +44,27 @@ const verificarTokenOriginal = (reqOriginal) => {
 // Middleware para este router: Apenas autentica o token.
 router.use(async (req, res, next) => {
     try {
-        req.usuarioLogado = verificarTokenOriginal(req);
+        const tokenClaims = verificarTokenOriginal(req);
+        req.usuarioLogado = {
+            ...tokenClaims,
+            ...(req.usuarioLogado || {}),
+            id: req.usuarioLogado?.id || tokenClaims.id,
+            nome: req.usuarioLogado?.nome || tokenClaims.nome,
+        };
+        obterEmpresaIdDoContexto(req);
         next();
     } catch (error) {
         const statusCode = error.statusCode || 500;
         res.status(statusCode).json({ error: error.message, details: error.details });
     }
+});
+
+router.use((req, res, next) => {
+    if (req.empresaAtiva?.eh_legada === true) return next();
+    return res.status(403).json({
+        error: 'A cadeia produtiva ainda não está disponível para a empresa ativa.',
+        codigo: 'CADEIA_PRODUTIVA_NAO_MIGRADA',
+    });
 });
 
 // GET /api/ordens-de-producao/ (Listar OPs com filtros e paginação)
@@ -69,7 +85,7 @@ router.get('/', async (req, res) => {
         }
 
         if (query.getNextNumber === 'true') {
-            const result = await dbClient.query(`SELECT numero FROM ordens_de_producao ORDER BY CAST(NULLIF(REGEXP_REPLACE(numero, '\\D', '', 'g'), '') AS INTEGER) DESC NULLS LAST, numero DESC`);
+            const result = await dbClient.query(`SELECT numero FROM ordens_de_producao WHERE empresa_id = $1 ORDER BY CAST(NULLIF(REGEXP_REPLACE(numero, '\\D', '', 'g'), '') AS INTEGER) DESC NULLS LAST, numero DESC`, [req.empresaId]);
             return res.status(200).json(result.rows.map(row => row.numero));
         }
 
@@ -86,12 +102,12 @@ router.get('/', async (req, res) => {
                 p.nome AS produto,
                 p.imagem AS imagem_produto -- Já trazemos a imagem aqui se possível
             FROM ordens_de_producao op
-            LEFT JOIN produtos p ON op.produto_id = p.id
+            LEFT JOIN produtos p ON op.produto_id = p.id AND p.empresa_id = op.empresa_id
         `;
         
-        let whereClauses = [];
-        let params = [];
-        let paramIndex = 1;
+        let whereClauses = ['op.empresa_id = $1'];
+        let params = [req.empresaId];
+        let paramIndex = 2;
 
         // --- A LÓGICA DO FILTRO CORRIGIDA ESTÁ AQUI ---
         if (query.status && query.status !== 'todas') {
@@ -113,7 +129,7 @@ router.get('/', async (req, res) => {
         
         const whereCondition = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '';
         
-        const countQuery = `SELECT COUNT(op.id) FROM ordens_de_producao op LEFT JOIN produtos p ON op.produto_id = p.id ${whereCondition}`;
+        const countQuery = `SELECT COUNT(op.id) FROM ordens_de_producao op LEFT JOIN produtos p ON op.produto_id = p.id AND p.empresa_id = op.empresa_id ${whereCondition}`;
         const orderBy = query.status === 'finalizado' ? 'op.data_final DESC NULLS LAST' : 'op.id DESC';
         const dataQuery = `${queryTextBase} ${whereCondition} ORDER BY ${orderBy} LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
         
@@ -173,11 +189,12 @@ router.get('/', async (req, res) => {
         const radarResult = await dbClient.query(`
             SELECT produto_id, data_entrega, data_final
             FROM ordens_de_producao
-            WHERE status = 'finalizado'
+            WHERE empresa_id = $1
+              AND status = 'finalizado'
               AND data_final IS NOT NULL
               AND data_entrega IS NOT NULL
               AND data_final >= '2026-01-01'
-        `);
+        `, [req.empresaId]);
 
         // Agrupa por produto_id somando horas e contando OPs
         const somaHorasPorProduto = new Map();
@@ -246,7 +263,7 @@ router.get('/prontas-para-encerrar', async (req, res) => {
 
     try {
         dbClient = await pool.connect();
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, req.empresaId);
         if (!permissoes.includes('acesso-ordens-de-producao')) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
@@ -280,8 +297,9 @@ router.get('/prontas-para-encerrar', async (req, res) => {
                       AND prod.etapa_index = jsonb_array_length(op.etapas) - 1
                 ) AS quantidade_feita_ultima_etapa
             FROM ordens_de_producao op
-            LEFT JOIN produtos p ON op.produto_id = p.id
-            WHERE op.status IN ('em-aberto', 'produzindo')
+            LEFT JOIN produtos p ON op.produto_id = p.id AND p.empresa_id = op.empresa_id
+            WHERE op.empresa_id = $1
+              AND op.status IN ('em-aberto', 'produzindo')
               AND op.etapas IS NOT NULL
               AND jsonb_array_length(op.etapas) > 0
               AND (
@@ -290,7 +308,7 @@ router.get('/prontas-para-encerrar', async (req, res) => {
                   WHERE prod.op_numero = op.numero
               ) >= jsonb_array_length(op.etapas)
             ORDER BY ultima_producao_em ASC NULLS LAST
-        `);
+        `, [req.empresaId]);
 
         const agora = new Date();
         const HORAS_MINIMAS_PARA_ALERTAR = 3;
@@ -340,7 +358,7 @@ router.get('/:id', async (req, res) => {
 
     try {
         dbClient = await pool.connect();
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, req.empresaId);
         if (!permissoes.includes('acesso-ordens-de-producao')) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
@@ -350,10 +368,11 @@ router.get('/:id', async (req, res) => {
         const opQuery = `
             SELECT op.*, p.nome as produto, p.etapas as etapas_config
             FROM ordens_de_producao op
-            LEFT JOIN produtos p ON op.produto_id = p.id
-            WHERE op.edit_id = $1 OR op.numero = $1
+            LEFT JOIN produtos p ON op.produto_id = p.id AND p.empresa_id = op.empresa_id
+            WHERE op.empresa_id = $2
+              AND (op.edit_id = $1 OR op.numero = $1)
         `;
-        const opResult = await dbClient.query(opQuery, [opIdentifier]);
+        const opResult = await dbClient.query(opQuery, [opIdentifier, req.empresaId]);
 
         if (opResult.rows.length === 0) {
             return res.status(404).json({ error: 'Ordem de Produção não encontrada.' });
@@ -426,7 +445,7 @@ router.post('/', async (req, res) => {
         dbClient = await pool.connect();
         await dbClient.query('BEGIN');
 
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, req.empresaId);
         if (!permissoes.includes('gerar-op')) {
             throw new Error('Permissão negada.');
         }
@@ -439,7 +458,7 @@ router.post('/', async (req, res) => {
         }
         
         // 1. BUSCAR E TRAVAR O CORTE DE ORIGEM
-        const corteResult = await dbClient.query('SELECT * FROM cortes WHERE id = $1 FOR UPDATE', [corte_origem_id]);
+        const corteResult = await dbClient.query('SELECT * FROM cortes WHERE id = $1 AND empresa_id = $2 FOR UPDATE', [corte_origem_id, req.empresaId]);
         if (corteResult.rows.length === 0) throw new Error('Corte de origem não encontrado.');
         const corte = corteResult.rows[0];
         if (corte.op) throw new Error(`Este corte (PC: ${corte.pn}) já foi utilizado na OP #${corte.op}.`);
@@ -460,7 +479,7 @@ router.post('/', async (req, res) => {
         const demandaIdFinal = demanda_id || corte.demanda_id || null;
 
         // 3. BUSCAR DETALHES DO PRODUTO (ETAPAS)
-        const produtoResult = await dbClient.query('SELECT etapas FROM produtos WHERE id = $1', [corte.produto_id]);
+        const produtoResult = await dbClient.query('SELECT etapas FROM produtos WHERE id = $1 AND empresa_id = $2', [corte.produto_id, req.empresaId]);
         if (produtoResult.rows.length === 0) throw new Error('Produto do corte não encontrado.');
         const etapasConfig = produtoResult.rows[0].etapas || [];
 
@@ -479,9 +498,10 @@ router.post('/', async (req, res) => {
         };
 
         const opInsertResult = await dbClient.query(
-            `INSERT INTO ordens_de_producao (numero, produto_id, variante, quantidade, data_entrega, observacoes, status, edit_id, etapas, demanda_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+            `INSERT INTO ordens_de_producao (empresa_id, numero, produto_id, variante, quantidade, data_entrega, observacoes, status, edit_id, etapas, demanda_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
             [
+                req.empresaId,
                 opPayload.numero, 
                 opPayload.produto_id, 
                 opPayload.variante, 
@@ -505,8 +525,8 @@ router.post('/', async (req, res) => {
             const saldoRestante = qtdOriginalCorte - qtdUsada;
             // 5a. Atualiza o corte original (que virou OP)
             await dbClient.query(
-                `UPDATE cortes SET op = $1, status = 'usado', quantidade = $2 WHERE id = $3`, 
-                [opCriada.numero, qtdUsada, corte_origem_id]
+                `UPDATE cortes SET op = $1, status = 'usado', quantidade = $2 WHERE id = $3 AND empresa_id = $4`,
+                [opCriada.numero, qtdUsada, corte_origem_id, req.empresaId]
             );
 
             // --- INÍCIO DA SUBSTITUIÇÃO (5b) ---
@@ -517,9 +537,9 @@ router.post('/', async (req, res) => {
             const novoPn = `${pnRaiz}-S${Date.now().toString().slice(-5)}`; // Ex: 13935-S59281
 
             await dbClient.query(
-                `INSERT INTO cortes (produto_id, variante, quantidade, data, status, pn, cortador, demanda_id)
-                 VALUES ($1, $2, $3, $4, 'cortados', $5, $6, NULL)`,
-                [corte.produto_id, corte.variante, saldoRestante, corte.data, novoPn, corte.cortador]
+                `INSERT INTO cortes (empresa_id, produto_id, variante, quantidade, data, status, pn, cortador, demanda_id)
+                 VALUES ($1, $2, $3, $4, $5, 'cortados', $6, $7, NULL)`,
+                [req.empresaId, corte.produto_id, corte.variante, saldoRestante, corte.data, novoPn, corte.cortador]
             );
             
             // --- FIM DA SUBSTITUIÇÃO ---
@@ -527,8 +547,8 @@ router.post('/', async (req, res) => {
         } else {
             // CENÁRIO: Consumo Total
             await dbClient.query(
-                `UPDATE cortes SET op = $1, status = 'usado' WHERE id = $2`, 
-                [opCriada.numero, corte_origem_id]
+                `UPDATE cortes SET op = $1, status = 'usado' WHERE id = $2 AND empresa_id = $3`,
+                [opCriada.numero, corte_origem_id, req.empresaId]
             );
         }
 
@@ -545,15 +565,20 @@ router.post('/', async (req, res) => {
             const idProducaoTexto = `prod_${Date.now()}`;
 
             await dbClient.query(
-                `INSERT INTO producoes (id, op_numero, etapa_index, processo, produto_id, variacao, maquina, quantidade, funcionario, funcionario_id, data, lancado_por)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-                [idProducaoTexto, opCriada.numero, etapaCorteIndex, 'Corte', corte.produto_id, corte.variante, maquinaDoCorte, opPayload.quantidade, nomeCortador, cortadorId, corte.data, usuarioLogado.nome]
+                `INSERT INTO producoes (id, op_numero, etapa_index, processo, produto_id, variacao, maquina, quantidade, funcionario, funcionario_id, data, lancado_por, empresa_id)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+                [idProducaoTexto, opCriada.numero, etapaCorteIndex, 'Corte', corte.produto_id, corte.variante || '-', maquinaDoCorte, opPayload.quantidade, nomeCortador, cortadorId, corte.data, usuarioLogado.nome, req.empresaId]
             );
         }
         
         // 7. ATUALIZAR STATUS DA DEMANDA (Se houver vínculo)
         if (demandaIdFinal) {
-             await dbClient.query(`UPDATE demandas_producao SET status = 'em_producao' WHERE id = $1`, [demandaIdFinal]);
+             const demandaVinculo = await dbClient.query(
+                 `SELECT id FROM demandas_producao WHERE id = $1 AND empresa_id = $2`,
+                 [demandaIdFinal, req.empresaId]
+             );
+             if (demandaVinculo.rowCount === 0) throw new Error('Demanda não encontrada na empresa ativa.');
+             await dbClient.query(`UPDATE demandas_producao SET status = 'em_producao' WHERE id = $1 AND empresa_id = $2`, [demandaIdFinal, req.empresaId]);
         }
 
         await dbClient.query('COMMIT');
@@ -585,7 +610,7 @@ router.get('/check-op-filha/:numeroMae', async (req, res) => {
         dbClient = await pool.connect();
         
         // Verificação de permissão (opcional, mas bom ter)
-        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, req.empresaId);
         if (!permissoesCompletas.includes('acesso-ordens-de-producao')) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
@@ -596,11 +621,12 @@ router.get('/check-op-filha/:numeroMae', async (req, res) => {
             SELECT EXISTS (
                 SELECT 1 
                 FROM ordens_de_producao 
-                WHERE observacoes = $1 AND status NOT IN ('cancelada', 'excluido')
+                WHERE empresa_id = $2
+                  AND observacoes = $1 AND status NOT IN ('cancelada', 'excluido')
             ) as "filhaExiste";
         `;
-        
-        const result = await dbClient.query(query, [textoBusca]);
+
+        const result = await dbClient.query(query, [textoBusca, req.empresaId]);
         const { filhaExiste } = result.rows[0];
 
         res.status(200).json({ existe: filhaExiste });
@@ -637,6 +663,16 @@ router.put('/', async (req, res) => {
         }
         if (!produto_id && status !== 'cancelada') {
             throw new Error('O campo "produto_id" é obrigatório para atualização.');
+        }
+
+        if (produto_id && status !== 'cancelada') {
+            const produtoVinculo = await dbClient.query(
+                'SELECT id FROM produtos WHERE id = $1 AND empresa_id = $2',
+                [produto_id, req.empresaId]
+            );
+            if (produtoVinculo.rowCount === 0) {
+                throw new Error('Produto não encontrado na empresa ativa.');
+            }
         }
 
         let permissaoConcedida = false;
@@ -695,7 +731,7 @@ router.put('/', async (req, res) => {
         // Isso garante que o saldo de arremate fique correto independente do que o frontend mandou.
         if (status === 'finalizado') {
             const etapasDBResult = await dbClient.query(
-                `SELECT etapas FROM ordens_de_producao WHERE edit_id = $1`, [edit_id]
+                `SELECT etapas FROM ordens_de_producao WHERE edit_id = $1 AND empresa_id = $2`, [edit_id, req.empresaId]
             );
             const etapasBase = etapasDBResult.rows[0]?.etapas || opData.etapas || [];
 
@@ -716,12 +752,12 @@ router.put('/', async (req, res) => {
 
         let finalizedChildrenNumbers = [];
         if (status === 'cancelada') {
-            await dbClient.query(`UPDATE cortes SET status = 'excluido' WHERE op = $1`, [numero]);
+            await dbClient.query(`UPDATE cortes SET status = 'excluido' WHERE op = $1 AND empresa_id = $2`, [numero, req.empresaId]);
         } else if (status === 'finalizado') {
             const textoBusca = `OP gerada em conjunto com a OP mãe #${numero}`;
             const filhasResult = await dbClient.query(
-                `UPDATE ordens_de_producao SET status = 'finalizado', data_final = CURRENT_TIMESTAMP WHERE observacoes = $1 AND status != 'finalizado' RETURNING numero`,
-                [textoBusca]
+                `UPDATE ordens_de_producao SET status = 'finalizado', data_final = CURRENT_TIMESTAMP WHERE empresa_id = $2 AND observacoes = $1 AND status != 'finalizado' RETURNING numero`,
+                [textoBusca, req.empresaId]
             );
             if (filhasResult.rowCount > 0) {
                 finalizedChildrenNumbers = filhasResult.rows.map(r => r.numero);
@@ -733,12 +769,12 @@ router.put('/', async (req, res) => {
              SET numero = $1, produto_id = $2, variante = $3, quantidade = $4, data_entrega = $5,
                  observacoes = $6, status = $7, etapas = $8, data_final = $9, 
                  data_atualizacao = CURRENT_TIMESTAMP
-             WHERE edit_id = $10 RETURNING *`;
+             WHERE edit_id = $10 AND empresa_id = $11 RETURNING *`;
         
         const values = [
             opData.numero, parseInt(produto_id), opData.variante || null, parseInt(opData.quantidade), 
             opData.data_entrega, opData.observacoes || '', status, 
-            JSON.stringify(opData.etapas || []), opData.data_final || null, edit_id
+            JSON.stringify(opData.etapas || []), opData.data_final || null, edit_id, req.empresaId
         ];
 
         const result = await dbClient.query(queryText, values);

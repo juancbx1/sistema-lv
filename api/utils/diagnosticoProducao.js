@@ -1,6 +1,6 @@
 // api/utils/diagnosticoProducao.js
 
-export async function gerarDiagnosticoCompleto(dbClient) {
+export async function gerarDiagnosticoCompleto(dbClient, empresaId) {
     // 1. BULK DATA
     const [
         demandasResult,
@@ -10,35 +10,44 @@ export async function gerarDiagnosticoCompleto(dbClient) {
         cortesResult,
         cortesVinculadosResult
     ] = await Promise.all([
-        dbClient.query(`SELECT * FROM demandas_producao WHERE status NOT IN ('cancelada') AND arquivada_em IS NULL ORDER BY prioridade ASC, data_solicitacao ASC`),
-        dbClient.query(`SELECT id, numero, demanda_id, produto_id, variante, quantidade, status, etapas FROM ordens_de_producao WHERE demanda_id IS NOT NULL`),
-        dbClient.query(`SELECT op_numero, quantidade_arrematada, quantidade_ja_embalada FROM arremates JOIN ordens_de_producao op ON arremates.op_numero = op.numero WHERE op.demanda_id IS NOT NULL AND arremates.tipo_lancamento = 'PRODUCAO'`),
-        dbClient.query("SELECT id, nome, sku, is_kit, grade, imagem FROM produtos"),
+        dbClient.query(`SELECT * FROM demandas_producao WHERE empresa_id = $1 AND status NOT IN ('cancelada') AND arquivada_em IS NULL ORDER BY prioridade ASC, data_solicitacao ASC`, [empresaId]),
+        dbClient.query(`SELECT op.id, op.numero, op.demanda_id, op.produto_id, op.variante, op.quantidade, op.status, op.etapas
+                        FROM ordens_de_producao op
+                        JOIN demandas_producao d ON d.id = op.demanda_id AND d.empresa_id = $1
+                        WHERE op.demanda_id IS NOT NULL`, [empresaId]),
+        dbClient.query(`SELECT arremates.op_numero, arremates.quantidade_arrematada, arremates.quantidade_ja_embalada
+                        FROM arremates
+                        JOIN ordens_de_producao op ON arremates.op_numero = op.numero
+                        JOIN demandas_producao d ON d.id = op.demanda_id AND d.empresa_id = $1
+                        WHERE op.demanda_id IS NOT NULL AND arremates.tipo_lancamento = 'PRODUCAO'`, [empresaId]),
+        dbClient.query("SELECT id, nome, sku, is_kit, grade, imagem FROM produtos WHERE empresa_id = $1", [empresaId]),
         // Agrega cortes DISPONÍVEIS por produto+variante para exibir no painel
         // op IS NULL = corte ainda não consumido por nenhuma OP
         // Não filtra por demanda_id pois cortes históricos podem ter sido criados sem vínculo de demanda
         dbClient.query(`
             SELECT
-                produto_id,
-                COALESCE(variante, '-') AS variante,
-                COALESCE(SUM(quantidade) FILTER (WHERE status = 'cortados'), 0)::int  AS cortado,
-                COALESCE(SUM(quantidade) FILTER (WHERE status = 'pendente'), 0)::int  AS pendente
-            FROM cortes
-            WHERE status != 'excluido' AND op IS NULL
-            GROUP BY produto_id, variante
-        `),
+                c.produto_id,
+                COALESCE(c.variante, '-') AS variante,
+                COALESCE(SUM(c.quantidade) FILTER (WHERE c.status = 'cortados'), 0)::int  AS cortado,
+                COALESCE(SUM(c.quantidade) FILTER (WHERE c.status = 'pendente'), 0)::int  AS pendente
+            FROM cortes c
+            JOIN produtos p ON p.id = c.produto_id AND p.empresa_id = $1
+            WHERE c.status != 'excluido' AND c.op IS NULL
+            GROUP BY c.produto_id, c.variante
+        `, [empresaId]),
         // Cortes em estoque DIRETAMENTE vinculados a uma demanda (demanda_id IS NOT NULL)
         // Usado para mostrar o badge "corte vinculado" no card da demanda no painel
         dbClient.query(`
             SELECT
-                demanda_id,
-                COALESCE(SUM(quantidade) FILTER (WHERE status = 'cortados'), 0)::int AS cortado_vinculado
-            FROM cortes
-            WHERE status = 'cortados'
-              AND op IS NULL
-              AND demanda_id IS NOT NULL
-            GROUP BY demanda_id
-        `)
+                c.demanda_id,
+                COALESCE(SUM(c.quantidade) FILTER (WHERE c.status = 'cortados'), 0)::int AS cortado_vinculado
+            FROM cortes c
+            JOIN demandas_producao d ON d.id = c.demanda_id AND d.empresa_id = $1
+            WHERE c.status = 'cortados'
+              AND c.op IS NULL
+              AND c.demanda_id IS NOT NULL
+            GROUP BY c.demanda_id
+        `, [empresaId])
     ]);
 
     // 2. MAPAS DE PRODUTOS
@@ -241,7 +250,7 @@ export async function gerarDiagnosticoCompleto(dbClient) {
         if (status.ok) {
              const demandaOriginal = demandasResult.rows.find(d => d.id === demandaId);
              if (demandaOriginal && demandaOriginal.status !== 'concluida') {
-                 dbClient.query(`UPDATE demandas_producao SET status = 'concluida', data_conclusao = NOW() WHERE id = $1`, [demandaId]).catch(console.error);
+                 dbClient.query(`UPDATE demandas_producao SET status = 'concluida', data_conclusao = NOW() WHERE id = $1 AND empresa_id = $2`, [demandaId, empresaId]).catch(console.error);
              }
         }
     });

@@ -22,6 +22,11 @@ import {
 const router = express.Router();
 const pool = new Pool({
     connectionString: process.env.POSTGRES_URL,
+    ssl: process.env.POSTGRES_URL
+        && !process.env.POSTGRES_URL.includes('127.0.0.1')
+        && !process.env.POSTGRES_URL.includes('localhost')
+        ? { rejectUnauthorized: false }
+        : undefined,
     timezone: 'UTC',
 });
 const SECRET_KEY = process.env.JWT_SECRET;
@@ -262,12 +267,16 @@ async function calcularPontosProducao(
 
 
 // Atualiza TPP de cada etapa unificada proporcionalmente ao peso histórico de cada uma
-async function atualizarTPPProporcionado(dbClient, produto_id, etapas, duracaoSegPorPeca) {
+async function atualizarTPPProporcionado(dbClient, produto_id, etapas, duracaoSegPorPeca, empresaId) {
     if (!duracaoSegPorPeca || duracaoSegPorPeca <= 0) return;
     const processos = etapas.map(e => e.processo);
     const tppResult = await dbClient.query(
-        `SELECT processo, tempo_segundos FROM tempos_padrao_producao WHERE produto_id = $1 AND processo = ANY($2::text[])`,
-        [produto_id, processos]
+        `SELECT tpp.processo, tpp.tempo_segundos
+           FROM tempos_padrao_producao tpp
+           JOIN produtos p ON p.id = tpp.produto_id AND p.empresa_id = $3
+          WHERE tpp.produto_id = $1
+            AND tpp.processo = ANY($2::text[])`,
+        [produto_id, processos, empresaId]
     );
     const tppMap = new Map(tppResult.rows.map(r => [r.processo, parseFloat(r.tempo_segundos)]));
     const tppSoma = etapas.reduce((acc, e) => acc + (tppMap.get(e.processo) || duracaoSegPorPeca), 0);
@@ -312,7 +321,13 @@ const verificarToken = (reqOriginal) => {
 // Middleware para este router: Apenas autentica o token.
 router.use(async (req, res, next) => {
     try {
-        req.usuarioLogado = verificarToken(req);
+        const tokenClaims = verificarToken(req);
+        req.usuarioLogado = {
+            ...tokenClaims,
+            ...(req.usuarioLogado || {}),
+            id: req.usuarioLogado?.id || tokenClaims.id,
+            nome: req.usuarioLogado?.nome || tokenClaims.nome,
+        };
         req.empresaId = obterEmpresaIdDoContexto(req);
         next();
     } catch (error) {
@@ -321,6 +336,39 @@ router.use(async (req, res, next) => {
         const responseError = { error: error.message };
         if (error.details) responseError.details = error.details;
         res.status(statusCode).json(responseError);
+    }
+});
+
+// A rota só abre para empresas secundárias depois que a migration estrutural
+// existir no banco. Isso mantém a trava fechada em uma Neon ainda não migrada,
+// mas permite o ensaio de dois contextos no clone local preparado.
+router.use(async (req, res, next) => {
+    if (req.empresaAtiva?.eh_legada === true) return next();
+
+    let dbClient;
+    try {
+        dbClient = await pool.connect();
+        const migration = await dbClient.query(
+            `SELECT 1
+               FROM sistema_migrations
+              WHERE id = 'multiempresas-fase8-producao-ensaio-v1'
+              LIMIT 1`
+        );
+        if (migration.rowCount !== 1) {
+            return res.status(403).json({
+                error: 'A cadeia produtiva ainda não está disponível para a empresa ativa.',
+                codigo: 'CADEIA_PRODUTIVA_NAO_MIGRADA',
+            });
+        }
+        next();
+    } catch (error) {
+        console.error('[router/producoes GATE] Migration empresarial ausente:', error.message);
+        res.status(403).json({
+            error: 'A cadeia produtiva ainda não está disponível para a empresa ativa.',
+            codigo: 'CADEIA_PRODUTIVA_NAO_MIGRADA',
+        });
+    } finally {
+        if (dbClient) dbClient.release();
     }
 });
 
@@ -337,6 +385,21 @@ router.post('/', async (req, res) => {
         // Validação básica
         if (!funcionario_id || !opNumero || !produto_id || !processo || !quantidade) {
             throw new Error("Dados insuficientes para iniciar sessão.");
+        }
+
+        const origemValida = await dbClient.query(
+            `SELECT op.numero
+               FROM ordens_de_producao op
+               JOIN produtos p
+                 ON p.id = op.produto_id
+                AND p.empresa_id = op.empresa_id
+              WHERE op.numero = $1
+                AND op.empresa_id = $2
+                AND p.id = $3`,
+            [String(opNumero), req.empresaId, Number(produto_id)]
+        );
+        if (origemValida.rows.length === 0) {
+            throw new Error('OP ou produto não pertence à empresa ativa.');
         }
 
         // Verifica se usuário já está ocupado
@@ -479,6 +542,21 @@ router.post('/lote', async (req, res) => {
         for (const item of itens) {
             const { opNumero, produto_id, variante, processo, quantidade, etapas_unificadas } = item;
 
+            const origemValida = await dbClient.query(
+                `SELECT op.numero
+                   FROM ordens_de_producao op
+                   JOIN produtos p
+                     ON p.id = op.produto_id
+                    AND p.empresa_id = op.empresa_id
+                  WHERE op.numero = $1
+                    AND op.empresa_id = $2
+                    AND p.id = $3`,
+                [String(opNumero), req.empresaId, Number(produto_id)]
+            );
+            if (origemValida.rows.length === 0) {
+                throw new Error('OP ou produto de uma tarefa não pertence à empresa ativa.');
+            }
+
             const sessaoQuery = `
                 INSERT INTO sessoes_trabalho_producao
                     (funcionario_id, op_numero, produto_id, variante, processo,
@@ -561,7 +639,7 @@ router.get('/', async (req, res) => {
 
     try {
         dbClient = await pool.connect();
-        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, req.empresaId);
         const podeGerenciarTudo = permissoesCompletas.includes('acesso-gerenciar-producao');
         const podeVerProprias = permissoesCompletas.includes('ver-proprias-producoes');
 
@@ -598,7 +676,7 @@ router.get('/', async (req, res) => {
             u.avatar_url,
             u.foto_oficial
         FROM producoes pr
-        LEFT JOIN produtos p ON pr.produto_id = p.id
+        LEFT JOIN produtos p ON pr.produto_id = p.id AND p.empresa_id = pr.empresa_id
         LEFT JOIN usuarios u ON pr.funcionario_id = u.id
     `;
 
@@ -606,7 +684,7 @@ router.get('/', async (req, res) => {
 
         // Caso 1: filtro por OP — sem paginação, mantém comportamento atual
         if (opNumero) {
-            const result = await dbClient.query(`${baseSelect} WHERE pr.op_numero = $1 ORDER BY pr.data DESC`, [opNumero]);
+            const result = await dbClient.query(`${baseSelect} WHERE pr.empresa_id = $1 AND pr.op_numero = $2 ORDER BY pr.data DESC`, [req.empresaId, opNumero]);
             return res.status(200).json(result.rows);
         }
 
@@ -618,8 +696,8 @@ router.get('/', async (req, res) => {
 
             const { funcionario_ids, data_inicio, data_fim, op_numero_busca, order } = req.query;
 
-            const conditions  = [];
-            const queryParams = [];
+            const conditions  = ['pr.empresa_id = $1'];
+            const queryParams = [req.empresaId];
 
             // Filtro por funcionários (lista separada por vírgula) ou por id único (compat)
             const idsRaw = funcionario_ids || (filtroFuncId ? filtroFuncId : null);
@@ -685,14 +763,15 @@ router.get('/', async (req, res) => {
         let queryParams = [];
 
         if (podeGerenciarTudo) {
-            queryText = `${baseSelect} ORDER BY pr.data DESC`;
+            queryText = `${baseSelect} WHERE pr.empresa_id = $1 ORDER BY pr.data DESC`;
+            queryParams = [req.empresaId];
         } else if (podeVerProprias) {
             const idFuncionario = usuarioLogado.id;
             if (!idFuncionario) {
                 return res.status(400).json({ error: "Falha ao identificar ID do usuário para filtro." });
             }
-            queryText = `${baseSelect} WHERE pr.funcionario_id = $1 ORDER BY pr.data DESC`;
-            queryParams = [idFuncionario];
+            queryText = `${baseSelect} WHERE pr.empresa_id = $1 AND pr.funcionario_id = $2 ORDER BY pr.data DESC`;
+            queryParams = [req.empresaId, idFuncionario];
         } else {
             return res.status(403).json({ error: 'Configuração de acesso inválida.' });
         }
@@ -714,7 +793,7 @@ router.put('/', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
-        const permissoesDoUsuario = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoesDoUsuario = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, req.empresaId);
         
         // <<< MUDANÇA: Adicionamos o 'id' ao nome do funcionário para clareza >>>
         const { id, quantidade, edicoes, assinada, funcionario: novoNomeFuncionario, dadosColetados } = req.body;
@@ -725,8 +804,8 @@ router.put('/', async (req, res) => {
 
         // <<< MUDANÇA: Buscamos mais dados do registro original >>>
         const producaoResult = await dbClient.query(
-            'SELECT * FROM producoes WHERE id = $1', 
-            [id]
+            'SELECT * FROM producoes WHERE id = $1 AND empresa_id = $2',
+            [id, req.empresaId]
         );
 
         if (producaoResult.rows.length === 0) {
@@ -747,8 +826,8 @@ router.put('/', async (req, res) => {
                 return res.status(400).json({ error: 'Este item já foi assinado.' });
             }
             await dbClient.query('BEGIN');
-            const updateResult = await dbClient.query(`UPDATE producoes SET assinada = TRUE WHERE id = $1 RETURNING *`, [id]);
-            await dbClient.query(`INSERT INTO log_assinaturas (id_usuario, id_producao, dados_coletados) VALUES ($1, $2, $3)`, [usuarioLogado.id, id, dadosColetados || null]);
+            const updateResult = await dbClient.query(`UPDATE producoes SET assinada = TRUE WHERE id = $1 AND empresa_id = $2 RETURNING *`, [id, req.empresaId]);
+            await dbClient.query(`INSERT INTO log_assinaturas (empresa_id, id_usuario, id_producao, dados_coletados) VALUES ($1, $2, $3, $4)`, [req.empresaId, usuarioLogado.id, id, dadosColetados || null]);
             await dbClient.query('COMMIT');
             return res.status(200).json(updateResult.rows[0]);
         } 
@@ -772,7 +851,17 @@ router.put('/', async (req, res) => {
             
             // <<< MUDANÇA: Lógica para quando o funcionário é alterado >>>
             if (novoNomeFuncionario !== undefined && novoNomeFuncionario !== producaoOriginal.funcionario) {
-                const novoFuncionarioResult = await dbClient.query('SELECT id FROM usuarios WHERE nome = $1', [novoNomeFuncionario]);
+                const novoFuncionarioResult = await dbClient.query(
+                    `SELECT u.id
+                       FROM usuarios u
+                       JOIN usuarios_empresas ue
+                         ON ue.usuario_id = u.id
+                        AND ue.empresa_id = $2
+                        AND ue.ativo
+                      WHERE u.nome = $1
+                      LIMIT 1`,
+                    [novoNomeFuncionario, req.empresaId]
+                );
                 if (novoFuncionarioResult.rows.length === 0) {
                     return res.status(404).json({ error: `Funcionário '${novoNomeFuncionario}' não encontrado.` });
                 }
@@ -819,8 +908,8 @@ router.put('/', async (req, res) => {
                 return res.status(200).json(producaoOriginal); // Nenhuma alteração, retorna o original
             }
 
-            updateValues.push(id);
-            const queryUpdate = `UPDATE producoes SET ${updateFields.join(', ')} WHERE id = $${paramIndex} RETURNING *`;
+            updateValues.push(id, req.empresaId);
+            const queryUpdate = `UPDATE producoes SET ${updateFields.join(', ')} WHERE id = $${paramIndex} AND empresa_id = $${paramIndex + 1} RETURNING *`;
             const result = await dbClient.query(queryUpdate, updateValues);
             await registrarAuditoria(dbClient, usuarioLogado, 'producao.editada', 'producao', id, {
                 id,
@@ -855,7 +944,7 @@ router.delete('/', async (req, res) => {
         dbClient = await pool.connect();
         await dbClient.query('BEGIN'); // <<< 1. INICIA A TRANSAÇÃO
 
-        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, req.empresaId);
         if (!permissoesCompletas.includes('excluir-registro-producao-direto')) {
             await dbClient.query('ROLLBACK');
             return res.status(403).json({ error: 'Permissão negada para excluir registro de produção.' });
@@ -867,7 +956,7 @@ router.delete('/', async (req, res) => {
             return res.status(400).json({ error: 'ID não fornecido.' });
         }
 
-        const deleteResult = await dbClient.query('DELETE FROM producoes WHERE id = $1 RETURNING *', [id]);
+        const deleteResult = await dbClient.query('DELETE FROM producoes WHERE id = $1 AND empresa_id = $2 RETURNING *', [id, req.empresaId]);
 
         if (deleteResult.rowCount === 0) {
             await dbClient.query('ROLLBACK');
@@ -884,8 +973,10 @@ router.delete('/', async (req, res) => {
                  decidido_por_nome = $2,
                  decidido_em = NOW(),
                  motivo_decisao = 'Registro deletado diretamente'
-             WHERE producao_id = $3 AND status = 'pendente'`,
-            [usuarioLogado.id, usuarioLogado.nome || usuarioLogado.nome_usuario, id]
+             WHERE producao_id = $3
+               AND empresa_id = $4
+               AND status = 'pendente'`,
+            [usuarioLogado.id, usuarioLogado.nome || usuarioLogado.nome_usuario, id, req.empresaId]
         );
 
         await dbClient.query('COMMIT'); // <<< 2. CONFIRMA AS ALTERAÇÕES
@@ -919,7 +1010,7 @@ router.put('/assinar-tiktik-op', async (req, res) => {
 
     try {
         dbClient = await pool.connect();
-        const permissoesUsuario = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id);
+        const permissoesUsuario = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, req.empresaId);
         
         // Assumi que você criará esta permissão como planejado
         if (!permissoesUsuario.includes('assinar-producao-tiktik')) {
@@ -927,8 +1018,8 @@ router.put('/assinar-tiktik-op', async (req, res) => {
         }
 
         const producaoResult = await dbClient.query(
-            'SELECT funcionario, assinada_por_tiktik FROM producoes WHERE id = $1',
-            [id_producao_op]
+            'SELECT funcionario, assinada_por_tiktik FROM producoes WHERE id = $1 AND empresa_id = $2',
+            [id_producao_op, req.empresaId]
         );
 
         if (producaoResult.rows.length === 0) {
@@ -948,14 +1039,14 @@ router.put('/assinar-tiktik-op', async (req, res) => {
         
         // 1. Atualiza a produção
         const updateResult = await dbClient.query(
-            'UPDATE producoes SET assinada_por_tiktik = TRUE WHERE id = $1 RETURNING *',
-            [id_producao_op]
+            'UPDATE producoes SET assinada_por_tiktik = TRUE WHERE id = $1 AND empresa_id = $2 RETURNING *',
+            [id_producao_op, req.empresaId]
         );
         
         // 2. Insere o log da assinatura
         await dbClient.query(
-            'INSERT INTO log_assinaturas (id_usuario, id_producao, dados_coletados) VALUES ($1, $2, $3)',
-            [usuarioLogado.id, id_producao_op, dadosColetados || null]
+            'INSERT INTO log_assinaturas (empresa_id, id_usuario, id_producao, dados_coletados) VALUES ($1, $2, $3, $4)',
+            [req.empresaId, usuarioLogado.id, id_producao_op, dadosColetados || null]
         );
 
         // Confirma a transação
@@ -1017,7 +1108,10 @@ router.put('/finalizar', async (req, res) => {
         else if (dadosFuncionario.tipos.includes('tiktik')) tipoAtividadeParaConfig = 'processo_op_tiktik';
 
         // 4. Busca Máquina Correta
-        const produtoResult = await dbClient.query('SELECT etapas FROM produtos WHERE id = $1', [sessao.produto_id]);
+        const produtoResult = await dbClient.query(
+            'SELECT etapas FROM produtos WHERE id = $1 AND empresa_id = $2',
+            [sessao.produto_id, req.empresaId]
+        );
         const etapasDoProduto = produtoResult.rows[0]?.etapas || [];
         const etapaConfigProduto = etapasDoProduto.find(e => (e.processo || e) === sessao.processo);
         const maquinaCorreta = (etapaConfigProduto && typeof etapaConfigProduto === 'object') ? (etapaConfigProduto.maquina || 'Não Definida') : 'Não Definida';
@@ -1041,18 +1135,18 @@ router.put('/finalizar', async (req, res) => {
                     req.empresaId
                 );
                 await dbClient.query(
-                    `INSERT INTO producoes (id, op_numero, etapa_index, processo, produto_id, variacao, maquina, quantidade, funcionario, funcionario_id, data, lancado_por, valor_ponto_aplicado, pontos_gerados)
-                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), $11, $12, $13)`,
+                    `INSERT INTO producoes (id, op_numero, etapa_index, processo, produto_id, variacao, maquina, quantidade, funcionario, funcionario_id, data, lancado_por, valor_ponto_aplicado, pontos_gerados, empresa_id)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), $11, $12, $13, $14)`,
                     [
                         `prod_unif_${Date.now()}_${Math.random().toString(36).substr(2,4)}`,
                         sessao.op_numero, idxUnif, etapaUnif.processo, sessao.produto_id,
-                        sessao.variante, etapaUnif.maquina || 'Não Definida',
+                        sessao.variante || '-', etapaUnif.maquina || 'Não Definida',
                         parseInt(quantidade_finalizada), nomeFuncionario, sessao.funcionario_id,
-                        usuarioLogado.nome, valorPontoAplicado, pontosGerados,
+                        usuarioLogado.nome, valorPontoAplicado, pontosGerados, req.empresaId,
                     ]
                 );
             }
-            await atualizarTPPProporcionado(dbClient, sessao.produto_id, etapasUnificadas, duracaoSegPorPeca);
+            await atualizarTPPProporcionado(dbClient, sessao.produto_id, etapasUnificadas, duracaoSegPorPeca, req.empresaId);
         } else {
         // ─── SESSÃO NORMAL — distribuição por múltiplas OPs ──────────────────────────────
 
@@ -1062,11 +1156,12 @@ router.put('/finalizar', async (req, res) => {
         const opsDisponiveisResult = await dbClient.query(`
             SELECT numero, etapas, quantidade 
             FROM ordens_de_producao 
-            WHERE produto_id = $1 
+            WHERE empresa_id = $3
+              AND produto_id = $1
               AND (variante = $2 OR ($2 IS NULL AND variante IS NULL))
               AND status IN ('em-aberto', 'produzindo')
             ORDER BY numero ASC
-        `, [sessao.produto_id, sessao.variante]);
+        `, [sessao.produto_id, sessao.variante, req.empresaId]);
         
         const opsCandidatas = opsDisponiveisResult.rows;
 
@@ -1074,7 +1169,10 @@ router.put('/finalizar', async (req, res) => {
         // Para evitar erro 500, vamos buscar a OP original se ela não veio na lista de abertas
         let opOriginalFallback = null;
         if (opsCandidatas.length === 0) {
-             const opOrigRes = await dbClient.query('SELECT numero, etapas FROM ordens_de_producao WHERE numero = $1', [sessao.op_numero]);
+             const opOrigRes = await dbClient.query(
+                'SELECT numero, etapas FROM ordens_de_producao WHERE numero = $1 AND empresa_id = $2',
+                [sessao.op_numero, req.empresaId]
+             );
              if (opOrigRes.rows.length > 0) opOriginalFallback = opOrigRes.rows[0];
         }
 
@@ -1085,8 +1183,11 @@ router.put('/finalizar', async (req, res) => {
         if (numerosOps.length > 0) {
             const lancamentosAnt = await dbClient.query(`
                 SELECT op_numero, etapa_index, SUM(quantidade) as total
-                FROM producoes WHERE op_numero = ANY($1::text[]) GROUP BY op_numero, etapa_index
-            `, [numerosOps]);
+                FROM producoes
+                WHERE empresa_id = $2
+                  AND op_numero = ANY($1::text[])
+                GROUP BY op_numero, etapa_index
+            `, [numerosOps, req.empresaId]);
             lancamentosAnt.rows.forEach(r => mapaSaldo.set(`${r.op_numero}-${r.etapa_index}`, parseInt(r.total)));
         }
 
@@ -1117,9 +1218,9 @@ router.put('/finalizar', async (req, res) => {
                     );
 
                 await dbClient.query(
-                    `INSERT INTO producoes (id, op_numero, etapa_index, processo, produto_id, variacao, maquina, quantidade, funcionario, funcionario_id, data, lancado_por, valor_ponto_aplicado, pontos_gerados)
-                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), $11, $12, $13)`,
-                    [`prod_${Date.now()}_${Math.random().toString(36).substr(2,4)}`, op.numero, etapaIndex, sessao.processo, sessao.produto_id, sessao.variante, maquinaCorreta, qtdLancar, nomeFuncionario, sessao.funcionario_id, usuarioLogado.nome, valorPontoAplicado, pontosGerados]
+                    `INSERT INTO producoes (id, op_numero, etapa_index, processo, produto_id, variacao, maquina, quantidade, funcionario, funcionario_id, data, lancado_por, valor_ponto_aplicado, pontos_gerados, empresa_id)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), $11, $12, $13, $14)`,
+                    [`prod_${Date.now()}_${Math.random().toString(36).substr(2,4)}`, op.numero, etapaIndex, sessao.processo, sessao.produto_id, sessao.variante || '-', maquinaCorreta, qtdLancar, nomeFuncionario, sessao.funcionario_id, usuarioLogado.nome, valorPontoAplicado, pontosGerados, req.empresaId]
                 );
                 logAuditoria.push(`OP #${op.numero}: ${qtdLancar}`);
                 quantidadeRestante -= qtdLancar;
@@ -1141,31 +1242,14 @@ router.put('/finalizar', async (req, res) => {
                 );
 
                 await dbClient.query(
-                    `INSERT INTO producoes (id, op_numero, etapa_index, processo, produto_id, variacao, maquina, quantidade, funcionario, funcionario_id, data, lancado_por, valor_ponto_aplicado, pontos_gerados)
-                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), $11, $12, $13)`,
-                    [`prod_force_${Date.now()}`, opAlvo.numero, idx, sessao.processo, sessao.produto_id, sessao.variante, maquinaCorreta, quantidadeRestante, nomeFuncionario, sessao.funcionario_id, usuarioLogado.nome, valorPontoAplicado, pontosGerados]
+                    `INSERT INTO producoes (id, op_numero, etapa_index, processo, produto_id, variacao, maquina, quantidade, funcionario, funcionario_id, data, lancado_por, valor_ponto_aplicado, pontos_gerados, empresa_id)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), $11, $12, $13, $14)`,
+                    [`prod_force_${Date.now()}`, opAlvo.numero, idx, sessao.processo, sessao.produto_id, sessao.variante || '-', maquinaCorreta, quantidadeRestante, nomeFuncionario, sessao.funcionario_id, usuarioLogado.nome, valorPontoAplicado, pontosGerados, req.empresaId]
                 );
                 
                 logAuditoria.push(`FORÇADO OP #${opAlvo.numero}: ${quantidadeRestante}`);
              } else {
-                 // Caso extremo: Não achou NENHUMA OP (nem a original existe mais?).
-                 // Lança sem OP ou dá erro? Vamos lançar com OP '0000' para não perder a produção.
-                 console.warn("Nenhuma OP encontrada para lançar a sobra. Usando OP de contingência.");
-                 const { pontosGerados, valorPontoAplicado } =
-                    await calcularPontosProducao(
-                        dbClient,
-                        sessao.produto_id,
-                        sessao.processo,
-                        quantidadeRestante,
-                        sessao.funcionario_id,
-                        req.empresaId
-                    );
-                 
-                 await dbClient.query(
-                    `INSERT INTO producoes (id, op_numero, etapa_index, processo, produto_id, variacao, maquina, quantidade, funcionario, funcionario_id, data, lancado_por, valor_ponto_aplicado, pontos_gerados)
-                     VALUES ($1, '0000', -1, $2, $3, $4, $5, $6, $7, $8, NOW(), $9, $10, $11)`,
-                    [`prod_orphan_${Date.now()}`, sessao.processo, sessao.produto_id, sessao.variante, maquinaCorreta, quantidadeRestante, nomeFuncionario, sessao.funcionario_id, usuarioLogado.nome, valorPontoAplicado, pontosGerados]
-                );
+                 throw new Error('Nenhuma OP válida encontrada para lançar a produção.');
              }
         }
         } // fim sessão normal
@@ -1307,10 +1391,12 @@ router.get('/externos-recentes', async (req, res) => {
             FROM producoes p
             JOIN usuarios u ON u.id = p.funcionario_id AND 'prestador_externo' = ANY(u.tipos)
             LEFT JOIN produtos prod ON prod.id = p.produto_id
-            WHERE p.data >= NOW() - INTERVAL '24 hours'
+            WHERE p.empresa_id = $1
+              AND (prod.empresa_id = p.empresa_id OR prod.id IS NULL)
+              AND p.data >= NOW() - INTERVAL '24 hours'
             ORDER BY p.data DESC
             LIMIT 20
-        `);
+        `, [req.empresaId]);
         res.status(200).json(result.rows);
     } catch (error) {
         console.error('[API GET /producoes/externos-recentes] Erro:', error);
@@ -1327,7 +1413,7 @@ router.delete('/externo/:id', async (req, res) => {
         dbClient = await pool.connect();
         await dbClient.query('BEGIN');
 
-        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id);
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id, req.empresaId);
         if (!permissoes.includes('acesso-ordens-de-producao')) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
@@ -1338,7 +1424,8 @@ router.delete('/externo/:id', async (req, res) => {
             FROM producoes p
             JOIN usuarios u ON u.id = p.funcionario_id AND 'prestador_externo' = ANY(u.tipos)
             WHERE p.id = $1
-        `, [req.params.id]);
+              AND p.empresa_id = $2
+        `, [req.params.id, req.empresaId]);
 
         if (producaoRes.rows.length === 0) {
             return res.status(404).json({ error: 'Lançamento externo não encontrado.' });
@@ -1370,7 +1457,7 @@ router.delete('/externo/:id', async (req, res) => {
         ]);
 
         // Remove o registro de producao
-        await dbClient.query('DELETE FROM producoes WHERE id = $1', [p.id]);
+        await dbClient.query('DELETE FROM producoes WHERE id = $1 AND empresa_id = $2', [p.id, req.empresaId]);
 
         await dbClient.query('COMMIT');
         res.status(200).json({ ok: true });
@@ -1418,7 +1505,10 @@ router.post('/externo', async (req, res) => {
         for (let i = 0; i < itens.length; i++) {
             const { op_numero, produto_id, variante, processo, quantidade, etapas_unificadas } = itens[i];
 
-            const produtoRes = await dbClient.query('SELECT etapas FROM produtos WHERE id = $1', [produto_id]);
+            const produtoRes = await dbClient.query(
+                'SELECT etapas FROM produtos WHERE id = $1 AND empresa_id = $2',
+                [produto_id, req.empresaId]
+            );
             const etapasDoProduto = produtoRes.rows[0]?.etapas || [];
             const etapaIndex = etapasDoProduto.findIndex(e => (e.processo || e) === processo);
             const etapaConfig = etapasDoProduto[etapaIndex];
@@ -1451,18 +1541,20 @@ router.post('/externo', async (req, res) => {
             const opsDisponiveisResult = await dbClient.query(`
                 SELECT numero, etapas, quantidade
                 FROM ordens_de_producao
-                WHERE produto_id = $1
+                WHERE empresa_id = $3
+                  AND produto_id = $1
                   AND (variante = $2 OR ($2 IS NULL AND variante IS NULL))
                   AND status IN ('em-aberto', 'produzindo')
                 ORDER BY numero ASC
-            `, [produto_id, variante || null]);
+            `, [produto_id, variante || null, req.empresaId]);
             const opsCandidatas = opsDisponiveisResult.rows;
 
             // Fallback: se não há OPs ativas, usa a OP original (mesmo que fechada)
             let opOriginalFallback = null;
             if (opsCandidatas.length === 0) {
                 const opOrigRes = await dbClient.query(
-                    'SELECT numero, etapas FROM ordens_de_producao WHERE numero = $1', [op_numero]
+                    'SELECT numero, etapas FROM ordens_de_producao WHERE numero = $1 AND empresa_id = $2',
+                    [op_numero, req.empresaId]
                 );
                 if (opOrigRes.rows.length > 0) opOriginalFallback = opOrigRes.rows[0];
             }
@@ -1473,9 +1565,11 @@ router.post('/externo', async (req, res) => {
             if (numerosOps.length > 0) {
                 const lancamentosAnt = await dbClient.query(`
                     SELECT op_numero, etapa_index, SUM(quantidade) as total
-                    FROM producoes WHERE op_numero = ANY($1::text[])
+                    FROM producoes
+                    WHERE empresa_id = $2
+                      AND op_numero = ANY($1::text[])
                     GROUP BY op_numero, etapa_index
-                `, [numerosOps]);
+                `, [numerosOps, req.empresaId]);
                 lancamentosAnt.rows.forEach(r =>
                     mapaSaldo.set(`${r.op_numero}-${r.etapa_index}`, parseInt(r.total))
                 );
@@ -1508,13 +1602,13 @@ router.post('/externo', async (req, res) => {
                             freelance.id, req.empresaId
                         );
                         await dbClient.query(
-                            `INSERT INTO producoes (id, op_numero, etapa_index, processo, produto_id, variacao, maquina, quantidade, funcionario, funcionario_id, data, lancado_por, valor_ponto_aplicado, pontos_gerados)
-                             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), $11, $12, $13)`,
+                            `INSERT INTO producoes (id, op_numero, etapa_index, processo, produto_id, variacao, maquina, quantidade, funcionario, funcionario_id, data, lancado_por, valor_ponto_aplicado, pontos_gerados, empresa_id)
+                             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), $11, $12, $13, $14)`,
                             [
                                 `prod_ext_${Date.now()}_${i}_${Math.random().toString(36).substr(2, 4)}`,
-                                op.numero, etapaIdxNaOp, processoUnif, produto_id, variante || null, maquinaUnif,
+                                op.numero, etapaIdxNaOp, processoUnif, produto_id, variante || '-', maquinaUnif,
                                 qtdLancar, freelance.nome, freelance.id,
-                                req.usuarioLogado.nome, valorPontoAplicado, pontosGerados,
+                                req.usuarioLogado.nome, valorPontoAplicado, pontosGerados, req.empresaId,
                             ]
                         );
                         quantidadeRestante -= qtdLancar;
@@ -1532,15 +1626,17 @@ router.post('/externo', async (req, res) => {
                             freelance.id, req.empresaId
                         );
                         await dbClient.query(
-                            `INSERT INTO producoes (id, op_numero, etapa_index, processo, produto_id, variacao, maquina, quantidade, funcionario, funcionario_id, data, lancado_por, valor_ponto_aplicado, pontos_gerados)
-                             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), $11, $12, $13)`,
+                            `INSERT INTO producoes (id, op_numero, etapa_index, processo, produto_id, variacao, maquina, quantidade, funcionario, funcionario_id, data, lancado_por, valor_ponto_aplicado, pontos_gerados, empresa_id)
+                             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), $11, $12, $13, $14)`,
                             [
                                 `prod_ext_force_${Date.now()}_${i}`,
-                                opAlvo.numero, idx, processoUnif, produto_id, variante || null, maquinaUnif,
+                                opAlvo.numero, idx, processoUnif, produto_id, variante || '-', maquinaUnif,
                                 quantidadeRestante, freelance.nome, freelance.id,
-                                req.usuarioLogado.nome, valorPontoAplicado, pontosGerados,
+                                req.usuarioLogado.nome, valorPontoAplicado, pontosGerados, req.empresaId,
                             ]
                         );
+                    } else {
+                        throw new Error('Nenhuma OP válida encontrada para lançar a produção externa.');
                     }
                 }
             }

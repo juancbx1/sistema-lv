@@ -21,6 +21,7 @@ export default function OPPainelAtividades() {
     const [inativoInfoId, setInativoInfoId] = useState(null);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [infoFeriado, setInfoFeriado] = useState(null);
+    const [cadeiaBloqueada, setCadeiaBloqueada] = useState(false);
     // v1.8 — Alerta de intervalo (almoço/pausa automático)
     const [alertaIntervalo, setAlertaIntervalo] = useState(null);
     // { almoco: ['Maria', 'Ana'], pausa: ['Rosa'] }

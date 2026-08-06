@@ -3020,22 +3020,6 @@ body.autenticado {
     flex-shrink: 0;
 }
 
-.cracha-menu-btn {
-    background: rgba(255,255,255,0.18);
-    border: none;
-    color: white;
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.85rem;
-    transition: background 0.15s;
-}
-.cracha-menu-btn:hover { background: rgba(255,255,255,0.32); }
-
 /* =====================================================
    BOTTOM SHEET — Menu de ações do crachá
    Tablet-first: botões grandes, fáceis de tocar
@@ -5280,40 +5264,6 @@ body.autenticado {
 }
 .cracha-barra.barra-pausada {
     opacity: 0.4;
-}
-
-/* ─── Botão pausar/retomar relógio ─── */
-.op-btn-pausar-timer {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    width: 100%;
-    font-size: 0.78rem;
-    font-weight: 600;
-    color: #7f8c8d;
-    background: transparent;
-    border: 1px solid #ddd;
-    border-radius: 5px;
-    padding: 5px 10px;
-    cursor: pointer;
-    transition: all 0.15s;
-    min-height: 32px;
-    margin-top: 8px;
-}
-.op-btn-pausar-timer:hover {
-    background: #f5f5f5;
-    color: #2c3e50;
-    border-color: #bbb;
-}
-.op-btn-pausar-timer.retomar {
-    color: #2980b9;
-    border-color: #aed6f1;
-    background: #eaf4fb;
-}
-.op-btn-pausar-timer.retomar:hover {
-    background: #d6eaf8;
-    border-color: #85c1e9;
 }
 
 /* ─── MELHORIA-08: Banner de aviso pré-atribuição (ultrapassar S3) ─── */
@@ -8895,6 +8845,71 @@ body.autenticado {
     }
 }
 
+/* ==========================================================================
+   REDESIGN DOS CARDS DE JORNADA — segunda fatia visual
+   ========================================================================== */
+
+.cracha-card .cracha-topo {
+    align-items: center;
+    gap: 12px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.cracha-identidade-compacta {
+    min-width: 0;
+    flex: 1;
+}
+
+.cracha-identidade-compacta .cracha-nome {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.op-redesign-card-role {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 3px;
+    color: #64748b;
+    font-size: 0.74rem;
+}
+
+.op-redesign-card-role i {
+    color: #94a3b8;
+    font-size: 0.7rem;
+}
+
+.op-redesign-card-body {
+    display: flex;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
+}
+
+.op-redesign-card-body > .cracha-tarefa,
+.op-redesign-card-body > .cracha-status-idle,
+.op-redesign-card-body > .cracha-intervalo-corpo,
+.op-redesign-card-body > .cracha-livre-body {
+    flex: 1;
+}
+
+.op-redesign-card-body .cracha-footer {
+    gap: 10px;
+    margin-top: auto;
+    padding-top: 14px;
+}
+
+.op-redesign-card-body .cracha-btn,
+.op-redesign-card-body .op-btn-liberar-intervalo {
+    min-height: 46px;
+}
+
+.op-redesign-card-body .op-btn-liberar-intervalo {
+    margin-top: 12px;
+}
+
 @media (max-width: 480px) {
     .op-quicklog-qty-input {
         width: 86px;
@@ -9730,4 +9745,1448 @@ body.autenticado {
     display: flex;
     justify-content: flex-end;
     margin-bottom: 8px;
+}
+
+/* ==========================================================================
+   REDESIGN DO PAINEL DE JORNADA — primeira fatia visual
+   ========================================================================== */
+
+.op-redesign-resumo {
+    display: grid;
+    gap: 16px;
+    margin-bottom: 18px;
+}
+
+.op-redesign-cabecalho {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.op-redesign-overline {
+    margin: 0 0 4px;
+    color: #64748b;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.op-redesign-titulo-linha {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.op-redesign-titulo {
+    margin: 0;
+    color: #1e293b;
+    font-size: 1.35rem;
+    font-weight: 700;
+}
+
+.op-redesign-subtitulo {
+    margin: 4px 0 0;
+    color: #64748b;
+    font-size: 0.85rem;
+}
+
+.op-redesign-ao-vivo {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 28px;
+    padding: 4px 9px;
+    border: 1px solid #bbf7d0;
+    border-radius: 999px;
+    background: #f0fdf4;
+    color: #15803d;
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+}
+
+.op-redesign-ao-vivo-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #22c55e;
+    box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.14);
+}
+
+.op-redesign-refresh {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 8px 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    background: #fff;
+    color: #475569;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.op-redesign-refresh:hover,
+.op-redesign-refresh:focus-visible {
+    border-color: #94a3b8;
+    background: #f8fafc;
+}
+
+.op-redesign-refresh:disabled {
+    cursor: wait;
+    opacity: 0.65;
+}
+
+.op-redesign-filtros {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.op-redesign-filtro {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 8px 12px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: transparent;
+    color: #64748b;
+    cursor: pointer;
+    font-size: 0.82rem;
+    font-weight: 600;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.op-redesign-filtro strong {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    min-height: 22px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #475569;
+    font-size: 0.72rem;
+}
+
+.op-redesign-filtro:hover,
+.op-redesign-filtro:focus-visible {
+    border-color: #cbd5e1;
+    background: #f8fafc;
+    color: #334155;
+}
+
+.op-redesign-filtro.ativo {
+    border-color: #bfd7ee;
+    background: #e8f1fa;
+    color: #245b8f;
+}
+
+.op-redesign-filtro.ativo strong {
+    background: #fff;
+    color: #245b8f;
+}
+
+.oa-redesign-grupo-cabecalho {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 6px 0 10px;
+}
+
+.oa-redesign-grupo-cabecalho h3 {
+    margin: 0;
+    color: #334155;
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.oa-redesign-grupo-cabecalho div span,
+.oa-redesign-grupo-cabecalho > span {
+    color: #64748b;
+    font-size: 0.78rem;
+}
+
+.oa-redesign-status-grid {
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 16px;
+    align-items: stretch;
+}
+
+.oa-redesign-inativos-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    justify-content: stretch;
+    gap: 12px;
+}
+
+.oa-inativos-titulo.oa-redesign-grupo-cabecalho {
+    margin-top: 24px;
+    margin-bottom: 10px;
+}
+
+@media (max-width: 1024px) {
+    .oa-redesign-status-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 600px) {
+    .op-redesign-cabecalho {
+        flex-direction: column;
+    }
+
+    .op-redesign-refresh {
+        width: 100%;
+    }
+
+    .op-redesign-filtros {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        scrollbar-width: thin;
+    }
+
+    .op-redesign-filtro {
+        flex: 0 0 auto;
+    }
+
+    .oa-redesign-status-grid,
+    .oa-redesign-inativos-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .oa-redesign-grupo-cabecalho {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 4px;
+    }
+}
+
+/* ==========================================================================
+   REDESIGN DO CARD DE EXECUÇÃO — fila, timer e jornada integrada
+   ========================================================================== */
+
+.oa-redesign-status-grid {
+    align-items: start;
+}
+
+.op-redesign-task-card {
+    align-self: start;
+    border-top: 4px solid var(--cracha-cor, #347eea);
+}
+
+.op-redesign-task-card .cracha-topo {
+    min-height: 68px;
+    padding: 10px 12px 10px 14px;
+    border-radius: 12px 12px 0 0;
+    border-bottom: 1px solid #dce5ef;
+    background: #ffffff;
+    background-image: none;
+}
+
+.op-redesign-task-card .cracha-topo .cracha-avatar {
+    border-color: var(--cracha-cor, #347eea);
+    box-shadow: 0 2px 8px rgba(43, 70, 99, 0.14);
+}
+
+.op-redesign-task-card .cracha-identidade-compacta {
+    color: #24364b;
+}
+
+.op-redesign-task-card .cracha-identidade-compacta .cracha-nome {
+    color: #24364b;
+    text-shadow: none;
+}
+
+.op-redesign-task-card .op-redesign-card-role {
+    color: #6d7f93;
+}
+
+.op-redesign-task-card .op-redesign-card-role i {
+    color: var(--cracha-cor, #347eea);
+}
+
+.op-redesign-task-card .cracha-topo-acoes {
+    gap: 0;
+}
+
+.op-jornada-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 8px 10px;
+    border: 1px solid #cbd9e8;
+    border-radius: 10px;
+    background: #ffffff;
+    color: #3c6388;
+    cursor: pointer;
+    font-size: 0.72rem;
+    font-weight: 800;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.op-jornada-btn:hover,
+.op-jornada-btn:focus-visible {
+    border-color: #94b9e4;
+    background: #eaf2ff;
+    color: #245b8f;
+}
+
+.op-redesign-execucao-area {
+    display: flex;
+    flex: 0 0 auto !important;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px 0;
+}
+
+.op-redesign-tarefa-cabecalho {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.op-redesign-processo-area {
+    min-width: 0;
+    flex: 1;
+}
+
+.op-redesign-processo-area .cracha-tarefa-processo,
+.op-redesign-processo-area .cracha-tarefa-processo-wrapper {
+    margin-bottom: 0;
+}
+
+.op-redesign-processo-area .cracha-tarefa-processo-wrapper {
+    align-items: center;
+    flex-direction: row;
+    gap: 8px;
+    min-width: 0;
+}
+
+.op-redesign-processo-area .cracha-unif-badge {
+    flex: 0 0 auto;
+    padding: 1px 6px;
+}
+
+.op-redesign-processo-area .cracha-tarefa-processo {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.op-redesign-produto {
+    margin: 0;
+    padding: 10px;
+    border: 1px solid #e1eaf3;
+    border-radius: 12px;
+    background: #f7f9fc;
+}
+
+.op-redesign-produto .cracha-tarefa-imagem {
+    width: 58px;
+    height: 58px;
+    border: 1px solid #d7e1ec;
+    box-shadow: none;
+}
+
+.op-redesign-produto .cracha-tarefa-variante-texto {
+    color: #24364b;
+    font-size: 1rem;
+}
+
+.op-redesign-execucao-area .cracha-metricas-grandes {
+    margin: 0;
+    gap: 8px;
+}
+
+.op-redesign-execucao-area .cracha-metrica-bloco {
+    min-height: 70px;
+    border: 1px solid #e1eaf3;
+    background: #ffffff;
+}
+
+.op-redesign-execucao-area .cracha-metrica-bloco.crono {
+    background: #edf5ff;
+}
+
+.op-redesign-execucao-area .cracha-metrica-bloco.crono.cronometro-pausado {
+    background: #fff8e8;
+}
+
+.op-redesign-timer-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+}
+
+.op-redesign-timer-row .cracha-metrica-valor.cronometro {
+    min-width: 0;
+    justify-content: flex-start;
+    font-size: 1.08rem;
+}
+
+.op-redesign-pause-control {
+    position: relative;
+    display: grid;
+    width: 42px;
+    height: 42px;
+    min-width: 42px;
+    min-height: 42px;
+    flex: 0 0 auto;
+    place-items: center;
+    border: 1px solid #bdd3ec;
+    border-radius: 50%;
+    background: #f0f6ff;
+    color: #347eea;
+    cursor: pointer;
+    font-size: 0.78rem;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.op-redesign-pause-control::after {
+    position: absolute;
+    inset: -5px;
+    border: 1px solid rgba(52, 126, 234, 0.28);
+    border-radius: 50%;
+    content: "";
+    animation: op-redesign-pause-pulse 2s ease-in-out infinite;
+}
+
+.op-redesign-pause-control:hover,
+.op-redesign-pause-control:focus-visible {
+    border-color: #8db6df;
+    background: #dfeeff;
+}
+
+.op-redesign-pause-control.retomar {
+    border-color: #efc56f;
+    background: #fff8e8;
+    color: #bd7a00;
+}
+
+.op-redesign-pause-control.retomar::after {
+    border-color: rgba(189, 122, 0, 0.3);
+    animation: op-redesign-paused-pulse 1.25s ease-in-out infinite;
+}
+
+@keyframes op-redesign-pause-pulse {
+    0%, 100% { opacity: 0.25; transform: scale(0.94); }
+    50% { opacity: 0.8; transform: scale(1.08); }
+}
+
+@keyframes op-redesign-paused-pulse {
+    0%, 100% { opacity: 0.32; transform: scale(0.96); }
+    50% { opacity: 0.95; transform: scale(1.12); }
+}
+
+.op-redesign-execucao-area .cracha-barra-container {
+    margin: 0;
+}
+
+.op-redesign-fila {
+    margin: 0;
+    padding: 10px;
+    border: 1px solid #cfe0f1;
+    border-radius: 12px;
+    background: #f1f7fd;
+}
+
+.op-redesign-fila-cabecalho {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    min-height: 44px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #315b83;
+    cursor: pointer;
+    font-size: 0.72rem;
+    font-weight: 800;
+    text-align: left;
+}
+
+.op-redesign-fila-cabecalho:focus-visible {
+    outline: 3px solid rgba(52, 126, 234, 0.28);
+    outline-offset: 3px;
+}
+
+.op-redesign-fila-cabecalho-vazio {
+    cursor: default;
+}
+
+.op-redesign-fila-cabecalho .op-redesign-fila-titulo {
+    display: inline-flex;
+    min-width: 0;
+    flex: 1;
+    align-items: center;
+    gap: 6px;
+}
+
+.op-redesign-fila-cabecalho .op-redesign-fila-meta {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 7px;
+    min-width: 0;
+}
+
+.op-redesign-fila-cabecalho small {
+    overflow: hidden;
+    color: #6f8da9;
+    font-size: 0.62rem;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.op-redesign-fila-cabecalho i {
+    color: #5f8fbe;
+}
+
+.op-redesign-fila-cabecalho strong {
+    display: inline-grid;
+    min-width: 24px;
+    min-height: 24px;
+    padding: 0 6px;
+    place-items: center;
+    border-radius: 999px;
+    background: #dcecff;
+    color: #2764a5;
+    font-size: 0.68rem;
+}
+
+.op-redesign-fila-chevron {
+    transition: transform 180ms ease;
+}
+
+.op-redesign-fila.expandida .op-redesign-fila-chevron {
+    transform: rotate(180deg);
+}
+
+.op-redesign-fila-expansao {
+    display: grid;
+    grid-template-rows: 0fr;
+    overflow: hidden;
+    opacity: 0;
+    transition: grid-template-rows 220ms ease, opacity 180ms ease, padding-top 220ms ease;
+}
+
+.op-redesign-fila-expansao.aberta {
+    grid-template-rows: 1fr;
+    padding-top: 8px;
+    opacity: 1;
+}
+
+.op-redesign-fila-expansao-conteudo {
+    min-height: 0;
+    overflow: hidden;
+}
+
+.op-redesign-fila .op-redesign-fila-lista {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.op-redesign-fila .op-redesign-fila-item {
+    position: relative;
+    display: block;
+    min-width: 0;
+    padding: 8px 8px 8px 29px;
+    border: 1px solid #dbe8f4;
+    border-radius: 8px;
+    background: #ffffff;
+}
+
+.op-redesign-fila-ordem {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    color: #6f8da9;
+    font-size: 0.58rem;
+    font-weight: 800;
+}
+
+.op-redesign-fila .op-redesign-fila-conteudo {
+    min-width: 0;
+}
+
+.op-redesign-fila .op-redesign-fila-conteudo .fila-linha1 {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+}
+
+.op-redesign-fila .op-redesign-fila-conteudo .fila-linha2 {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    margin-top: 2px;
+}
+
+.op-redesign-fila .op-redesign-fila-conteudo .fila-nome,
+.op-redesign-fila .op-redesign-fila-conteudo .fila-variante,
+.op-redesign-fila .op-redesign-fila-conteudo .fila-proc {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.op-redesign-fila .op-redesign-fila-conteudo .fila-nome {
+    min-width: 0;
+    flex: 1 1 auto;
+    font-size: 0.68rem;
+}
+
+.op-redesign-fila .op-redesign-fila-conteudo .fila-variante,
+.op-redesign-fila .op-redesign-fila-conteudo .fila-proc {
+    font-size: 0.62rem;
+}
+
+.op-redesign-fila .op-redesign-fila-conteudo .fila-linha2 .fila-variante {
+    min-width: 0;
+    padding-left: 0;
+}
+
+.op-redesign-fila .op-redesign-fila-conteudo .fila-linha2 .fila-proc {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: 4px;
+    padding-left: 0;
+    flex-wrap: nowrap;
+}
+
+.op-redesign-task-card .op-redesign-card-body .cracha-footer {
+    margin-top: 0;
+}
+
+.op-jornada-acoes {
+    display: grid;
+    gap: 10px;
+    margin: 14px 0;
+    padding: 12px;
+    border: 1px solid #bfd7ee;
+    border-radius: 12px;
+    background: #eaf2ff;
+}
+
+.op-jornada-acoes-cabecalho {
+    display: grid;
+    gap: 2px;
+}
+
+.op-jornada-acoes-cabecalho span {
+    color: #245b8f;
+    font-size: 0.76rem;
+    font-weight: 800;
+}
+
+.op-jornada-acoes-cabecalho small {
+    color: #6f8da9;
+    font-size: 0.68rem;
+}
+
+.op-jornada-acoes-lista {
+    display: grid;
+    gap: 6px;
+}
+
+.op-jornada-acao {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-height: 44px;
+    padding: 8px 10px;
+    border: 1px solid #c8dced;
+    border-radius: 9px;
+    background: #ffffff;
+    color: #426784;
+    cursor: pointer;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-align: left;
+}
+
+.op-jornada-acao:hover,
+.op-jornada-acao:focus-visible {
+    border-color: #8db6df;
+    background: #f8fbff;
+}
+
+.op-jornada-acao i {
+    width: 18px;
+    color: #347eea;
+    text-align: center;
+}
+
+/* ========================================================================
+   REDESIGN DOS ESTADOS SEM TAREFA E FORA DA OPERACAO
+   ======================================================================== */
+
+.op-redesign-task-card .op-redesign-estado-idle {
+    flex: 0 0 auto;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 10px;
+    padding: 14px 14px 8px;
+    text-align: left;
+}
+
+.op-redesign-estado-icone {
+    display: grid;
+    width: 40px;
+    height: 40px;
+    flex: 0 0 auto;
+    place-items: center;
+    border: 1px solid currentColor;
+    border-radius: 12px;
+    background: color-mix(in srgb, currentColor 10%, #ffffff);
+    font-size: 1rem;
+}
+
+.op-redesign-estado-copy {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+}
+
+.op-redesign-estado-copy .cracha-status-idle-texto {
+    overflow: hidden;
+    color: #24364b;
+    font-size: 0.86rem;
+    font-weight: 800;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.op-redesign-estado-copy > span {
+    overflow: hidden;
+    color: #71859a;
+    font-size: 0.7rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.op-redesign-task-card .cracha-livre-body {
+    flex: 0 0 auto;
+    min-height: 94px;
+    padding: 8px 14px 2px;
+}
+
+.op-redesign-task-card .cracha-livre-vazio {
+    min-height: 70px;
+    padding: 10px 8px;
+    font-size: 0.76rem;
+}
+
+.op-redesign-task-card .op-redesign-estado-intervalo {
+    display: grid;
+    grid-template-areas:
+        "icone status"
+        "icone retorno"
+        "lock lock";
+    grid-template-columns: 42px minmax(0, 1fr);
+    align-items: center;
+    justify-content: initial;
+    gap: 5px 10px;
+    min-height: 0;
+    padding: 14px 14px 10px;
+    text-align: left;
+}
+
+.op-redesign-task-card .op-redesign-estado-intervalo .cracha-intervalo-icone {
+    display: grid;
+    width: 42px;
+    height: 42px;
+    grid-area: icone;
+    place-items: center;
+    border: 1px solid currentColor;
+    border-radius: 12px;
+    background: #fff;
+    font-size: 1rem;
+}
+
+.op-redesign-task-card .op-redesign-estado-intervalo .cracha-intervalo-status {
+    grid-area: status;
+    align-self: end;
+    font-size: 0.92rem;
+}
+
+.op-redesign-task-card .op-redesign-intervalo-retorno {
+    grid-area: retorno;
+    align-self: start;
+    font-size: 0.75rem;
+}
+
+.op-redesign-task-card .op-redesign-intervalo-lock {
+    grid-area: lock;
+    width: 100%;
+    margin-top: 5px;
+    padding-top: 8px;
+    border-top: 1px dashed #d5dde6;
+    font-size: 0.7rem;
+}
+
+.op-redesign-task-card .cracha-btn-retomar {
+    min-height: 46px;
+    border-radius: 10px;
+}
+
+.oa-redesign-inativo-card {
+    min-height: 146px;
+    padding: 12px 14px;
+    border: 1px solid #dce5ef;
+    border-top: 3px solid var(--oa-inativo-cor, #94a3b8);
+    border-radius: 12px;
+    background: #ffffff;
+    box-shadow: 0 4px 14px rgba(43, 70, 99, 0.08);
+    gap: 10px;
+}
+
+.oa-redesign-inativo-card .oa-inativo-card-topo {
+    align-items: center;
+    gap: 10px;
+}
+
+.oa-redesign-inativo-card .oa-inativo-avatar {
+    width: 42px;
+    height: 42px;
+    flex: 0 0 auto;
+    border: 2px solid color-mix(in srgb, var(--oa-inativo-cor, #94a3b8) 35%, #ffffff);
+    border-radius: 12px;
+}
+
+.oa-redesign-inativo-card .oa-inativo-card-info {
+    gap: 3px;
+}
+
+.oa-redesign-inativo-card .oa-inativo-nome {
+    color: #24364b;
+    font-size: 0.86rem;
+}
+
+.oa-redesign-inativo-card .oa-inativo-status {
+    width: fit-content;
+    padding: 3px 7px;
+    border-radius: 999px;
+    background: #f4f7fa;
+    font-size: 0.7rem;
+}
+
+.oa-redesign-inativo-card .oa-inativo-retorno {
+    color: #71859a;
+    font-size: 0.68rem;
+}
+
+.oa-redesign-inativo-card .oa-inativo-btn-info {
+    display: grid;
+    width: 44px;
+    height: 44px;
+    margin-left: auto;
+    padding: 0;
+    place-items: center;
+    border: 1px solid #d6e1ec;
+    border-radius: 10px;
+    background: #f8fafc;
+    color: #6d849c;
+    font-size: 0.9rem;
+}
+
+.oa-redesign-inativo-card .oa-inativo-btn-info:hover,
+.oa-redesign-inativo-card .oa-inativo-btn-info:focus-visible {
+    border-color: #9ebcda;
+    background: #edf5ff;
+    color: #347eea;
+}
+
+.oa-redesign-inativo-card .oa-inativo-btn-hora-extra,
+.oa-redesign-inativo-card .oa-inativo-btn-liberar,
+.oa-redesign-inativo-card .oa-inativo-btn-desfazer {
+    min-height: 44px;
+    border-radius: 9px;
+    font-size: 0.78rem;
+}
+
+.oa-redesign-inativo-card .oa-inativo-btn-hora-extra {
+    border-color: #aeb8ef;
+    background: #f1f2ff;
+    color: #4f46b5;
+}
+
+.oa-redesign-inativo-card .oa-inativo-btn-liberar {
+    border-color: #a8ddb8;
+    background: #f0faf4;
+}
+
+.oa-redesign-inativo-card .oa-inativo-btn-desfazer {
+    border-radius: 9px;
+}
+
+/* ========================================================================
+   REDESIGN DA JORNADA, TIMELINE E TRANSICOES
+   ======================================================================== */
+
+.bs-timeline-container {
+    margin: 12px 14px 4px;
+    padding: 12px;
+    border: 1px solid #dce8f3;
+    border-radius: 12px;
+    background: #f7f9fc;
+}
+
+.bs-timeline-header {
+    margin-bottom: 10px;
+}
+
+.bs-timeline-titulo {
+    color: #315b83;
+    font-size: 0.72rem;
+}
+
+.bs-timeline-titulo i {
+    color: #347eea;
+}
+
+.bs-timeline-info-btn {
+    width: 32px;
+    height: 32px;
+    min-height: 32px;
+    border-color: #bfd7ee;
+    background: #ffffff;
+    color: #5f8fbe;
+}
+
+.bs-timeline-info-btn:hover,
+.bs-timeline-info-btn:focus-visible {
+    border-color: #347eea;
+    background: #edf5ff;
+    color: #245b8f;
+}
+
+.bs-timeline-labels {
+    color: #6f8da9;
+    font-size: 0.68rem;
+    font-weight: 700;
+}
+
+.bs-timeline-barra {
+    height: 18px;
+    border: 1px solid #d5e2ef;
+    background: #ffffff;
+}
+
+.bs-timeline-segmento {
+    opacity: 0.92;
+}
+
+.bs-timeline-agora {
+    width: 3px;
+    background: #dc2626;
+    box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.14);
+}
+
+.bs-timeline-legenda {
+    gap: 8px 12px;
+    margin-top: 8px;
+}
+
+.bs-timeline-legenda span {
+    color: #71859a;
+    font-size: 0.64rem;
+}
+
+.oa-popup-overlay {
+    background: rgba(15, 23, 42, 0.58);
+}
+
+.oa-popup-intervalo {
+    width: min(420px, calc(100vw - 32px));
+    padding: 22px 18px 18px;
+    border: 1px solid #dce5ef;
+    border-top: 4px solid #f59e0b;
+    border-radius: 18px;
+    box-shadow: 0 18px 48px rgba(36, 54, 75, 0.22);
+    gap: 12px;
+}
+
+.oa-popup-intervalo-icone {
+    display: grid;
+    width: 48px;
+    height: 48px;
+    place-items: center;
+    border: 1px solid #fed7aa;
+    border-radius: 14px;
+    background: #fff7ed;
+    font-size: 1.45rem;
+}
+
+.oa-popup-intervalo-titulo {
+    color: #24364b;
+    font-size: 1.08rem;
+}
+
+.oa-popup-intervalo-linha {
+    min-height: 44px;
+    padding: 9px 11px;
+    border-radius: 10px;
+    font-size: 0.8rem;
+}
+
+.oa-popup-intervalo-aviso {
+    padding: 0 4px;
+    font-size: 0.74rem;
+}
+
+.oa-popup-intervalo-btn {
+    min-height: 48px;
+    border-radius: 10px;
+    background: #315b83;
+    font-size: 0.88rem;
+}
+
+.oa-popup-desfazer {
+    width: min(380px, calc(100vw - 32px));
+    padding: 22px 18px 18px;
+    border: 1px solid #dce5ef;
+    border-top: 4px solid #22c55e;
+    border-radius: 18px;
+    box-shadow: 0 18px 48px rgba(36, 54, 75, 0.22);
+    gap: 10px;
+}
+
+.oa-popup-desfazer-icone {
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
+    background: #f0fdf4;
+    color: #15803d;
+}
+
+.oa-popup-desfazer-titulo {
+    color: #24364b;
+    font-size: 1rem;
+}
+
+.oa-popup-desfazer-desc {
+    font-size: 0.78rem;
+}
+
+.oa-popup-desfazer-countdown {
+    color: #315b83;
+    font-size: 1.8rem;
+}
+
+.oa-popup-desfazer-btn {
+    min-height: 48px;
+    border-radius: 10px;
+    font-size: 0.82rem;
+}
+
+/* Jornada no tablet: mais largura para leitura e acoes em duas colunas. */
+.bs-sheet {
+    width: min(620px, calc(100vw - 32px));
+    max-width: 620px;
+    max-height: 88vh;
+    overflow-y: auto;
+    border: 1px solid #dce5ef;
+    box-shadow: 0 18px 48px rgba(36, 54, 75, 0.22);
+}
+
+.op-jornada-acoes {
+    gap: 8px;
+    margin: 12px 14px;
+    padding: 12px;
+    border-color: #cfe0f1;
+    background: #f1f7fd;
+}
+
+.op-jornada-contexto {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    min-height: 36px;
+    padding: 8px 9px;
+    border: 1px solid #cfe0f1;
+    border-radius: 9px;
+    background: #ffffff;
+    color: #426784;
+    font-size: 0.68rem;
+    line-height: 1.35;
+}
+
+.op-jornada-contexto i {
+    flex: 0 0 auto;
+    margin-top: 1px;
+    color: #347eea;
+}
+
+.op-jornada-contexto.bloqueado {
+    border-color: #f2d49b;
+    background: #fffaf0;
+    color: #8a5a14;
+}
+
+.op-jornada-contexto.bloqueado i {
+    color: #d97706;
+}
+
+.op-jornada-acoes-lista {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.op-jornada-acao {
+    min-height: 50px;
+    padding: 8px 9px;
+    border-color: #c8dced;
+    font-size: 0.72rem;
+    line-height: 1.2;
+}
+
+.op-jornada-acao.desabilitada,
+.op-jornada-acao.desabilitada:hover,
+.op-jornada-acao.desabilitada:focus-visible {
+    border-color: #d9e1e9;
+    border-style: dashed;
+    background: #f8fafc;
+    color: #9aaabd;
+    cursor: not-allowed;
+    opacity: 0.72;
+}
+
+.op-jornada-acao.desabilitada i {
+    color: #a8b6c5;
+}
+
+/* No desktop, o menu ocupa 296px fixos; centralizar o sheet na area restante. */
+@media (min-width: 1025px) {
+    .bs-sheet {
+        left: calc(50% + 148px);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .op-redesign-pause-control::after,
+    .op-redesign-pause-control.retomar::after {
+        animation: none;
+    }
+}
+
+@media (max-width: 600px) {
+    .op-jornada-btn {
+        width: 44px;
+        padding: 8px;
+    }
+
+    .op-jornada-btn span {
+        display: none;
+    }
+
+    .op-redesign-tarefa-cabecalho {
+        align-items: flex-start;
+    }
+
+}
+
+/* ========================================================================
+   PROXIMA FATIA — selecao de tarefa e confirmacao de quantidade
+   Contexto sempre visivel, dois cards no tablet e densidade sem perder toque.
+   ======================================================================== */
+
+.op-atribuicao-container .popup-overlay {
+    background: rgba(15, 23, 42, 0.58);
+    backdrop-filter: blur(2px);
+}
+
+.op-atribuicao-container .op-modal-atribuir-v2 {
+    width: min(1040px, calc(100% - 32px));
+    height: min(88vh, 860px);
+    border: 1px solid #dce5ef;
+    border-radius: 18px;
+    background: #f7f9fc;
+    box-shadow: 0 22px 60px rgba(36, 54, 75, 0.24);
+}
+
+.op-atribuicao-container .op-modal-atribuir-v2.modo-lista {
+    max-width: 1040px;
+}
+
+.op-atribuicao-container .op-modal-atribuir-v2.modo-confirmacao {
+    max-width: 760px;
+}
+
+.op-atribuicao-container .op-modal-header {
+    padding: 14px 18px;
+    border-bottom-color: #dce5ef;
+    border-radius: 18px 18px 0 0;
+}
+
+.op-atribuicao-container .op-modal-body {
+    padding: 14px;
+}
+
+.op-atribuicao-container .op-modal-fechar-btn,
+.op-atribuicao-container .btn-voltar-header {
+    min-width: 44px;
+    min-height: 44px;
+}
+
+.op-atribuicao-container .op-modal-fechar-btn {
+    width: 44px;
+    height: 44px;
+}
+
+.op-atribuicao-container .op-cards-container-modal {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    padding: 4px;
+}
+
+.op-atribuicao-container .op-card-react {
+    grid-template-columns: 58px minmax(0, 1fr) auto;
+    min-width: 0;
+    min-height: 128px;
+    gap: 0 10px;
+    padding: 12px 12px 12px 14px;
+    border: 1px solid #dce5ef !important;
+    border-radius: 14px;
+    box-shadow: 0 3px 10px rgba(36, 54, 75, 0.07);
+}
+
+.op-atribuicao-container .op-card-react:hover {
+    transform: translateY(-2px);
+    border-color: #9fc5e8 !important;
+    box-shadow: 0 8px 18px rgba(52, 126, 234, 0.14);
+}
+
+.op-atribuicao-container .op-card-react .card-imagem-produto {
+    width: 58px;
+    height: 58px;
+    border-radius: 11px;
+}
+
+.op-atribuicao-container .op-card-react .card-info-principal {
+    align-items: flex-start;
+    min-width: 0;
+    padding: 0;
+}
+
+.op-atribuicao-container .op-card-react .card-info-principal h3 {
+    width: 100%;
+    font-size: 0.94rem;
+}
+
+.op-atribuicao-container .op-card-react .card-info-principal p {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.op-atribuicao-container .op-card-react .card-bloco-pendente {
+    min-width: 66px;
+    align-self: center;
+    padding: 8px 9px;
+    background: #edf5ff;
+    border: 1px solid #d1e4f7;
+}
+
+.op-atribuicao-container .op-card-react .card-bloco-pendente .valor {
+    font-size: 1.55rem;
+    color: #245b8f;
+}
+
+.op-atribuicao-container .op-etapa-unificavel-badge,
+.op-atribuicao-container .op-card-ops-footer {
+    min-width: 0;
+}
+
+.op-atribuicao-container .op-sugestao-destaque {
+    margin-bottom: 12px;
+    border-color: #f2c36b;
+    border-radius: 14px;
+    box-shadow: 0 4px 14px rgba(245, 158, 11, 0.12);
+}
+
+.op-atribuicao-container .op-sugestao-corpo {
+    padding: 10px 12px;
+}
+
+.op-atribuicao-container .op-sugestao-btn {
+    min-height: 44px;
+}
+
+.op-atribuicao-container .op-confirmacao-lista {
+    padding: 4px;
+}
+
+.op-atribuicao-container .op-item-confirmacao-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(240px, 0.72fr);
+    align-items: start;
+    gap: 14px;
+    padding: 14px 14px 14px 20px;
+    margin-bottom: 12px;
+    border-color: #dce5ef;
+    border-radius: 14px;
+    box-shadow: 0 3px 10px rgba(36, 54, 75, 0.07);
+}
+
+.op-atribuicao-container .item-info-visual {
+    display: grid;
+    grid-template-columns: 58px minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    width: auto;
+    text-align: left;
+}
+
+.op-atribuicao-container .item-info-visual img {
+    width: 58px;
+    height: 58px;
+    margin: 0;
+    border-radius: 11px;
+}
+
+.op-atribuicao-container .item-info-visual > div {
+    min-width: 0;
+}
+
+.op-atribuicao-container .item-info-visual h4 {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.98rem;
+}
+
+.op-atribuicao-container .item-controles-qtd {
+    align-items: stretch;
+    width: auto;
+    min-width: 0;
+    padding: 0 0 0 14px;
+    border-top: 0;
+    border-left: 1px solid #e3ebf3;
+}
+
+.op-atribuicao-container .qtd-display-linha {
+    justify-content: stretch;
+    gap: 8px;
+}
+
+.op-atribuicao-container .qtd-display-linha input {
+    flex: 1;
+    min-width: 56px;
+    height: 50px;
+    border-color: #c8dced;
+    background: #f8fbff;
+}
+
+.op-atribuicao-container .btn-ajuste.mini {
+    width: 50px;
+    height: 50px;
+    border-color: #c8dced;
+    color: #245b8f;
+}
+
+.op-atribuicao-container .qtd-atalhos-linha {
+    justify-content: stretch;
+}
+
+.op-atribuicao-container .qtd-atalhos-linha button {
+    min-height: 44px;
+    flex: 1;
+}
+
+.op-atribuicao-container .op-confirmacao-unif-detalhe,
+.op-atribuicao-container .op-atrib-aviso-horario {
+    grid-column: 1 / -1;
+}
+
+@media (min-width: 1025px) {
+    .op-atribuicao-container {
+        padding-left: 296px;
+        box-sizing: border-box;
+    }
+}
+
+@media (max-width: 600px) {
+    .op-atribuicao-container .op-modal-atribuir-v2 {
+        width: calc(100% - 20px);
+        height: calc(100vh - 20px);
+        max-height: calc(100vh - 20px);
+        border-radius: 16px;
+    }
+
+    .op-atribuicao-container .op-modal-header {
+        gap: 8px;
+        padding: 10px 12px;
+    }
+
+    .op-atribuicao-container .op-modal-header-esquerda,
+    .op-atribuicao-container .op-modal-header-direita {
+        min-width: 44px;
+    }
+
+    .op-atribuicao-container .op-modal-header-centro {
+        min-width: 0;
+        flex: 1;
+    }
+
+    .op-atribuicao-container .op-modal-body {
+        padding: 10px;
+    }
+
+    .op-atribuicao-container .op-cards-container-modal {
+        display: flex;
+        flex-direction: column;
+        grid-template-columns: none;
+        gap: 10px;
+        overflow-x: hidden;
+    }
+
+    .op-atribuicao-container .op-card-react {
+        width: 100%;
+    }
+
+    .op-atribuicao-container .op-item-confirmacao-card {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+    }
+
+    .op-atribuicao-container .item-controles-qtd {
+        width: 100%;
+        padding: 12px 0 0;
+        border-top: 1px solid #e3ebf3;
+        border-left: 0;
+    }
 }

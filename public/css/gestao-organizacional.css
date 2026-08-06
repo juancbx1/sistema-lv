@@ -643,6 +643,133 @@
     font-size: .94rem;
 }
 
+.go-jornada-secao {
+    border-color: #bdd8f4;
+    background: linear-gradient(180deg, #fbfdff 0%, #f6faff 100%);
+}
+
+.go-jornada-cabecalho {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+}
+
+.go-jornada-cabecalho h3 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 5px;
+}
+
+.go-jornada-cabecalho h3 i {
+    color: var(--gs-primaria);
+}
+
+.go-jornada-cabecalho p {
+    max-width: 620px;
+    margin: 0;
+    color: var(--go-muted);
+    font-size: .78rem;
+    line-height: 1.4;
+}
+
+.go-jornada-dias {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 7px;
+    margin: 16px 0;
+}
+
+.go-jornada-dia {
+    display: grid;
+    min-height: 58px;
+    place-items: center;
+    gap: 3px;
+    padding: 8px 5px;
+    border: 1px solid var(--go-borda);
+    border-radius: 11px;
+    color: #64748b;
+    background: #fff;
+    cursor: pointer;
+    font: inherit;
+    transition: border-color .15s ease, background .15s ease, color .15s ease, transform .15s ease;
+}
+
+.go-jornada-dia:hover {
+    transform: translateY(-1px);
+    border-color: #9bbce3;
+}
+
+.go-jornada-dia:focus-visible {
+    outline: 3px solid rgba(31, 111, 235, .16);
+    outline-offset: 2px;
+}
+
+.go-jornada-dia.ativo {
+    border-color: #8db6ee;
+    color: #185cb3;
+    background: #eaf3ff;
+}
+
+.go-jornada-dia span {
+    font-size: .82rem;
+    font-weight: 800;
+}
+
+.go-jornada-dia small {
+    color: inherit;
+    font-size: .65rem;
+    font-weight: 600;
+}
+
+.go-jornada-horarios {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.go-jornada-horarios label {
+    display: grid;
+    gap: 6px;
+    color: #42526a;
+    font-size: .75rem;
+    font-weight: 800;
+}
+
+.go-jornada-horarios input {
+    width: 100%;
+    min-height: 44px;
+    padding: 0 10px;
+    border: 1px solid var(--go-borda);
+    border-radius: 10px;
+    color: var(--go-texto);
+    background: #fff;
+    font: inherit;
+    font-size: .9rem;
+    font-weight: 600;
+}
+
+.go-jornada-horarios input:focus {
+    border-color: var(--go-azul);
+    outline: 3px solid rgba(31, 111, 235, .12);
+}
+
+.go-jornada-legenda {
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+    margin: 13px 0 0;
+    color: var(--go-muted);
+    font-size: .72rem;
+    line-height: 1.4;
+}
+
+.go-jornada-legenda i {
+    margin-top: 2px;
+    color: var(--gs-primaria);
+}
+
 .go-form-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1018,6 +1145,14 @@
     .go-check-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+
+    .go-jornada-dias {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .go-jornada-horarios {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
 
 @media (max-width: 720px) {
@@ -1069,6 +1204,15 @@
 
     .go-check-grid {
         grid-template-columns: 1fr;
+    }
+
+    .go-jornada-cabecalho {
+        flex-direction: column;
+    }
+
+    .go-jornada-dias,
+    .go-jornada-horarios {
+        grid-template-columns: 1fr 1fr;
     }
 
     .go-vinculo-dados {

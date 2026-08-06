@@ -996,6 +996,24 @@ router.put('/:id/status', async (req, res) => {
             console.error('[BACKEND-VALIDACAO] ERRO: Status inválido!');
             return res.status(400).json({ error: 'Status fornecido é inválido.' });
         }
+
+        if (novoStatus === 'ALOCADO_EXTERNO') {
+            const tarefaAtiva = await dbClient.query(
+                `SELECT 1
+                   FROM sessoes_trabalho_producao
+                  WHERE funcionario_id = $1
+                    AND empresa_id = $2
+                    AND status = 'EM_ANDAMENTO'
+                  LIMIT 1`,
+                [idUsuarioParaAtualizar, req.empresaId]
+            );
+            if (tarefaAtiva.rows.length > 0) {
+                return res.status(409).json({
+                    error: 'Não é possível alocar em outro setor enquanto há uma tarefa de produção em andamento. Finalize ou cancele a tarefa primeiro.',
+                    codigo: 'TAREFA_PRODUCAO_EM_ANDAMENTO',
+                });
+            }
+        }
         
         // CORREÇÃO AQUI: A função atômica não precisa mais do dbClient.
         await atualizarStatusUsuarioDB(

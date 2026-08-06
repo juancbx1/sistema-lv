@@ -9,9 +9,40 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        html, body { background: #f4f6f8; }
+        #lv-boot-loader {
+            display: flex;
+            min-height: 100vh;
+            align-items: center;
+            justify-content: center;
+            color: #2c3e50;
+            background: #f4f6f8;
+            font: 500 14px/1.4 Inter, "Segoe UI", sans-serif;
+        }
+        #lv-boot-loader-inner { display: grid; justify-items: center; gap: 14px; }
+        #lv-boot-loader-spinner {
+            width: 42px;
+            height: 42px;
+            border: 3px solid rgba(52, 152, 219, .16);
+            border-top-color: #3498db;
+            border-radius: 50%;
+            animation: lv-boot-spin .8s linear infinite;
+        }
+        #lv-boot-loader-label { color: #7f8c8d; }
+        @keyframes lv-boot-spin { to { transform: rotate(360deg); } }
+        @media (prefers-reduced-motion: reduce) { #lv-boot-loader-spinner { animation: none; } }
+    </style>
 </head>
 <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main-login.jsx"></script>
+    <div id="root">
+        <div id="lv-boot-loader" role="status" aria-live="polite">
+            <div id="lv-boot-loader-inner">
+                <span id="lv-boot-loader-spinner" aria-hidden="true"></span>
+                <span id="lv-boot-loader-label">Organizando seu ambiente...</span>
+            </div>
+        </div>
+    </div>
+    <script type="module" src="/src/main-login.tsx"></script>
 </body>
 </html>

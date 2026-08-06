@@ -1417,15 +1417,25 @@ com evidências e próximos ensaios, fica em
 `_planejamento/plano-op-reorganizacao-ponto-jornada-e-redesign.md`.
 
 | Gate | Critério de entrada | Estado atual |
+|---|---|---|
+| G1 | Contrato de jornada e ponto aprovado, incluindo exceções | Parcial; políticas e aprovação final ainda precisam ser consolidadas |
+| G2 | Dias não trabalhados não geram registros | Aprovado localmente; smoke operacional ainda pendente |
+| G3 | Reconciliação automática funciona sem navegador conectado | Aprovada em ensaio local; validação operacional ainda pendente |
+| G4 | Painel, cards e popups aprovados em tablet | Direção aprovada; quinta fatia visual aguarda validação autenticada |
+| G5 | Fluxo ponta a ponta de tarefa e quantidade aprovado pelos supervisores | Blocos principais aprovados; fechamento ponta a ponta ainda precisa ser registrado |
+| G6 | Integridade de produção, perdas, arremates e comissões validada | Aprovado localmente na bateria v5 em 12/12; G6.7 mantém a exceção documentada dos eventos append-only no clone candidato |
+| G7 | Escritores e consumidores da cadeia auditados | Concluído como auditoria; matriz por rota, proprietários, chaves e backlog de correções fechados em `_planejamento/auditoria-cadeia-produtiva-fase8.md` |
 | G8 | Restauração local fresca e migration aditiva da cadeia ensaiada | Produtos/Demandas, OPs/Cortes, Produção, Arremates, Embalagem, Estoque/Inventário e consumidores transversais aprovados em clones locais, com aplicação idempotente e rollback; nenhuma migration produtiva executada |
 | G9 | Isolamento empresarial validado com duas empresas | Todos os blocos da Fase 8 foram aprovados localmente com contexto legado funcionando, empresa secundária bloqueada quando o domínio ainda não está liberado, body spoof rejeitado e acesso cruzado isolado; liberação produtiva permanece pendente |
 | G10 | Backfill, rollback e ativação gradual revisados | Backfills, constraints, hashes, rollback e marcadores dos blocos da cadeia foram aprovados nos clones preservados; falta somente a revisão da bateria integrada e da estratégia de ativação produtiva |
 | G11 | Worktree separado em diff reproduzível e correções publicadas | Preparado para aceite manual, com pendência estrutural registrada; a matriz de 28 arquivos puros e 6 arquivos mistos e os checks estáticos estão aprovados, mas constraints globais legadas precisam de decisão antes da liberação secundária |
 | G12 | Autorização explícita para execução em produção | Pendente |
+
 Os gates G1–G10 são técnicos e funcionais. O G11 é o gate de reprodutibilidade
 da entrega e o G12 é a autorização operacional. Nenhuma migration da cadeia,
 liberação de módulo ou abertura de empresa secundária pode ocorrer antes do
 fechamento dos doze gates.
+
 ## Fase 8 — OPs e cadeia produtiva
 
 Os itens abaixo pertencem à execução da Fase 8; eles não precisam estar

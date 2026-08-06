@@ -16,7 +16,12 @@ O sistema está em transição planejada de empresa única para **multiempresas*
 
 `_planejamento/sistema-multiempresas.md`
 
-**Estado atual:** Fases 6, 6.1 e 7 concluídas no escopo aprovado; Fase 8 não iniciada.
+**Estado atual:** Fases 6, 6.1 e 7 concluídas no escopo aprovado; os ensaios
+locais da Fase 8 multiempresas, de Produtos/Demandas até consumidores
+transversais, também foram concluídos nos clones preservados. A migration da
+cadeia ainda não foi executada na produção. O projeto está fechando os gates
+G1–G12 definidos em `_planejamento/sistema-multiempresas.md` e detalhados em
+`_planejamento/plano-op-reorganizacao-ponto-jornada-e-redesign.md`.
 A fundação multiempresa e a Gestão Organizacional já estão em produção. A
 migration de preparação do Financeiro foi executada e validada na Neon em
 28/07/2026; a API foi isolada e validada, e o teste transacional das constraints
@@ -40,6 +45,23 @@ mantendo a dashboard legada disponível e a cadeia fechada na secundária. O
 redesign completo da dashboard foi publicado e aprovado pelo usuário em smoke
 autenticado de produção. A cadeia produtiva permanece bloqueada para empresas
 secundárias porque sua migração pertence à Fase 8.
+
+O primeiro ensaio aditivo da cadeia foi aprovado apenas localmente em
+03/08/2026: Produtos e Demandas receberam `empresa_id`, as demandas receberam
+`produto_id`, a aplicação foi idempotente e o rollback foi validado por hashes
+iguais aos da restauração. O ensaio HTTP com dois contextos também foi aprovado:
+criação, leitura e mutação ficaram isoladas, o body não alterou a empresa e a
+cadeia ainda não migrada permaneceu bloqueada na secundária. Esse ensaio não
+autoriza alteração na Neon nem liberação de qualquer domínio produtivo. No
+mesmo dia, a migration estrutural de OPs e Cortes foi ensaiada em clone derivado:
+9.763 OPs e 9.531 cortes receberam `empresa_id`, com 48 OPs sem demanda pai, 20
+cortes sem demanda pai e 7 cortes sem OP pai preservados para classificação; a
+aplicação idempotente, rollback e hashes das cinco tabelas foram aprovados.
+O smoke HTTP legado também aprovou listagem, radar, próximo PN, criação de corte,
+criação de OP, detalhe e checagem de OP filha; a empresa secundária continuou
+bloqueada. O caso de corte sem variante corrigiu a gravação técnica de
+`producoes.variacao` para `'-'`. Os fixtures do smoke foram removidos e não houve
+Neon, commit ou deploy.
 
 ### Decisões obrigatórias
 
@@ -137,6 +159,43 @@ secundárias porque sua migração pertence à Fase 8.
   do diff e validação antes do push. O procedimento fica em
   `_planejamento/multiempresas-controle-de-arquivos.md`.
 
+### Dashboard dos empregados — decisões de interface aprovadas em 2026-08-03
+
+- A sidebar deve manter os cards Meu cartão VT e Ranking da semana, mas o
+  ranking não recebe redesign nesta etapa; sua identidade e seus três painéis
+  permanecem preservados.
+- O topo da sidebar não exibe o texto “Sistema LV”. O título da seção dos dois
+  cards deve ser “Informações úteis”.
+- O rodapé da sidebar mantém os recursos existentes, incluindo versão e
+  Preferências, adaptados à paleta da nova sidebar.
+- O botão Sair fica no header junto do perfil, tanto na sidebar desktop quanto
+  no header do drawer mobile; não fica mais no rodapé desktop.
+- O cartão Meu cartão VT usa hierarquia própria da dashboard, com saldo,
+  status de cobertura e mensagens de provisionamento/devolução, sem alterar a
+  origem ou a regra dos dados do VT.
+- O carregamento inicial deve possuir uma camada estática no HTML antes do
+  bundle React, evitando tela branca até a montagem do primeiro componente.
+- A barra de foco diário usa carregamento contínuo enquanto nenhuma meta foi
+  atingida; depois assume as cores Bronze, Prata ou Ouro conforme o maior nível
+  alcançado no dia.
+- A celebração de meta é não cumulativa: ao abrir a dashboard, somente o maior
+  nível novo do dia recebe mensagem personalizada, confetes e efeitos de festa;
+  o nível exibido é persistido por empregado, empresa e data para não repetir.
+- Ouro recebe brilho, pulsos e glitters saindo da barra; Bronze e Prata recebem
+  explosão de confetes em escala crescente. As animações respeitam
+  `prefers-reduced-motion`.
+- Pontos lançados pelo supervisor contam para a meta visual do dia e para a
+  elegibilidade do resgate, mas não entram no ranking nem geram sobra no banco
+  de resgate. A auditoria automática do cofre usa somente produção real.
+- Cada ganho automático do cofre possui `data_referencia` e deve ser único por
+  empresa, empregado e dia de produção. A gravação ocorre em transação com
+  lock por vínculo; correções financeiras preservam o movimento original e
+  registram o tipo `CORRECAO`.
+- A migration de idempotência do banco de resgate e a correção dos cinco
+  lançamentos indevidos da Milena Silva foram aplicadas e validadas na Neon em
+  2026-08-05: índice único persistido, cinco movimentos classificados como
+  `CORRECAO` e saldo corrigido de 386,80 para 41,80 pontos.
+
 ### Jornada e controle de ponto — decisões aprovadas em 2026-08-01
 
 - A jornada de trabalho por vínculo, incluindo dias, entrada, almoço, pausa e
@@ -165,6 +224,10 @@ secundárias porque sua migração pertence à Fase 8.
   arremates não podem manter regras concorrentes.
 - O plano executável dessa frente fica em
   `_planejamento/plano-op-reorganizacao-ponto-jornada-e-redesign.md`.
+- A auditoria dos escritores e consumidores da cadeia produtiva para a Fase 8
+  foi aberta em `_planejamento/auditoria-cadeia-produtiva-fase8.md`. Enquanto
+  ela não for concluída, nenhum domínio da cadeia pode ser liberado para uma
+  empresa secundária.
 - A fundação do motor foi implementada em `api/ponto-eventos.js` e
   `api/ponto-motor.js`; a migration `_planejamento/migration-ponto-eventos-transicoes.sql`
   foi ensaiada na restauração local isolada e executada/validada na Neon em
@@ -181,6 +244,10 @@ secundárias porque sua migração pertence à Fase 8.
   vínculo, origem, autor, motivo e payload. Os fluxos de produção e arremate
   emitem esses fatos na mesma transação que cria, finaliza ou cancela a sessão;
   a falta emite cancelamento causal para sessões ativas.
+- A saída ordinária automática em `horario_real_s3` não é uma saída antecipada.
+  A UI só pode exibir `Saída antecipada` e oferecer `Desfazer Saída` quando
+  `ponto_diario.tipo_excecao = 'SAIDA_ANTECIPADA'` e o registro ainda não foi
+  desfeito; o backend também deve rejeitar o desfazer de um S3 ordinário.
 - A falta, o cron, a atribuição, o cancelamento de produção, as exceções de
   atraso, o retorno manual e a correção de retorno foram aprovados em HTTP no
   clone local. A validação ampliada também aprovou falta antes da jornada sem
@@ -189,17 +256,17 @@ secundárias porque sua migração pertence à Fase 8.
 - A migration de eventos/transições foi executada na Neon em 2026-08-02. A
   validação pós-migration confirmou registro em `sistema_migrations`, tabelas
   vazias, constraints, índices, trigger append-only e rollback de ensaio sem
-  deixar fixtures. O código compatível ainda não foi publicado.
+  deixar fixtures. O código compatível foi publicado no commit `8286e07`.
 - A migração do frontend para TypeScript está em andamento por fases (ver
   seção “Migração progressiva para TypeScript”). Em 2026-08-02 foram concluídas
   e revisadas as fases de UI compartilhados, Calendário, Gestão Organizacional,
   Central de Alertas, Centro de Incentivos, Dashboard das empregadas (todos
   os componentes `Dash*`) e Home administrativa.
-  Ordens de Produção iniciou a migração incremental com `main-op.tsx`,
-  `op-types.ts`, filtros, paginação, linha de etapa e
-  `OPGerenciamentoTela.tsx`; `main-op.jsx` permanece como fallback local até o
-  staging seletivo. A conversão não pode alterar a lógica de jornada/ponto já
-  validada. A migração de `api/*.js` fica fora do escopo inicial.
+  A trilha TS da página de Ordens de Produção foi encerrada no escopo atual e
+  publicada no commit `4a0da29`; os componentes ligados diretamente ao ponto
+  permanecem em JSX de forma intencional até o redesign desse domínio. A
+  conversão não pode alterar a lógica de jornada/ponto já validada. A migração
+  de `api/*.js` fica fora do escopo inicial.
 
 ### Estado executivo em 2026-07-29
 
@@ -569,7 +636,7 @@ A coluna **Troca contínua** indica se a página já elimina o intervalo vazio e
 |---|---|---|---|---|---|---|---|
 | Login / Index | `login.css` | ✅ | ❌ | ✅ | N/A | N/A | Redesign aprovado e aplicado em 2026-07-28. React 100%, tablet-first, painel editorial de confecção sem pessoas e formulário claro com a paleta oficial. Login público neutro quanto às empresas. Token persistente de 30 dias; demitidos → tela de despedida + cooldown crescente. |
 
-| Ordens de Produção | `ordens-de-producao.css` | ✅ | ⚠️ | ✅ | ✅ (via alias) | ❓ | Referência de qualidade. `main-op.tsx`, contratos mínimos, filtros, paginação, linha de etapa e `OPGerenciamentoTela.tsx` concluídos localmente; filhos de ponto ainda em JSX. |
+| Ordens de Produção | `ordens-de-producao.css` | ✅ | ⚠️ | ✅ | ✅ (via alias) | ❓ | Referência de qualidade. Trilha TS encerrada no escopo atual e publicada em `4a0da29`; componentes diretamente ligados ao ponto permanecem em JSX para a frente de jornada/redesign. |
 
 | Calendário da Empresa | `calendario.css` | ✅ | ✅ | ✅ | ✅ | ❓ | Migrado para TypeScript em 02/08/2026 (`main-calendario.tsx` + `CalendarioCompleto.tsx` + `calendario-types.ts`). Typecheck ok. |
 
@@ -1441,14 +1508,23 @@ Fora do escopo da Fase 5 (APIs): `api/gincanas*.js` permanecem em JS.
 
 Fora do escopo desta fase (permanece JSX): `AlertasFAB.jsx` — FAB compartilhado.
 
+**Fase 8 — Login (iniciada em 2026-08-03)**
+
+- O entry point público foi migrado de `main-login.jsx` para
+  `main-login.tsx`, e o componente raiz de autenticação foi migrado de
+  `LoginApp.jsx` para `LoginApp.tsx`.
+- A migração preservou o fluxo de autenticação, bloqueio temporário, estados de
+  carregamento/despedida e redirecionamento. `npm run typecheck`, `npm run build`
+  e `git diff --check` passaram após a conclusão da fatia.
+
 #### Entry points React em TypeScript (estado atual)
 
 Em TS: `main-financeiro`, `main-cpag`, `main-menu-lateral`, `main-calendario`,
 `main-gestao-organizacional`, `main-config-alertas`, `main-incentivos`,
-`index-dashboard` / `main-dashboard`, `main-home`.
+`index-dashboard` / `main-dashboard`, `main-home`, `main-login`.
 
-Ainda em JSX: login, OP, arremates, embalagem, estoque, permissões, produção
-geral, gerenciar produção, usuários legado (`main-usuarios`), agentes globais.
+Ainda em JSX: OP, arremates, embalagem, estoque, permissões, produção geral,
+gerenciar produção, usuários legado (`main-usuarios`), agentes globais.
 `AlertasFAB` continua em JSX (FAB admin compartilhado).
 
 #### Regras desta migração
@@ -1819,10 +1895,122 @@ empresa secundaria porque a Fase 8 esta fora do escopo.
   `node --check` `api/jornada.js`, `api/ponto-eventos.js`,
   `api/ponto-motor.js`, `api/ponto.js`, `api/cron.js`, `api/producao.js`,
   `api/producoes.js` e `api/arremates.js`; `git diff --check`, typecheck e
-  build tambem passaram. Nenhum commit, push ou deploy foi feito.
-  O proximo passo e separar o diff seletivo do ponto, criar seu commit proprio
-  e aguardar autorizacao explicita para publicar e executar o smoke autenticado,
-  mantendo a cadeia produtiva bloqueada para empresas secundarias.
+  build tambem passaram. O bloco foi publicado seletivamente no commit
+  `8286e07`, mantendo a cadeia produtiva bloqueada para empresas secundarias.
+  O smoke autenticado foi adiado ate a migration append-only ser executada e
+  validada na Neon.
+
+### Atualizacao operacional em 2026-08-02 — migration append-only executada
+
+- O usuario executou na Neon a migration
+  `_planejamento/migration-ponto-eventos-transicoes.sql` sem erros.
+- A validacao das colunas de `ponto_eventos` e
+  `ponto_transicoes_pendentes` foi aprovada; `autor_nome` esta como `text` nas
+  duas tabelas e os tipos restantes correspondem ao contrato.
+- O motor de ponto publicado em `8286e07` passa a encontrar as tabelas
+  aditivas e pode usar o livro append-only e as transicoes pendentes. O gate
+  estrutural foi aprovado com 14 constraints, 8 indices, trigger
+  `trg_ponto_eventos_append_only` habilitado e marcador
+  `ponto-eventos-transicoes-v1` registrado.
+- A simulacao local ampliada foi aprovada em 2026-08-02 nos niveis de dominio,
+  motor e HTTP, cobrindo cron, E1, almoco, pausas, fallback, DSR/feriado,
+  falta, excecoes, concorrencia, idempotencia e eventos de tarefa. Ela usou um
+  clone isolado do banco e nao alterou a restauracao original nem a Neon.
+- O smoke autenticado controlado em producao permanece pendente por depender de
+  um dia util e de uma fixture/escopo seguro. Os mockups do redesign visual do
+  ponto foram aprovados e a codificacao avancou ate o ajuste da terceira fatia
+  do card de execucao.
+- Em 2026-08-02, o usuario aprovou a direcao visual do primeiro mockup do painel
+  de jornada e atividades: tablet-first, foco na proxima acao valida, estados e
+  motivos explicitos, transicoes pendentes acionaveis e regras mantidas no
+  backend. O codigo do redesign foi iniciado localmente; os proximos mockups
+  detalharao card, confirmacao/excecao, timeline e configuracao da jornada.
+- O usuario tambem aprovou o mockup do detalhe de interacao de uma transicao,
+  com confirmacao, excecao com motivo obrigatorio e historico no mesmo contexto.
+- O usuario tambem aprovou o mockup da timeline diaria, com planejado,
+  processado, efetivo, origem, fallback e preservacao causal do historico.
+- O usuario tambem aprovou o mockup do editor de Jornada de Trabalho por
+  vinculo, incluindo dias, horarios, resumo, validacoes e impacto em registros
+  futuros sem reescrita automatica do historico.
+- A validacao responsiva consolidada para tablet paisagem, tablet retrato e
+  celular, incluindo estados operacionais de borda, tambem foi aprovada. A
+  etapa de mockups esta encerrada.
+- A primeira fatia visual implementada preserva handlers, endpoints e regras
+  atuais: novo resumo do painel, KPIs de jornada, filtros com contagem e
+  separacao entre pessoas em operacao e fora da operacao.
+- A segunda fatia mantém o corpo operacional existente e reorganiza o topo de
+  cada card com papel, estado atual e proxima referencia de jornada. Cronometro,
+  pausa, liberacao, cancelamento, finalizacao e bottom sheets continuam usando
+  os mesmos handlers e contratos.
+- A terceira fatia redesenha o card de tarefa atribuida: remove o rotulo
+  redundante de atividade, transforma a pausa em controle compacto animado ao
+  lado do cronometro, integra as acoes ao botao Jornada, concentra a area do
+  produto e trata a fila como bloco compacto independente. A fila vazia informa
+  apenas que nao ha tarefas agendadas; nao sugere que o empregado esteja ocioso.
+  A saida planejada foi removida do cabecalho da tarefa para manter o foco no
+  processo e no produto.
+- O ajuste da fila implementa acordeao por card, fechado por padrao: o cabecalho
+  mostra a quantidade e "Clique para expandir" quando existem tarefas, enquanto
+  a lista abre com animacao apenas no card acionado. Cards sem fila mostram
+  "Nenhuma tarefa agendada" e permanecem sem acao. Typecheck, build e diff check
+  foram aprovados; falta o smoke manual do acordeao.
+- O item da fila usa o indice como marcador no canto superior esquerdo, sem
+  reservar uma coluna exclusiva, e combina variante e processo na mesma linha
+  com espacamento e truncamento responsivo.
+- No cabecalho da tarefa unificada, o badge foi reduzido para `UNIF` e fica na
+  mesma linha do processo, economizando uma linha sem perder a identificacao.
+- A tolerancia S3 e as acoes de liberar intervalo agora ficam restritas a dias de
+  jornada ordinaria. `/api/producao/status-funcionarios` envia
+  `jornada_ordinaria_hoje`, considerando escala e calendario especial; o card
+  usa esse campo com fallback local pela escala. Em DSR, feriado ou hora extra,
+  esses indicadores nao aparecem.
+- A quarta fatia visual do redesign fecha os estados sem tarefa e fora da
+  operacao: disponibilidade, almoco e pausa usam composicao compacta, enquanto
+  os cards inativos adotam cor de estado, identidade enxuta e acoes touch-first.
+  Os handlers, permissoes, bottom sheets e regras de negocio foram preservados;
+  typecheck, build e diff check foram aprovados. A validacao visual manual ainda
+  depende de uma sessao autenticada.
+- O status do painel de OP tambem informa o tipo do dia e se a janela ordinaria
+  esta aberta. Falta, saida antecipada e atraso sao bloqueados na interface em
+  DSR, folga, trabalho extra ou fora da janela; hora extra usa somente tarefas.
+  Alocar em outro setor e rejeitado pelo backend quando ha tarefa produtiva em
+  andamento, evitando confirmacao sem efeito. O bloco de acoes usa duas colunas
+  e o modal de Jornada chega a 620px em tablets.
+- No desktop, o modal de Jornada e seus sheets ficam centralizados na area util
+  apos o menu lateral fixo de 296px; em tablet e celular continuam centralizados
+  na viewport.
+- Os cards de Fora de operacao usam duas colunas flexiveis em tablet e desktop,
+  e uma coluna em telas pequenas.
+- O modal de atribuicao de tarefa usa duas colunas em tablet e desktop, com
+  contexto e disponibilidade compactos; a confirmacao de quantidade usa produto
+  e controles lado a lado. Em celular, ambos retornam para uma coluna.
+- A rota `/api/producao/status-funcionarios` reconcilia o motor de jornada antes
+  de ler `ponto_diario`, em transacoes isoladas por funcionario; falhas isoladas
+  fazem rollback e nao impedem o painel. O fallback legado permanece quando as
+  tabelas aditivas nao estao disponiveis.
+- A reconciliação foi extraída para `reconciliarJornadaFuncionarios`, em
+  `api/ponto-motor.js`, e também é executada antes da leitura das projeções no
+  status individual de produção e no painel de TikTiks em arremates. Os três
+  caminhos compartilham a mesma regra, com transação por vínculo, rollback e
+  fallback legado quando o motor ainda não está disponível.
+- O ensaio transacional do motor foi concluído em 2026-08-03. A base local
+  `sistema_lv_ponto_motor_test` foi criada como cópia de
+  `sistema_lv_restore_test`; a preparação multiempresa da Fase 7 foi aplicada
+  somente nessa cópia porque a restauração de origem ainda não tinha
+  `empresa_id` em `ponto_diario` e `calendario_empresa`. O script
+  `node tools/testar-ponto-motor-local.mjs` retornou `aprovado: true`, com
+  11 eventos e todos os cenários previstos. O helper
+  `reconciliarJornadaFuncionarios` também foi aprovado com os vínculos 4 e 9:
+  o vínculo 4 confirmou evento e projeção, a falha isolada do vínculo 9 fez
+  rollback da transação desse vínculo e a resposta continuou com
+  `eventosAplicados: 1` e um erro.
+- A base `sistema_lv_ponto_simulacao` continua contendo eventos nas datas fixas
+  do script; por ser append-only, novos ensaios devem usar uma cópia fresca de
+  `sistema_lv_restore_test` (ou outra restauração), não a simulação diretamente.
+- O grid de inativos usa largura maxima controlada para que um unico card nao
+  ocupe a linha inteira. A fatia seguinte tambem padronizou visualmente a
+  Jornada, a timeline diaria e os popups de intervalo, confirmacao de
+  saida/retorno e desfazer, preservando callbacks, permissoes e countdown.
 
 Atualização em 2026-08-03: o bloco de Produção da Fase 8 foi ensaiado somente
 em clones PostgreSQL locais. A base `sistema_lv_cadeia_producao_test` foi

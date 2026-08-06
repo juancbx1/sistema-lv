@@ -33,6 +33,7 @@ export interface UILinhaPontoHoje {
     horario_real_s2?: string | null;
     horario_real_e3?: string | null;
     horario_real_s3?: string | null;
+    tipo_excecao?: string | null;
     saida_desfeita?: boolean | null;
 }
 
@@ -185,7 +186,7 @@ export default function UILinhaDoTempoDia({ funcionario, pontoHoje }: UILinhaDoT
         if (seg) segmentos.push(seg);
     }
 
-    if (pontoHoje?.horario_real_s3 && !pontoHoje?.saida_desfeita) {
+    if (pontoHoje?.tipo_excecao === 'SAIDA_ANTECIPADA' && pontoHoje?.horario_real_s3 && !pontoHoje?.saida_desfeita) {
         const seg = segmento(n(pontoHoje.horario_real_s3), s3, '#e74c3c', 'Saída antecipada');
         if (seg) segmentos.push(seg);
     }

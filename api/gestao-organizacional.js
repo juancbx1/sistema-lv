@@ -58,6 +58,62 @@ function inteiroOpcional(valor, nome) {
     return numero;
 }
 
+const DIAS_TRABALHO_PADRAO = {
+    '0': false,
+    '1': true,
+    '2': true,
+    '3': true,
+    '4': true,
+    '5': true,
+    '6': false,
+};
+
+const CAMPOS_JORNADA = [
+    'dias_trabalho',
+    'horario_entrada_1',
+    'horario_saida_1',
+    'horario_entrada_2',
+    'horario_saida_2',
+    'horario_entrada_3',
+    'horario_saida_3',
+];
+
+function jornadaFoiInformada(body) {
+    return CAMPOS_JORNADA.some((campo) => Object.prototype.hasOwnProperty.call(body || {}, campo));
+}
+
+function normalizarDiasTrabalho(valor) {
+    if (valor === undefined || valor === null) return { ...DIAS_TRABALHO_PADRAO };
+    if (!valor || typeof valor !== 'object' || Array.isArray(valor)) {
+        throw erro(400, 'Dias de trabalho invÃ¡lidos.');
+    }
+    return Object.fromEntries(
+        Object.keys(DIAS_TRABALHO_PADRAO).map((dia) => [dia, valor[dia] === true])
+    );
+}
+
+function normalizarHorario(valor, nome) {
+    const horario = texto(valor, 5);
+    if (!horario) return null;
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(horario)) {
+        throw erro(400, `${nome} invÃ¡lido.`);
+    }
+    return horario;
+}
+
+function dadosJornada(body) {
+    if (!jornadaFoiInformada(body)) return null;
+    return {
+        dias_trabalho: normalizarDiasTrabalho(body.dias_trabalho),
+        horario_entrada_1: normalizarHorario(body.horario_entrada_1, 'HorÃ¡rio de entrada'),
+        horario_saida_1: normalizarHorario(body.horario_saida_1, 'HorÃ¡rio de saÃ­da para almoÃ§o'),
+        horario_entrada_2: normalizarHorario(body.horario_entrada_2, 'HorÃ¡rio de retorno do almoÃ§o'),
+        horario_saida_2: normalizarHorario(body.horario_saida_2, 'HorÃ¡rio de saÃ­da para pausa'),
+        horario_entrada_3: normalizarHorario(body.horario_entrada_3, 'HorÃ¡rio de retorno da pausa'),
+        horario_saida_3: normalizarHorario(body.horario_saida_3, 'HorÃ¡rio de saÃ­da final'),
+    };
+}
+
 function dataOpcional(valor, nome) {
     const data = texto(valor, 10);
     if (!data) return null;
@@ -159,6 +215,7 @@ function dadosVinculo(body) {
     const administrador = tipos.includes('administrador');
     const socio = tipos.some((tipo) => tipo === 'socio' || tipo === 'ex_socio');
     const prestador = !socio && (tipos.includes('prestador_externo') || Boolean(body.is_freelance));
+    const jornada = dadosJornada(body);
 
     return {
         tipos,
@@ -179,6 +236,7 @@ function dadosVinculo(body) {
         is_freelance: prestador,
         ativo,
         empresa_principal: Boolean(body.empresa_principal),
+        ...(jornada || {}),
     };
 }
 
@@ -255,8 +313,15 @@ async function sincronizarLegado(client, usuarioId, vinculo, empresa) {
              desconto_inss_percentual = $7,
              desconto_vt_percentual = $8,
              data_admissao = $9,
-             data_demissao = $10
-         WHERE id = $11`,
+             data_demissao = $10,
+             dias_trabalho = COALESCE($11::jsonb, dias_trabalho),
+             horario_entrada_1 = COALESCE($12::time, horario_entrada_1),
+             horario_saida_1 = COALESCE($13::time, horario_saida_1),
+             horario_entrada_2 = COALESCE($14::time, horario_entrada_2),
+             horario_saida_2 = COALESCE($15::time, horario_saida_2),
+             horario_entrada_3 = COALESCE($16::time, horario_entrada_3),
+             horario_saida_3 = COALESCE($17::time, horario_saida_3)
+         WHERE id = $18`,
         [
             vinculo.tipos,
             vinculo.permissoes,
@@ -268,6 +333,13 @@ async function sincronizarLegado(client, usuarioId, vinculo, empresa) {
             vinculo.desconto_vt_percentual,
             vinculo.data_admissao,
             vinculo.data_demissao,
+            vinculo.dias_trabalho ? JSON.stringify(vinculo.dias_trabalho) : null,
+            vinculo.horario_entrada_1,
+            vinculo.horario_saida_1,
+            vinculo.horario_entrada_2,
+            vinculo.horario_saida_2,
+            vinculo.horario_entrada_3,
+            vinculo.horario_saida_3,
             usuarioId,
         ]
     );
@@ -579,6 +651,13 @@ router.get('/pessoas', async (req, res) => {
                             'desconto_vt_percentual', ue.desconto_vt_percentual,
                             'data_admissao', ue.data_admissao,
                             'data_demissao', ue.data_demissao,
+                            'dias_trabalho', ue.dias_trabalho,
+                            'horario_entrada_1', ue.horario_entrada_1,
+                            'horario_saida_1', ue.horario_saida_1,
+                            'horario_entrada_2', ue.horario_entrada_2,
+                            'horario_saida_2', ue.horario_saida_2,
+                            'horario_entrada_3', ue.horario_entrada_3,
+                            'horario_saida_3', ue.horario_saida_3,
                             'is_freelance', ue.is_freelance,
                             'ativo', ue.ativo,
                             'empresa_principal', ue.empresa_principal
@@ -626,9 +705,12 @@ router.post('/pessoas', async (req, res) => {
             `INSERT INTO usuarios (
                 nome, nome_completo, nome_usuario, email, senha, tipos, permissoes,
                 nivel, salario_fixo, valor_passagem_diaria, elegivel_pagamento,
-                desconto_inss_percentual, desconto_vt_percentual, data_admissao, data_demissao
+                desconto_inss_percentual, desconto_vt_percentual, data_admissao, data_demissao,
+                dias_trabalho, horario_entrada_1, horario_saida_1, horario_entrada_2,
+                horario_saida_2, horario_entrada_3, horario_saida_3
              ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+                $16::jsonb, $17::time, $18::time, $19::time, $20::time, $21::time, $22::time
              )
              RETURNING id, nome, nome_completo, nome_usuario, email`,
             [
@@ -637,6 +719,10 @@ router.post('/pessoas', async (req, res) => {
                 vinculo.valor_passagem_diaria, vinculo.elegivel_pagamento,
                 vinculo.desconto_inss_percentual, vinculo.desconto_vt_percentual,
                 vinculo.data_admissao, vinculo.data_demissao,
+                vinculo.dias_trabalho ? JSON.stringify(vinculo.dias_trabalho) : null,
+                vinculo.horario_entrada_1, vinculo.horario_saida_1,
+                vinculo.horario_entrada_2, vinculo.horario_saida_2,
+                vinculo.horario_entrada_3, vinculo.horario_saida_3,
             ]
         );
         const pessoa = pessoaResult.rows[0];
@@ -645,9 +731,12 @@ router.post('/pessoas', async (req, res) => {
                 usuario_id, empresa_id, tipos, permissoes, nivel, salario_fixo,
                 valor_passagem_diaria, elegivel_pagamento, desconto_inss_percentual,
                 desconto_vt_percentual, data_admissao, data_demissao, is_freelance,
-                ativo, empresa_principal
+                ativo, empresa_principal, dias_trabalho, horario_entrada_1,
+                horario_saida_1, horario_entrada_2, horario_saida_2,
+                horario_entrada_3, horario_saida_3
              ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, TRUE
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, TRUE,
+                $15::jsonb, $16::time, $17::time, $18::time, $19::time, $20::time, $21::time
              )
              RETURNING *`,
             [
@@ -656,6 +745,10 @@ router.post('/pessoas', async (req, res) => {
                 vinculo.elegivel_pagamento, vinculo.desconto_inss_percentual,
                 vinculo.desconto_vt_percentual, vinculo.data_admissao,
                 vinculo.data_demissao, vinculo.is_freelance, vinculo.ativo,
+                vinculo.dias_trabalho ? JSON.stringify(vinculo.dias_trabalho) : null,
+                vinculo.horario_entrada_1, vinculo.horario_saida_1,
+                vinculo.horario_entrada_2, vinculo.horario_saida_2,
+                vinculo.horario_entrada_3, vinculo.horario_saida_3,
             ]
         );
         const contatoFinanceiroId = await garantirContatoFinanceiroVinculo(
@@ -757,9 +850,12 @@ router.post('/pessoas/:id/vinculos', async (req, res) => {
                 usuario_id, empresa_id, tipos, permissoes, nivel, salario_fixo,
                 valor_passagem_diaria, elegivel_pagamento, desconto_inss_percentual,
                 desconto_vt_percentual, data_admissao, data_demissao, is_freelance,
-                ativo, empresa_principal
+                ativo, empresa_principal, dias_trabalho, horario_entrada_1,
+                horario_saida_1, horario_entrada_2, horario_saida_2,
+                horario_entrada_3, horario_saida_3
              ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+                $16::jsonb, $17::time, $18::time, $19::time, $20::time, $21::time, $22::time
              )
              RETURNING *`,
             [
@@ -768,6 +864,10 @@ router.post('/pessoas/:id/vinculos', async (req, res) => {
                 vinculo.elegivel_pagamento, vinculo.desconto_inss_percentual,
                 vinculo.desconto_vt_percentual, vinculo.data_admissao,
                 vinculo.data_demissao, vinculo.is_freelance, vinculo.ativo, principal,
+                vinculo.dias_trabalho ? JSON.stringify(vinculo.dias_trabalho) : null,
+                vinculo.horario_entrada_1, vinculo.horario_saida_1,
+                vinculo.horario_entrada_2, vinculo.horario_saida_2,
+                vinculo.horario_entrada_3, vinculo.horario_saida_3,
             ]
         );
         const contatoFinanceiroId = await garantirContatoFinanceiroVinculo(
@@ -858,15 +958,27 @@ router.put('/vinculos/:id', async (req, res) => {
                  is_freelance = $11,
                  ativo = $12,
                  empresa_principal = $13,
+                 dias_trabalho = COALESCE($14::jsonb, dias_trabalho),
+                 horario_entrada_1 = COALESCE($15::time, horario_entrada_1),
+                 horario_saida_1 = COALESCE($16::time, horario_saida_1),
+                 horario_entrada_2 = COALESCE($17::time, horario_entrada_2),
+                 horario_saida_2 = COALESCE($18::time, horario_saida_2),
+                 horario_entrada_3 = COALESCE($19::time, horario_entrada_3),
+                 horario_saida_3 = COALESCE($20::time, horario_saida_3),
                  atualizado_em = NOW()
-             WHERE id = $14
+             WHERE id = $21
              RETURNING *`,
             [
                 vinculo.tipos, vinculo.permissoes, vinculo.nivel, vinculo.salario_fixo,
                 vinculo.valor_passagem_diaria, vinculo.elegivel_pagamento,
-                vinculo.desconto_inss_percentual, vinculo.desconto_vt_percentual,
-                vinculo.data_admissao, vinculo.data_demissao, vinculo.is_freelance,
-                vinculo.ativo, vinculo.empresa_principal, vinculoId,
+                 vinculo.desconto_inss_percentual, vinculo.desconto_vt_percentual,
+                 vinculo.data_admissao, vinculo.data_demissao, vinculo.is_freelance,
+                 vinculo.ativo, vinculo.empresa_principal,
+                 vinculo.dias_trabalho ? JSON.stringify(vinculo.dias_trabalho) : null,
+                 vinculo.horario_entrada_1, vinculo.horario_saida_1,
+                 vinculo.horario_entrada_2, vinculo.horario_saida_2,
+                 vinculo.horario_entrada_3, vinculo.horario_saida_3,
+                 vinculoId,
             ]
         );
         if (vinculoPrincipalSubstitutoId) {

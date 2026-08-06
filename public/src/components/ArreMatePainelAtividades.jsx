@@ -374,7 +374,7 @@ export default function ArreMatePainelAtividades({ permissoes = [] }) {
             });
             setTiktiks(prev => prev.map(t =>
                 t.id === tiktikId
-                    ? { ...t, status_atual: 'FORA_DO_HORARIO', ponto_hoje: { ...(t.ponto_hoje || {}), horario_real_s3: horaOtimistaSP, saida_desfeita: false } }
+                    ? { ...t, status_atual: 'FORA_DO_HORARIO', ponto_hoje: { ...(t.ponto_hoje || {}), horario_real_s3: horaOtimistaSP, tipo_excecao: 'SAIDA_ANTECIPADA', saida_antecipada_ativa: true, saida_desfeita: false } }
                     : t
             ));
         } else if (tipoExcecao === 'ATRASO') {
@@ -582,7 +582,7 @@ export default function ArreMatePainelAtividades({ permissoes = [] }) {
 
         let retorno = null;
         if (s === 'FORA_DO_HORARIO') {
-            const temSaidaAntecipada = tiktik.ponto_hoje?.horario_real_s3 && !tiktik.ponto_hoje?.saida_desfeita;
+            const temSaidaAntecipada = tiktik.ponto_hoje?.saida_antecipada_ativa === true;
             if (!temSaidaAntecipada) {
                 const horaAtual = new Date().toLocaleTimeString('en-GB', {
                     timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit'
@@ -710,7 +710,7 @@ export default function ArreMatePainelAtividades({ permissoes = [] }) {
                                                             )}
                                                         </span>
                                                     )}
-                                                    {!info.eDiaFolga && t.status_atual === 'FORA_DO_HORARIO' && t.ponto_hoje?.horario_real_s3 && (
+                                                    {!info.eDiaFolga && t.status_atual === 'FORA_DO_HORARIO' && t.ponto_hoje?.saida_antecipada_ativa === true && (
                                                         <span className="oa-inativo-retorno">Saída antecipada: <strong>{String(t.ponto_hoje.horario_real_s3).substring(0, 5)}</strong></span>
                                                     )}
                                                 </div>
@@ -724,7 +724,7 @@ export default function ArreMatePainelAtividades({ permissoes = [] }) {
                                             </div>
 
                                             {/* BUG-11: saída antecipada ativa → Desfazer; FORA_DO_HORARIO → Hora Extra; outros → Liberar */}
-                                            {t.status_atual === 'FORA_DO_HORARIO' && t.ponto_hoje?.horario_real_s3 && !t.ponto_hoje?.saida_desfeita ? (
+                                            {t.status_atual === 'FORA_DO_HORARIO' && t.ponto_hoje?.saida_antecipada_ativa === true ? (
                                                 <button
                                                     className="oa-inativo-btn-desfazer"
                                                     onClick={() => handleDesfazerSaida(t.id)}
@@ -841,11 +841,11 @@ export default function ArreMatePainelAtividades({ permissoes = [] }) {
                                                                         </div>
                                                                     )}
                                                                     {t.ponto_hoje.horario_real_s3 && (
-                                                                        <div className={`bs-registro-linha${t.ponto_hoje.saida_desfeita ? ' desfeito' : ''}`}>
+                                                                        <div className={`bs-registro-linha${t.ponto_hoje.tipo_excecao === 'SAIDA_ANTECIPADA' && t.ponto_hoje.saida_desfeita ? ' desfeito' : ''}`}>
                                                                             <span className="bs-registro-icone"><i className="fas fa-sign-out-alt"></i></span>
                                                                             <span className="bs-registro-desc">
-                                                                                Saída antecipada
-                                                                                {t.ponto_hoje.saida_desfeita && (
+                                                                                {t.ponto_hoje.tipo_excecao === 'SAIDA_ANTECIPADA' ? 'Saída antecipada' : 'Saída final'}
+                                                                                {t.ponto_hoje.tipo_excecao === 'SAIDA_ANTECIPADA' && t.ponto_hoje.saida_desfeita && (
                                                                                     <em className="bs-registro-desfeito"> — desfeita por {t.ponto_hoje.saida_desfeita_por || 'supervisor'}</em>
                                                                                 )}
                                                                             </span>

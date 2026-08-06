@@ -1,19 +1,40 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { sincronizarPermissoesUsuario } from '/js/utils/auth.js';
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { sincronizarPermissoesUsuario } from '../../js/utils/auth.js';
 
-const ETAPAS_ACESSO = [
+type TelaLogin = 'formulario' | 'loading' | 'despedida';
+
+interface BloqueioLogin {
+  tentativas: number;
+  bloqueadoAte: number;
+}
+
+interface UsuarioLogin {
+  permissoes?: string[];
+  [chave: string]: unknown;
+}
+
+interface MarcaSistemaProps {
+  escura?: boolean;
+}
+
+interface EstruturaLoginProps {
+  children: ReactNode;
+  compacto?: boolean;
+}
+
+const ETAPAS_ACESSO: readonly string[] = [
   'Validando seu acesso',
   'Carregando seu perfil',
   'Preparando o ambiente',
 ];
 
-function calcularCooldownMs(tentativas) {
+function calcularCooldownMs(tentativas: number): number {
   const base = 30_000;
   const maximo = 4 * 60 * 60 * 1000;
   return Math.min(base * Math.pow(3, tentativas - 1), maximo);
 }
 
-function formatarTempo(ms) {
+function formatarTempo(ms: number): string {
   const totalSegundos = Math.ceil(ms / 1000);
   const horas = Math.floor(totalSegundos / 3600);
   const minutos = Math.floor((totalSegundos % 3600) / 60);
@@ -24,7 +45,7 @@ function formatarTempo(ms) {
   return `${segundos}seg`;
 }
 
-function salvarBloqueio(nomeUsuario, tentativas) {
+function salvarBloqueio(nomeUsuario: string, tentativas: number): number {
   const bloqueadoAte = Date.now() + calcularCooldownMs(tentativas);
   localStorage.setItem(
     `demitido_${nomeUsuario.toLowerCase()}`,
@@ -33,25 +54,39 @@ function salvarBloqueio(nomeUsuario, tentativas) {
   return bloqueadoAte;
 }
 
-function lerBloqueio(nomeUsuario) {
+function lerBloqueio(nomeUsuario: string): BloqueioLogin | null {
   if (!nomeUsuario) return null;
 
   try {
     const bloqueio = localStorage.getItem(`demitido_${nomeUsuario.toLowerCase()}`);
-    return bloqueio ? JSON.parse(bloqueio) : null;
+    if (!bloqueio) return null;
+
+    const parsed = JSON.parse(bloqueio) as Partial<BloqueioLogin> | null;
+    if (
+      !parsed ||
+      !Number.isFinite(parsed.tentativas) ||
+      !Number.isFinite(parsed.bloqueadoAte)
+    ) {
+      return null;
+    }
+
+    return {
+      tentativas: Number(parsed.tentativas),
+      bloqueadoAte: Number(parsed.bloqueadoAte),
+    };
   } catch {
     return null;
   }
 }
 
-function decidirRedirecionamento(usuario) {
+function decidirRedirecionamento(usuario: UsuarioLogin): string {
   const permissoes = usuario.permissoes || [];
   if (permissoes.includes('acesso-admin-geral')) return '/admin/home.html';
   if (permissoes.includes('acesso-dashboard')) return '/dashboard/dashboard.html';
   return '/admin/acesso-negado.html';
 }
 
-function MarcaSistema({ escura = false }) {
+function MarcaSistema({ escura = false }: MarcaSistemaProps) {
   return (
     <div className={`lv-marca${escura ? ' lv-marca--escura' : ''}`} aria-label="Sistema LV">
       <svg className="lv-marca-simbolo" viewBox="0 0 48 48" aria-hidden="true">
@@ -85,7 +120,7 @@ function PainelEditorial() {
   );
 }
 
-function EstruturaLogin({ children, compacto = false }) {
+function EstruturaLogin({ children, compacto = false }: EstruturaLoginProps) {
   return (
     <div className={`lv-root${compacto ? ' lv-root--compacto' : ''}`} id="lv-login-root">
       <main className="lv-shell">
@@ -103,7 +138,7 @@ function EstruturaLogin({ children, compacto = false }) {
 }
 
 export default function LoginApp() {
-  const [tela, setTela] = useState('formulario');
+  const [tela, setTela] = useState<TelaLogin>('formulario');
   const [nomeUsuario, setNomeUsuario] = useState('');
   const [senha, setSenha] = useState('');
   const [mostrarSenha, setMostrarSenha] = useState(false);
@@ -114,8 +149,8 @@ export default function LoginApp() {
   const [nomeDemitido, setNomeDemitido] = useState('');
   const [cooldownRestante, setCooldownRestante] = useState(0);
   const [cooldownInline, setCooldownInline] = useState(0);
-  const timerCooldown = useRef(null);
-  const timerCooldownInline = useRef(null);
+  const timerCooldown = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timerCooldownInline = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -131,8 +166,8 @@ export default function LoginApp() {
           return;
         }
 
-        let usuario = await response.json();
-        usuario = await sincronizarPermissoesUsuario(usuario);
+        let usuario = (await response.json()) as UsuarioLogin;
+        usuario = (await sincronizarPermissoesUsuario(usuario)) as UsuarioLogin;
         localStorage.setItem('permissoes', JSON.stringify(usuario.permissoes || []));
         window.location.href = decidirRedirecionamento(usuario);
       } catch {
@@ -142,7 +177,9 @@ export default function LoginApp() {
   }, []);
 
   useEffect(() => {
-    if (timerCooldownInline.current) clearInterval(timerCooldownInline.current);
+    if (timerCooldownInline.current !== null) {
+      clearInterval(timerCooldownInline.current);
+    }
 
     const bloqueio = lerBloqueio(nomeUsuario);
     if (!bloqueio || bloqueio.bloqueadoAte <= Date.now()) {
@@ -157,18 +194,26 @@ export default function LoginApp() {
 
       if (restante <= 0) {
         setCooldownInline(0);
-        clearInterval(timerCooldownInline.current);
+        if (timerCooldownInline.current !== null) {
+          clearInterval(timerCooldownInline.current);
+        }
       } else {
         setCooldownInline(restante);
       }
     }, 1000);
 
-    return () => clearInterval(timerCooldownInline.current);
+    return () => {
+      if (timerCooldownInline.current !== null) {
+        clearInterval(timerCooldownInline.current);
+      }
+    };
   }, [nomeUsuario]);
 
   useEffect(() => {
     if (tela !== 'despedida') return undefined;
-    if (timerCooldown.current) clearInterval(timerCooldown.current);
+    if (timerCooldown.current !== null) {
+      clearInterval(timerCooldown.current);
+    }
 
     timerCooldown.current = setInterval(() => {
       const bloqueio = lerBloqueio(nomeDemitido || nomeUsuario);
@@ -176,13 +221,19 @@ export default function LoginApp() {
 
       if (restante <= 0) {
         setCooldownRestante(0);
-        clearInterval(timerCooldown.current);
+        if (timerCooldown.current !== null) {
+          clearInterval(timerCooldown.current);
+        }
       } else {
         setCooldownRestante(restante);
       }
     }, 1000);
 
-    return () => clearInterval(timerCooldown.current);
+    return () => {
+      if (timerCooldown.current !== null) {
+        clearInterval(timerCooldown.current);
+      }
+    };
   }, [tela, nomeDemitido, nomeUsuario]);
 
   useEffect(() => {
@@ -198,7 +249,7 @@ export default function LoginApp() {
     return () => clearInterval(intervalo);
   }, [tela]);
 
-  const handleSubmit = useCallback(async (event) => {
+  const handleSubmit = useCallback(async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setErroUsuario('');
     setErroSenha('');
@@ -259,7 +310,7 @@ export default function LoginApp() {
         return;
       }
 
-      const { token } = await response.json();
+      const { token } = (await response.json()) as { token: string };
       localStorage.setItem('token', token);
 
       const perfilResponse = await fetch('/api/usuarios/me', {
@@ -267,8 +318,8 @@ export default function LoginApp() {
       });
       if (!perfilResponse.ok) throw new Error('Erro ao carregar perfil.');
 
-      let usuario = await perfilResponse.json();
-      usuario = await sincronizarPermissoesUsuario(usuario);
+      let usuario = (await perfilResponse.json()) as UsuarioLogin;
+      usuario = (await sincronizarPermissoesUsuario(usuario)) as UsuarioLogin;
       localStorage.setItem('permissoes', JSON.stringify(usuario.permissoes || []));
 
       document.getElementById('lv-login-root')?.classList.add('lv-fadeout');

@@ -13,6 +13,7 @@ import {
     registrarEventoTarefa,
     TIPOS_EVENTO_TAREFA,
 } from './ponto-eventos.js';
+import { reconciliarJornadaFuncionarios } from './ponto-motor.js';
 
 const router = express.Router();
 const pool = new Pool({
@@ -36,6 +37,26 @@ const hhmmParaMin = (hhmm) => {
     if (isNaN(h) || isNaN(m)) return null;
     return h * 60 + m;
 };
+
+function janelaOrdinariaAberta(row, jornadaOrdinariaHoje, agoraMin) {
+    if (!jornadaOrdinariaHoje) return false;
+
+    const entrada1 = hhmmParaMin(row.horario_entrada_1);
+    const saida1 = hhmmParaMin(row.horario_saida_1);
+    const entrada2 = hhmmParaMin(row.horario_entrada_2);
+    const saida2 = hhmmParaMin(row.horario_saida_2);
+    const entrada3 = hhmmParaMin(row.horario_entrada_3);
+    const saida3 = hhmmParaMin(row.horario_saida_3 || row.horario_saida_2 || row.horario_saida_1);
+
+    const janelas = [
+        [entrada1, saida1 || entrada2 || saida3],
+        [entrada2, saida2 || entrada3 || saida3],
+        [entrada3, saida3],
+    ].filter(([inicio, fim]) => inicio !== null && fim !== null && fim > inicio);
+
+    if (janelas.length === 0) return true;
+    return janelas.some(([inicio, fim]) => agoraMin >= inicio && agoraMin < fim);
+}
 
 // Middleware de autenticação (pode ser copiado de outros arquivos de API)
 router.use(async (req, res, next) => {
@@ -117,7 +138,11 @@ router.get('/meu-status', async (req, res) => {
             `, [userId, req.empresaId]),
             dbClient.query(`
                 SELECT horario_real_s1, horario_real_e2,
-                       horario_real_s2, horario_real_e3, horario_real_s3
+                       horario_real_s2, horario_real_e3, horario_real_s3,
+                       tipo_excecao,
+                       COALESCE(tipo_excecao = 'SAIDA_ANTECIPADA'
+                        AND horario_real_s3 IS NOT NULL
+                        AND COALESCE(saida_desfeita, FALSE) = FALSE, FALSE) AS saida_antecipada_ativa
                 FROM ponto_diario
                 WHERE funcionario_id = $1
                   AND empresa_id = $2
@@ -136,7 +161,28 @@ router.get('/meu-status', async (req, res) => {
         }
 
         const row = usuarioResult.rows[0];
-        const pontoDiario = pontoResult.rows[0] || null;
+        const reconciliacaoPonto = await reconciliarJornadaFuncionarios(dbClient, {
+            empresaId: req.empresaId,
+            funcionarioIds: [row.id],
+        });
+        if (reconciliacaoPonto.erros.length > 0) {
+            console.error('[API /producao/meu-status] Falha na reconciliação:', reconciliacaoPonto.erros);
+        }
+        const pontoAtualizadoResult = reconciliacaoPonto.motorAtivo
+            ? await dbClient.query(`
+                SELECT horario_real_s1, horario_real_e2,
+                       horario_real_s2, horario_real_e3, horario_real_s3,
+                       tipo_excecao,
+                       COALESCE(tipo_excecao = 'SAIDA_ANTECIPADA'
+                        AND horario_real_s3 IS NOT NULL
+                        AND COALESCE(saida_desfeita, FALSE) = FALSE, FALSE) AS saida_antecipada_ativa
+                FROM ponto_diario
+                WHERE funcionario_id = $1
+                  AND empresa_id = $2
+                  AND data = (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
+            `, [userId, req.empresaId])
+            : pontoResult;
+        const pontoDiario = pontoAtualizadoResult.rows[0] || null;
         const tarefas = row.tarefas_ativas || [];
         const temTarefa = tarefas.length > 0;
         const pontosHoje = parseFloat(pontosHojeResult.rows[0]?.pontos_hoje || 0);
@@ -161,6 +207,8 @@ router.get('/meu-status', async (req, res) => {
                 horario_real_s2: pontoDiario.horario_real_s2,
                 horario_real_e3: pontoDiario.horario_real_e3,
                 horario_real_s3: pontoDiario.horario_real_s3,
+                tipo_excecao: pontoDiario.tipo_excecao,
+                saida_antecipada_ativa: pontoDiario.saida_antecipada_ativa === true,
             } : null,
             tarefa_atual:   temTarefa ? tarefas[0] : null,
             proxima_tarefa: tarefas.length > 1 ? tarefas[1] : null,
@@ -241,12 +289,20 @@ router.get('/status-funcionarios', async (req, res) => {
         `;
         
         const result = await dbClient.query(query, [req.empresaId]);
+        const reconciliacaoPonto = await reconciliarJornadaFuncionarios(
+            dbClient,
+            { empresaId: req.empresaId, funcionarioIds: result.rows.map((row) => row.id) }
+        );
 
         // Busca ponto_diario e sessoes_hoje em paralelo (bulk — sem N+1)
         const [pontoDiarioResult, sessoesHojeResult, feriadoHojeResult, calendarioHojeResult] = await Promise.all([
             dbClient.query(
                 `SELECT funcionario_id, horario_real_s1, horario_real_e2,
                         horario_real_s2, horario_real_e3, horario_real_s3,
+                        tipo_excecao,
+                        COALESCE(tipo_excecao = 'SAIDA_ANTECIPADA'
+                         AND horario_real_s3 IS NOT NULL
+                         AND COALESCE(saida_desfeita, FALSE) = FALSE, FALSE) AS saida_antecipada_ativa,
                         saida_desfeita, saida_desfeita_por, saida_desfeita_em
                  FROM ponto_diario
                  WHERE data = (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
@@ -314,6 +370,8 @@ router.get('/status-funcionarios', async (req, res) => {
         const sessoesHojeMap  = new Map(sessoesHojeResult.rows.map(r => [r.funcionario_id, r.sessoes || []]));
         const calendarioHoje = calendarioHojeResult.rows[0] || {};
         const diaSemanaHoje = diaSemanaLocal(dataHojeSP);
+        const diaComCalendarioEspecial = calendarioHoje.possui_dia_nao_ordinario === true
+            || calendarioHoje.possui_trabalho_extra === true;
 
         // ─────────────────────────────────────────────────────────────────────
         // BUG-15b — Rede de segurança pós-E2/E3
@@ -331,7 +389,7 @@ router.get('/status-funcionarios', async (req, res) => {
         const agoraMin = hhmmParaMin(agoraSP);
         const safetyNetInserts = [];
         const n5 = (t) => t ? String(t).substring(0, 5) : null;
-        const motorPontoAtivo = await pontoEventosDisponivel(dbClient);
+        const motorPontoAtivo = reconciliacaoPonto.motorAtivo;
 
         if (!motorPontoAtivo) {
         for (const row of result.rows) {
@@ -342,8 +400,6 @@ router.get('/status-funcionarios', async (req, res) => {
             // O safety-net só pode existir em jornada ordinária. DSR, feriado,
             // trabalho extra e dias desmarcados usam o fluxo especial de blocos.
             const diasTrabalho = diasTrabalhoNormalizados(row.dias_trabalho);
-            const diaComCalendarioEspecial = calendarioHoje.possui_dia_nao_ordinario === true
-                || calendarioHoje.possui_trabalho_extra === true;
             const diaMarcado = diaSemanaHoje !== null && diasTrabalho[diaSemanaHoje] === true;
             if (!diaMarcado || diaComCalendarioEspecial) continue;
 
@@ -458,6 +514,16 @@ router.get('/status-funcionarios', async (req, res) => {
 
             // Pegamos a primeira tarefa como "principal" para compatibilidade com código antigo
             const tarefaPrincipal = temTarefa ? tarefas[0] : null;
+            const diasTrabalho = diasTrabalhoNormalizados(row.dias_trabalho);
+            const diaMarcado = diaSemanaHoje !== null && diasTrabalho[diaSemanaHoje] === true;
+            const jornadaOrdinariaHoje = diaMarcado && !diaComCalendarioEspecial;
+            const tipoJornadaHoje = calendarioHoje.possui_trabalho_extra === true
+                ? 'TRABALHO_EXTRA'
+                : calendarioHoje.possui_dia_nao_ordinario === true
+                    ? 'FERIADO_OU_FOLGA_EMPRESA'
+                    : !diaMarcado
+                        ? 'DSR_FOLGA'
+                        : 'ORDINARIA';
 
             return {
                 id: row.id,
@@ -475,6 +541,9 @@ router.get('/status-funcionarios', async (req, res) => {
                 horario_entrada_3: row.horario_entrada_3,
                 horario_saida_3:   row.horario_saida_3,
                 dias_trabalho:     row.dias_trabalho,
+                jornada_ordinaria_hoje: jornadaOrdinariaHoje,
+                tipo_jornada_hoje: tipoJornadaHoje,
+                janela_ordinaria_aberta: janelaOrdinariaAberta(row, jornadaOrdinariaHoje, agoraMin),
                 // Ponto do dia (horários reais de intervalo — null quando não há registro)
                 ponto_hoje: pontoDiario ? {
                     horario_real_s1:    pontoDiario.horario_real_s1,
@@ -482,6 +551,8 @@ router.get('/status-funcionarios', async (req, res) => {
                     horario_real_s2:    pontoDiario.horario_real_s2,
                     horario_real_e3:    pontoDiario.horario_real_e3,
                     horario_real_s3:    pontoDiario.horario_real_s3,
+                    tipo_excecao:      pontoDiario.tipo_excecao,
+                    saida_antecipada_ativa: pontoDiario.saida_antecipada_ativa === true,
                     saida_desfeita:     pontoDiario.saida_desfeita || false,
                     saida_desfeita_por: pontoDiario.saida_desfeita_por || null,
                     saida_desfeita_em:  pontoDiario.saida_desfeita_em || null,

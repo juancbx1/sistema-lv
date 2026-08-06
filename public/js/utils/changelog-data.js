@@ -20,6 +20,17 @@
 
 export const changelog = [
     {
+        versao: '1.44.0',
+        data: '06/08/2026',
+        admin: [
+            'A tela de login foi migrada para TypeScript, mantendo o fluxo de autenticação existente',
+            'Importação de extratos agora permite criar lançamentos financeiros em lote, com processamento de arquivos, revisão e regras de classificação',
+            'O painel de atividades de Ordens de Produção foi completamente redesenhado, com resumo operacional, filtros, cards de acompanhamento, fila de tarefas e jornada integrada',
+            'O controle de ponto recebeu melhorias para contexto da jornada, transições de intervalo, falta, saída antecipada, atraso e bloqueios coerentes ao calendário de trabalho',
+        ],
+        dashboard: [],
+    },
+    {
         versao: '1.43.5',
         data: '05/08/2026',
         admin: [

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import ReactDOM from 'react-dom';
-import { calcularTempoEfetivo, formatarHora, formatarTempo } from '../utils/PontoHelpers.js';
+import { calcularTempoEfetivo, ehDiaDeTrabalhoHoje, formatarHora, formatarTempo } from '../utils/PontoHelpers.js';
 import UILinhaDoTempoDia from './UILinhaDoTempoDia';
 import UIBloqueio from './UIBloqueio';
 
@@ -15,6 +15,7 @@ const getRoleInfo = (tipos = []) => {
 const getStatusIdle = (status) => {
     const map = {
         LIVRE:            { icone: 'fa-check-circle',  texto: 'Disponível',      cor: '#22c55e' },
+        LIVRE_MANUAL:     { icone: 'fa-check-circle',  texto: 'Disponível',      cor: '#22c55e' },
         PAUSA:            { icone: 'fa-coffee',        texto: 'Em Pausa',        cor: '#f59e0b' },
         PAUSA_MANUAL:     { icone: 'fa-coffee',        texto: 'Em Pausa',        cor: '#f59e0b' },
         ALMOCO:           { icone: 'fa-utensils',      texto: 'Almoço',          cor: '#f97316' },
@@ -41,8 +42,8 @@ const calcularRitmo = (ms, tpp, quantidade) => {
 // ────────────────────────────────────────────────────────────────────────────
 
 export default function OPStatusCard({ funcionario, tpp, onAtribuirTarefa, onAcaoManual, onFinalizarTarefa, onCancelarTarefa, onExcecao, onLiberarIntervalo, onLiberarParaTrabalho }) {
-    const [menuAberto, setMenuAberto] = useState(false);
     const [infoAberto, setInfoAberto] = useState(false);
+    const [filaAberta, setFilaAberta] = useState(false);
 
     // ── Cronômetro ──────────────────────────────────────────────────────────
     const [tempoMs, setTempoMs] = useState(0);
@@ -67,7 +68,7 @@ export default function OPStatusCard({ funcionario, tpp, onAtribuirTarefa, onAca
         status_atual, nome, avatar_url, foto_oficial, nivel, tipos = [], tarefas,
         horario_entrada_1, horario_saida_1, horario_entrada_2, horario_saida_2,
         horario_entrada_3, horario_saida_3, dias_trabalho,
-        ponto_hoje,
+        ponto_hoje, tipo_jornada_hoje, janela_ordinaria_aberta,
     } = funcionario;
     const todasTarefas = tarefas || (funcionario.tarefa_atual ? [funcionario.tarefa_atual] : []);
     const tarefaPrincipal = todasTarefas[0] || null;
@@ -75,6 +76,26 @@ export default function OPStatusCard({ funcionario, tpp, onAtribuirTarefa, onAca
 
     const role = getRoleInfo(tipos);
     const fotoExibida = avatar_url || foto_oficial || null;
+    const filaId = `op-fila-${funcionario.id ?? 'sem-id'}`;
+    const jornadaOrdinariaHoje = funcionario.jornada_ordinaria_hoje ?? ehDiaDeTrabalhoHoje(dias_trabalho);
+    const jornadaAcoesOrdinariasDisponiveis = jornadaOrdinariaHoje && janela_ordinaria_aberta !== false;
+    const jornadaContextoTexto = !jornadaOrdinariaHoje
+        ? tipo_jornada_hoje === 'TRABALHO_EXTRA'
+            ? 'Dia de trabalho extra: use somente tarefas de hora extra.'
+            : tipo_jornada_hoje === 'FERIADO_OU_FOLGA_EMPRESA'
+                ? 'Feriado ou folga da empresa: use somente tarefas de hora extra.'
+                : 'DSR/folga: use somente tarefas de hora extra.'
+        : !jornadaAcoesOrdinariasDisponiveis
+            ? 'Fora do horário ordinário: use somente tarefas de hora extra.'
+            : 'Jornada ordinária ativa.';
+
+    useEffect(() => {
+        setFilaAberta(false);
+    }, [tarefaPrincipal?.id_sessao]);
+
+    useEffect(() => {
+        if (filaEspera.length === 0) setFilaAberta(false);
+    }, [filaEspera.length]);
 
     // --- CRONÔMETRO INTERNO (intervalo-ciente) --- BUG-20 fix
     useEffect(() => {
@@ -131,7 +152,7 @@ export default function OPStatusCard({ funcionario, tpp, onAtribuirTarefa, onAca
     // --- INDICADOR DE TOLERÂNCIA S3 (BUG-18: recalcula a cada 30s em tempo real) ---
     useEffect(() => {
         const calcular = () => {
-            if (status_atual !== 'PRODUZINDO') { setToleranciaS3(null); return; }
+            if (status_atual !== 'PRODUZINDO' || !jornadaOrdinariaHoje) { setToleranciaS3(null); return; }
             const s3 = horario_saida_3 || horario_saida_2 || horario_saida_1;
             if (!s3) { setToleranciaS3(null); return; }
             const horaAtual = new Date().toLocaleTimeString('en-GB', {
@@ -145,7 +166,7 @@ export default function OPStatusCard({ funcionario, tpp, onAtribuirTarefa, onAca
         calcular();
         const id = setInterval(calcular, 30000); // recalcula a cada 30s
         return () => clearInterval(id);
-    }, [status_atual, horario_saida_1, horario_saida_2, horario_saida_3]);
+    }, [status_atual, horario_saida_1, horario_saida_2, horario_saida_3, jornadaOrdinariaHoje]);
 
     // --- BOTÃO "LIBERAR PARA INTERVALO" (janela S-20 a S, com 2 fases escalonadas) ---
     //   Fase 1 — antecipacao:  [S-20, S-5]  → discreto (azul suave)
@@ -155,7 +176,7 @@ export default function OPStatusCard({ funcionario, tpp, onAtribuirTarefa, onAca
     useEffect(() => {
         const calcular = () => {
             // v1.9: botão de liberação antecipada aparece para LIVRE e PRODUZINDO
-            if (status_atual !== 'LIVRE' && status_atual !== 'PRODUZINDO') { setIntervaloProximo(null); return; }
+            if (!jornadaOrdinariaHoje || (status_atual !== 'LIVRE' && status_atual !== 'PRODUZINDO')) { setIntervaloProximo(null); return; }
             const agora = new Date();
             const horaAtual = agora.toLocaleTimeString('en-GB', {
                 timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit'
@@ -203,7 +224,7 @@ export default function OPStatusCard({ funcionario, tpp, onAtribuirTarefa, onAca
         // Recalcula a cada 30s para atualizar o contador de atraso com precisão (fase 4)
         const id = setInterval(calcular, 30000);
         return () => clearInterval(id);
-    }, [status_atual, horario_saida_1, horario_saida_2, ponto_hoje?.horario_real_s1, ponto_hoje?.horario_real_s2]);
+    }, [status_atual, horario_saida_1, horario_saida_2, ponto_hoje?.horario_real_s1, ponto_hoje?.horario_real_s2, jornadaOrdinariaHoje]);
 
     const ritmo = (status_atual === 'PRODUZINDO' && !cronoPausado)
         ? calcularRitmo(tempoMs, tpp, tarefaPrincipal?.quantidade)
@@ -211,21 +232,34 @@ export default function OPStatusCard({ funcionario, tpp, onAtribuirTarefa, onAca
 
     // --- MENU DE AÇÕES ---
     const getMenuItems = () => {
+        const protegerAcoes = (items) => items.map(item => {
+            let motivoBloqueio = null;
+            if (['FALTOU', 'SAIDA_ANTECIPADA', 'ATRASO'].includes(item.acao) && !jornadaAcoesOrdinariasDisponiveis) {
+                motivoBloqueio = `${jornadaContextoTexto} Esta ação não pode ser aplicada agora.`;
+            }
+            if (item.acao === 'ALOCADO_EXTERNO' && tarefaPrincipal) {
+                motivoBloqueio = 'Finalize ou cancele a tarefa atual antes de alocar em outro setor.';
+            }
+            return motivoBloqueio
+                ? { ...item, desabilitado: true, motivoBloqueio }
+                : item;
+        });
+
         switch (status_atual) {
             case 'LIVRE':
             case 'LIVRE_MANUAL':
             case 'PRODUZINDO':
-                return [
+                return protegerAcoes([
                     { acao: 'FALTOU',             label: 'Marcar Falta',          icon: 'fa-user-slash' },
                     { acao: 'ALOCADO_EXTERNO',    label: 'Alocar em Outro Setor', icon: 'fa-shipping-fast' },
                     { acao: 'SAIDA_ANTECIPADA',   label: 'Saída Antecipada',      icon: 'fa-sign-out-alt' },
-                ];
+                ]);
             default: {
                 const items = [{ acao: 'LIVRE_MANUAL', label: 'Liberar para Trabalho', icon: 'fa-play' }];
                 if (status_atual === 'FORA_DO_HORARIO') {
                     items.push({ acao: 'ATRASO', label: 'Chegada Atrasada', icon: 'fa-sign-in-alt' });
                 }
-                return items;
+                return protegerAcoes(items);
             }
         }
     };
@@ -247,7 +281,7 @@ export default function OPStatusCard({ funcionario, tpp, onAtribuirTarefa, onAca
 
             return (
                 <>
-                    <div className="cracha-intervalo-corpo">
+                    <div className="cracha-intervalo-corpo op-redesign-estado-intervalo">
                         <div className="cracha-intervalo-icone" style={{ color: corTipo }}>
                             <i className={`fas ${icone}`}></i>
                         </div>
@@ -255,11 +289,11 @@ export default function OPStatusCard({ funcionario, tpp, onAtribuirTarefa, onAca
                             {textoTipo}
                         </div>
                         {retorno && retorno !== '--:--' && (
-                            <div className="cracha-intervalo-retorno">
+                            <div className="cracha-intervalo-retorno op-redesign-intervalo-retorno">
                                 Retorno previsto às <strong>{retorno}</strong>
                             </div>
                         )}
-                        <div className="cracha-intervalo-lock">
+                        <div className="cracha-intervalo-lock op-redesign-intervalo-lock">
                             <i className="fas fa-lock"></i>
                             <span>Bloqueado durante o intervalo</span>
                         </div>
@@ -291,27 +325,31 @@ export default function OPStatusCard({ funcionario, tpp, onAtribuirTarefa, onAca
 
             return (
                 <>
-                    <div className="cracha-tarefa">
-                        {Array.isArray(tarefaPrincipal.etapas_unificadas) && tarefaPrincipal.etapas_unificadas.length >= 2 ? (
-                            <div className="cracha-tarefa-processo-wrapper">
-                                <span className="cracha-unif-badge">
-                                    <i className="fas fa-link"></i> Unificadas
-                                </span>
-                                <div className="cracha-tarefa-processo">
-                                    {tarefaPrincipal.etapas_unificadas.map((e, i) => (
-                                        <span key={e.processo}>
-                                            {i > 0 && <i className="fas fa-arrow-right cracha-unif-seta"></i>}
-                                            {e.processo}
+                    <div className="cracha-tarefa op-redesign-execucao-area">
+                        <div className="op-redesign-tarefa-cabecalho">
+                            <div className="op-redesign-processo-area">
+                                {Array.isArray(tarefaPrincipal.etapas_unificadas) && tarefaPrincipal.etapas_unificadas.length >= 2 ? (
+                                    <div className="cracha-tarefa-processo-wrapper">
+                                        <span className="cracha-unif-badge">
+                                            <i className="fas fa-link"></i> UNIF
                                         </span>
-                                    ))}
-                                </div>
+                                        <div className="cracha-tarefa-processo">
+                                            {tarefaPrincipal.etapas_unificadas.map((e, i) => (
+                                                <span key={e.processo}>
+                                                    {i > 0 && <i className="fas fa-arrow-right cracha-unif-seta"></i>}
+                                                    {e.processo}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="cracha-tarefa-processo">{tarefaPrincipal.processo}</div>
+                                )}
                             </div>
-                        ) : (
-                            <div className="cracha-tarefa-processo">{tarefaPrincipal.processo}</div>
-                        )}
+                        </div>
 
                         {/* Cabeçalho da tarefa: imagem da variação + nome da variação */}
-                        <div className="cracha-tarefa-cabeca">
+                        <div className="cracha-tarefa-cabeca op-redesign-produto">
                             <div className="cracha-tarefa-imagem">
                                 {imagemVariacao ? (
                                     <img src={imagemVariacao} alt={nomeExibido || 'Produto'} />
@@ -324,16 +362,28 @@ export default function OPStatusCard({ funcionario, tpp, onAtribuirTarefa, onAca
                             <div className="cracha-tarefa-variante-texto">{nomeExibido}</div>
                         </div>
 
-                        {/* Dois blocos grandes: Quantidade | Cronômetro */}
+                        {/* Área principal: quantidade + cronômetro com pausa compacta */}
                         <div className="cracha-metricas-grandes">
                             <div className="cracha-metrica-bloco">
                                 <div className="cracha-metrica-valor">{tarefaPrincipal.quantidade}</div>
                                 <div className="cracha-metrica-label">peças</div>
                             </div>
                             <div className={`cracha-metrica-bloco crono${cronoPausado ? ' cronometro-pausado' : ''}`}>
-                                <div className="cracha-metrica-valor cronometro">
-                                    <i className={`fas ${cronoPausado ? 'fa-pause-circle' : 'fa-clock'}`}></i>
-                                    {' '}{formatarTempo(tempoMs)}
+                                <div className="op-redesign-timer-row">
+                                    <div className="cracha-metrica-valor cronometro">
+                                        <i className={`fas ${cronoPausado ? 'fa-pause-circle' : 'fa-clock'}`}></i>
+                                        {' '}{formatarTempo(tempoMs)}
+                                    </div>
+                                    {!cronoPausadoAuto && (
+                                        <button
+                                            type="button"
+                                            className={`op-redesign-pause-control${timerManualPausado ? ' retomar' : ''}`}
+                                            onClick={timerManualPausado ? handleRetomarTimer : handlePausarTimer}
+                                            aria-label={timerManualPausado ? 'Retomar relógio' : 'Pausar relógio'}
+                                        >
+                                            <i className={`fas fa-${timerManualPausado ? 'play' : 'pause'}`} aria-hidden="true"></i>
+                                        </button>
+                                    )}
                                 </div>
                                 {ritmo && !cronoPausado ? (
                                     <div className={`cracha-metrica-label ritmo ${ritmo.classe}`}>{ritmo.emoji} {ritmo.texto}</div>
@@ -363,19 +413,6 @@ export default function OPStatusCard({ funcionario, tpp, onAtribuirTarefa, onAca
                             <div className={`cracha-barra ${ritmo?.classe || ''}${cronoPausado ? ' barra-pausada' : ''}`} style={{ width: `${progressoVisual}%` }}></div>
                         </div>
 
-                        {/* Botão de pausa manual (só aparece quando NÃO está em pausa automática) */}
-                        {!cronoPausadoAuto && (
-                            timerManualPausado ? (
-                                <button className="op-btn-pausar-timer retomar" onClick={handleRetomarTimer}>
-                                    <i className="fas fa-play"></i> Retomar Relógio
-                                </button>
-                            ) : (
-                                <button className="op-btn-pausar-timer" onClick={handlePausarTimer}>
-                                    <i className="fas fa-pause"></i> Pausar Relógio
-                                </button>
-                            )
-                        )}
-
                         {/* Indicador de tolerância S3 — trabalhando além do horário final (BUG-18: atualiza em tempo real) */}
                         {toleranciaS3 !== null && (
                             <div className={`op-status-tolerancia ${toleranciaS3 > 20 ? 'critico' : 'aviso'}`}>
@@ -390,33 +427,65 @@ export default function OPStatusCard({ funcionario, tpp, onAtribuirTarefa, onAca
                             </div>
                         )}
 
-                        {filaEspera.length > 0 && (
-                            <div className="cracha-fila">
-                                <span className="cracha-fila-titulo"><i className="fas fa-layer-group"></i> Fila ({filaEspera.length})</span>
-                                <ul>
-                                    {filaEspera.map((t, i) => {
-                                        const isUnif = Array.isArray(t.etapas_unificadas) && t.etapas_unificadas.length >= 2;
-                                        return (
-                                            <li key={t.id_sessao || i}>
-                                                <div className="fila-linha1">
-                                                    <span className="fila-qtd">{t.quantidade}</span>
-                                                    <span className="fila-nome">{t.produto_nome}</span>
-                                                </div>
-                                                {t.variante && (
-                                                    <div className="fila-variante">{t.variante}</div>
-                                                )}
-                                                <div className={`fila-proc${isUnif ? ' unif' : ''}`}>
-                                                    {isUnif
-                                                        ? <><i className="fas fa-link"></i>{t.etapas_unificadas.map(e => e.processo).join(' + ')}</>
-                                                        : t.processo
-                                                    }
-                                                </div>
-                                            </li>
-                                        );
-                                    })}
-                                </ul>
-                            </div>
-                        )}
+                        <div className={`cracha-fila op-redesign-fila${filaAberta ? ' expandida' : ''}`}>
+                            {filaEspera.length > 0 ? (
+                                <button
+                                    type="button"
+                                    className="op-redesign-fila-cabecalho"
+                                    onClick={() => setFilaAberta(aberta => !aberta)}
+                                    aria-controls={filaId}
+                                    aria-expanded={filaAberta}
+                                >
+                                    <span className="op-redesign-fila-titulo"><i className="fas fa-layer-group"></i> Próximas tarefas</span>
+                                    <span className="op-redesign-fila-meta">
+                                        <small>Clique para expandir</small>
+                                        <strong>{filaEspera.length}</strong>
+                                        <i className="fas fa-chevron-down op-redesign-fila-chevron" aria-hidden="true"></i>
+                                    </span>
+                                </button>
+                            ) : (
+                                <div className="op-redesign-fila-cabecalho op-redesign-fila-cabecalho-vazio">
+                                    <span className="op-redesign-fila-titulo"><i className="fas fa-layer-group"></i> Próximas tarefas</span>
+                                    <span className="op-redesign-fila-meta">
+                                        <small>Nenhuma tarefa agendada</small>
+                                        <strong>0</strong>
+                                    </span>
+                                </div>
+                            )}
+                            {filaEspera.length > 0 && (
+                                <div id={filaId} className={`op-redesign-fila-expansao${filaAberta ? ' aberta' : ''}`} aria-hidden={!filaAberta}>
+                                    <div className="op-redesign-fila-expansao-conteudo">
+                                        <ul className="op-redesign-fila-lista">
+                                            {filaEspera.map((t, i) => {
+                                                const isUnif = Array.isArray(t.etapas_unificadas) && t.etapas_unificadas.length >= 2;
+                                                return (
+                                                    <li key={t.id_sessao || i} className="op-redesign-fila-item">
+                                                        <span className="op-redesign-fila-ordem">{String(i + 1).padStart(2, '0')}</span>
+                                                        <div className="op-redesign-fila-conteudo">
+                                                            <div className="fila-linha1">
+                                                                <span className="fila-qtd">{t.quantidade}</span>
+                                                                <span className="fila-nome">{t.produto_nome}</span>
+                                                            </div>
+                                                            <div className="fila-linha2">
+                                                                {t.variante && (
+                                                                    <span className="fila-variante">{t.variante}</span>
+                                                                )}
+                                                                <span className={`fila-proc${isUnif ? ' unif' : ''}`}>
+                                                                    {isUnif
+                                                                        ? <><i className="fas fa-link"></i>{t.etapas_unificadas.map(e => e.processo).join(' + ')}</>
+                                                                        : t.processo
+                                                                    }
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    </li>
+                                                );
+                                            })}
+                                        </ul>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
 
                     {/* v1.9: botão de liberação antecipada quando PRODUZINDO e intervalo se aproxima */}
@@ -494,9 +563,20 @@ export default function OPStatusCard({ funcionario, tpp, onAtribuirTarefa, onAca
 
         return (
             <>
-                <div className="cracha-status-idle">
-                    <i className={`fas ${idle.icone}`} style={{ color: idle.cor }}></i>
-                    <span className="cracha-status-idle-texto">{idle.texto}</span>
+                <div className="cracha-status-idle op-redesign-estado-idle">
+                    <span className="op-redesign-estado-icone" style={{ color: idle.cor }}>
+                        <i className={`fas ${idle.icone}`}></i>
+                    </span>
+                    <div className="op-redesign-estado-copy">
+                        <strong className="cracha-status-idle-texto">{idle.texto}</strong>
+                        <span>
+                            {status_atual === 'LIVRE'
+                                ? 'Pronta para receber nova tarefa'
+                                : status_atual === 'LIVRE_MANUAL'
+                                    ? 'Liberada manualmente'
+                                    : 'Acompanhe a jornada pela acao Jornada'}
+                        </span>
+                    </div>
                 </div>
 
                 {status_atual === 'ALMOCO' && retornoAlmoco !== '--:--' && (
@@ -578,6 +658,7 @@ export default function OPStatusCard({ funcionario, tpp, onAtribuirTarefa, onAca
     const estaEmIntervalo = ['ALMOCO', 'PAUSA', 'PAUSA_MANUAL'].includes(status_atual) && !tarefaPrincipal;
     const cardClasses = [
         'cracha-card',
+        'op-redesign-task-card',
         role.classe,
         status_atual === 'PRODUZINDO' ? 'cracha-em-producao' : '',
         estaEmIntervalo ? 'cracha-em-intervalo' : '',
@@ -602,58 +683,23 @@ export default function OPStatusCard({ funcionario, tpp, onAtribuirTarefa, onAca
                 </div>
                 <div className="cracha-identidade-compacta">
                     <div className="cracha-nome" title={nome}>{nome}</div>
+                    <div className="op-redesign-card-role">
+                        <i className={`fas ${role.icon}`} aria-hidden="true"></i>
+                        <span>{role.label}</span>
+                    </div>
                 </div>
                 <div className="cracha-topo-acoes">
-                    <button className="cracha-menu-btn" onClick={() => setInfoAberto(true)} title="Ver horários">
-                        <i className="fas fa-info-circle"></i>
+                    <button
+                        type="button"
+                        className="op-jornada-btn"
+                        onClick={() => setInfoAberto(true)}
+                        aria-label="Abrir Jornada de Trabalho e ações"
+                    >
+                        <i className="fas fa-calendar-alt" aria-hidden="true"></i>
+                        <span>Jornada</span>
                     </button>
-                    {menuItems.length > 0 && (
-                        <button className="cracha-menu-btn" onClick={() => setMenuAberto(true)} title="Opções">
-                            <i className="fas fa-ellipsis-v"></i>
-                        </button>
-                    )}
                 </div>
             </div>
-
-            {/* BOTTOM SHEET — menu de ações */}
-            {menuAberto && ReactDOM.createPortal(
-                <>
-                    <div className="bs-overlay" onClick={() => setMenuAberto(false)} />
-                    <div className="bs-sheet" onClick={e => e.stopPropagation()}>
-                        <div className="bs-handle" />
-                        <div className="bs-header">
-                            <div
-                                className={`bs-avatar${!fotoExibida ? ' bs-avatar-vazio' : ''}`}
-                                style={fotoExibida ? { backgroundImage: `url('${fotoExibida}')` } : {}}
-                            >
-                                {!fotoExibida && <i className="fas fa-user"></i>}
-                            </div>
-                            <div>
-                                <div className="bs-nome">{nome}</div>
-                                <div className="bs-role">{role.label}</div>
-                            </div>
-                        </div>
-                        <div className="bs-acoes">
-                            {menuItems.map(item => (
-                                <button
-                                    key={item.acao}
-                                    className="bs-item"
-                                    onClick={() => { onAcaoManual(funcionario, item.acao); setMenuAberto(false); }}
-                                >
-                                    <div className="bs-item-icone">
-                                        <i className={`fas ${item.icon}`}></i>
-                                    </div>
-                                    <span>{item.label}</span>
-                                </button>
-                            ))}
-                        </div>
-                        <button className="bs-cancelar" onClick={() => setMenuAberto(false)}>
-                            Cancelar
-                        </button>
-                    </div>
-                </>,
-                document.body
-            )}
 
             {/* BOTTOM SHEET DE HORÁRIOS */}
             {infoAberto && ReactDOM.createPortal(
@@ -673,6 +719,34 @@ export default function OPStatusCard({ funcionario, tpp, onAtribuirTarefa, onAca
                                 <div className="bs-role">Jornada de Trabalho</div>
                             </div>
                         </div>
+
+                        {menuItems.length > 0 && (
+                            <div className="op-jornada-acoes">
+                                <div className="op-jornada-acoes-cabecalho">
+                                    <span>Ações da jornada</span>
+                                    <small>Disponíveis para este estado</small>
+                                </div>
+                                <div className={`op-jornada-contexto${jornadaAcoesOrdinariasDisponiveis ? ' ativo' : ' bloqueado'}`}>
+                                    <i className={`fas ${jornadaAcoesOrdinariasDisponiveis ? 'fa-check-circle' : 'fa-lock'}`} aria-hidden="true"></i>
+                                    <span>{jornadaContextoTexto}</span>
+                                </div>
+                                <div className="op-jornada-acoes-lista">
+                                    {menuItems.map(item => (
+                                        <button
+                                            key={item.acao}
+                                            type="button"
+                                            className={`op-jornada-acao${item.desabilitado ? ' desabilitada' : ''}`}
+                                            disabled={item.desabilitado}
+                                            title={item.motivoBloqueio || item.label}
+                                            onClick={() => { onAcaoManual(funcionario, item.acao); setInfoAberto(false); }}
+                                        >
+                                            <i className={`fas ${item.icon}`} aria-hidden="true"></i>
+                                            <span>{item.label}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
 
                         {/* Linha do Tempo do Dia (MELHORIA-06) */}
                         <UILinhaDoTempoDia funcionario={funcionario} pontoHoje={ponto_hoje} />
@@ -755,11 +829,11 @@ export default function OPStatusCard({ funcionario, tpp, onAtribuirTarefa, onAca
                                         </div>
                                     )}
                                     {ponto_hoje.horario_real_s3 && (
-                                        <div className={`bs-registro-linha${ponto_hoje.saida_desfeita ? ' desfeito' : ''}`}>
+                                        <div className={`bs-registro-linha${ponto_hoje.tipo_excecao === 'SAIDA_ANTECIPADA' && ponto_hoje.saida_desfeita ? ' desfeito' : ''}`}>
                                             <span className="bs-registro-icone"><i className="fas fa-sign-out-alt"></i></span>
                                             <span className="bs-registro-desc">
-                                                Saída antecipada
-                                                {ponto_hoje.saida_desfeita && (
+                                                {ponto_hoje.tipo_excecao === 'SAIDA_ANTECIPADA' ? 'Saída antecipada' : 'Saída final'}
+                                                {ponto_hoje.tipo_excecao === 'SAIDA_ANTECIPADA' && ponto_hoje.saida_desfeita && (
                                                     <em className="bs-registro-desfeito"> — desfeita por {ponto_hoje.saida_desfeita_por || 'supervisor'}</em>
                                                 )}
                                             </span>
@@ -779,7 +853,9 @@ export default function OPStatusCard({ funcionario, tpp, onAtribuirTarefa, onAca
             )}
 
             {/* CORPO + RODAPÉ */}
-            {renderBody()}
+            <div className="op-redesign-card-body">
+                {renderBody()}
+            </div>
         </div>
     );
 }

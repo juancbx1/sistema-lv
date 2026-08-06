@@ -13,6 +13,7 @@ import {
     registrarEventoTarefa,
     TIPOS_EVENTO_TAREFA,
 } from './ponto-eventos.js';
+import { reconciliarJornadaFuncionarios } from './ponto-motor.js';
 import { obterEmpresaIdDoContexto } from './contexto-empresa.js';
 
 // --- INÍCIO DA CORREÇÃO DE FUSO HORÁRIO ---
@@ -851,6 +852,14 @@ router.get('/status-tiktiks', async (req, res) => {
         ]);
         const tiktiksBase = result.rows;
 
+        const reconciliacaoPonto = await reconciliarJornadaFuncionarios(dbClient, {
+            empresaId: req.empresaId,
+            funcionarioIds: tiktiksBase.map((tiktik) => tiktik.id),
+        });
+        if (reconciliacaoPonto.erros.length > 0) {
+            console.error('[API /arremates/status-tiktiks] Falha na reconciliação:', reconciliacaoPonto.erros);
+        }
+
         // Agora, buscamos TODAS as sessões ativas de TODOS os tiktiks de uma vez
         const sessoesAtivasResult = await dbClient.query(`
             SELECT
@@ -887,6 +896,10 @@ router.get('/status-tiktiks', async (req, res) => {
             dbClient.query(`
                 SELECT funcionario_id, horario_real_s1, horario_real_e2,
                        horario_real_s2, horario_real_e3, horario_real_s3,
+                       tipo_excecao,
+                       COALESCE(tipo_excecao = 'SAIDA_ANTECIPADA'
+                        AND horario_real_s3 IS NOT NULL
+                        AND COALESCE(saida_desfeita, FALSE) = FALSE, FALSE) AS saida_antecipada_ativa,
                        saida_desfeita, saida_desfeita_por
                 FROM ponto_diario
                 WHERE data = (NOW() AT TIME ZONE 'America/Sao_Paulo')::date

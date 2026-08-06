@@ -324,7 +324,7 @@ router.get('/desempenho', async (req, res) => {
         // 4. Busca Atividades (CORRIGIDO: USANDO ID)
         let queryText = `
             SELECT pr.id::text as id_original, pr.data, pr.pontos_gerados, pr.op_numero, pr.processo, p.nome as produto, pr.quantidade, pr.variacao, 'OP' as tipo_origem
-            FROM producoes pr JOIN produtos p ON pr.produto_id = p.id 
+            FROM producoes pr JOIN produtos p ON pr.produto_id = p.id
             WHERE pr.funcionario_id = $1 AND pr.data BETWEEN $2 AND $3
         `;
         if (tipoUsuario === 'tiktik') {
@@ -623,7 +623,7 @@ router.get('/desempenho', async (req, res) => {
         // Busca as últimas 100 atividades independente da data (para histórico visual)
         let queryLista = `
             SELECT pr.id::text as id_original, pr.data, pr.pontos_gerados, pr.op_numero, pr.processo, p.nome as produto, pr.quantidade, pr.variacao, 'OP' as tipo_origem
-            FROM producoes pr JOIN produtos p ON pr.produto_id = p.id 
+            FROM producoes pr JOIN produtos p ON pr.produto_id = p.id
             WHERE pr.funcionario_id = $1
         `;
         if (tipoUsuario === 'tiktik') {
@@ -1206,7 +1206,8 @@ router.get('/ranking-semana', async (req, res) => {
         // NOTA: pontos_extras propositalmente excluídos do ranking — seria injusto
         // com quem não recebeu bônus. O card exibe um 'i' explicando isso ao usuário.
         let queryPontos;
-        const paramsPontos = fimJanela ? [todosIds, inicioSemana, fimJanela] : [todosIds, inicioSemana];
+        const paramsPontos = [todosIds, inicioSemana];
+        if (fimJanela) paramsPontos.push(fimJanela);
         const clausulaFim  = fimJanela ? 'AND data_lancamento < $3' : '';
         const clausulaFimP = fimJanela ? 'AND data < $3' : '';
         if (tipoUsuario === 'tiktik') {
@@ -1391,7 +1392,11 @@ router.get('/streak', async (req, res) => {
     try {
         dbClient = await pool.connect();
 
-        const tipoRes = await dbClient.query('SELECT tipos FROM usuarios WHERE id = $1', [usuarioId]);
+        const tipoRes = await dbClient.query(
+            `SELECT tipos FROM usuarios_empresas
+             WHERE usuario_id = $1 AND empresa_id = $2 AND ativo`,
+            [usuarioId, empresaId]
+        );
         const tipoUsuario = tipoRes.rows[0]?.tipos?.[0] || 'costureira';
 
         const agoraSP = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));

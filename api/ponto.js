@@ -111,9 +111,10 @@ router.post('/falta', async (req, res) => {
                 `UPDATE sessoes_trabalho_arremate
                  SET status = 'CANCELADA', data_fim = COALESCE(data_fim, NOW())
                  WHERE usuario_tiktik_id = $1
+                   AND empresa_id = $2
                    AND status = 'EM_ANDAMENTO'
                  RETURNING id`,
-                [funcionario_id]
+                [funcionario_id, req.empresaId]
             );
         }
 
@@ -651,10 +652,11 @@ router.post('/desfazer-saida', async (req, res) => {
 
         // Verifica se existe saída antecipada hoje (não desfeita)
         const pontoRes = await dbClient.query(
-            `SELECT id, horario_real_s3 FROM ponto_diario
+            `SELECT id, horario_real_s3, tipo_excecao FROM ponto_diario
              WHERE funcionario_id = $1
                AND data = $2
                AND empresa_id = $3
+               AND tipo_excecao = 'SAIDA_ANTECIPADA'
                AND horario_real_s3 IS NOT NULL
                AND (saida_desfeita IS NULL OR saida_desfeita = FALSE)`,
             [funcionario_id, dataHojeSP, req.empresaId]

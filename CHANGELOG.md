@@ -18,6 +18,18 @@ Depois: `git push && git push --tags` → Vercel faz o deploy automaticamente.
 
 ---
 
+## [1.44.0] — 2026-08-06
+
+### Adicionado
+- Tela de login migrada para TypeScript, preservando o fluxo de autenticação existente.
+- Importação de extratos para criação em lote de lançamentos financeiros, com processamento de arquivos, revisão e regras de classificação.
+
+### Alterado
+- Painel de atividades da página de Ordens de Produção completamente redesenhado, com resumo operacional, filtros, cards de acompanhamento, fila de tarefas e jornada integrada.
+- Controle de ponto aprimorado com contexto da jornada, transições de intervalo, registro de falta, saída antecipada, atraso e ações com bloqueios coerentes ao calendário de trabalho.
+
+---
+
 ## [1.43.5] — 2026-08-05
 
 ### Alterado

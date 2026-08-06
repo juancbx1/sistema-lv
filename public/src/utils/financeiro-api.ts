@@ -16,7 +16,10 @@ export async function fetchFinanceiro<T>(endpoint: string, options: RequestInit 
   const token = localStorage.getItem('token');
   const headers = new Headers(options.headers);
   headers.set('Authorization', `Bearer ${token ?? ''}`);
-  if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+  // FormData define o boundary sozinho — não forçar application/json
+  if (options.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
 
   const response = await fetch(`/api/financeiro${endpoint}`, { ...options, headers });
   if (!response.ok) {

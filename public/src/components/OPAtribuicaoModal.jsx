@@ -54,7 +54,7 @@ export default function OPAtribuicaoModal({ funcionario, isOpen, onClose, tpp })
   const tituloModal = telaAtual === 'selecao' ? 'Selecionar Tarefa' : 'Confirmar Quantidade';
 
   return (
-    <div className="popup-container" style={{ display: 'flex' }}>
+    <div className="popup-container op-atribuicao-container" style={{ display: 'flex' }}>
       <div className="popup-overlay" onClick={onClose}></div>
       <div className={`op-modal-atribuir-v2 ${telaAtual === 'selecao' ? 'modo-lista' : 'modo-confirmacao'}`}>
 

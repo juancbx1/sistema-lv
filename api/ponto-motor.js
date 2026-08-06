@@ -7,6 +7,7 @@
 import {
     abrirTransicaoPendente,
     ORIGENS_PONTO,
+    pontoEventosDisponivel,
     registrarEventoPonto,
     resolverTransicaoPendente,
     STATUS_TRANSICAO,
@@ -433,6 +434,48 @@ export async function confirmarSaidaIntervaloPendente(dbClient, {
         valor: String(resolucao.transicao.horario_saida_efetivo).substring(0, 5),
     });
     return { ...resolucao, horario_retorno_planejado: pendente.horario_retorno_planejado };
+}
+
+export async function reconciliarJornadaFuncionarios(dbClient, {
+    empresaId,
+    funcionarioIds,
+    agora = new Date(),
+}) {
+    const ids = [...new Set((funcionarioIds || []).filter((id) => id !== null && id !== undefined))];
+    const motorAtivo = await pontoEventosDisponivel(dbClient);
+    if (!motorAtivo || ids.length === 0) {
+        return { motorAtivo, eventosAplicados: 0, erros: [] };
+    }
+
+    let eventosAplicados = 0;
+    const erros = [];
+
+    for (const funcionarioId of ids) {
+        let transacaoAberta = false;
+        try {
+            await dbClient.query('BEGIN');
+            transacaoAberta = true;
+            const resultado = await reconciliarJornadaFuncionario(dbClient, {
+                empresaId,
+                funcionarioId,
+                agora,
+            });
+            await dbClient.query('COMMIT');
+            transacaoAberta = false;
+            eventosAplicados += resultado.eventos?.length || 0;
+        } catch (error) {
+            if (transacaoAberta) {
+                try {
+                    await dbClient.query('ROLLBACK');
+                } catch (rollbackError) {
+                    erros.push({ funcionarioId, mensagem: rollbackError.message });
+                }
+            }
+            erros.push({ funcionarioId, mensagem: error.message });
+        }
+    }
+
+    return { motorAtivo, eventosAplicados, erros };
 }
 
 export { INTERVALOS, horaParaMinutos, normalizarHora };

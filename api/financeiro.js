@@ -6,6 +6,7 @@ import express from 'express';
 import { getPermissoesCompletasUsuarioDB } from './usuarios.js';
 import { obterEmpresaIdDoContexto } from './contexto-empresa.js';
 import etag from 'etag';
+import importacaoRouter from './financeiro-importacao.js';
 
 const formatCurrency = (value) => {
     // Converte para número, tratando null, undefined ou strings vazias como 0.
@@ -496,6 +497,11 @@ async function registrarLog(dbClient, idUsuario, nomeUsuario, acao, dados = {}, 
                 break;
             case 'EDICAO_CONCESSIONARIA_VT':
                 detalhes = `Atualizou concessionária de VT "${dados.depois?.nome}" (taxa ${dados.depois?.taxa_recarga_percentual}%, ${dados.depois?.ativo ? 'ativa' : 'inativa'}).`;
+                break;
+            case 'IMPORTACAO_EXTRATO':
+                detalhes = dados.detalhesTexto
+                    || `Processou importação de extrato bancário (#${dados.depois?.lote?.id || dados.depois?.id || '—'}).`;
+                dadosAlterados = { depois: dados.depois || dados };
                 break;
 
             default:
@@ -5254,5 +5260,7 @@ router.post('/lancamentos/solicitar-criacao', async (req, res) => {
     }
 });
 
+// Importação inteligente de extratos (OFX) — herda middleware de auth/permissões
+router.use(importacaoRouter);
 
 export default router;

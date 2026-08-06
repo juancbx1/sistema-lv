@@ -8,6 +8,7 @@ import { mostrarMensagem, mostrarConfirmacao, mostrarPromptNumerico, mostrarProm
 import OPAtribuicaoModal from './OPAtribuicaoModal.jsx';
 import UIBloqueio from './UIBloqueio';
 import OPPontoPopup from './OPPontoPopup.jsx';
+import OPPainelResumo from './OPPainelResumo.jsx';
 import { obterEmpresaAtivaLocal } from '/js/utils/auth.js';
 
 export default function OPPainelAtividades() {
@@ -20,6 +21,7 @@ export default function OPPainelAtividades() {
     const [funcionarioSelecionado, setFuncionarioSelecionado] = useState(null);
     const [inativoInfoId, setInativoInfoId] = useState(null);
     const [isRefreshing, setIsRefreshing] = useState(false);
+    const [filtroPainel, setFiltroPainel] = useState('TODOS');
     const [infoFeriado, setInfoFeriado] = useState(null);
     const [cadeiaBloqueada, setCadeiaBloqueada] = useState(false);
     // v1.8 — Alerta de intervalo (almoço/pausa automático)
@@ -366,6 +368,20 @@ export default function OPPainelAtividades() {
     }, [desfazerPopup, buscarDadosPainel]);
 
     const handleAcaoManual = async (funcionario, acao, mensagem) => {
+        const jornadaOrdinariaHoje = funcionario.jornada_ordinaria_hoje !== false;
+        const jornadaAcoesOrdinariasDisponiveis = jornadaOrdinariaHoje && funcionario.janela_ordinaria_aberta !== false;
+        const temTarefaAtiva = Boolean(funcionario.tarefa_atual?.id_sessao || funcionario.tarefas?.length);
+        const tipoJornada = funcionario.tipo_jornada_hoje || 'fora da jornada ordinária';
+
+        if (['FALTOU', 'SAIDA_ANTECIPADA', 'ATRASO'].includes(acao) && !jornadaAcoesOrdinariasDisponiveis) {
+            mostrarMensagem(`A ação não está disponível agora: ${tipoJornada}. Use somente o fluxo de tarefa em hora extra.`, 'aviso');
+            return;
+        }
+        if (acao === 'ALOCADO_EXTERNO' && temTarefaAtiva) {
+            mostrarMensagem('Finalize ou cancele a tarefa atual antes de alocar em outro setor.', 'aviso');
+            return;
+        }
+
         // Intercepta ações de ponto — não são status de usuário, vão para api/ponto
         if (acao === 'SAIDA_ANTECIPADA' || acao === 'ATRASO') {
             return handleExcecao(funcionario.id, acao);
@@ -454,7 +470,7 @@ export default function OPPainelAtividades() {
             });
             setFuncionarios(prev => prev.map(f =>
                 f.id === funcionarioId
-                    ? { ...f, status_atual: 'FORA_DO_HORARIO', ponto_hoje: { ...(f.ponto_hoje || {}), horario_real_s3: horaOtimistaSP, saida_desfeita: false } }
+                    ? { ...f, status_atual: 'FORA_DO_HORARIO', ponto_hoje: { ...(f.ponto_hoje || {}), horario_real_s3: horaOtimistaSP, tipo_excecao: 'SAIDA_ANTECIPADA', saida_antecipada_ativa: true, saida_desfeita: false } }
                     : f
             ));
         } else if (tipoExcecao === 'ATRASO') {
@@ -575,9 +591,33 @@ export default function OPPainelAtividades() {
     const funcionariosPrincipais = funcionarios.filter(f => statusPrincipais.includes(f.status_atual));
     const funcionariosInativos   = funcionarios.filter(f => !statusPrincipais.includes(f.status_atual));
 
+    const ehAtencao = (funcionario) => ['FORA_DO_HORARIO', 'FALTOU', 'ALOCADO_EXTERNO'].includes(funcionario.status_atual);
+    const correspondeAoFiltro = (funcionario) => {
+        switch (filtroPainel) {
+            case 'ATENCAO': return ehAtencao(funcionario);
+            case 'ATIVIDADE': return funcionario.status_atual === 'PRODUZINDO';
+            case 'DISPONIVEL': return ['LIVRE', 'LIVRE_MANUAL'].includes(funcionario.status_atual);
+            case 'INTERVALO': return ['ALMOCO', 'PAUSA', 'PAUSA_MANUAL'].includes(funcionario.status_atual);
+            case 'FORA': return !statusPrincipais.includes(funcionario.status_atual);
+            default: return true;
+        }
+    };
+    const funcionariosPrincipaisFiltrados = funcionariosPrincipais.filter(correspondeAoFiltro);
+    const funcionariosInativosFiltrados = funcionariosInativos.filter(correspondeAoFiltro);
+
     const qtdProduzindo  = funcionarios.filter(f => f.status_atual === 'PRODUZINDO').length;
     const qtdDisponivel  = funcionarios.filter(f => ['LIVRE', 'LIVRE_MANUAL'].includes(f.status_atual)).length;
     const qtdIntervalo   = funcionarios.filter(f => ['ALMOCO', 'PAUSA', 'PAUSA_MANUAL'].includes(f.status_atual)).length;
+    const qtdAtencao = funcionarios.filter(ehAtencao).length;
+    const qtdForaOperacao = funcionariosInativos.length;
+    const contagensFiltros = {
+        TODOS: funcionarios.length,
+        ATENCAO: qtdAtencao,
+        ATIVIDADE: qtdProduzindo,
+        DISPONIVEL: qtdDisponivel,
+        INTERVALO: qtdIntervalo,
+        FORA: qtdForaOperacao,
+    };
     const temAlguemProduzindo = qtdProduzindo > 0;
 
     // Determina se hoje é dia de trabalho para o funcionário (mesmo fallback do servidor)
@@ -617,7 +657,7 @@ export default function OPPainelAtividades() {
         } else if (s === 'PAUSA' || s === 'PAUSA_MANUAL') {
             retorno = n(func.ponto_hoje?.horario_real_e3) || n(func.horario_entrada_3);
         } else if (s === 'FORA_DO_HORARIO') {
-            const temSaidaAntecipada = func.ponto_hoje?.horario_real_s3 && !func.ponto_hoje?.saida_desfeita;
+            const temSaidaAntecipada = func.ponto_hoje?.saida_antecipada_ativa === true;
             if (!temSaidaAntecipada) {
                 // Só mostra "Retorno: HH:MM" se for ANTES do E1 (funcionário ainda não chegou hoje).
                 // Depois do S3 o turno já encerrou — não faz sentido mostrar "atrasado X min".
@@ -656,39 +696,15 @@ export default function OPPainelAtividades() {
             <div className="oa-main-content-card">
                 <section className="oa-painel-atividades">
 
-                    <div className="oa-secao-header">
-                        <div className="oa-header-esquerda">
-                            <h2 className="oa-titulo-secao">Painel de Atividades</h2>
-                            {temAlguemProduzindo && (
-                                <span className="oa-ao-vivo">
-                                    <span className="oa-ao-vivo-dot"></span>
-                                    AO VIVO
-                                </span>
-                            )}
-                            {/* MELHORIA-05: botão de refresh manual */}
-                            <button
-                                className="oa-btn-refresh"
-                                onClick={handleRefreshManual}
-                                disabled={isRefreshing}
-                                title="Atualizar dados do painel"
-                            >
-                                <i className={`fas fa-sync-alt ${isRefreshing ? 'girando' : ''}`}></i>
-                            </button>
-                        </div>
-                        <div className="oa-kpi-strip">
-                            <span className={`oa-kpi-item${qtdProduzindo > 0 ? ' produzindo' : ''}`}>
-                                <i className="fas fa-bolt"></i> {qtdProduzindo} produzindo
-                            </span>
-                            <span className={`oa-kpi-item${qtdDisponivel > 0 ? ' disponivel' : ''}`}>
-                                <i className="fas fa-check-circle"></i> {qtdDisponivel} disponível
-                            </span>
-                            {qtdIntervalo > 0 && (
-                                <span className="oa-kpi-item intervalo">
-                                    <i className="fas fa-pause-circle"></i> {qtdIntervalo} em intervalo
-                                </span>
-                            )}
-                        </div>
-                    </div>
+                    <OPPainelResumo
+                        total={funcionarios.length}
+                        temAlguemProduzindo={temAlguemProduzindo}
+                        filtroAtivo={filtroPainel}
+                        contagens={contagensFiltros}
+                        onFiltroChange={setFiltroPainel}
+                        onRefresh={handleRefreshManual}
+                        isRefreshing={isRefreshing}
+                    />
 
                     {infoFeriado && (
                         <div className="op-painel-banner-feriado">
@@ -697,15 +713,29 @@ export default function OPPainelAtividades() {
                         </div>
                     )}
 
-                    {funcionariosPrincipais.length === 0 ? (
-                        <div className="oa-empty-state">
-                            <i className="fas fa-tshirt oa-empty-state-icon"></i>
-                            <p className="oa-empty-state-titulo">Nenhum colaborador em atividade</p>
-                            <p className="oa-empty-state-subtitulo">Aguardando início das atividades ou verifique as escalas</p>
-                        </div>
+                    {funcionariosPrincipaisFiltrados.length === 0 ? (
+                        funcionariosInativosFiltrados.length === 0 && (
+                            <div className="oa-empty-state">
+                                <i className="fas fa-tshirt oa-empty-state-icon"></i>
+                                <p className="oa-empty-state-titulo">
+                                    {funcionarios.length > 0 ? 'Nenhuma pessoa corresponde a este filtro' : 'Nenhum colaborador em atividade'}
+                                </p>
+                                <p className="oa-empty-state-subtitulo">
+                                    {funcionarios.length > 0 ? 'Selecione outra visão para continuar acompanhando a jornada.' : 'Aguardando início das atividades ou verifique as escalas'}
+                                </p>
+                            </div>
+                        )
                     ) : (
-                        <div className="oa-painel-status-grid">
-                            {funcionariosPrincipais.map(func => {
+                        <>
+                            <div className="oa-redesign-grupo-cabecalho">
+                                <div>
+                                    <h3>Em operação</h3>
+                                    <span>Acompanhamento da jornada e da atividade atual</span>
+                                </div>
+                                <span>{funcionariosPrincipaisFiltrados.length} pessoa{funcionariosPrincipaisFiltrados.length === 1 ? '' : 's'}</span>
+                            </div>
+                            <div className="oa-painel-status-grid oa-redesign-status-grid">
+                            {funcionariosPrincipaisFiltrados.map(func => {
                                 const etapasUnif = func.tarefa_atual?.etapas_unificadas;
                                 const tppDaTarefa = (Array.isArray(etapasUnif) && etapasUnif.length >= 2)
                                     ? etapasUnif.reduce((s, e) => s + (temposPadraoProducao[`${func.tarefa_atual.produto_id}-${e.processo}`] || 0), 0) || null
@@ -725,18 +755,28 @@ export default function OPPainelAtividades() {
                                     />
                                 );
                             })}
-                        </div>
+                            </div>
+                        </>
                     )}
 
-                    {funcionariosInativos.length > 0 && (
+                    {funcionariosInativosFiltrados.length > 0 && (
                         <div className="oa-inativos-secao">
-                            <div className="oa-inativos-titulo">Inativos</div>
-                            <div className="oa-inativos-grid">
-                                {funcionariosInativos.map(func => {
+                            <div className="oa-inativos-titulo oa-redesign-grupo-cabecalho">
+                                <div>
+                                    <h3>Fora da operação</h3>
+                                </div>
+                                <span>{funcionariosInativosFiltrados.length} pessoa{funcionariosInativosFiltrados.length === 1 ? '' : 's'}</span>
+                            </div>
+                            <div className="oa-inativos-grid oa-redesign-inativos-grid">
+                                {funcionariosInativosFiltrados.map(func => {
                                     const info = getInfoInativo(func);
                                     const primeiroNome = func.nome.split(' ')[0];
                                     return (
-                                        <div key={func.id} className="oa-inativo-card">
+                                        <div
+                                            key={func.id}
+                                            className="oa-inativo-card oa-redesign-inativo-card"
+                                            style={{ '--oa-inativo-cor': info.cor }}
+                                        >
                                             <div className="oa-inativo-card-topo">
                                                 {/* Avatar miniatura */}
                                                 {(() => {
@@ -761,7 +801,7 @@ export default function OPPainelAtividades() {
                                                         </span>
                                                     )}
                                                     {/* "Saída antecipada" só aparece em dias de trabalho, nunca em folga */}
-                                                    {!info.eDiaFolga && func.status_atual === 'FORA_DO_HORARIO' && func.ponto_hoje?.horario_real_s3 && (
+                                                    {!info.eDiaFolga && func.status_atual === 'FORA_DO_HORARIO' && func.ponto_hoje?.saida_antecipada_ativa === true && (
                                                         <span className="oa-inativo-retorno">Saída antecipada: <strong>{String(func.ponto_hoje.horario_real_s3).substring(0, 5)}</strong></span>
                                                     )}
                                                 </div>
@@ -774,7 +814,7 @@ export default function OPPainelAtividades() {
                                                 </button>
                                             </div>
                                             {/* BUG-11: saída antecipada ativa → Desfazer; FORA_DO_HORARIO → Hora Extra; outros → Liberar */}
-                                            {func.status_atual === 'FORA_DO_HORARIO' && func.ponto_hoje?.horario_real_s3 && !func.ponto_hoje?.saida_desfeita ? (
+                                            {func.status_atual === 'FORA_DO_HORARIO' && func.ponto_hoje?.saida_antecipada_ativa === true ? (
                                                 <button
                                                     className="oa-inativo-btn-desfazer"
                                                     onClick={() => handleDesfazerSaida(func.id)}
@@ -894,11 +934,11 @@ export default function OPPainelAtividades() {
                                                                         </div>
                                                                     )}
                                                                     {func.ponto_hoje.horario_real_s3 && (
-                                                                        <div className={`bs-registro-linha${func.ponto_hoje.saida_desfeita ? ' desfeito' : ''}`}>
+                                                                        <div className={`bs-registro-linha${func.ponto_hoje.tipo_excecao === 'SAIDA_ANTECIPADA' && func.ponto_hoje.saida_desfeita ? ' desfeito' : ''}`}>
                                                                             <span className="bs-registro-icone"><i className="fas fa-sign-out-alt"></i></span>
                                                                             <span className="bs-registro-desc">
-                                                                                Saída antecipada
-                                                                                {func.ponto_hoje.saida_desfeita && (
+                                                                                {func.ponto_hoje.tipo_excecao === 'SAIDA_ANTECIPADA' ? 'Saída antecipada' : 'Saída final'}
+                                                                                {func.ponto_hoje.tipo_excecao === 'SAIDA_ANTECIPADA' && func.ponto_hoje.saida_desfeita && (
                                                                                     <em className="bs-registro-desfeito"> — desfeita por {func.ponto_hoje.saida_desfeita_por || 'supervisor'}</em>
                                                                                 )}
                                                                             </span>

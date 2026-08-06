@@ -25,6 +25,25 @@ export const formatarTempo = (ms) => {
 export const formatarHora = (t) => t ? String(t).substring(0, 5) : '--:--';
 
 /**
+ * Informa se a data pertence à jornada ordinária do vínculo.
+ * O segundo argumento existe para permitir testes determinísticos.
+ *
+ * @param {Record<string, boolean>|null} diasTrabalho
+ * @param {Date} data
+ * @returns {boolean}
+ */
+export function ehDiaDeTrabalhoHoje(diasTrabalho, data = new Date()) {
+    const efetivo = diasTrabalho && typeof diasTrabalho === 'object' && !Array.isArray(diasTrabalho)
+        ? { '0': false, '1': true, '2': true, '3': true, '4': true, '5': true, '6': false, ...diasTrabalho }
+        : { '0': false, '1': true, '2': true, '3': true, '4': true, '5': true, '6': false };
+    const hojeSP = data.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+    const [ano, mes, dia] = hojeSP.split('-').map(Number);
+    if (![ano, mes, dia].every(Number.isFinite)) return false;
+    const diaKey = String(new Date(Date.UTC(ano, mes - 1, dia, 12)).getUTCDay());
+    return efetivo[diaKey] === true;
+}
+
+/**
  * Calcula o tempo efetivo de trabalho descontando intervalos (almoço/pausa) já registrados.
  *
  * @param {string} dataInicio - ISO string com timezone (ex: "2026-04-13T16:00:00+00:00")

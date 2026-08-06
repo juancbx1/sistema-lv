@@ -15,6 +15,7 @@ declare module '/js/utils/auth.js' {
   ): Promise<boolean | unknown>;
   export function limparContextoEmpresaLocal(): void;
   export function salvarContextoEmpresaLocal(ctx: unknown): void;
+  export function obterEmpresaAtivaLocal(): { eh_legada?: boolean } | null;
 }
 
 declare module '/js/utils/popups.js' {

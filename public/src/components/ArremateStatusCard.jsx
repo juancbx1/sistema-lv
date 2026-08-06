@@ -686,11 +686,11 @@ export default function ArremateStatusCard({
                                         </div>
                                     )}
                                     {ponto_hoje.horario_real_s3 && (
-                                        <div className={`bs-registro-linha${ponto_hoje.saida_desfeita ? ' desfeito' : ''}`}>
+                                        <div className={`bs-registro-linha${ponto_hoje.tipo_excecao === 'SAIDA_ANTECIPADA' && ponto_hoje.saida_desfeita ? ' desfeito' : ''}`}>
                                             <span className="bs-registro-icone"><i className="fas fa-sign-out-alt"></i></span>
                                             <span className="bs-registro-desc">
-                                                Saída antecipada
-                                                {ponto_hoje.saida_desfeita && (
+                                                {ponto_hoje.tipo_excecao === 'SAIDA_ANTECIPADA' ? 'Saída antecipada' : 'Saída final'}
+                                                {ponto_hoje.tipo_excecao === 'SAIDA_ANTECIPADA' && ponto_hoje.saida_desfeita && (
                                                     <em className="bs-registro-desfeito"> — desfeita por {ponto_hoje.saida_desfeita_por || 'supervisor'}</em>
                                                 )}
                                             </span>

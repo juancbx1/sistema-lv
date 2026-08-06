@@ -7,7 +7,6 @@ import multer from 'multer';
 import pkg from 'pg';
 import { parseOfx } from './lib/parse-ofx.js';
 import { parseTabularExtrato, previewTabular } from './lib/parse-csv-extrato.js';
-import { parsePdfExtrato } from './lib/parse-pdf-extrato.js';
 import { montarResumo, processarLoteImportacao } from './lib/importacao-processar-lote.js';
 import {
     aprenderRegra,
@@ -104,6 +103,14 @@ function parseMapeamentoBody(body) {
     return null;
 }
 
+// O parser PDF carrega pdfjs-dist e dependências nativas de canvas.
+// O import sob demanda mantém as demais rotas da API compatíveis com o runtime
+// serverless quando a infraestrutura de PDF não está disponível.
+async function parsePdfExtratoSobDemanda(buffer, nomeArquivo) {
+    const { parsePdfExtrato } = await import('./lib/parse-pdf-extrato.js');
+    return parsePdfExtrato(buffer, nomeArquivo);
+}
+
 // ---------------------------------------------------------------------------
 // POST /importacoes/extrato/preview — colunas + amostra (CSV/XLSX)
 // ---------------------------------------------------------------------------
@@ -133,7 +140,7 @@ router.post('/importacoes/extrato/preview', (req, res) => {
                 });
             }
             if (formato === 'PDF') {
-                const parsed = await parsePdfExtrato(req.file.buffer, nome);
+                const parsed = await parsePdfExtratoSobDemanda(req.file.buffer, nome);
                 return res.json({
                     formato: 'PDF',
                     precisa_mapeamento: false,
@@ -228,7 +235,7 @@ router.post('/importacoes/extrato', (req, res) => {
             if (formato === 'OFX') {
                 parsed = parseOfx(req.file.buffer);
             } else if (formato === 'PDF') {
-                parsed = await parsePdfExtrato(req.file.buffer, nomeArquivo);
+                parsed = await parsePdfExtratoSobDemanda(req.file.buffer, nomeArquivo);
             } else {
                 mapeamento = parseMapeamentoBody(req.body);
                 if (!mapeamento) {

@@ -30,7 +30,21 @@ WITH estrutura AS (
                     WHERE ue.usuario_id = c.funcionario_id
                       AND ue.empresa_id = c.empresa_id
                )
-        ), 0) AS funcionarios_fora_da_empresa
+        ), 0) AS funcionarios_fora_da_empresa,
+        NOT EXISTS (
+            SELECT 1
+              FROM pg_indexes
+             WHERE schemaname = 'public'
+               AND tablename = 'calendario_empresa'
+               AND indexname = 'idx_calendario_unique'
+        ) AS indice_global_ausente,
+        EXISTS (
+            SELECT 1
+              FROM pg_class indice
+              JOIN pg_index definicao ON definicao.indexrelid = indice.oid
+             WHERE indice.oid = to_regclass('public.idx_calendario_empresa_unique')
+               AND definicao.indisunique
+        ) AS indice_empresarial_presente
 ),
 empresas_ativas AS (
     SELECT
@@ -48,6 +62,11 @@ empresas_ativas AS (
             SELECT 1
               FROM sistema_migrations
              WHERE id = 'multiempresas-fase9-calendario-v1'
+        ),
+        'correcao_unicidade_registrada', EXISTS (
+            SELECT 1
+              FROM sistema_migrations
+             WHERE id = 'multiempresas-fase9-calendario-correcao-unicidade-v1'
         ),
         'modulo_pronto', COALESCE((
             SELECT multiempresa_pronto
@@ -70,6 +89,11 @@ empresas_ativas AS (
                   FROM sistema_migrations
                  WHERE id = 'multiempresas-fase9-calendario-v1'
             )
+            AND EXISTS (
+                SELECT 1
+                  FROM sistema_migrations
+                 WHERE id = 'multiempresas-fase9-calendario-correcao-unicidade-v1'
+            )
             AND COALESCE((
                 SELECT multiempresa_pronto
                   FROM modulos_sistema
@@ -79,6 +103,8 @@ empresas_ativas AS (
             AND (SELECT constraints_validadas FROM estrutura)
             AND (SELECT linhas_sem_empresa = 0 FROM estrutura)
             AND (SELECT funcionarios_fora_da_empresa = 0 FROM estrutura)
+            AND (SELECT indice_global_ausente FROM estrutura)
+            AND (SELECT indice_empresarial_presente FROM estrutura)
             AND NOT EXISTS (
                 SELECT 1
                   FROM empresas_ativas

@@ -13,7 +13,7 @@ const SECRET_KEY = process.env.JWT_SECRET;
 const router = express.Router();
 
 const MODULOS_POR_PREFIXO = [
-    ['/configuracao-pontos', 'permissoes'],
+    ['/configuracao-pontos', 'incentivos'],
     ['/gincanas-pagamentos', 'incentivos'],
     ['/gerenciar-producao', 'gerenciar-producao'],
     ['/ops-para-embalagem', 'embalagem'],

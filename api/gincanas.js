@@ -10,19 +10,6 @@ const router = express.Router();
 const pool = new Pool({ connectionString: process.env.POSTGRES_URL });
 const SECRET_KEY = process.env.JWT_SECRET;
 
-function empresaLegada(req) {
-    return req.empresaAtiva?.eh_legada === true;
-}
-
-function exigirCadeiaProdutivaLegada(req, res) {
-    if (empresaLegada(req)) return true;
-    res.status(403).json({
-        error: 'A cadeia de produção desta funcionalidade ainda não está disponível para a empresa ativa.',
-        codigo: 'CADEIA_PRODUTIVA_NAO_MIGRADA',
-    });
-    return false;
-}
-
 // ---------------------------------------------------------------------------
 // Auth middleware
 // ---------------------------------------------------------------------------
@@ -192,18 +179,19 @@ async function calcularProgressoIndividual(
     janelaInicio,
     janelaFim,
     produtoId = null,
-    cadeiaLegada = true
+    empresaId
 ) {
-    if (!cadeiaLegada) return 0;
+    if (!empresaId) return 0;
     if (escopo === 'produto_especifico') {
         if (!produtoId) return 0;
         const res = await dbClient.query(
             `SELECT COALESCE(SUM(quantidade), 0) AS valor
              FROM producoes
-             WHERE funcionario_id = $1
-               AND data BETWEEN $2 AND $3
-               AND produto_id = $4`,
-            [userId, janelaInicio, janelaFim, produtoId]
+             WHERE empresa_id = $1
+               AND funcionario_id = $2
+               AND data BETWEEN $3 AND $4
+               AND produto_id = $5`,
+            [empresaId, userId, janelaInicio, janelaFim, produtoId]
         );
         return parseFloat(res.rows[0].valor);
     }
@@ -214,9 +202,10 @@ async function calcularProgressoIndividual(
         const res = await dbClient.query(
             `SELECT COALESCE(SUM(pontos_gerados), 0) AS valor
              FROM producoes
-             WHERE funcionario_id = $1
-               AND data BETWEEN $2 AND $3`,
-            [userId, janelaInicio, janelaFim]
+             WHERE empresa_id = $1
+               AND funcionario_id = $2
+               AND data BETWEEN $3 AND $4`,
+            [empresaId, userId, janelaInicio, janelaFim]
         );
         pontos += parseFloat(res.rows[0].valor);
     }
@@ -225,10 +214,11 @@ async function calcularProgressoIndividual(
         const res = await dbClient.query(
             `SELECT COALESCE(SUM(pontos_gerados), 0) AS valor
              FROM arremates
-             WHERE usuario_tiktik_id = $1
-               AND data_lancamento BETWEEN $2 AND $3
+             WHERE empresa_id = $1
+               AND usuario_tiktik_id = $2
+               AND data_lancamento BETWEEN $3 AND $4
                AND tipo_lancamento = 'PRODUCAO'`,
-            [userId, janelaInicio, janelaFim]
+            [empresaId, userId, janelaInicio, janelaFim]
         );
         pontos += parseFloat(res.rows[0].valor);
     }
@@ -261,7 +251,8 @@ async function calcularRankingBulk(
                 COALESCE((
                     SELECT SUM(p.quantidade)
                     FROM producoes p
-                 WHERE p.funcionario_id = u.id
+                 WHERE p.empresa_id = $1
+                   AND p.funcionario_id = u.id
                        AND p.data BETWEEN $2 AND $3
                        AND p.produto_id = $4
                  ), 0) AS valor
@@ -281,7 +272,8 @@ async function calcularRankingBulk(
             ? `COALESCE((
                    SELECT SUM(p.pontos_gerados)
                    FROM producoes p
-                   WHERE p.funcionario_id = u.id
+                   WHERE p.empresa_id = $1
+                     AND p.funcionario_id = u.id
                        AND p.data BETWEEN $2 AND $3
                 ), 0)`
             : `0`;
@@ -290,7 +282,8 @@ async function calcularRankingBulk(
             ? `COALESCE((
                    SELECT SUM(a.pontos_gerados)
                    FROM arremates a
-                   WHERE a.usuario_tiktik_id = u.id
+                   WHERE a.empresa_id = $1
+                     AND a.usuario_tiktik_id = u.id
                       AND a.data_lancamento BETWEEN $2 AND $3
                      AND a.tipo_lancamento = 'PRODUCAO'
                ), 0)`
@@ -400,13 +393,18 @@ async function recuperarVencedorCorridaPostMortem(
     let ganhoEm = janelaFim;
     try {
         const col = gincana.escopo_atividade === 'produto_especifico' ? 'quantidade' : 'pontos_gerados';
-        const params = gincana.escopo_atividade === 'produto_especifico'
-            ? [candidato.usuario_id, janelaInicio, janelaFim, gincana.produto_id]
-            : [candidato.usuario_id, janelaInicio, janelaFim];
-        const extra = gincana.escopo_atividade === 'produto_especifico' ? 'AND produto_id = $4' : '';
+        const params = [empresaId, candidato.usuario_id, janelaInicio, janelaFim];
+        const extra = gincana.escopo_atividade === 'produto_especifico'
+            ? 'AND produto_id = $5'
+            : '';
+        if (gincana.escopo_atividade === 'produto_especifico') {
+            params.push(gincana.produto_id);
+        }
         const prodsRes = await dbClient.query(
             `SELECT ${col} AS val, data FROM producoes
-             WHERE funcionario_id = $1 AND data BETWEEN $2 AND $3 ${extra}
+             WHERE empresa_id = $1
+               AND funcionario_id = $2
+               AND data BETWEEN $3 AND $4 ${extra}
              ORDER BY data ASC`,
             params
         );
@@ -471,7 +469,9 @@ router.get('/', async (req, res) => {
                         ) ORDER BY gp.ordem, gp.meta_valor
                     ) FILTER (WHERE gp.id IS NOT NULL) AS premiacoes
              FROM gincanas g
-             LEFT JOIN produtos pr ON pr.id = g.produto_id
+             LEFT JOIN produtos pr
+               ON pr.id = g.produto_id
+              AND pr.empresa_id = g.empresa_id
               LEFT JOIN gincanas_premiacoes gp
                 ON gp.gincana_id = g.id
                AND gp.empresa_id = g.empresa_id
@@ -523,7 +523,6 @@ router.get('/', async (req, res) => {
 router.get('/dashboard', async (req, res) => {
     const usuario = req.usuarioLogado;
     const empresaId = req.empresaId;
-    if (!exigirCadeiaProdutivaLegada(req, res)) return;
     let dbClient;
     try {
         dbClient = await pool.connect();
@@ -555,7 +554,9 @@ router.get('/dashboard', async (req, res) => {
                         '[]'::json
                     ) AS premiacoes
              FROM gincanas g
-             LEFT JOIN produtos pr ON pr.id = g.produto_id
+             LEFT JOIN produtos pr
+               ON pr.id = g.produto_id
+              AND pr.empresa_id = g.empresa_id
               LEFT JOIN gincanas_premiacoes gp
                 ON gp.gincana_id = g.id
                AND gp.empresa_id = g.empresa_id
@@ -596,7 +597,7 @@ router.get('/dashboard', async (req, res) => {
 
             if (janelaInicio && janelaFim) {
                 meuValor = await calcularProgressoIndividual(
-                    dbClient, usuario.id, g.escopo_atividade, janelaInicio, janelaFim, g.produto_id, true
+                    dbClient, usuario.id, g.escopo_atividade, janelaInicio, janelaFim, g.produto_id, empresaId
                 );
 
                 const ranking = await calcularRankingBulk(
@@ -751,7 +752,9 @@ router.get('/:id', async (req, res) => {
         const gRes = await dbClient.query(
             `SELECT g.*, pr.nome AS produto_nome
              FROM gincanas g
-             LEFT JOIN produtos pr ON pr.id = g.produto_id
+             LEFT JOIN produtos pr
+               ON pr.id = g.produto_id
+              AND pr.empresa_id = g.empresa_id
               WHERE g.id = $1
                 AND g.empresa_id = $2`,
             [req.params.id, empresaId]
@@ -779,7 +782,6 @@ router.get('/:id', async (req, res) => {
 // ---------------------------------------------------------------------------
 router.get('/:id/ranking', async (req, res) => {
     const empresaId = req.empresaId;
-    if (!exigirCadeiaProdutivaLegada(req, res)) return;
     let dbClient;
     try {
         dbClient = await pool.connect();
@@ -791,7 +793,9 @@ router.get('/:id/ranking', async (req, res) => {
         const gRes = await dbClient.query(
             `SELECT g.*, pr.nome AS produto_nome
              FROM gincanas g
-             LEFT JOIN produtos pr ON pr.id = g.produto_id
+             LEFT JOIN produtos pr
+               ON pr.id = g.produto_id
+              AND pr.empresa_id = g.empresa_id
               WHERE g.id = $1
                 AND g.empresa_id = $2`,
             [req.params.id, empresaId]
@@ -932,6 +936,22 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ error: 'produto_id é obrigatório quando escopo_atividade = produto_especifico.' });
         }
 
+        const produtoId = produto_id === null || produto_id === undefined || produto_id === ''
+            ? null
+            : Number(produto_id);
+        if (produtoId !== null && (!Number.isInteger(produtoId) || produtoId <= 0)) {
+            return res.status(400).json({ error: 'produto_id inválido.' });
+        }
+        if (produtoId !== null) {
+            const produtoRes = await dbClient.query(
+                'SELECT id FROM produtos WHERE id = $1 AND empresa_id = $2',
+                [produtoId, empresaId]
+            );
+            if (!produtoRes.rows.length) {
+                return res.status(404).json({ error: 'Produto não encontrado na empresa ativa.' });
+            }
+        }
+
         await dbClient.query('BEGIN');
 
         const gRes = await dbClient.query(
@@ -942,7 +962,7 @@ router.post('/', async (req, res) => {
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
              RETURNING *`,
             [empresaId, nome, descricao || null, banner_emoji, participantes, modalidade, tipo_premiacao,
-             escopo_atividade, produto_id || null, tipo_recorrencia, datetime_inicio, datetime_fim,
+             escopo_atividade, produtoId, tipo_recorrencia, datetime_inicio, datetime_fim,
              hora_inicio_semana, hora_fim_semana, visivel_dashboard, req.usuarioLogado.id]
         );
         const gincana = gRes.rows[0];
@@ -1003,6 +1023,25 @@ router.put('/:id', async (req, res) => {
             premiacoes = [],
         } = req.body;
 
+        const produtoId = produto_id === null || produto_id === undefined || produto_id === ''
+            ? null
+            : Number(produto_id);
+        if (produtoId !== null && (!Number.isInteger(produtoId) || produtoId <= 0)) {
+            return res.status(400).json({ error: 'produto_id inválido.' });
+        }
+        if (escopo_atividade === 'produto_especifico' && produtoId === null) {
+            return res.status(400).json({ error: 'produto_id é obrigatório quando escopo_atividade = produto_especifico.' });
+        }
+        if (produtoId !== null) {
+            const produtoRes = await dbClient.query(
+                'SELECT id FROM produtos WHERE id = $1 AND empresa_id = $2',
+                [produtoId, empresaId]
+            );
+            if (!produtoRes.rows.length) {
+                return res.status(404).json({ error: 'Produto não encontrado na empresa ativa.' });
+            }
+        }
+
         await dbClient.query('BEGIN');
 
         const updated = await dbClient.query(
@@ -1015,7 +1054,7 @@ router.put('/:id', async (req, res) => {
              WHERE id=$15
                AND empresa_id=$16 RETURNING *`,
             [nome, descricao || null, banner_emoji, participantes, modalidade || 'individual',
-             tipo_premiacao || 'meta', escopo_atividade, produto_id || null,
+             tipo_premiacao || 'meta', escopo_atividade, produtoId,
              tipo_recorrencia, datetime_inicio, datetime_fim,
              hora_inicio_semana || null, hora_fim_semana || null, visivel_dashboard,
               req.params.id, empresaId]
@@ -1055,7 +1094,6 @@ router.put('/:id', async (req, res) => {
 // ---------------------------------------------------------------------------
 router.patch('/:id/publicar', async (req, res) => {
     const empresaId = req.empresaId;
-    if (!exigirCadeiaProdutivaLegada(req, res)) return;
     let dbClient;
     try {
         dbClient = await pool.connect();
@@ -1258,7 +1296,7 @@ export async function verificarGincanasAposProducao(dbClient, funcionarioId, tim
         const { janela_inicio: janelaInicio, janela_fim: janelaFim, semana_ref: semanaRef } = faseInfo;
 
         const valorAtual = await calcularProgressoIndividual(
-            dbClient, funcionarioId, g.escopo_atividade, janelaInicio, janelaFim, g.produto_id, true
+            dbClient, funcionarioId, g.escopo_atividade, janelaInicio, janelaFim, g.produto_id, empresaId
         );
 
         const { nivelGanho } = calcularNivelGanho(premiacoes, valorAtual);

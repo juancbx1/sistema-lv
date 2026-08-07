@@ -73,7 +73,9 @@ router.get('/padrao', async (req, res) => {
                 cpp.data_atualizacao, 
                 cpp.atualizado_em 
             FROM configuracoes_pontos_processos cpp
-            LEFT JOIN produtos p ON cpp.produto_id = p.id  -- JOIN para buscar o nome
+            LEFT JOIN produtos p
+              ON cpp.produto_id = p.id
+             AND p.empresa_id = cpp.empresa_id
         `;
         const queryParams = [empresaId];
         const conditions = ['cpp.empresa_id = $1'];
@@ -141,6 +143,14 @@ router.post('/padrao', async (req, res) => {
         if (isNaN(produtoIdNum) || produtoIdNum <= 0) {
             return res.status(400).json({ error: 'produto_id inválido.'});
         }
+
+        const produtoRes = await dbCliente.query(
+            'SELECT id FROM produtos WHERE id = $1 AND empresa_id = $2',
+            [produtoIdNum, empresaId]
+        );
+        if (!produtoRes.rows.length) {
+            return res.status(404).json({ error: 'Produto não encontrado na empresa ativa.' });
+        }
         
         if (tipo_atividade !== 'arremate_tiktik' && !processo_nome) {
             return res.status(400).json({ error: 'Campo processo_nome é obrigatório para este tipo de atividade.' });
@@ -177,7 +187,10 @@ router.post('/padrao', async (req, res) => {
         
         // Para retornar com o nome do produto (opcional, mas bom para consistência)
         const configRetornada = result.rows[0];
-        const produtoInfo = await dbCliente.query('SELECT nome FROM produtos WHERE id = $1', [configRetornada.produto_id]);
+        const produtoInfo = await dbCliente.query(
+            'SELECT nome FROM produtos WHERE id = $1 AND empresa_id = $2',
+            [configRetornada.produto_id, empresaId]
+        );
         configRetornada.produto_nome = produtoInfo.rows.length > 0 ? produtoInfo.rows[0].nome : 'Produto Desconhecido';
         res.status(201).json(configRetornada);
 
@@ -258,7 +271,10 @@ router.put('/padrao/:id', async (req, res) => {
 
         // Para retornar com o nome do produto
         const configRetornada = result.rows[0];
-        const produtoInfo = await dbCliente.query('SELECT nome FROM produtos WHERE id = $1', [configRetornada.produto_id]);
+        const produtoInfo = await dbCliente.query(
+            'SELECT nome FROM produtos WHERE id = $1 AND empresa_id = $2',
+            [configRetornada.produto_id, empresaId]
+        );
         configRetornada.produto_nome = produtoInfo.rows.length > 0 ? produtoInfo.rows[0].nome : 'Produto Desconhecido';
 
         res.status(200).json(configRetornada);

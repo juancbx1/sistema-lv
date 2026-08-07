@@ -1,6 +1,7 @@
 import React, { useMemo, useState, type FormEvent, type MouseEvent } from 'react';
 import { permissoesDisponiveis } from '../../js/utils/permissoes.js';
 import GOIdentidadeCampos from './GOIdentidadeCampos';
+import UICarregando from './UICarregando';
 import type {
     GOClassificacaoVinculo,
     GODiasTrabalho,
@@ -637,7 +638,7 @@ export default function GOVinculoModal({ pessoa, vinculo, empresas, onClose, onS
                     <button type="button" className="gs-btn gs-btn-secundario" onClick={onClose}>Cancelar</button>
                     <button className="gs-btn gs-btn-primario" disabled={salvando}>
                         {salvando
-                            ? <><i className="fas fa-spinner fa-spin"></i> Salvando...</>
+                            ? <><UICarregando variante="inline" /> Salvando...</>
                             : <><i className="fas fa-save"></i> {vinculo ? 'Salvar cadastro' : 'Salvar vínculo'}</>}
                     </button>
                 </footer>

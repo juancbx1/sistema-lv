@@ -6,6 +6,10 @@ import { globSync } from 'glob';
 import { readFileSync } from 'fs';
 
 const pkg = JSON.parse(readFileSync('./package.json', 'utf8'));
+const empresaCarregamentoBootstrap = readFileSync(
+  './public/js/utils/empresa-carregamento-bootstrap.js',
+  'utf8',
+);
 
 // Encontra todos os arquivos .html dentro da pasta public
 // e os prepara para o Rollup.
@@ -27,7 +31,18 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(pkg.version),
   },
 
-  plugins: [react()],
+  plugins: [
+    react(),
+    {
+      name: 'inline-empresa-carregamento-bootstrap',
+      transformIndexHtml(html) {
+        return html.replace(
+          '<script src="/js/utils/empresa-carregamento-bootstrap.js"></script>',
+          `<script>${empresaCarregamentoBootstrap}</script>`,
+        );
+      },
+    },
+  ],
   
   server: {
     // A página raiz agora é encontrada automaticamente.

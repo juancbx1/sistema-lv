@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { mostrarToast } from '/js/utils/popups.js';
+import UICarregando from './UICarregando';
 
 function hojeEmSP() {
     return new Date().toLocaleDateString('sv', { timeZone: 'America/Sao_Paulo' });
@@ -213,7 +214,7 @@ function PGPontosExtrasModal({ funcionarios, todasMetas, dataReferencia, onFecha
                         disabled={!podeConfirmar}
                     >
                         {loading
-                            ? <i className="fas fa-spinner fa-spin"></i>
+                            ? <UICarregando variante="inline" />
                             : <i className="fas fa-star"></i>
                         }
                         Confirmar Lançamento

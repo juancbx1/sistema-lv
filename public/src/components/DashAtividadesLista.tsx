@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 // @ts-expect-error módulo JS legado sem tipos
 import { fetchAPI } from '/js/utils/api-utils';
 import DashTabelaPontosModal from './DashTabelaPontosRedesign';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
+import UICarregando from './UICarregando';
 import type { DashAtividade, DashAtividadesResponse, DashFiltroPeriodoAtividades } from '../utils/dashboard-types';
 
 export default function DashAtividadesLista({ aoAtualizar }: { aoAtualizar?: () => void } = {}) {
@@ -157,11 +159,16 @@ export default function DashAtividadesLista({ aoAtualizar }: { aoAtualizar?: () 
             </div>
 
             <div className="ds-atividades-wrapper">
-                {loading ? <div className="ds-spinner" style={{margin:'40px auto'}}></div> : (
+                {loading ? <UICarregando variante="bloco" tamanho="sm" texto="Carregando atividades..." /> : (
                     <ul className="ds-atividades-lista">
                         {listaAtividades.length === 0 ? (
-                            <li className="ds-item-vazio" style={{textAlign:'center', padding:'30px', color:'#999', fontStyle:'italic'}}>
-                                Nenhuma atividade encontrada.
+                            <li>
+                                <UIFeedbackNotFound
+                                    variante="compacto"
+                                    icon="fa-calendar-check"
+                                    titulo="Nenhuma atividade encontrada"
+                                    mensagem="Tente escolher outro período ou ajustar a busca."
+                                />
                             </li>
                         ) : (
                             itensParaExibir.map((item, index) => {

@@ -5,6 +5,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { obterProdutos as obterProdutosDoStorage } from '/js/utils/storage.js';
 import { mostrarMensagem, mostrarConfirmacao } from '/js/utils/popups.js';
 import UIBloqueio from './UIBloqueio';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 
 async function fetchAPI(url, options = {}) {
     const token = localStorage.getItem('token');
@@ -57,7 +58,12 @@ function EtapaBloco({ etapa, index, lancamentos, meta, usuariosMap }) {
 
             <div className="op-etapa-bloco-body">
                 {lancsDaEtapa.length === 0 ? (
-                    <p className="op-etapa-vazio">Nenhum lançamento ainda.</p>
+                    <UIFeedbackNotFound
+                        variante="compacto"
+                        icon="fa-list-check"
+                        titulo="Nenhum lançamento ainda"
+                        mensagem="Os lançamentos desta etapa aparecerão aqui."
+                    />
                 ) : (
                     lancsDaEtapa.map(lanc => {
                         const user = usuariosMap.get(lanc.funcionario);

@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import UIBloqueio from './UIBloqueio';
 import GOEmpresaCard from './GOEmpresaCard';
 import type { GOEmpresa } from '../utils/go-types';
@@ -43,7 +44,14 @@ export default function GOEmpresasTab({ empresas, empresaAtivaId, carregando, on
                         <div className="go-empresas-grid">
                             {filtradas.map((empresa) => <GOEmpresaCard key={empresa.id} empresa={empresa} empresaAtivaId={empresaAtivaId} onEditar={onEditar} onVerPessoas={onVerPessoas} />)}
                         </div>
-                    ) : <div className="go-vazio"><i className="fas fa-building"></i><p>Nenhuma empresa encontrada.</p></div>}
+                    ) : (
+                        <UIFeedbackNotFound
+                            variante="compacto"
+                            icon="fa-building"
+                            titulo="Nenhuma empresa encontrada"
+                            mensagem="Não há empresas correspondentes à busca atual."
+                        />
+                    )}
                 </section>
             )}
         </>

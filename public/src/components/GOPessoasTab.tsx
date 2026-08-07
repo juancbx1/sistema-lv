@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import UIBloqueio from './UIBloqueio';
 import GOPessoaCard from './GOPessoaCard';
 import type { GOEmpresa, GOEscopo, GOPessoa, GOVinculo } from '../utils/go-types';
@@ -130,7 +131,14 @@ export default function GOPessoasTab({
                             <div className="go-pessoas-grid">
                                 {ativos.map((pessoa) => <GOPessoaCard key={pessoa.id} pessoa={pessoa} empresaAtivaId={empresaAtivaId} onEditarVinculo={onEditarVinculo} onNovoVinculo={onNovoVinculo} onEncerrarVinculo={onEncerrarVinculo} />)}
                             </div>
-                        ) : <div className="go-vazio"><i className="fas fa-users"></i><p>Nenhuma pessoa encontrada neste contexto.</p></div>}
+                        ) : (
+                            <UIFeedbackNotFound
+                                variante="compacto"
+                                icon="fa-users"
+                                titulo="Nenhuma pessoa encontrada"
+                                mensagem="Não há pessoas ativas neste contexto."
+                            />
+                        )}
                     </section>
                     {antigos.length > 0 && (
                         <details className="go-ex-membros gs-card">

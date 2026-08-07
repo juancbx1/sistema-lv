@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Select from 'react-select';
 import UIBloqueio from './UIBloqueio';
+import UICarregando from './UICarregando';
 import { formatarDataParaInput, formatarHora, formatarDataDisplay } from '/js/utils/formataDtHr.js';
 import { mostrarMensagem } from '/js/utils/popups.js';
 import { fetchAPI } from '/js/utils/api-utils.js';
@@ -291,7 +292,7 @@ export default function UCDrawerEdicao({ usuario, onClose, aoSalvar, aoAtualizar
                                     onClick={() => inputFotoRef.current?.click()}
                                     disabled={uploadandoFoto}
                                 >
-                                    <i className={`fas ${uploadandoFoto ? 'fa-spinner fa-spin' : 'fa-camera'}`}></i>
+                                    {uploadandoFoto ? <UICarregando variante="inline" /> : <i className="fas fa-camera"></i>}
                                     {uploadandoFoto ? ' Enviando...' : ' Alterar foto'}
                                 </button>
                                 {formData.foto_oficial && (
@@ -553,7 +554,7 @@ export default function UCDrawerEdicao({ usuario, onClose, aoSalvar, aoAtualizar
                     </button>
                     <button className="gs-btn gs-btn-primario" onClick={handleSalvar} disabled={salvando}>
                         {salvando
-                            ? <><div className="spinner-btn-interno"></div> Salvando...</>
+                            ? <><UICarregando variante="inline" /> Salvando...</>
                             : 'Salvar alterações'
                         }
                     </button>

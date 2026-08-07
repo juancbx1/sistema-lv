@@ -10,6 +10,7 @@ import OPCentralEncerramento from './OPCentralEncerramento.jsx';
 import { obterProdutos as obterProdutosDoStorage } from '/js/utils/storage.js';
 import { mostrarConfirmacao, mostrarToast } from '/js/utils/popups.js';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 
 export default function OPGerenciamentoTela({ opsPendentesGlobal, onRefreshContadores, permissoes = [] }) {
     const [ops, setOps] = useState([]);
@@ -270,9 +271,12 @@ export default function OPGerenciamentoTela({ opsPendentesGlobal, onRefreshConta
                                 />
                             ))
                         ) : (
-                            <p style={{ textAlign: 'center', gridColumn: '1 / -1' }}>
-                                Nenhuma Ordem de Produção encontrada para os filtros aplicados.
-                            </p>
+                            <UIFeedbackNotFound
+                                variante="compacto"
+                                icon="fa-clipboard-list"
+                                titulo="Nenhuma ordem de produção encontrada"
+                                mensagem="Não há ordens correspondentes aos filtros aplicados."
+                            />
                         )}
                     </div>
 

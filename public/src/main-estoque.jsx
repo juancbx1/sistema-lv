@@ -20,7 +20,7 @@ function EstoqueFab() {
 
     return (
         <>
-            <BotaoBuscaFunil permissoes={permissoes} />
+            <BotaoBuscaFunil permissoes={permissoes} usarCarregamentoPadrao />
             <AlertasFAB />
         </>
     );

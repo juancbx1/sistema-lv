@@ -3,6 +3,7 @@ import Select, { components, type NoticeProps, type StylesConfig } from 'react-s
 import { formatarMoeda } from '../utils/cpag-format';
 import { mostrarConfirmacao, mostrarToast } from '../utils/cpag-feedback';
 import UIFeedbackNotFound from './UIFeedbackNotFound';
+import UICarregando from './UICarregando';
 import { fetchCpag } from '../utils/cpag-api';
 import type {
   CpagContaFinanceira,
@@ -186,7 +187,7 @@ export default function CPAGBonus({ usuarios, contas }: Props) {
             onClick={() => void handleConcederBonus()}
             disabled={loading}
           >
-            {loading ? <i className="fas fa-spinner fa-spin" /> : <i className="fas fa-check" />}
+            {loading ? <UICarregando variante="inline" /> : <i className="fas fa-check" />}
             {loading ? ' Processando...' : ' Confirmar Bônus'}
           </button>
         </div>

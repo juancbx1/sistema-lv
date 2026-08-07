@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import UILogItem, { HISTORICO_ACAO_GRUPOS, HISTORICO_ACAO_OPCOES } from './UILogItem.tsx';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import UISearchableSelect from './UISearchableSelect.tsx';
 import { fetchFinanceiro } from '../utils/financeiro-api';
 import { useFinanceiro } from './FinanceiroContext';
@@ -263,11 +264,12 @@ export default function FeedAtividades() {
                 {logs.map((log) => <UILogItem key={log.id} log={log} />)}
               </div>
             ) : (
-              <p className="fc-historico-vazio">
-                {temFiltroAtivo
-                  ? 'Nenhuma atividade encontrada com esses filtros.'
-                  : 'Nenhuma atividade registrada ainda.'}
-              </p>
+              <UIFeedbackNotFound
+                variante="compacto"
+                icon={temFiltroAtivo ? 'fa-search' : 'fa-history'}
+                titulo={temFiltroAtivo ? 'Nenhuma atividade encontrada' : 'Nenhuma atividade registrada ainda'}
+                mensagem={temFiltroAtivo ? 'Tente ajustar os filtros selecionados.' : 'As atividades aparecerão aqui quando forem registradas.'}
+              />
             )}
 
             {paginacao.totalPages > 1 && (

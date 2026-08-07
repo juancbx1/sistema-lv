@@ -1,5 +1,6 @@
 import React, { useState, type FormEvent, type MouseEvent } from 'react';
 import type { GOEmpresa, GOEmpresaForm } from '../utils/go-types';
+import UICarregando from './UICarregando';
 
 const VAZIA: GOEmpresaForm = {
     codigo: '',
@@ -137,7 +138,7 @@ export default function GOEmpresaModal({ empresa, onClose, onSalvar }: GOEmpresa
                 <footer>
                     <button type="button" className="gs-btn gs-btn-secundario" onClick={onClose}>Cancelar</button>
                     <button className="gs-btn gs-btn-primario" disabled={salvando}>
-                        {salvando ? <><i className="fas fa-spinner fa-spin"></i> Salvando...</> : <><i className="fas fa-save"></i> Salvar empresa</>}
+                        {salvando ? <><UICarregando variante="inline" /> Salvando...</> : <><i className="fas fa-save"></i> Salvar empresa</>}
                     </button>
                 </footer>
             </form>

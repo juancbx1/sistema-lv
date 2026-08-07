@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import FinanceiroAgendaCard from './FinanceiroAgendaCard.tsx';
 import FinanceiroAgendaHistoricoModal from './FinanceiroAgendaHistoricoModal.tsx';
 import UIBloqueio from './UIBloqueio';
@@ -171,7 +172,12 @@ export default function FinanceiroAgenda() {
           <button type="button" className="fc-btn-atualizar" onClick={() => void carregar(page, filtroAtivo)}>Tentar novamente</button>
         </div>
       ) : !grupos.length ? (
-        <p style={{ textAlign: 'center', padding: '20px' }}>Nenhuma conta pendente na agenda.</p>
+        <UIFeedbackNotFound
+          variante="compacto"
+          icon="fa-calendar-check"
+          titulo="Nenhuma conta pendente"
+          mensagem="Não há contas aguardando pagamento na agenda."
+        />
       ) : (
         <>
           <div className="fc-agenda-lista">

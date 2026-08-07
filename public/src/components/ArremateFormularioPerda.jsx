@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { getImagemVariacao } from '../utils/ArremateProdutoHelpers.js';
+import UICarregando from './UICarregando';
 
 import { mostrarMensagem } from '/js/utils/popups.js';
 
@@ -122,7 +123,7 @@ export default function FormularioPerda({ item, onConfirmar }) {
                 </div>
 
                 <button type="submit" className="oa-btn oa-btn-perigo" disabled={carregando} style={{width: '100%', marginTop: '10px'}}>
-                    {carregando ? <div className="spinner-btn-interno"></div> : <i className="fas fa-save"></i>}
+                    {carregando ? <UICarregando variante="inline" /> : <i className="fas fa-save"></i>}
                     {carregando ? 'Registrando...' : 'Confirmar Perda'}
                 </button>
             </form>

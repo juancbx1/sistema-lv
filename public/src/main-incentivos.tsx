@@ -6,6 +6,7 @@ import { verificarAutenticacao } from '/js/utils/auth.js';
 import UIHeaderPagina from './components/UIHeaderPagina';
 import UITabNav from './components/UITabNav';
 import UICarregando from './components/UICarregando';
+import removerCarregamentoInicial from './utils/remover-carregamento-inicial';
 import IncenGincanasTab from './components/IncenGincanasTab';
 import IncenMetasTab from './components/IncenMetasTab';
 import IncenPontosTab from './components/IncenPontosTab';
@@ -22,7 +23,10 @@ function App() {
         const checarAuth = async () => {
             try {
                 const auth = await verificarAutenticacao('admin/incentivos.html', ['acesso-ponto-por-processo']);
-                if (auth) setAutenticado(true);
+                if (auth) {
+                    removerCarregamentoInicial();
+                    setAutenticado(true);
+                }
             } catch (e) {
                 console.error('[Incentivos] Erro auth:', e);
             }

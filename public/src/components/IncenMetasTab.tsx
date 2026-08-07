@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo, type FormEvent } from 'react';
 // @ts-expect-error popups JS legados sem declaração TypeScript
 import { mostrarConfirmacao, mostrarMensagem } from '/js/utils/popups.js';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import type {
     IncenProduto,
     MetaCondicao,
@@ -183,7 +184,7 @@ function RegraCard({
                         disabled={salvando || !mudou}
                         title="Salvar"
                     >
-                        <i className={`fas ${salvando ? 'fa-spinner fa-spin' : 'fa-save'}`} />
+                        {salvando ? <UICarregando variante="inline" /> : <i className="fas fa-save" />}
                     </button>
                     <button
                         className="incen-regra-btn incen-regra-btn--excluir"
@@ -477,7 +478,12 @@ function ModalCondicoes({
                         Objetivos adicionais além dos pontos.
                     </p>
                     {condicoes.length === 0 ? (
-                        <p className="incen-metas-sem-condicoes">Nenhuma condição definida para esta meta.</p>
+                        <UIFeedbackNotFound
+                            variante="compacto"
+                            icon="fa-list-check"
+                            titulo="Nenhuma condição definida"
+                            mensagem="Adicione uma condição para configurar esta meta."
+                        />
                     ) : (
                         <div className="incen-metas-condicoes-lista">
                             {condicoes.map((c, i) => (
@@ -742,10 +748,12 @@ export default function IncenMetasTab() {
                     {carregandoRegras ? (
                         <UICarregando variante="bloco" />
                     ) : Object.keys(grupos).length === 0 ? (
-                        <div className="incen-lista-vazia">
-                            <i className="fas fa-bullseye" />
-                            <p>Nenhuma regra cadastrada para esta versão.</p>
-                        </div>
+                        <UIFeedbackNotFound
+                            variante="compacto"
+                            icon="fa-bullseye"
+                            titulo="Nenhuma regra cadastrada"
+                            mensagem="Cadastre uma regra para esta versão."
+                        />
                     ) : (
                         <div className="incen-grupos-lista">
                             {Object.entries(grupos).map(([chave, grupo]) => (

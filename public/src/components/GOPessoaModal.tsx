@@ -7,6 +7,7 @@ import type {
     GOPessoa,
     GOVinculoForm,
 } from '../utils/go-types';
+import UICarregando from './UICarregando';
 
 export interface GOPessoaSalvarCreate {
     nome: string;
@@ -96,7 +97,7 @@ export default function GOPessoaModal({ pessoa, empresas, empresaAtivaId, onClos
                 <footer>
                     <button type="button" className="gs-btn gs-btn-secundario" onClick={onClose}>Cancelar</button>
                     <button className="gs-btn gs-btn-primario" disabled={salvando}>
-                        {salvando ? <><i className="fas fa-spinner fa-spin"></i> Salvando...</> : <><i className="fas fa-save"></i> Salvar pessoa</>}
+                        {salvando ? <><UICarregando variante="inline" /> Salvando...</> : <><i className="fas fa-save"></i> Salvar pessoa</>}
                     </button>
                 </footer>
             </form>

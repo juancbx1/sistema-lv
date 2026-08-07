@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import UICarregando from './UICarregando';
 import PermissoesAcordiao from './PermissoesAcordiao.jsx';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import { permissoesPorTipo } from '../../js/utils/permissoes.js';
 
 function fetchAuth(url, opts = {}) {
@@ -146,7 +147,14 @@ export default function PermissoesEditor() {
                         />
                         <ul className="pu-lista-usuarios">
                             {usuariosFiltrados.length === 0 && (
-                                <li className="pu-lista-vazia">Nenhum usuário encontrado.</li>
+                                <li>
+                                    <UIFeedbackNotFound
+                                        variante="compacto"
+                                        icon="fa-user-slash"
+                                        titulo="Nenhum usuário encontrado"
+                                        mensagem="Tente buscar por outro nome."
+                                    />
+                                </li>
                             )}
                             {usuariosFiltrados.map(u => (
                                 <li
@@ -186,7 +194,7 @@ export default function PermissoesEditor() {
                                         disabled={!permissoesAlteradas || salvando}
                                     >
                                         {salvando
-                                            ? <><i className="fas fa-spinner fa-spin"></i> Salvando...</>
+                                            ? <><UICarregando variante="inline" /> Salvando...</>
                                             : <><i className="fas fa-save"></i> Salvar Permissões</>
                                         }
                                     </button>

@@ -130,7 +130,7 @@ export default function ConfigAlertasGerais({ onTestarSom }: ConfigAlertasGerais
                 </button>
                 <button className="gs-btn gs-btn-sucesso" onClick={() => { void handleSalvar(); }} disabled={salvando}>
                     {salvando
-                        ? <><div className="spinner-btn-interno"></div> Salvando...</>
+                        ? <><UICarregando variante="inline" /> Salvando...</>
                         : <><i className="fas fa-save"></i> Salvar Alterações</>
                     }
                 </button>

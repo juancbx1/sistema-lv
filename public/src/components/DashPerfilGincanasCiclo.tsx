@@ -4,6 +4,8 @@ import { fetchAPI } from '/js/utils/api-utils.js';
 // @ts-expect-error módulo JS legado sem tipos
 import { getObjetoCicloCompletoAtual } from '/js/utils/ciclos.js';
 import type { DashPremioItem, DashMeusPremiosResponse } from '../utils/dashboard-types';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
+import UICarregando from './UICarregando';
 
 export default function DashPerfilGincanasCiclo() {
     const [premios, setPremios] = useState<DashPremioItem[]>([]);
@@ -35,7 +37,7 @@ export default function DashPerfilGincanasCiclo() {
         return (
             <div className="perfil-secao">
                 <div className="perfil-secao-titulo">🏆 Gincanas Vencidas no Ciclo</div>
-                <div className="ds-spinner" style={{ margin: '10px auto' }} />
+                <UICarregando variante="bloco" tamanho="sm" />
             </div>
         );
     }
@@ -44,9 +46,12 @@ export default function DashPerfilGincanasCiclo() {
         return (
             <div className="perfil-secao">
                 <div className="perfil-secao-titulo">🏆 Gincanas Vencidas no Ciclo</div>
-                <div style={{ fontSize: '0.82rem', color: 'var(--ds-cor-cinza-texto-secundario)', textAlign: 'center', padding: '8px 0' }}>
-                    Nenhuma premiação neste ciclo ainda.
-                </div>
+                <UIFeedbackNotFound
+                    variante="compacto"
+                    icon="fa-trophy"
+                    titulo="Nenhuma premiação neste ciclo"
+                    mensagem="As premiações conquistadas aparecerão aqui."
+                />
             </div>
         );
     }

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import { permissoesCategorizadas } from '../../js/utils/permissoes.js';
 
 export default function PermissoesAcordiao({ usuario, checkboxState, onChange, permissoesBase }) {
@@ -80,10 +81,12 @@ export default function PermissoesAcordiao({ usuario, checkboxState, onChange, p
                         p.id.toLowerCase().includes(buscaLower)
                     );
                 }) && (
-                    <div className="pu-busca-sem-resultado">
-                        <i className="fas fa-search"></i>
-                        <p>Nenhuma permissão encontrada para "<strong>{busca}</strong>"</p>
-                    </div>
+                    <UIFeedbackNotFound
+                        variante="compacto"
+                        icon="fa-search"
+                        titulo="Nenhuma permissão encontrada"
+                        mensagem={`Não encontramos permissões para “${busca}”.`}
+                    />
                 )}
             </div>
         </div>

@@ -11,7 +11,10 @@ function App() {
     useEffect(() => {
         const checarAuth = async () => {
             const auth = await verificarAutenticacao('admin/gerenciar-producao.html', ['acesso-gerenciar-producao']);
-            if (auth) setAutenticado(true);
+            if (auth) {
+                document.getElementById('lv-initial-page-loader')?.remove();
+                setAutenticado(true);
+            }
             setCarregando(false);
         };
         checarAuth();

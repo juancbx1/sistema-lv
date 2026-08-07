@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import GPCard from './GPCard.jsx';
 import GPEditarModal from './GPEditarModal.jsx';
 import GPExcluirModal from './GPExcluirModal.jsx';
@@ -318,10 +319,12 @@ export default function GPRegistrosTab() {
             {!carregando && (
                 <>
                     {producoes.length === 0 ? (
-                        <div className="gp-estado-vazio">
-                            <i className="fas fa-inbox"></i>
-                            <p>Nenhum registro encontrado com os filtros selecionados</p>
-                        </div>
+                        <UIFeedbackNotFound
+                            variante="compacto"
+                            icon="fa-inbox"
+                            titulo="Nenhum registro encontrado"
+                            mensagem="Não há registros para os filtros selecionados."
+                        />
                     ) : (
                         <>
                             {/* Cabeçalho dos resultados */}

@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client';
 // @ts-expect-error módulo JS legado sem tipos
 import { verificarAutenticacao } from '/js/utils/auth.js';
 import CalendarioCompleto from './components/CalendarioCompleto';
+import UICarregando from './components/UICarregando';
+import removerCarregamentoInicial from './utils/remover-carregamento-inicial';
 
 interface ErrorBoundaryProps {
     children: ReactNode;
@@ -43,7 +45,10 @@ function App() {
         const checarAuth = async () => {
             try {
                 const auth = await verificarAutenticacao('admin/calendario.html', []);
-                if (auth) setAutenticado(true);
+                if (auth) {
+                    removerCarregamentoInicial();
+                    setAutenticado(true);
+                }
             } catch (e) {
                 console.error('[Calendario] Erro auth:', e);
             }
@@ -52,7 +57,7 @@ function App() {
         void checarAuth();
     }, []);
 
-    if (carregando) return <div style={{ padding: 24 }}>Verificando permissões...</div>;
+    if (carregando) return <UICarregando variante="pagina" texto="Verificando seu acesso..." />;
     if (autenticado) {
         return (
             <ErrorBoundary>

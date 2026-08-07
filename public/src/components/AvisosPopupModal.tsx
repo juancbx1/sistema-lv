@@ -11,6 +11,8 @@
 import { useState, useEffect, useRef, useMemo, type ChangeEvent, type KeyboardEvent, type MouseEvent } from 'react';
 import imageCompression from 'browser-image-compression';
 import { mostrarMensagem } from '../../js/utils/popups.js';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
+import UICarregando from './UICarregando';
 import type {
     AvisoPopup,
     AvisoPopupCompressInfo,
@@ -643,7 +645,7 @@ export default function AvisosPopupModal({ aviso, modo = 'criar', onSalvo, onFec
                                 >
                                     {comprimindo ? (
                                         <>
-                                            <div className="avpm-upload-spinner"></div>
+                                            <UICarregando variante="inline" />
                                             <span className="avpm-upload-text">Comprimindo imagem...</span>
                                         </>
                                     ) : (
@@ -744,10 +746,12 @@ export default function AvisosPopupModal({ aviso, modo = 'criar', onSalvo, onFec
                                         ))}
                                     </div>
                                 ) : (
-                                    <p className="avpm-individuais-vazio">
-                                        Nenhuma pessoa selecionada. Avisos do Financeiro (ex.: recarga VT)
-                                        costumam ter uma pessoa específica.
-                                    </p>
+                                    <UIFeedbackNotFound
+                                        variante="compacto"
+                                        icon="fa-user-plus"
+                                        titulo="Nenhuma pessoa selecionada"
+                                        mensagem="Avisos do Financeiro costumam ter uma pessoa específica."
+                                    />
                                 )}
 
                                 <input
@@ -759,9 +763,7 @@ export default function AvisosPopupModal({ aviso, modo = 'criar', onSalvo, onFec
                                 />
 
                                 {carregandoPessoas ? (
-                                    <p className="avpm-individuais-vazio">
-                                        <i className="fas fa-spinner fa-spin" /> Carregando pessoas…
-                                    </p>
+                                    <UICarregando variante="bloco" tamanho="sm" texto="Carregando pessoas..." />
                                 ) : (
                                     <div className="avpm-individuais-lista">
                                         {pessoasFiltradas.map((p) => {
@@ -778,7 +780,12 @@ export default function AvisosPopupModal({ aviso, modo = 'criar', onSalvo, onFec
                                             );
                                         })}
                                         {pessoas.length > 0 && pessoasFiltradas.length === 0 && (
-                                            <p className="avpm-individuais-vazio">Nenhum resultado para a busca.</p>
+                                            <UIFeedbackNotFound
+                                                variante="compacto"
+                                                icon="fa-search"
+                                                titulo="Nenhuma pessoa encontrada"
+                                                mensagem="Tente outro nome ou limpe a busca."
+                                            />
                                         )}
                                     </div>
                                 )}
@@ -805,12 +812,15 @@ export default function AvisosPopupModal({ aviso, modo = 'criar', onSalvo, onFec
                         {mostrarCalendario && (
                             <div className="avpm-cal-chips">
                                 {carregandoCal && (
-                                    <span className="avpm-cal-loading">
-                                        <i className="fas fa-spinner fa-spin"></i> Carregando...
-                                    </span>
+                                    <UICarregando variante="bloco" tamanho="sm" texto="Carregando calendário..." />
                                 )}
                                 {!carregandoCal && eventosCalendario.length === 0 && (
-                                    <span className="avpm-cal-vazio">Nenhum evento nos próximos 90 dias.</span>
+                                    <UIFeedbackNotFound
+                                        variante="compacto"
+                                        icon="fa-calendar-xmark"
+                                        titulo="Nenhum evento próximo"
+                                        mensagem="Não há eventos nos próximos 90 dias."
+                                    />
                                 )}
                                 {!carregandoCal && eventosCalendario.map(ev => (
                                     <button
@@ -922,7 +932,7 @@ export default function AvisosPopupModal({ aviso, modo = 'criar', onSalvo, onFec
                         disabled={salvando || comprimindo}
                     >
                         {salvando
-                            ? <><div className="spinner-btn-interno"></div> Salvando...</>
+                            ? <><UICarregando variante="inline" /> Salvando...</>
                             : <><i className="fas fa-check"></i> {btnSalvarTexto}</>
                         }
                     </button>

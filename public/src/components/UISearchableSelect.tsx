@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent, type MouseEvent } from 'react';
 import { normalizeText } from '../utils/searchHelpers';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 
 export interface SearchableOption { value: string | number; label: string; }
 interface Props {
@@ -33,5 +34,5 @@ export default function UISearchableSelect({
   const handleSelectOption = (value: string | number) => { setSelectedValue(value); onChange(value); setIsOpen(false); setSearchTerm(''); };
   const handleClear = (event: MouseEvent<HTMLButtonElement>) => { event.stopPropagation(); setSelectedValue(null); onChange(null); setSearchTerm(''); };
 
-  return <div className="searchable-select-wrapper" ref={wrapperRef}><div className="searchable-select-input-container"><input type="text" className="fc-input" placeholder={placeholder} value={selectedValue ? selectedLabel : searchTerm} onChange={handleInputChange} onClick={() => setIsOpen((open) => !open)} />{selectedValue && <button type="button" className="clear-btn" onClick={handleClear}><i className="fas fa-times" /></button>}</div>{isOpen && <div className="searchable-select-dropdown">{filteredOptions.length > 0 ? <>{filteredOptions.map((option) => <button type="button" key={option.value} className="dropdown-item" onClick={() => handleSelectOption(option.value)}>{option.label}</button>)}{matchingOptions.length > maxVisible && <div className="dropdown-item-disabled">Digite mais para refinar os {matchingOptions.length} resultados.</div>}</> : <div className="dropdown-item-disabled">Nenhum resultado encontrado.</div>}</div>}</div>;
+  return <div className="searchable-select-wrapper" ref={wrapperRef}><div className="searchable-select-input-container"><input type="text" className="fc-input" placeholder={placeholder} value={selectedValue ? selectedLabel : searchTerm} onChange={handleInputChange} onClick={() => setIsOpen((open) => !open)} />{selectedValue && <button type="button" className="clear-btn" onClick={handleClear}><i className="fas fa-times" /></button>}</div>{isOpen && <div className="searchable-select-dropdown">{filteredOptions.length > 0 ? <>{filteredOptions.map((option) => <button type="button" key={option.value} className="dropdown-item" onClick={() => handleSelectOption(option.value)}>{option.label}</button>)}{matchingOptions.length > maxVisible && <div className="dropdown-item-disabled">Digite mais para refinar os {matchingOptions.length} resultados.</div>}</> : <UIFeedbackNotFound variante="compacto" icon="fa-search" titulo="Nenhum resultado" mensagem="Tente outro termo de busca." />}</div>}</div>;
 }

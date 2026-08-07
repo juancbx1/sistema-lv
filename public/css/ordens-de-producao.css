@@ -1004,7 +1004,7 @@ body.autenticado {
     background-color: var(--op-cor-cinza-fundo-input);
     border-radius: var(--op-raio-borda-card);
     padding: 20px;
-    margin-top: 30px;
+    margin: 20px 0 0; 
     border: 1px solid var(--op-cor-cinza-borda);
 }
 
@@ -3679,18 +3679,6 @@ body.autenticado {
     min-height: 120px;
 }
 
-.op-externo-historico-vazio {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 48px 16px;
-    color: #9ca3af;
-}
-.op-externo-historico-vazio i { font-size: 2rem; }
-.op-externo-historico-vazio p { font-size: 0.875rem; }
-
 .op-externo-historico-lista {
     display: flex;
     flex-direction: column;
@@ -3885,36 +3873,6 @@ body.autenticado {
 /* ==========================================================================
    # PAINEL — Empty State
    ========================================================================== */
-
-.oa-empty-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 60px 20px;
-    gap: 12px;
-    text-align: center;
-}
-.oa-empty-state-icon {
-    font-size: 4.5rem;
-    color: #e2e8f0;
-    animation: oa-idle-float 3.5s ease-in-out infinite;
-}
-.oa-empty-state-titulo {
-    font-size: 1.05rem;
-    font-weight: 600;
-    color: #94a3b8;
-    margin: 0;
-}
-.oa-empty-state-subtitulo {
-    font-size: 0.85rem;
-    color: #cbd5e1;
-    margin: 0;
-}
-@keyframes oa-idle-float {
-    0%, 100% { transform: translateY(0) rotate(-4deg); opacity: 0.7; }
-    50%       { transform: translateY(-12px) rotate(4deg); opacity: 1; }
-}
 
 /* ==========================================================================
    # PAINEL — Faixa de Inativos (substituiu o accordion)
@@ -6340,41 +6298,6 @@ body.autenticado {
 }
 
 /* Estado vazio — ícone + texto empilhados */
-.op-agente-vazio {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 20px 16px;
-}
-.op-agente-vazio-icone {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    background: #f0fdf4;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-}
-.op-agente-vazio-icone i {
-    font-size: 1.2rem;
-    color: #16a34a;
-}
-.op-agente-vazio-texto {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
-.op-agente-vazio-texto strong {
-    font-size: 0.88rem;
-    font-weight: 700;
-    color: #15803d;
-}
-.op-agente-vazio-texto span {
-    font-size: 0.78rem;
-    color: #64748b;
-}
-
 /* Barra de seleção moderna — linha de pills com checkbox */
 .op-agente-sel-barra {
     display: flex;
@@ -8101,20 +8024,6 @@ body.autenticado {
     color: #1d4ed8;
 }
 
-.op-cortes-estoque-vazio {
-    grid-column: 1 / -1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 8px;
-    padding: 40px 20px;
-    color: #94a3b8;
-    text-align: center;
-}
-.op-cortes-estoque-vazio i { font-size: 2rem; color: #cbd5e1; }
-.op-cortes-estoque-vazio p { font-size: 0.9rem; font-weight: 600; color: #64748b; margin: 0; }
-.op-cortes-estoque-vazio span { font-size: 0.8rem; color: #94a3b8; }
-
 /* Botão de refresh do estoque de cortes */
 .op-cortes-refresh-btn {
     display: inline-flex;
@@ -9250,26 +9159,6 @@ body.autenticado {
 }
 
 /* ── Estado vazio ── */
-.tpp-vazio {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    padding: 60px 20px;
-    color: #94a3b8;
-}
-
-.tpp-vazio i {
-    font-size: 2rem;
-    opacity: 0.5;
-}
-
-.tpp-vazio p {
-    font-size: 0.9rem;
-    margin: 0;
-}
-
 /* ── Responsivo tablet ── */
 @media (max-width: 768px) {
     .tpp-modal {

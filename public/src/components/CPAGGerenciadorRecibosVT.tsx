@@ -6,6 +6,8 @@ import { mostrarToast } from '../utils/cpag-feedback';
 import { fetchCpag } from '../utils/cpag-api';
 import type { CpagLoteVT, CpagUsuario } from '../utils/cpag-types';
 import CPAGPaginacao from './CPAGPaginacao';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
+import UICarregando from './UICarregando';
 
 interface Props {
   isOpen: boolean;
@@ -142,9 +144,14 @@ export default function CPAGGerenciadorRecibosVT({ isOpen, onClose }: Props) {
         </div>
         <div className="cpg-modal-body">
           {loading ? (
-            <div className="cpg-spinner">Carregando...</div>
+            <UICarregando variante="bloco" tamanho="sm" texto="Carregando recibos..." />
           ) : lotes.length === 0 ? (
-            <p>Nenhum lote encontrado.</p>
+            <UIFeedbackNotFound
+              variante="compacto"
+              icon="fa-layer-group"
+              titulo="Nenhum lote encontrado"
+              mensagem="Os lotes de recibos aparecerão aqui."
+            />
           ) : (
             <table className="cpg-tabela-detalhes">
               <thead>

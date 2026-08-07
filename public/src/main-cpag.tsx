@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client';
 import CPAGCentralPagamentos from './components/CPAGCentralPagamentos.tsx';
 import type { CpagAuthResult } from './utils/cpag-types';
 import { verificarAutenticacaoCpag } from './utils/cpag-auth';
+import UICarregando from './components/UICarregando';
+import removerCarregamentoInicial from './utils/remover-carregamento-inicial';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -54,6 +56,7 @@ function App() {
         const auth: CpagAuthResult | null = await verificarAutenticacaoCpag(['acessar-central-pagamentos']);
         if (!ativo) return;
         if (auth) {
+          removerCarregamentoInicial();
           setEstaAutenticado(true);
           setPermissoes(auth.permissoes ?? []);
           document.body.classList.add('autenticado');
@@ -79,17 +82,11 @@ function App() {
 }
 
 function UICpagAuthLoading() {
-  return (
-    <div className="ui-cg ui-cg--pagina">
-      <div className="ui-cg-spinner ui-cg-spinner--lg">
-        <div className="ui-cg-trilha" />
-        <div className="ui-cg-arco" />
-        <span className="ui-cg-letras">LV</span>
-      </div>
-    </div>
-  );
+  return <UICarregando variante="pagina" texto="Verificando seu acesso..." />;
 }
 
 const container = document.getElementById('root');
-if (container) createRoot(container).render(<App />);
+if (container) {
+  createRoot(container).render(<App />);
+}
 else console.error("Container 'root' não encontrado no HTML.");

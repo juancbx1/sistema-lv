@@ -6,6 +6,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { mostrarMensagem } from '/js/utils/popups.js';
 import UIBuscaInteligente from './UIBuscaInteligente';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import imagemPlaceholder from '../../img/placeholder-image.png';
 
 async function fetchApiWithToken(endpoint, options = {}) {
@@ -236,10 +237,12 @@ export default function OPModalTempos({ isOpen, onClose }) {
                     {carregando ? (
                         <UICarregando variante="bloco" texto="Carregando produtos..." />
                     ) : produtosFiltrados.length === 0 ? (
-                        <div className="tpp-vazio">
-                            <i className="fas fa-search"></i>
-                            <p>Nenhum produto encontrado para "{termoBusca}"</p>
-                        </div>
+                        <UIFeedbackNotFound
+                            variante="compacto"
+                            icon="fa-search"
+                            titulo="Nenhum produto encontrado"
+                            mensagem={`Não há produtos correspondentes a "${termoBusca}".`}
+                        />
                     ) : (
                         <div className="tpp-cards-grid">
                             {produtosFiltrados.map(produto => (

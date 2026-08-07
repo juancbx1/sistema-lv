@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import { fetchFinanceiro } from '../utils/financeiro-api';
 import { useFinanceiro } from './FinanceiroContext';
 
@@ -143,7 +144,14 @@ export default function FinanceiroDashboard() {
                   <strong>{currency(saldo)}</strong>
                 </div>
               );
-            }) : <p className="fc-dashboard-empty">Nenhuma conta com saldo diferente de zero.</p>}
+            }) : (
+              <UIFeedbackNotFound
+                variante="compacto"
+                icon="fa-wallet"
+                titulo="Nenhuma conta com saldo"
+                mensagem="Não há contas com saldo diferente de zero no momento."
+              />
+            )}
           </div>
         </article>
       </section>

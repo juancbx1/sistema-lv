@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { sincronizarPermissoesUsuario } from '../../js/utils/auth.js';
+import UICarregando from './UICarregando';
 
 type TelaLogin = 'formulario' | 'loading' | 'despedida';
 
@@ -337,10 +338,7 @@ export default function LoginApp() {
     return (
       <EstruturaLogin compacto>
         <div className="lv-estado lv-estado--loading" role="status" aria-live="polite">
-          <div className="lv-loading-simbolo" aria-hidden="true">
-            <span></span>
-            <i className="fas fa-check"></i>
-          </div>
+          <UICarregando variante="bloco" tamanho="md" texto="Preparando seu acesso..." />
           <h2>Estamos preparando tudo.</h2>
           <p>Só mais um instante para acessar seu ambiente.</p>
           <div className="lv-loading-etapas">

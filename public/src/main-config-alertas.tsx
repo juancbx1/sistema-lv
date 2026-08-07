@@ -5,6 +5,8 @@ import { createRoot } from 'react-dom/client';
 // @ts-expect-error módulo JS legado sem tipos
 import { verificarAutenticacao } from '/js/utils/auth.js';
 import ConfigAlertasPage from './pages/ConfigAlertas/ConfigAlertasPage';
+import UICarregando from './components/UICarregando';
+import removerCarregamentoInicial from './utils/remover-carregamento-inicial';
 
 function App() {
     const [carregando, setCarregando] = useState(true);
@@ -15,6 +17,7 @@ function App() {
             try {
                 const auth = await verificarAutenticacao('admin/config-alertas.html', ['configurar-alertas']);
                 if (auth) {
+                    removerCarregamentoInicial();
                     setAutenticado(true);
                 }
             } catch (e) {
@@ -27,7 +30,7 @@ function App() {
     }, []);
 
     if (carregando) {
-        return <div className="spinner">Verificando permissões...</div>;
+        return <UICarregando variante="pagina" texto="Verificando permissões..." />;
     }
 
     if (autenticado) {

@@ -4,6 +4,7 @@
 import React, { useState, useCallback, Fragment } from 'react';
 import { mostrarMensagem, mostrarConfirmacao } from '/js/utils/popups.js';
 import OPTelaSelecaoEtapa from './OPTelaSelecaoEtapa.jsx';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio';
 import UIBloqueio from './UIBloqueio';
 
@@ -354,11 +355,13 @@ export default function OPExternoTela() {
                     <div className="op-externo-historico">
                         {carregandoHistorico ? (
                             <div className="spinner" style={{ margin: '40px auto' }}>Carregando...</div>
-                        ) : historico.length === 0 ? (
-                            <div className="op-externo-historico-vazio">
-                                <i className="fas fa-inbox"></i>
-                                <p>Nenhum lançamento externo nas últimas 24h</p>
-                            </div>
+                            ) : historico.length === 0 ? (
+                                <UIFeedbackNotFound
+                                    variante="compacto"
+                                    icon="fa-inbox"
+                                    titulo="Nenhum lançamento externo recente"
+                                    mensagem="Não há lançamentos externos nas últimas 24 horas."
+                                />
                         ) : (
                             <div className="op-externo-historico-lista">
                                 {historico.map(item => {

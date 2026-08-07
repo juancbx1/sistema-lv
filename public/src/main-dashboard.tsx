@@ -149,7 +149,9 @@ export default function MainDashboard() {
             if (contextoEmpresa?.empresaAtiva) {
                 salvarContextoEmpresaLocal(
                     { empresa_ativa: contextoEmpresa.empresaAtiva },
-                    localStorage,
+                    sessionStorage.getItem('impersonation_token')
+                        ? sessionStorage
+                        : localStorage,
                 );
             }
 

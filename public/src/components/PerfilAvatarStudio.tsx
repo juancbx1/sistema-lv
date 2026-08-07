@@ -10,6 +10,7 @@ import {
 import { createPortal } from 'react-dom';
 import useDialogFocus from '../hooks/useDialogFocus';
 import '../../css/perfil-avatar-studio.css';
+import UICarregando from './UICarregando';
 
 interface Avatar {
   id: number;
@@ -532,7 +533,7 @@ export default function PerfilAvatarStudio({
 
             {carregandoGaleria ? (
               <div className="perfil-avatar-loading" aria-label="Carregando fotos">
-                <i className="fa-solid fa-spinner fa-spin" aria-hidden="true" />
+                <UICarregando variante="inline" />
               </div>
             ) : (
               <div className="perfil-avatar-thumbs">
@@ -631,7 +632,7 @@ export default function PerfilAvatarStudio({
             >
               {processando ? (
                 <>
-                  <i className="fa-solid fa-spinner fa-spin" aria-hidden="true" />
+                  <UICarregando variante="inline" />
                   Preparando...
                 </>
               ) : (

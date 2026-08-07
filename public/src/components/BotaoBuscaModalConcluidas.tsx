@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import UIFeedbackNotFound from './UIFeedbackNotFound';
 import OPPaginacaoWrapper from './OPPaginacaoWrapper.tsx';
+import UICarregando from './UICarregando';
 // @ts-expect-error utilitario JS legado sem declaracao TypeScript
 import { mostrarMensagem } from '/js/utils/popups.js';
 // @ts-expect-error utilitario JS legado sem declaracao TypeScript
@@ -34,6 +35,7 @@ interface ItensPendentes {
 interface BotaoBuscaModalConcluidasProps {
   isOpen: boolean;
   onClose: () => void;
+  usarCarregamentoPadrao?: boolean;
 }
 
 interface HistoricoItemCardProps {
@@ -97,6 +99,7 @@ function formatarData(timestamp: string | null | undefined): string {
 export default function BotaoBuscaModalConcluidas({
   isOpen,
   onClose,
+  usarCarregamentoPadrao = false,
 }: BotaoBuscaModalConcluidasProps) {
   const [abaAtiva, setAbaAtiva] = useState<AbaAtiva>('pendente');
   const [subAba, setSubAba] = useState<SubAba>('concluidas');
@@ -248,7 +251,7 @@ export default function BotaoBuscaModalConcluidas({
           {abaAtiva === 'pendente' && (
             <>
               {carregandoPendentes ? (
-                <div className="spinner">Calculando...</div>
+                usarCarregamentoPadrao ? <UICarregando variante="bloco" texto="Calculando..." /> : <div className="spinner">Calculando...</div>
               ) : totalPendentes === 0 ? (
                 <UIFeedbackNotFound icon="fa-check-double" titulo="Tudo arquivado" mensagem="Nenhuma demanda concluída ou com divergência pendente de arquivamento." />
               ) : (
@@ -266,9 +269,19 @@ export default function BotaoBuscaModalConcluidas({
 
                   <div className="gs-historico-lista">
                     {listaSubAbaCompleta.length === 0 ? (
-                      <p className="gs-historico-vazio">Nenhuma nesta categoria.</p>
+                      <UIFeedbackNotFound
+                        variante="compacto"
+                        icon="fa-inbox"
+                        titulo="Nenhuma demanda nesta categoria"
+                        mensagem="Não há itens para exibir nesta aba."
+                      />
                     ) : listaSubAba.length === 0 ? (
-                      <p className="gs-historico-vazio">Página vazia.</p>
+                      <UIFeedbackNotFound
+                        variante="compacto"
+                        icon="fa-search"
+                        titulo="Nenhum item nesta página"
+                        mensagem="Não há mais itens para exibir aqui."
+                      />
                     ) : listaSubAba.map((item) => (
                       <HistoricoItemCard
                         key={`${item.demanda_id}-${item.produto_id}-${item.variante || ''}`}
@@ -292,7 +305,7 @@ export default function BotaoBuscaModalConcluidas({
 
                   <div className="gs-historico-footer">
                     <button className="gs-btn gs-btn-primario gs-btn-full" onClick={() => void handleArquivarTudo()} disabled={arquivando}>
-                      {arquivando ? <><div className="spinner-btn-interno"></div> Arquivando...</> : <><i className="fas fa-archive"></i> Arquivar tudo ({totalPendentes} {totalPendentes === 1 ? 'item' : 'itens'})</>}
+                      {arquivando ? <>{usarCarregamentoPadrao ? <UICarregando variante="inline" /> : <div className="spinner-btn-interno"></div>} Arquivando...</> : <><i className="fas fa-archive"></i> Arquivar tudo ({totalPendentes} {totalPendentes === 1 ? 'item' : 'itens'})</>}
                     </button>
                   </div>
                 </>
@@ -303,7 +316,7 @@ export default function BotaoBuscaModalConcluidas({
           {abaAtiva === 'arquivo' && (
             <>
               {carregandoArquivo ? (
-                <div className="spinner">Carregando arquivo...</div>
+                usarCarregamentoPadrao ? <UICarregando variante="bloco" texto="Carregando arquivo..." /> : <div className="spinner">Carregando arquivo...</div>
               ) : itensArquivados.length === 0 ? (
                 <UIFeedbackNotFound icon="fa-archive" titulo="Arquivo vazio" mensagem="Nenhuma demanda foi arquivada ainda." />
               ) : (

@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 // @ts-expect-error popups JS legados sem declaração TypeScript
 import { mostrarConfirmacao, mostrarMensagem } from '/js/utils/popups.js';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import type {
     IncenProduto,
     PontoConfig,
@@ -116,7 +117,7 @@ function ConfigRow({
                     disabled={salvando || !mudou}
                     title="Salvar"
                 >
-                    <i className={`fas ${salvando ? 'fa-spinner fa-spin' : 'fa-save'}`} />
+                    {salvando ? <UICarregando variante="inline" /> : <i className="fas fa-save" />}
                 </button>
                 <button
                     className="incen-regra-btn incen-regra-btn--excluir"
@@ -372,9 +373,12 @@ function BuscaProduto({
                     </button>
                 ))}
                 {filtrados.length === 0 && (
-                    <span className="incen-metas-muted" style={{ padding: '10px 0' }}>
-                        Nenhum produto encontrado.
-                    </span>
+                    <UIFeedbackNotFound
+                        variante="compacto"
+                        icon="fa-search"
+                        titulo="Nenhum produto encontrado"
+                        mensagem="Tente ajustar a busca."
+                    />
                 )}
             </div>
             <button className="gs-btn gs-btn-secundario" onClick={onCancelar} style={{ marginTop: 4, alignSelf: 'flex-start' }}>
@@ -557,11 +561,12 @@ export default function IncenPontosTab() {
             {recarregando ? (
                 <UICarregando variante="bloco" />
             ) : grupos.length === 0 ? (
-                <div className="incen-lista-vazia">
-                    <i className="fas fa-star" />
-                    <p>Nenhuma configuração encontrada.</p>
-                    <small>Clique em "Nova Configuração" para começar.</small>
-                </div>
+                <UIFeedbackNotFound
+                    variante="compacto"
+                    icon="fa-star"
+                    titulo="Nenhuma configuração encontrada"
+                    mensagem={'Clique em “Nova Configuração” para começar.'}
+                />
             ) : (
                 <div className="incen-prod-grupos-lista">
                     {grupos.map(g => (

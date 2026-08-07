@@ -1,4 +1,5 @@
 import React from 'react';
+import UICarregando from './UICarregando';
 
 const BADGES = [
     { dias: 21, nome: 'Lendária', cor: '#7c3aed' },
@@ -20,7 +21,7 @@ export default function DashPerfilStreak({ diasSeguidos, badgeAtual, proximoBadg
         return (
             <div className="perfil-secao">
                 <div className="perfil-secao-titulo">🔥 Sequência de Produção</div>
-                <div className="ds-spinner" style={{ margin: '10px auto' }} />
+                <UICarregando variante="bloco" tamanho="sm" />
             </div>
         );
     }

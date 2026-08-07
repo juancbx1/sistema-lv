@@ -15,6 +15,7 @@ import { formatarMoeda } from '../utils/cpag-format';
 import { mostrarConfirmacao, mostrarToast } from '../utils/cpag-feedback';
 import { fetchCpag } from '../utils/cpag-api';
 import UIFeedbackNotFound from './UIFeedbackNotFound';
+import UICarregando from './UICarregando';
 import CPAGModalReciboComissao from './CPAGModalReciboComissao';
 import type { CpagIntervaloReciboEmpresa } from '../utils/cpag-types';
 import {
@@ -738,15 +739,17 @@ export default function CPAGComissao({ usuarios, contas }: Props) {
           </div>
 
           {opcoesCiclo.length === 0 ? (
-            <div className="cpg-competencias__vazio">
-              <i className="fas fa-calendar-xmark" aria-hidden="true" />
-              <p>Nenhuma competência disponível para este empregado (verifique a data de admissão).</p>
-            </div>
+            <UIFeedbackNotFound
+              variante="compacto"
+              icon="fa-calendar-xmark"
+              titulo="Nenhuma competência disponível"
+              mensagem="Verifique a data de admissão do empregado."
+            />
           ) : (
             <>
               {classificandoCiclos && (
                 <p className="cpg-competencias__classificando" role="status">
-                  <i className="fas fa-spinner fa-spin" aria-hidden="true" /> Conferindo
+                  <UICarregando variante="inline" /> Conferindo
                   valores dos ciclos fechados…
                 </p>
               )}
@@ -829,9 +832,7 @@ export default function CPAGComissao({ usuarios, contas }: Props) {
       )}
 
       {loadingCalculo && (
-        <div className="cpg-spinner">
-          <span>Calculando...</span>
-        </div>
+        <UICarregando variante="bloco" tamanho="sm" texto="Calculando..." />
       )}
 
       {!loadingCalculo && resultadoCalculo && cicloSelecionado && (

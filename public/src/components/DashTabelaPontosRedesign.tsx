@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom';
 // @ts-expect-error módulo JS legado sem tipos
 import { fetchAPI } from '/js/utils/api-utils';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import type { DashTabelaProduto, DashTabelaProcesso } from '../utils/dashboard-types';
 
 function formatarPontos(valor?: number | null) {
@@ -84,13 +85,12 @@ export default function DashTabelaPontosRedesign({ onClose }: { onClose: () => v
                     {loading ? (
                         <UICarregando variante="bloco" texto="Montando sua tabela..." />
                     ) : produtos.length === 0 ? (
-                        <div className="ds-tabela-pontos-vazio">
-                            <span className="ds-tabela-pontos-vazio-icone" aria-hidden="true">
-                                <i className="fas fa-table-list" />
-                            </span>
-                            <strong>Nenhum produto encontrado</strong>
-                            <p>A tabela aparecerá assim que houver produtos registrados no seu histórico.</p>
-                        </div>
+                        <UIFeedbackNotFound
+                            variante="compacto"
+                            icon="fa-table-list"
+                            titulo="Nenhum produto encontrado"
+                            mensagem="A tabela aparecerá assim que houver produtos registrados no seu histórico."
+                        />
                     ) : (
                         <div className="ds-tabela-pontos-lista">
                             {produtos.map((produto, indice) => {
@@ -134,7 +134,12 @@ export default function DashTabelaPontosRedesign({ onClose }: { onClose: () => v
                                                 <span>pontos</span>
                                             </div>
                                             {processos.length === 0 ? (
-                                                <p className="ds-tabela-pontos-sem-etapas">Nenhuma etapa cadastrada para este produto.</p>
+                                                <UIFeedbackNotFound
+                                                    variante="compacto"
+                                                    icon="fa-list-check"
+                                                    titulo="Nenhuma etapa cadastrada"
+                                                    mensagem="Este produto ainda não possui etapas configuradas."
+                                                />
                                             ) : (
                                                 processos.map((processo, processoIndice) => {
                                                     const pontos = Number(processo?.pontos || 0);

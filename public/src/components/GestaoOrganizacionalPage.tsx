@@ -55,6 +55,7 @@ export default function GestaoOrganizacionalPage() {
                 'any'
             ) as GOAuthResult | null | false | undefined;
             if (!auth) return;
+            document.getElementById('lv-initial-page-loader')?.remove();
             setEmpresaAtivaId(auth.usuario.empresa_ativa?.id || null);
             try {
                 await Promise.all([carregarEmpresas(), carregarPessoas('atual')]);

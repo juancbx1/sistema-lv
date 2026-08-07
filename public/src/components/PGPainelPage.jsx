@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import UIHeaderPagina from './UIHeaderPagina';
 import UIFeedbackNotFound from './UIFeedbackNotFound';
+import UICarregando from './UICarregando';
 import PGFiltrosPeriodo from './PGFiltrosPeriodo.jsx';
 import PGKpiBar from './PGKpiBar.jsx';
 import PGEquipeCard from './PGEquipeCard.jsx';
@@ -200,10 +201,7 @@ function PGPainelPage() {
     if (loading) return (
         <>
             <UIHeaderPagina titulo="Produção Geral" />
-            <div className="pg-loading">
-                <div className="pg-spinner"></div>
-                <span>Carregando...</span>
-            </div>
+            <UICarregando variante="bloco" texto="Carregando produção..." />
         </>
     );
 

@@ -22,17 +22,19 @@ interface OpDemandaDiagnostico {
 interface BotaoBuscaFunilProps {
   onIniciarProducao?: (dados: OpInicioProducaoDados) => void;
   permissoes: string[];
+  usarCarregamentoPadrao?: boolean;
 }
 
 interface PainelDemandasProps {
   onIniciarProducao: (dados: OpInicioProducaoDados) => void;
   permissoes: string[];
+  usarCarregamentoPadrao?: boolean;
   onClose: () => void;
 }
 
 const PainelDemandasTipado = PainelDemandas as ComponentType<PainelDemandasProps>;
 
-export default function BotaoBuscaFunil({ onIniciarProducao, permissoes }: BotaoBuscaFunilProps) {
+export default function BotaoBuscaFunil({ onIniciarProducao, permissoes, usarCarregamentoPadrao = false }: BotaoBuscaFunilProps) {
   const [modalAberto, setModalAberto] = useState(false);
   const [countAguardando, setCountAguardando] = useState(0);
   const [countCostura, setCountCostura] = useState(0);
@@ -159,6 +161,7 @@ export default function BotaoBuscaFunil({ onIniciarProducao, permissoes }: Botao
             <PainelDemandasTipado
               onIniciarProducao={handleIniciarProducao}
               permissoes={permissoes}
+              usarCarregamentoPadrao={usarCarregamentoPadrao}
               onClose={handleClose}
             />
           </div>

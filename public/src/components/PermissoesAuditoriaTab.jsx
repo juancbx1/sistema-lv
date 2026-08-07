@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Select from 'react-select';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 
 const LIMIT = 12;
 
@@ -195,10 +196,12 @@ export default function PermissoesAuditoriaTab() {
             {carregando ? (
                 <UICarregando variante="bloco" />
             ) : logs.length === 0 ? (
-                <div className="pu-audit-vazio">
-                    <i className="fas fa-history"></i>
-                    <p>Nenhum evento de auditoria encontrado.</p>
-                </div>
+                <UIFeedbackNotFound
+                    variante="compacto"
+                    icon="fa-history"
+                    titulo="Nenhum evento de auditoria encontrado"
+                    mensagem="Não há eventos para os filtros selecionados."
+                />
             ) : (
                 <>
                     <div className="pu-audit-total">{total} evento{total !== 1 ? 's' : ''} encontrado{total !== 1 ? 's' : ''}</div>

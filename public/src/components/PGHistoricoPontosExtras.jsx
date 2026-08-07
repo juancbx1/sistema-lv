@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
+import UICarregando from './UICarregando';
 import { mostrarToast, mostrarMensagem, mostrarPromptTexto } from '/js/utils/popups.js';
 
 function formatarDataBR(isoDate) {
@@ -100,13 +102,16 @@ function PGHistoricoPontosExtras({ dataReferencia }) {
             {aberto && (
                 <div className="pg-historico-pe-corpo">
                     {loading && (
-                        <div className="pg-historico-pe-loading">
-                            <i className="fas fa-spinner fa-spin"></i> Carregando...
-                        </div>
+                        <UICarregando variante="bloco" tamanho="sm" texto="Carregando histórico..." />
                     )}
 
                     {!loading && registros.length === 0 && (
-                        <p className="pg-historico-pe-vazio">Nenhum lançamento de pontos extras para esta data.</p>
+                        <UIFeedbackNotFound
+                            variante="compacto"
+                            icon="fa-star"
+                            titulo="Nenhum lançamento de pontos extras"
+                            mensagem="Não há pontos extras registrados para esta data."
+                        />
                     )}
 
                     {registros.map(r => (

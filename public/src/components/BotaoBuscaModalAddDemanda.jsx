@@ -77,7 +77,7 @@ const ListaResultadosBusca = ({ resultados, onSelecionar, paginacaoInfo, onPageC
 };
 
 // ── Carrinho Express — prioridade por item ────────────────────
-const CarrinhoSection = ({ carrinho, onAtualizarQtd, onRemover, onLimpar, onTogglePrioridadeItem, onCriar, criando }) => {
+const CarrinhoSection = ({ carrinho, onAtualizarQtd, onRemover, onLimpar, onTogglePrioridadeItem, onCriar, criando, usarCarregamentoPadrao }) => {
     const todosUrgentes = carrinho.length > 0 && carrinho.every(c => c.prioridade);
     const algumUrgente  = carrinho.some(c => c.prioridade);
 
@@ -178,7 +178,7 @@ const CarrinhoSection = ({ carrinho, onAtualizarQtd, onRemover, onLimpar, onTogg
                 style={{ marginTop: 12 }}
             >
                 {criando
-                    ? <><div className="spinner-btn-interno"></div> Criando...</>
+                    ? <>{usarCarregamentoPadrao ? <UICarregando variante="inline" /> : <div className="spinner-btn-interno"></div>} Criando...</>
                     : <><i className="fas fa-check"></i> Criar {carrinho.length} Demanda{carrinho.length !== 1 ? 's' : ''}</>
                 }
             </button>
@@ -336,7 +336,7 @@ const TelaDuplicata = ({ item, demandasAtivas, onCriarMesmoAssim, onVoltar, onDe
 };
 
 // ── Formulário de confirmação (modo normal) ───────────────────
-const FormularioConfirmacao = ({ item, onConfirmar, onVoltar, carregando }) => {
+const FormularioConfirmacao = ({ item, onConfirmar, onVoltar, carregando, usarCarregamentoPadrao }) => {
     const [quantidade, setQuantidade] = useState('');
     const [isPrioridade, setIsPrioridade] = useState(false);
 
@@ -393,7 +393,7 @@ const FormularioConfirmacao = ({ item, onConfirmar, onVoltar, carregando }) => {
             <button type="submit" className="gs-btn gs-btn-primario gs-btn-full"
                 disabled={!quantidade || parseInt(quantidade) < 1 || carregando}>
                 {carregando
-                    ? <><div className="spinner-btn-interno"></div> Criando...</>
+                    ? <>{usarCarregamentoPadrao ? <UICarregando variante="inline" /> : <div className="spinner-btn-interno"></div>} Criando...</>
                     : <><i className="fas fa-check"></i> Criar Demanda</>
                 }
             </button>
@@ -428,7 +428,7 @@ const CampoBusca = ({ value, onChange, onLimpar, placeholder = 'Digite o nome, c
 // ============================================================
 // COMPONENTE PRINCIPAL
 // ============================================================
-export default function ModalAdicionarDemanda({ onClose, onDemandaCriada, itemPreSelecionado = null }) {
+export default function ModalAdicionarDemanda({ onClose, onDemandaCriada, itemPreSelecionado = null, usarCarregamentoPadrao = false }) {
     // Estado modo normal
     const [termoBusca, setTermoBusca]           = useState('');
     const [resultados, setResultados]           = useState([]);
@@ -650,6 +650,7 @@ export default function ModalAdicionarDemanda({ onClose, onDemandaCriada, itemPr
                     onConfirmar={handleCriarDemanda}
                     onVoltar={() => setItemSelecionado(null)}
                     carregando={carregando}
+                    usarCarregamentoPadrao={usarCarregamentoPadrao}
                 />
             );
         }
@@ -684,6 +685,7 @@ export default function ModalAdicionarDemanda({ onClose, onDemandaCriada, itemPr
                         onTogglePrioridadeItem={handleTogglePrioridadeItem}
                         onCriar={handleCriarLote}
                         criando={criandoLote}
+                        usarCarregamentoPadrao={usarCarregamentoPadrao}
                     />
                 )}
 

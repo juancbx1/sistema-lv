@@ -8,6 +8,7 @@ import useTypewriter from '../hooks/useTypewriter';
 import useContador from '../hooks/useContador.js';
 import OPAgenteFaseScan from './OPAgenteFaseScan.jsx';
 import UIBloqueio from './UIBloqueio';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 
 // ── Frases de repouso ─────────────────────────────────────────────────────────
 
@@ -494,15 +495,12 @@ export default function OPCentralEncerramento({ opsPendentesGlobal = 0, onAbrirL
                     </div>
 
                     {opsEscaneadas.length === 0 ? (
-                        <div className="op-agente-vazio">
-                            <div className="op-agente-vazio-icone">
-                                <i className="fas fa-check-circle"></i>
-                            </div>
-                            <div className="op-agente-vazio-texto">
-                                <strong>Tudo ainda em produção!</strong>
-                                <span>Nenhuma OP com todas as etapas concluídas no momento.</span>
-                            </div>
-                        </div>
+                        <UIFeedbackNotFound
+                            variante="compacto"
+                            icon="fa-check-circle"
+                            titulo="Tudo ainda em produção"
+                            mensagem="Nenhuma OP com todas as etapas concluídas no momento."
+                        />
                     ) : (
                         <>
                             {/* Barra de seleção moderna */}

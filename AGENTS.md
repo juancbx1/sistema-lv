@@ -384,7 +384,7 @@ Situação operacional:
 
 ### Padrão de entrada React por página
 
-Cada página admin tem um `.html` em `public/admin/` que importa um `main-*.jsx` como módulo. O `.jsx` monta o componente raiz via `ReactDOM.createRoot`. Exemplo: `public/admin/ordens-de-producao.html` → `public/src/main-op.jsx`.
+Cada página admin tem um `.html` em `public/admin/` que importa um `main-*.jsx` como módulo. O `.jsx` monta o componente raiz via `ReactDOM.createRoot`. Exemplo: `public/admin/minha-pagina.html` → `public/src/main-minha-pagina.jsx`.
 
 ---
 
@@ -504,8 +504,7 @@ O `global-style.css` remove o `margin-left` do body no tablet (`@media max-width
 }
 ```
 
-**Onde está hoje:** `ordens-de-producao.css` e `arremates.css`.  
-**Ao criar ou migrar uma página nova** para `gs-card`, adicione isso no CSS da página. Está faltando em: `calendario.css`, `central-de-pagamentos.css`, `usuarios-cadastrados.css`, `home.css`, e outras páginas ainda não migradas.
+**Regra de criação e migração:** toda página nova ou migrada que use `main.gs-card` deve declarar esse bloco no próprio CSS da página. O `global-style.css` não substitui essa declaração, porque cada página é responsável pelo respiro externo do seu card principal.
 
 ---
 
@@ -522,7 +521,7 @@ O desenvolvimento é organizado por **áreas** (cada área = uma página do sist
 
 ## Estrutura Visual Padrão de Páginas
 
-**Regra absoluta:** toda página nova ou refatorada deve seguir esta estrutura. A página de **Ordens de Produção** é a referência visual do sistema — todas as outras devem se parecer com ela, mudando apenas o conteúdo. **Não há exceções.**
+**Regra absoluta:** toda página nova ou refatorada deve seguir esta estrutura visual e os mesmos valores de espaçamento. A identidade, os componentes e o conteúdo podem variar por área, mas a moldura estrutural da página é única para todo o sistema. **Não há exceções.**
 
 ### Esqueleto HTML obrigatório (arquivo `.html`)
 
@@ -565,6 +564,13 @@ O `main.gs-card` tem `padding: 25px` e `margin: 20px`. Dentro dele:
 - `gs-conteudo-pagina` tem `padding: 20px 0 0` dentro do main — o lateral vem do card
 - `gs-card` interno (seções) tem `padding: 25px` próprio e `margin-bottom: 0` (gap do flex cuida do espaço)
 
+### Valores responsivos obrigatórios
+
+- Em telas de até `1024px`, o `body` deve usar `padding: 40px 40px 10px` para preservar o respiro externo do card principal.
+- Em telas de até `768px`, `main.gs-card` deve usar `margin: 10px` e `padding: 15px`.
+- Em telas de até `480px`, o `body` deve usar `padding: 15px 10px`.
+- Esses valores pertencem à estrutura global da página e devem ser mantidos em qualquer CSS específico que sobrescreva o layout da página.
+
 ### Classes globais de estrutura (`global-style.css`)
 
 | Classe | Onde usar | Descrição |
@@ -582,7 +588,7 @@ O `main.gs-card` tem `padding: 25px` e `margin: 20px`. Dentro dele:
 1. **Todo arquivo `.html` de admin** deve ter `<main id="root" class="gs-card">` — sem exceção.
 2. **Todo componente raiz React** deve começar com `UIHeaderPagina` como primeiro filho.
 3. **Nunca** colocar conteúdo fora da estrutura `UIHeaderPagina → gs-conteudo-pagina → gs-card`.
-4. `op-card-estilizado` em `ordens-de-producao.css` é alias legado de `gs-card`. Novas páginas usam `gs-card` direto.
+4. Classes específicas legadas de uma página não substituem `gs-card`. Novas páginas usam `gs-card` diretamente.
 5. O componente `UIHeaderPagina` fica em `public/src/components/UIHeaderPagina.jsx`.
 
 ### ⚠️ Anti-padrão crítico — onde o `gs-card` NÃO vai
@@ -881,7 +887,7 @@ O botão tem position: absolute/fixed?
 
 ### `UICarregando` — Spinner Universal do Sistema
 
-**Arquivo:** `public/src/components/UICarregando.jsx`
+**Arquivo:** `public/src/components/UICarregando.tsx`
 
 **Regra absoluta:** qualquer carregamento genérico de dados (busca de API, carregamento de página, atualização de aba) **deve usar este componente**. Nunca usar `<div className="spinner">`, textos de "Carregando..." ou implementações ad-hoc.
 
@@ -922,6 +928,14 @@ pública permanece inalterada.
 desde o primeiro frame. Animações do `UICarregando` não podem começar com
 conteúdo central em `opacity: 0`, pois a maioria dos carregamentos termina em
 aproximadamente dois segundos.
+
+**Bootstrap visual obrigatório:** páginas administrativas devem incluir no HTML
+um loader estático com as mesmas classes `.ui-cg-*` antes dos módulos React,
+identificado por `#lv-initial-page-loader`. A entrada da página remove esse
+loader somente depois da autenticação e/ou do primeiro estado React pronto;
+páginas legadas usam `htmlUICarregando` e `removerCarregamentoInicial` em
+`public/js/utils/ui-carregando.js`. A regra de visibilidade do `body` deve
+permitir que esse overlay apareça antes de `body.autenticado`.
 
 ### Transição universal entre empresas
 
@@ -2391,3 +2405,52 @@ deixando 11 módulos habilitados em cada empresa ativa. O cadastro de novas
 empresas agora habilita automaticamente os módulos cujo catálogo esteja
 marcado como `multiempresa_pronto`; módulos fora do escopo da Fase 8 continuam
 bloqueados.
+
+Decisao de UX multiempresa em 2026-08-06: a identidade visual do carregamento
+deve usar a empresa ativa do contexto do token, respeitando a mesma sigla e
+`cor_identificacao` exibidas no `ml-company-compact`. O bootstrap sincronico
+`public/js/utils/empresa-carregamento-bootstrap.js` e carregado nas paginas
+comuns antes dos bundles React, hidrata loaders estaticos e expoe a mesma
+identidade para `UICarregando` e `htmlUICarregando`. Em impersonacao,
+`sessionStorage` tem prioridade; no fluxo normal, `localStorage` e a fonte
+primaria. A troca de empresa nao deve limpar `empresaAtiva` antes de gravar o
+novo contexto, pois esse intervalo causa o fallback visual para LV. A pagina
+de Ordens de Producao permanece sem alteracao estrutural no HTML inicial.
+
+## Estado operacional consolidado — 2026-08-06
+
+Esta secao e a referencia atual para continuidade; os blocos anteriores que
+descrevem ensaios pendentes permanecem como historico da execucao.
+
+- O G11 foi aceito localmente e o G12 foi executado com autorizacao explicita.
+  A migration `multiempresas-fase8-liberacao-v1` foi executada e validada na
+  Neon com `aprovado: true`, deixando os 11 modulos da cadeia habilitados para
+  `lojas-variara` e `neila-confeccoes`. Novas empresas recebem esses modulos
+  quando o catalogo correspondente estiver marcado como
+  `multiempresa_pronto`.
+- O pacote da cadeia produtiva foi publicado no commit `47ae4dd`.
+  Permanecem fora dele o hunk `api/dashboard.js:1209-1210`, os diffs paralelos
+  do worktree e as remocoes visuais de OP.
+- Calendario foi publicado nos commits `46663d0` e `b9acd29`; a migration e a
+  correcao de unicidade foram executadas e validadas na Neon.
+- Incentivos foi publicado no commit `4511b6f`. A migration
+  `multiempresas-fase9-incentivos-v1` foi executada e validada na Neon com
+  `aprovado: true`, sem linhas sem empresa, sem usuarios ou produtos fora do
+  contexto e sem unicidades globais conflitantes.
+- Central de Pagamentos foi publicada no commit `705dd13`. A migration
+  `multiempresas-fase9-central-pagamentos-v1` foi executada e validada na Neon
+  com `aprovado: true`: as tres tabelas estao sem nulos, as oito constraints
+  empresariais estao validas, a unicidade global de registro de dia foi
+  removida, a unicidade empresarial permanece presente e as duas empresas
+  estao habilitadas. O usuario tambem confirmou testes manuais sem vazamento.
+- O typecheck, build, `node --check` da API da Central e `git diff --check`
+  passaram no pacote da Central. O build manteve apenas os avisos conhecidos
+  do bootstrap nao-module e do chunk grande da Central.
+- O worktree compartilhado continua sujo por redesign, migracao progressiva
+  para TypeScript e outros diffs paralelos. O staging esta vazio; nenhum desses
+  diffs deve ser incluido automaticamente no proximo commit.
+
+Nao ha incidente urgente conhecido neste momento. Nao repetir smokes de dominio
+ja aprovados, nao executar novas migrations e nao publicar novo commit sem
+autorizacao. O proximo ponto de partida esta em
+`_planejamento/RETOMADA-FASE9-POS-CENTRAL-2026-08-06.md`.

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import { fetchFinanceiro, FinanceiroApiException } from '../utils/financeiro-api';
 import type {
   FinanceiroCategoria,
@@ -324,7 +325,12 @@ export default function FinanceiroImportacaoRevisao({
 
       <div className="fc-import-lista">
         {visiveis.length === 0 ? (
-          <p className="fc-import-vazio">Nenhuma linha neste filtro.</p>
+          <UIFeedbackNotFound
+            variante="compacto"
+            icon="fa-filter"
+            titulo="Nenhuma linha neste filtro"
+            mensagem="Tente ajustar os filtros da importação."
+          />
         ) : visiveis.map((linha) => {
           const badge = badgeLinha(linha);
           const id = Number(linha.id);

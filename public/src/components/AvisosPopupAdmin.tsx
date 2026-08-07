@@ -9,6 +9,7 @@
 import { useState, useEffect } from 'react';
 import { mostrarMensagem, mostrarConfirmacao } from '../../js/utils/popups.js';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import AvisosPopupModal from './AvisosPopupModal';
 import AvisosPopupViewersModal from './AvisosPopupViewersModal';
 import type {
@@ -339,11 +340,11 @@ export default function AvisosPopupAdmin({ modalAberto, onFecharModal }: AvisosP
             {carregando && <UICarregando variante="bloco" />}
 
             {!carregando && avisos.length === 0 && (
-                <div className="avp-vazio">
-                    <i className="fas fa-bullhorn"></i>
-                    <p>Nenhum aviso criado ainda.</p>
-                    <p className="avp-vazio-sub">Clique em "Novo Aviso" para começar.</p>
-                </div>
+                <UIFeedbackNotFound
+                    icon="fa-bullhorn"
+                    titulo="Nenhum aviso criado ainda"
+                    mensagem={'Clique em “Novo Aviso” para começar.'}
+                />
             )}
 
             {/* ── Seção: Modelos ── */}
@@ -372,9 +373,12 @@ export default function AvisosPopupAdmin({ modalAberto, onFecharModal }: AvisosP
                         <AvisoCard key={a.id} aviso={a} {...propsCard} />
                     ))}
                     {ativos.length === 0 && !carregando && avisos.length > 0 && (
-                        <div className="avp-secao-vazio">
-                            <i className="fas fa-circle-xmark"></i> Nenhum aviso ativo no momento.
-                        </div>
+                        <UIFeedbackNotFound
+                            variante="compacto"
+                            icon="fa-circle-xmark"
+                            titulo="Nenhum aviso ativo no momento"
+                            mensagem="Os avisos publicados estão arquivados ou aguardando ativação."
+                        />
                     )}
                 </section>
             )}

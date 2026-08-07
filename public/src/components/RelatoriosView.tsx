@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import { fetchFinanceiro } from '../utils/financeiro-api';
 
 interface DadosDRE { totalReceitas: number; totalDespesas: number; resultado: number; }
@@ -132,7 +133,7 @@ export default function RelatoriosView() {
           <label className="fc-relatorios-filtro-label-fantasma" aria-hidden>Ação</label>
           <button type="submit" className="fc-btn fc-btn-primario fc-relatorios-gerar" disabled={isLoading}>
             {isLoading ? (
-              <><i className="fas fa-spinner fa-spin" /> Gerando...</>
+              <><UICarregando variante="inline" /> Gerando...</>
             ) : (
               <><i className="fas fa-chart-bar" /> Gerar Relatório</>
             )}
@@ -248,7 +249,12 @@ export default function RelatoriosView() {
                   </ol>
                 </>
               ) : (
-                <p className="fc-relatorios-vazio">Nenhuma despesa por categoria no período selecionado.</p>
+                <UIFeedbackNotFound
+                  variante="compacto"
+                  icon="fa-chart-pie"
+                  titulo="Nenhuma despesa por categoria"
+                  mensagem="Não há despesas no período selecionado."
+                />
               )}
             </section>
           </>

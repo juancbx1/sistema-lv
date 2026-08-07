@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import Select from 'react-select';
+import UICarregando from './UICarregando';
 import { formatarMoeda } from '../utils/cpag-format';
 import { mostrarConfirmacao, mostrarToast } from '../utils/cpag-feedback';
 import { fetchCpag } from '../utils/cpag-api';
@@ -523,8 +524,7 @@ export default function CPAGBeneficios({ usuarios, contas }: Props) {
 
         {!calendarioCarregado ? (
           <p className="cpg-competencias__classificando" role="status">
-            <i className="fas fa-spinner fa-spin" aria-hidden="true" /> Carregando calendário da
-            empresa…
+            <UICarregando variante="inline" /> Carregando calendário da empresa…
           </p>
         ) : (
           <>

@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 // @ts-expect-error popups JS legados sem declaração TypeScript
 import { mostrarMensagem, mostrarConfirmacao } from '/js/utils/popups.js';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import type {
     IncenPagamentosSubAba,
     PremioGanhoItem,
@@ -265,19 +266,23 @@ export default function IncenPagamentosTab() {
                         )}
 
                         {totalPendente === 0 && (
-                            <div className="incen-lista-vazia">
-                                <i className="fas fa-check-circle" style={{ color: '#22c55e' }}></i>
-                                <p>Nenhum prêmio pendente de pagamento.</p>
-                            </div>
+                            <UIFeedbackNotFound
+                                variante="compacto"
+                                icon="fa-check-circle"
+                                titulo="Nenhum prêmio pendente de pagamento"
+                                mensagem="Tudo certo por aqui."
+                            />
                         )}
                     </div>
                 ) : (
                     <div className="incen-pag-historico">
                         {historico.length === 0 ? (
-                            <div className="incen-lista-vazia">
-                                <i className="fas fa-history"></i>
-                                <p>Nenhum pagamento realizado ainda.</p>
-                            </div>
+                            <UIFeedbackNotFound
+                                variante="compacto"
+                                icon="fa-history"
+                                titulo="Nenhum pagamento realizado ainda"
+                                mensagem="Os pagamentos aparecerão aqui quando forem concluídos."
+                            />
                         ) : (
                             <div className="incen-pag-lista">
                                 {historico.map(item => (

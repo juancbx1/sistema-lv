@@ -4,6 +4,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import { mostrarMensagem, mostrarConfirmacao } from '../../js/utils/popups.js';
 import type {
     AvisoPopupBlobImagem,
@@ -188,18 +189,21 @@ export default function AvisosPopupGaleria({ onFechar }: AvisosPopupGaleriaProps
                     )}
 
                     {!carregando && !erro && imagens.length === 0 && (
-                        <div className="avpg-vazio">
-                            <i className="fas fa-image"></i>
-                            <p>Nenhuma imagem armazenada ainda.</p>
-                            <p className="avpg-vazio-sub">As imagens aparecem aqui após serem enviadas ao criar um aviso.</p>
-                        </div>
+                        <UIFeedbackNotFound
+                            variante="compacto"
+                            icon="fa-image"
+                            titulo="Nenhuma imagem armazenada ainda"
+                            mensagem="As imagens aparecem aqui após serem enviadas ao criar um aviso."
+                        />
                     )}
 
                     {!carregando && !erro && imagensFiltradas.length === 0 && imagens.length > 0 && (
-                        <div className="avpg-vazio">
-                            <i className="fas fa-filter"></i>
-                            <p>Nenhuma imagem nessa categoria.</p>
-                        </div>
+                        <UIFeedbackNotFound
+                            variante="compacto"
+                            icon="fa-filter"
+                            titulo="Nenhuma imagem nessa categoria"
+                            mensagem="Tente selecionar outra categoria."
+                        />
                     )}
 
                     {!carregando && !erro && imagensFiltradas.length > 0 && (
@@ -257,7 +261,7 @@ export default function AvisosPopupGaleria({ onFechar }: AvisosPopupGaleriaProps
                                             title={img.emUso && img.avisoAtivo ? `Em uso pelo aviso "${img.emUso}"` : 'Deletar imagem'}
                                         >
                                             {deletando === img.url
-                                                ? <><i className="fas fa-spinner fa-spin"></i> Deletando...</>
+                                                ? <><UICarregando variante="inline" /> Deletando...</>
                                                 : <><i className="fas fa-trash"></i></>
                                             }
                                         </button>

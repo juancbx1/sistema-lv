@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import '/css/alertas-central.css';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
+import UICarregando from './UICarregando';
 
 const POLLING_INTERVALO      = 4 * 60 * 1000; // 4 minutos
 const COOLDOWN_SOM_MS        = 2 * 60 * 1000; // 2 minutos entre sons
@@ -528,20 +530,21 @@ export default function AlertasFAB() {
 
                         <div className="alertas-drawer-corpo">
                             {alertas.length === 0 ? (
-                                <div className="alertas-vazio">
-                                    <i className="fas fa-check-circle"></i>
-                                    <p>Tudo tranquilo por aqui.</p>
-                                    <span>
-                                        {ultimaVerificacao
-                                            ? `Última verificação às ${ultimaVerificacao.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
-                                            : 'Aguardando verificação...'}
-                                    </span>
-                                </div>
+                                <UIFeedbackNotFound
+                                    variante="compacto"
+                                    icon="fa-check-circle"
+                                    titulo="Tudo tranquilo por aqui"
+                                    mensagem={ultimaVerificacao
+                                        ? `Última verificação às ${ultimaVerificacao.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
+                                        : 'Aguardando verificação...'}
+                                />
                             ) : alertasFiltrados.length === 0 ? (
-                                <div className="alertas-vazio">
-                                    <i className="fas fa-filter"></i>
-                                    <p>Nenhum alerta nessa área.</p>
-                                </div>
+                                <UIFeedbackNotFound
+                                    variante="compacto"
+                                    icon="fa-filter"
+                                    titulo="Nenhum alerta nessa área"
+                                    mensagem="Não há alertas correspondentes ao filtro selecionado."
+                                />
                             ) : (
                                 alertasFiltrados.map((alerta) => (
                                     <div key={alerta._id} className={`alertas-card nivel-${alerta.nivel}`}>
@@ -601,15 +604,14 @@ export default function AlertasFAB() {
                                 </div>
                                 <div className="alertas-historico-lista">
                                     {carregandoHistorico ? (
-                                        <div className="alertas-vazio">
-                                            <i className="fas fa-spinner fa-spin"></i>
-                                            <p>Carregando...</p>
-                                        </div>
+                                        <UICarregando variante="bloco" tamanho="sm" texto="Carregando histórico..." />
                                     ) : historico.length === 0 ? (
-                                        <div className="alertas-vazio">
-                                            <i className="fas fa-check-circle"></i>
-                                            <p>Nenhum alerta disparado hoje.</p>
-                                        </div>
+                                        <UIFeedbackNotFound
+                                            variante="compacto"
+                                            icon="fa-check-circle"
+                                            titulo="Nenhum alerta disparado hoje"
+                                            mensagem="O histórico deste dia está limpo."
+                                        />
                                     ) : (
                                         historico.map(item => (
                                             <div key={item.id} className={`alertas-historico-item nivel-${item.nivel}`}>

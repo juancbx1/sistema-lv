@@ -3,6 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import type {
     AvisoPopup,
     AvisoPopupViewersAba,
@@ -120,10 +121,12 @@ export default function AvisosPopupViewersModal({ aviso, onFechar }: AvisosPopup
                     {!carregando && !erro && dados && aba === 'viram' && (
                         <>
                             {totalViu === 0 ? (
-                                <div className="avpv-vazio">
-                                    <i className="fas fa-eye-slash"></i>
-                                    <p>Ninguém visualizou ainda.</p>
-                                </div>
+                                <UIFeedbackNotFound
+                                    variante="compacto"
+                                    icon="fa-eye-slash"
+                                    titulo="Ninguém visualizou ainda"
+                                    mensagem="Ainda não há confirmações de leitura para este aviso."
+                                />
                             ) : (
                                 <ul className="avpv-lista">
                                     {dados.visualizaram.map(u => (
@@ -146,10 +149,12 @@ export default function AvisosPopupViewersModal({ aviso, onFechar }: AvisosPopup
                     {!carregando && !erro && dados && aba === 'nao_viram' && (
                         <>
                             {totalNaoViu === 0 ? (
-                                <div className="avpv-vazio avpv-vazio--ok">
-                                    <i className="fas fa-check-circle"></i>
-                                    <p>Todos já visualizaram! 🎉</p>
-                                </div>
+                                <UIFeedbackNotFound
+                                    variante="compacto"
+                                    icon="fa-check-circle"
+                                    titulo="Todos já visualizaram!"
+                                    mensagem="Não há pessoas pendentes de leitura."
+                                />
                             ) : (
                                 <ul className="avpv-lista">
                                     {dados.nao_visualizaram.map(u => (

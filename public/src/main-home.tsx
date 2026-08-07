@@ -8,9 +8,11 @@ import { verificarAutenticacao } from '/js/utils/auth.js';
 import HOMEHeader from './components/HOMEHeader';
 import HOMEQuickActions from './components/HOMEQuickActions';
 import HOMENews from './components/HOMENews';
+import UICarregando from './components/UICarregando';
 // AlertasFAB permanece em JSX (FAB compartilhado entre páginas admin)
 import AlertasFAB from './components/AlertasFAB.jsx';
 import type { HomeAuthResult, HomeUsuario } from './utils/home-types';
+import removerCarregamentoInicial from './utils/remover-carregamento-inicial';
 
 function App() {
     const [usuario, setUsuario] = useState<HomeUsuario | null>(null);
@@ -28,12 +30,13 @@ function App() {
 
             setUsuario(auth.usuario);
             setPermissoes(auth.permissoes || []);
+            removerCarregamentoInicial();
             setAuthLoading(false);
         }
         void init();
     }, []);
 
-    if (authLoading) return null; // Tela branca rápida enquanto verifica token
+    if (authLoading) return <UICarregando variante="pagina" texto="Verificando seu acesso..." />;
 
     return (
         <>

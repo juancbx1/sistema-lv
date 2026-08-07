@@ -1570,8 +1570,8 @@ Revisar índices compostos, conforme cada consulta:
 - [x] Fase 5 — Gestão Organizacional
 - [x] Fase 6 — Financeiro como piloto
 - [x] Fase 7 — Empregados, dashboard e pagamentos
-- [ ] Fase 8 — OPs e cadeia produtiva
-- [ ] Fase 9 — Demais módulos
+- [x] Fase 8 — OPs e cadeia produtiva (liberada; acompanhamento operacional)
+- [ ] Fase 9 — Demais módulos (em andamento; Calendário, Incentivos e Central concluídos no escopo atual)
 - [ ] Fase 10 — Permissões por empresa
 - [ ] Fase 11 — Segurança, testes e desempenho
 - [ ] Fase 12 — Limpeza e ativação definitiva
@@ -1580,16 +1580,15 @@ Revisar índices compostos, conforme cada consulta:
 
 ## Estado atual
 
-**Fase em andamento:** operação da Fase 8 — OPs e cadeia produtiva. A Fase 8
-multiempresa foi liberada no escopo dos 11 módulos aprovados após o fechamento
-dos gates G1–G12.
+**Fase em andamento:** Fase 9 — demais módulos, após a liberação operacional da
+Fase 8. Calendário, Incentivos e Central de Pagamentos já foram concluídos no
+escopo atual; os módulos restantes serão tratados um a um.
 
-**Checkpoint atual:** Fases 0–7 concluídas e aprovadas dentro do escopo atual.
-A dashboard da Fase 7 foi publicada e aprovada em smoke autenticado; a
-preparação estrutural foi executada e validada na Neon.
+**Checkpoint atual:** Fases 0–8 concluídas no escopo aprovado. G11 e G12 foram
+fechados; a migration de liberação da Fase 8 foi executada e validada na Neon.
 
-**Próxima frente funcional:** acompanhar a operação multiempresa liberada,
-validar o deploy do pacote e planejar os módulos restantes da Fase 9.
+**Próxima frente funcional:** fazer inventário read-only dos módulos restantes
+da Fase 9 e preparar o próximo pacote seletivo.
 
 **Situação operacional:** o sistema possui infraestrutura multiempresa e a
 cadeia produtiva aprovada foi habilitada para `Lojas Variara`, `Neila
@@ -1599,13 +1598,9 @@ bloqueados conforme seus próprios flags.
 **Última atualização:** 2026-08-06.
 
 **Handoff da retomada:** o próximo Codex deve ler
-`_planejamento/RETOMADA-FASE8-MULTIEMPRESAS-2026-08-03.md`. Produtos/Demandas,
-OPs/Cortes e o bloco de lançamentos/sessões de Produção já foram aprovados
-localmente com idempotência, rollback e smoke HTTP de dois contextos. A próxima
-frente é fechar os consumidores restantes de Produção e depois migrar
-Arremates, Embalagem e Estoque; G11/G12 permanecem pendentes. Não executar
-Neon, commit, push ou deploy sem autorização explícita, e preservar o worktree
-e todas as bases locais existentes.
+`_planejamento/RETOMADA-FASE9-POS-CENTRAL-2026-08-06.md`. Não repetir G11/G12,
+não executar migration, commit, push ou deploy sem autorização explícita e
+preservar o worktree compartilhado e as bases locais existentes.
 
 **Banco alterado:** sim. Fundação multiempresa, schema financeiro final e
 preparação estrutural da Fase 7 executados e validados em produção.
@@ -1697,3 +1692,30 @@ Validação:
 | 2026-07-28 | Produtos, matérias-primas, contatos e fornecedores serão empresariais | Aprovado |
 | 2026-07-28 | Superadministrador será global e separado dos vínculos empresariais | Aprovado |
 | 2026-07-28 | Concluir implementação e validação local do seletor universal | Concluído localmente |
+
+## Estado operacional consolidado — 2026-08-06
+
+Este bloco é a referência atual para continuidade; os checkpoints anteriores
+que descrevem etapas pendentes permanecem como histórico.
+
+- G11 foi aceito localmente e G12 foi concluído com autorização explícita.
+  `multiempresas-fase8-liberacao-v1` foi executada e validada na Neon com
+  `aprovado: true`; os 11 módulos da cadeia estão habilitados para as empresas
+  ativas `lojas-variara` e `neila-confeccoes`.
+- A Fase 8 está liberada em produção no escopo aprovado e segue em
+  acompanhamento operacional. Não há nova migration da Fase 8 a executar.
+- Na Fase 9, Calendário, Incentivos e Central de Pagamentos foram publicados,
+  migrados e validados. Os commits são `46663d0`/`b9acd29`, `4511b6f` e
+  `705dd13`, respectivamente.
+- A validação final da Central confirmou zero nulos, zero usuários ou contas
+  fora da empresa, oito constraints válidas, unicidade global removida,
+  unicidade empresarial presente e zero empresas ativas pendentes.
+- O próximo passo é mapear read-only os módulos restantes da Fase 9 e preparar
+  o próximo pacote seletivo. O handoff é
+  `_planejamento/RETOMADA-FASE9-POS-CENTRAL-2026-08-06.md`.
+- O worktree continua compartilhado e sujo por redesign e TypeScript. O hunk
+  `api/dashboard.js:1209-1210`, as alterações paralelas e as remoções visuais
+  de OP continuam fora de qualquer pacote sem decisão explícita.
+
+A Fase 8 está liberada e a Fase 9 está em andamento; não reabrir G11/G12 por
+causa das seções históricas anteriores.

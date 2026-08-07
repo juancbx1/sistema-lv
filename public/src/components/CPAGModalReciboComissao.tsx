@@ -516,17 +516,21 @@ export default function CPAGModalReciboComissao({
             </div>
 
             {!selectedUser ? (
-              <div className="cpg-recibos-historico__vazio">
-                <i className="fas fa-clipboard-list" aria-hidden="true" />
-                <p>Escolha um empregado para ver o que já foi gerado e o que ainda falta.</p>
-              </div>
+              <UIFeedbackNotFound
+                variante="compacto"
+                icon="fa-clipboard-list"
+                titulo="Escolha um empregado"
+                mensagem="Aqui você verá o que já foi gerado e o que ainda falta."
+              />
             ) : loadingHistorico ? (
               <UICarregando variante="bloco" tamanho="md" texto="Carregando histórico…" />
             ) : historicoSemanas.length === 0 ? (
-              <div className="cpg-recibos-historico__vazio">
-                <i className="fas fa-inbox" aria-hidden="true" />
-                <p>Nenhuma semana fechada disponível para este empregado.</p>
-              </div>
+              <UIFeedbackNotFound
+                variante="compacto"
+                icon="fa-inbox"
+                titulo="Nenhuma semana fechada disponível"
+                mensagem="Não há histórico de semanas para este empregado."
+              />
             ) : (
               <div className="cpg-recibos-historico__lista">
                 {historicoSemanas.map((semana) => {

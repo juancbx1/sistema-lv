@@ -124,7 +124,7 @@ function App() {
                 isOpen={modalHistoricoAberto}
                 onClose={() => setModalHistoricoAberto(false)}
             />
-            <BotaoBuscaFunil permissoes={permissoes} />
+            <BotaoBuscaFunil permissoes={permissoes} usarCarregamentoPadrao />
             <AlertasFAB />
         </>
     );

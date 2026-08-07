@@ -4,6 +4,8 @@ import { fetchAPI } from '/js/utils/api-utils.js';
 // @ts-expect-error m�dulo JS legado sem tipos
 import { mostrarConfirmacao } from '/js/utils/popups.js';
 import type { DashCofre, DashMeta, DashCofreMovimento, DashCofreExtratoResponse } from '../utils/dashboard-types';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
+import UICarregando from './UICarregando';
 
 interface DashCofreModalProps {
     dadosCofre?: DashCofre | null;
@@ -167,7 +169,7 @@ export default function DashCofreModal({ dadosCofre, metaDoDia, pontosHoje, aoRe
                         disabled={loading}
                     >
                         {loading
-                            ? <><div className="ds-spinner-btn" /> Processando...</>
+                            ? <><UICarregando variante="inline" /> Processando...</>
                             : <><i className="fas fa-bolt" aria-hidden="true" /> Usar resgate agora</>
                         }
                     </button>
@@ -228,9 +230,14 @@ export default function DashCofreModal({ dadosCofre, metaDoDia, pontosHoje, aoRe
 
                 <div className="ds-cofre-extrato-lista">
                     {loading && historico.length === 0 ? (
-                        <div className="ds-spinner" style={{ margin: '30px auto' }} />
+                        <UICarregando variante="bloco" tamanho="sm" texto="Carregando extrato..." />
                     ) : grupos.length === 0 ? (
-                        <p className="ds-cofre-vazio">Nenhuma movimentação ainda.</p>
+                        <UIFeedbackNotFound
+                            variante="compacto"
+                            icon="fa-vault"
+                            titulo="Nenhuma movimentação ainda"
+                            mensagem="Seus ganhos e resgates aparecerão aqui."
+                        />
                     ) : (
                         grupos.map((entrada, idx) => {
                             if (entrada.tipo === '_DATA') return (

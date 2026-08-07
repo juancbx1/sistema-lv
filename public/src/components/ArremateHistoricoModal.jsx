@@ -4,6 +4,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import UIPaginacao from './UIPaginacao';
 import { mostrarConfirmacao, mostrarMensagem } from '/js/utils/popups.js';
 
@@ -96,7 +97,7 @@ function HistoricoCard({ item, onDesfazer, desfazendoId }) {
                     title="Desfazer este lançamento"
                 >
                     {desfazendoId === item.id
-                        ? <div className="spinner-btn-interno"></div>
+                        ? <UICarregando variante="inline" />
                         : <><i className="fas fa-undo"></i></>
                     }
                 </button>
@@ -271,10 +272,12 @@ export default function ArremateHistoricoModal({ isOpen, onClose }) {
                     {carregando ? (
                         <UICarregando variante="bloco" texto="Buscando histórico..." />
                     ) : eventos.length === 0 ? (
-                        <div className="arremate-hist-vazio">
-                            <i className="fas fa-inbox"></i>
-                            <p>Nenhum registro encontrado para os filtros selecionados.</p>
-                        </div>
+                        <UIFeedbackNotFound
+                            variante="compacto"
+                            icon="fa-inbox"
+                            titulo="Nenhum registro encontrado"
+                            mensagem="Não há histórico para os filtros selecionados."
+                        />
                     ) : (
                         <div className="arremate-hist-grid">
                             {eventos.map(item => (

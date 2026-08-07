@@ -4,6 +4,7 @@ import { fetchFinanceiro } from '../utils/financeiro-api';
 import type { FinanceiroLancamento } from '../utils/financeiro-types';
 import { textoDataLancamento, rotuloDataLancamento } from '../utils/financeiro-data-label';
 import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio';
+import UICarregando from './UICarregando';
 
 interface Props {
   lancamento: FinanceiroLancamento;
@@ -371,7 +372,7 @@ export default function LancamentoFinanceiroCard({
         >
           {infoLoading && (
             <p className="fc-info-gerencial-msg">
-              <i className="fas fa-spinner fa-spin" aria-hidden /> Carregando trilha do lançamento…
+              <UICarregando variante="inline" /> Carregando trilha do lançamento…
             </p>
           )}
 

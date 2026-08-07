@@ -12,6 +12,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import UIFeedbackNotFound from './UIFeedbackNotFound';
 import OPPaginacaoWrapper from './OPPaginacaoWrapper.jsx';
+import UICarregando from './UICarregando';
 import { mostrarMensagem } from '/js/utils/popups.js';
 import { calcularStatusDemanda, STATUS_META } from '/src/utils/demandaStatus.js';
 
@@ -56,7 +57,7 @@ function formatarData(ts) {
 const ITENS_POR_PAG_PENDENTES = 8;
 const ITENS_POR_PAG_ARQUIVO   = 8;
 
-export default function BotaoBuscaModalConcluidas({ isOpen, onClose }) {
+export default function BotaoBuscaModalConcluidas({ isOpen, onClose, usarCarregamentoPadrao = false }) {
     // Aba principal: 'pendente' | 'arquivo'
     const [abaAtiva, setAbaAtiva] = useState('pendente');
     // Sub-aba da aba pendente: 'concluidas' | 'divergencias'
@@ -249,7 +250,7 @@ export default function BotaoBuscaModalConcluidas({ isOpen, onClose }) {
                     {abaAtiva === 'pendente' && (
                         <>
                             {carregandoPendentes ? (
-                                <div className="spinner">Calculando...</div>
+                                usarCarregamentoPadrao ? <UICarregando variante="bloco" texto="Calculando..." /> : <div className="spinner">Calculando...</div>
                             ) : totalPendentes === 0 ? (
                                 <UIFeedbackNotFound
                                     icon="fa-check-double"
@@ -279,9 +280,19 @@ export default function BotaoBuscaModalConcluidas({ isOpen, onClose }) {
                                     {/* Lista */}
                                     <div className="gs-historico-lista">
                                         {listaSubAbaCompleta.length === 0 ? (
-                                            <p className="gs-historico-vazio">Nenhuma nesta categoria.</p>
+                                            <UIFeedbackNotFound
+                                                variante="compacto"
+                                                icon="fa-inbox"
+                                                titulo="Nenhuma demanda nesta categoria"
+                                                mensagem="Não há itens para exibir nesta aba."
+                                            />
                                         ) : listaSubAba.length === 0 ? (
-                                            <p className="gs-historico-vazio">Página vazia.</p>
+                                            <UIFeedbackNotFound
+                                                variante="compacto"
+                                                icon="fa-search"
+                                                titulo="Nenhum item nesta página"
+                                                mensagem="Não há mais itens para exibir aqui."
+                                            />
                                         ) : (
                                             listaSubAba.map(item => (
                                                 <HistoricoItemCard
@@ -318,7 +329,7 @@ export default function BotaoBuscaModalConcluidas({ isOpen, onClose }) {
                                             disabled={arquivando}
                                         >
                                             {arquivando ? (
-                                                <><div className="spinner-btn-interno"></div> Arquivando...</>
+                                                <>{usarCarregamentoPadrao ? <UICarregando variante="inline" /> : <div className="spinner-btn-interno"></div>} Arquivando...</>
                                             ) : (
                                                 <><i className="fas fa-archive"></i> Arquivar tudo ({totalPendentes} {totalPendentes === 1 ? 'item' : 'itens'})</>
                                             )}
@@ -333,7 +344,7 @@ export default function BotaoBuscaModalConcluidas({ isOpen, onClose }) {
                     {abaAtiva === 'arquivo' && (
                         <>
                             {carregandoArquivo ? (
-                                <div className="spinner">Carregando arquivo...</div>
+                                usarCarregamentoPadrao ? <UICarregando variante="bloco" texto="Carregando arquivo..." /> : <div className="spinner">Carregando arquivo...</div>
                             ) : itensArquivados.length === 0 ? (
                                 <UIFeedbackNotFound
                                     icon="fa-archive"

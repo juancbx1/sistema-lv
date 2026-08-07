@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import { mostrarMensagem } from '/js/utils/popups.js';
 
 async function fetchApi(endpoint, options = {}) {
@@ -193,10 +194,12 @@ export default function ArremateModalTempos({ isOpen, onClose }) {
                     {carregando ? (
                         <UICarregando variante="bloco" />
                     ) : produtosFiltrados.length === 0 ? (
-                        <div className="tpp-vazio">
-                            <i className="fas fa-box-open"></i>
-                            <p>Nenhum produto encontrado.</p>
-                        </div>
+                        <UIFeedbackNotFound
+                            variante="compacto"
+                            icon="fa-box-open"
+                            titulo="Nenhum produto encontrado"
+                            mensagem="Tente ajustar a busca para encontrar um produto."
+                        />
                     ) : (
                         <div className="tpp-cards-grid">
                             {produtosFiltrados.map(produto => (
@@ -219,7 +222,7 @@ export default function ArremateModalTempos({ isOpen, onClose }) {
                         disabled={salvando}
                     >
                         {salvando
-                            ? <><div className="spinner-btn-interno"></div> Salvando...</>
+                            ? <><UICarregando variante="inline" /> Salvando...</>
                             : <><i className="fas fa-save"></i> Salvar Alterações</>
                         }
                     </button>

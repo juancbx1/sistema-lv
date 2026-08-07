@@ -7,6 +7,7 @@ import { createPortal } from 'react-dom';
 // @ts-expect-error módulo JS legado sem tipos
 import { changelog } from '/js/utils/changelog-data.js';
 import type { DashChangelogEntrada } from '../utils/dashboard-types';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 
 export default function DashVersionFooter({ className = '' }: { className?: string }) {
     const [aberto, setAberto] = useState(false);
@@ -56,7 +57,12 @@ export default function DashVersionFooter({ className = '' }: { className?: stri
 
                         <div className="ds-version-modal-body">
                             {entradasDashboard.length === 0 ? (
-                                <p className="ds-version-vazio">Nenhuma novidade registrada ainda.</p>
+                                <UIFeedbackNotFound
+                                    variante="compacto"
+                                    icon="fa-box-open"
+                                    titulo="Nenhuma novidade registrada ainda"
+                                    mensagem="As atualizações do sistema aparecerão aqui."
+                                />
                             ) : (
                                 entradasDashboard.map((entrada, idx) => (
                                     <div key={entrada.versao} className="ds-version-entrada">

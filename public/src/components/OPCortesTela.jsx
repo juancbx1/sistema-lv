@@ -11,6 +11,7 @@ import OPPaginacaoWrapper from './OPPaginacaoWrapper.jsx';
 import OPCortesRadar from './OPCortesRadar.jsx';
 import OPCortesAgente from './OPCortesAgente.jsx';
 import OPQuickLogModal from './OPQuickLogModal.jsx';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import { obterProdutos as obterProdutosDoStorage } from '/js/utils/storage.js';
 import { mostrarMensagem, mostrarConfirmacao } from '/js/utils/popups.js';
 import UICarregando from './UICarregando';
@@ -414,11 +415,11 @@ export default function OPCortesTela() {
                                     );
                                 })
                             ) : (
-                                <div className="op-cortes-estoque-vazio">
-                                    <i className="fas fa-cut"></i>
-                                    <p>Nenhum corte em estoque no momento.</p>
-                                    <span>Use "Registrar Corte" acima para adicionar peças ao estoque.</span>
-                                </div>
+                                <UIFeedbackNotFound
+                                    icon="fa-cut"
+                                    titulo="Nenhum corte em estoque"
+                                    mensagem="Use “Registrar Corte” acima para adicionar peças ao estoque."
+                                />
                             )}
                         </div>
 

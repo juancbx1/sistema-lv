@@ -17,6 +17,7 @@ import MenuNovidades, { contarNovidadesNaoLidas } from './MenuNovidades';
 import MenuTransicaoEmpresa from './MenuTransicaoEmpresa';
 import MenuUsuario from './MenuUsuario';
 import PerfilAvatarStudio from './PerfilAvatarStudio';
+import UICarregando from './UICarregando';
 
 export default function MenuLateral() {
   const {
@@ -201,7 +202,7 @@ export default function MenuLateral() {
       <>
         <aside className="ml-menu-lateral ml-menu-loading" aria-label="Carregando menu">
           <div className="ml-loading-content">
-            <i className="fa-solid fa-spinner fa-spin" aria-hidden="true" />
+            <UICarregando variante="inline" />
           <span>{erroContexto || 'Preparando seu espaço...'}</span>
           </div>
         </aside>

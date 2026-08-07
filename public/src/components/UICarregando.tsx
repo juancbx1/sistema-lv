@@ -16,6 +16,7 @@
 // Para trocar o visual sem quebrar o sistema, altere apenas as classes
 // CSS começando com `.ui-cg-*` em global-style.css.
 
+import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
 
 export type UICarregandoVariante = 'bloco' | 'pagina' | 'inline';
@@ -28,6 +29,22 @@ interface EmpresaAtivaContexto {
     cor_identificacao?: string | null;
 }
 
+interface IdentidadeEmpresaCarregamento {
+    empresa: EmpresaAtivaContexto | null;
+    iniciais: string;
+    cor: string;
+    contraste: string;
+}
+
+declare global {
+    interface Window {
+        LVEmpresaCarregamento?: {
+            obterEmpresaAtiva?: () => EmpresaAtivaContexto | null;
+            obterIdentidade?: () => IdentidadeEmpresaCarregamento;
+        };
+    }
+}
+
 interface UICarregandoProps {
     variante?: UICarregandoVariante;
     tamanho?: UICarregandoTamanho;
@@ -35,9 +52,12 @@ interface UICarregandoProps {
 }
 
 function obterEmpresaAtiva(): EmpresaAtivaContexto | null {
+    const empresaDoBootstrap = window.LVEmpresaCarregamento?.obterEmpresaAtiva?.();
+    if (empresaDoBootstrap?.id) return empresaDoBootstrap;
+
     const storages = sessionStorage.getItem('impersonation_token')
         ? [sessionStorage, localStorage]
-        : [localStorage];
+        : [localStorage, sessionStorage];
     for (const storage of storages) {
         try {
             const empresa = JSON.parse(storage.getItem('empresaAtiva') || 'null') as EmpresaAtivaContexto | null;
@@ -47,6 +67,20 @@ function obterEmpresaAtiva(): EmpresaAtivaContexto | null {
         }
     }
     return null;
+}
+
+function obterIdentidadeEmpresa(): IdentidadeEmpresaCarregamento {
+    const identidadeDoBootstrap = window.LVEmpresaCarregamento?.obterIdentidade?.();
+    if (identidadeDoBootstrap) return identidadeDoBootstrap;
+
+    const empresa = obterEmpresaAtiva();
+    const cor = obterCorEmpresa(empresa);
+    return {
+        empresa,
+        iniciais: obterIniciaisEmpresa(empresa),
+        cor,
+        contraste: obterContraste(cor),
+    };
 }
 
 function obterIniciaisEmpresa(empresa: EmpresaAtivaContexto | null): string {
@@ -82,10 +116,21 @@ export default function UICarregando({ variante = 'bloco', tamanho, texto }: UIC
     const tam = tamanho || (variante === 'pagina' ? 'lg' : variante === 'inline' ? 'sm' : 'md');
     const inline = variante === 'inline';
     const textoVisivel = texto || (variante === 'pagina' ? 'Organizando seu ambiente...' : null);
-    const empresa = obterEmpresaAtiva();
-    const iniciais = obterIniciaisEmpresa(empresa);
-    const corEmpresa = obterCorEmpresa(empresa);
-    const contraste = obterContraste(corEmpresa);
+    const [identidadeEmpresa, setIdentidadeEmpresa] = useState(obterIdentidadeEmpresa);
+
+    useEffect(() => {
+        const atualizarIdentidade = () => setIdentidadeEmpresa(obterIdentidadeEmpresa());
+        window.addEventListener('lv:empresa-identidade-atualizada', atualizarIdentidade);
+        window.addEventListener('lv:empresa-contexto-carregado', atualizarIdentidade);
+        window.addEventListener('storage', atualizarIdentidade);
+        return () => {
+            window.removeEventListener('lv:empresa-identidade-atualizada', atualizarIdentidade);
+            window.removeEventListener('lv:empresa-contexto-carregado', atualizarIdentidade);
+            window.removeEventListener('storage', atualizarIdentidade);
+        };
+    }, []);
+
+    const { iniciais, cor: corEmpresa, contraste } = identidadeEmpresa;
 
     const estiloEmpresa = {
         '--ui-cg-empresa-cor': corEmpresa,

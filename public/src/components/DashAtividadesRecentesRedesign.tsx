@@ -4,6 +4,7 @@ import { fetchAPI } from '/js/utils/api-utils';
 import DashTabelaPontosModal from './DashTabelaPontosRedesign';
 import PaginacaoWrapper from './OPPaginacaoWrapper';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import type { DashAtividade, DashAtividadesResponse, DashFiltroPeriodoAtividades } from '../utils/dashboard-types';
 
 const TIME_ZONE = 'America/Sao_Paulo';
@@ -283,11 +284,12 @@ export default function DashAtividadesRecentesRedesign() {
                 {loading ? (
                     <UICarregando variante="bloco" />
                 ) : itensParaExibir.length === 0 ? (
-                    <div className="ds-atividades-redesign-vazio">
-                        <i className="fas fa-calendar-check" aria-hidden="true" />
-                        <strong>Nenhuma atividade encontrada</strong>
-                        <span>Tente escolher outra data ou ajustar a busca.</span>
-                    </div>
+                    <UIFeedbackNotFound
+                        variante="compacto"
+                        icon="fa-calendar-check"
+                        titulo="Nenhuma atividade encontrada"
+                        mensagem="Tente escolher outra data ou ajustar a busca."
+                    />
                 ) : itensParaExibir.map((item, index) => {
                     const extra = item.tipo_origem === 'PontosExtra';
                     const nomeProduto = extra ? 'Bônus do supervisor' : (item.nome_produto || 'Produto sem nome');

@@ -12,9 +12,11 @@ import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import allLocales from '@fullcalendar/core/locales-all';
+import UICarregando from './UICarregando';
 import type { DatesSetArg, DayCellMountArg, EventClickArg } from '@fullcalendar/core';
 import type { DateClickArg } from '@fullcalendar/interaction';
 import UIHeaderPagina from './UIHeaderPagina';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import type {
     CalendarioCtxMenu,
     CalendarioDayModal,
@@ -375,7 +377,12 @@ export default function CalendarioCompleto() {
 
                         <div className="cal-dia-corpo">
                             {dayModal.lista.length === 0 ? (
-                                <p className="cal-dia-vazio">Nenhum evento neste dia.</p>
+                                <UIFeedbackNotFound
+                                    variante="compacto"
+                                    icon="fa-calendar-day"
+                                    titulo="Nenhum evento neste dia"
+                                    mensagem="Não há compromissos registrados para esta data."
+                                />
                             ) : (
                                 <ul className="cal-dia-lista">
                                     {dayModal.lista.map((ev) => {
@@ -531,7 +538,7 @@ export default function CalendarioCompleto() {
                                     Cancelar
                                 </button>
                                 <button type="submit" className="cal-btn-salvar" disabled={salvando}>
-                                    {salvando ? <i className="fas fa-spinner fa-spin"></i> : <i className="fas fa-check"></i>}
+                                    {salvando ? <UICarregando variante="inline" /> : <i className="fas fa-check"></i>}
                                     {form.id ? ' Salvar' : ' Criar'}
                                 </button>
                             </div>

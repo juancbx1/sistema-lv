@@ -157,6 +157,15 @@ body.autenticado {
     visibility: visible;
 }
 
+/* A primeira pintura precisa mostrar o loader estático antes de o bundle
+   React e a autenticação terminarem. O overlay cobre a interface enquanto o
+   body ainda não recebeu a classe autenticado. */
+body:has(#lv-initial-page-loader),
+body:has(#carregamentoGlobal),
+body:has(#root-dashboard) {
+    visibility: visible;
+}
+
 /* Utilitário global para esconder elementos */
 .hidden {
     display: none !important;
@@ -488,7 +497,8 @@ main.gs-card .gs-cabecalho-pagina {
 
 /* gs-conteudo-pagina dentro do card principal não precisa de padding lateral extra */
 main.gs-card .gs-conteudo-pagina {
-    padding: 20px 0 0 0;
+    padding: 0;
+    margin: 20px 0 0;
 }
 
 @media (max-width: 768px) {
@@ -972,15 +982,6 @@ main.gs-card .gs-conteudo-pagina {
 }
 
 /* O spinner em si (pode usar o seu spinner padrão se preferir) */
-.gs-spinner-global {
-  border: 5px solid #f3f3f3; /* Cinza claro */
-  border-top: 5px solid #3498db; /* Azul */
-  border-radius: 50%;
-  width: 50px;
-  height: 50px;
-  animation: spin 1s linear infinite;
-}
-
 /* Classe para ESCONDER O CONTEÚDO PRINCIPAL enquanto carrega */
 .gs-conteudo-carregando {
   opacity: 0;
@@ -993,44 +994,153 @@ main.gs-card .gs-conteudo-pagina {
    ========================================================================== */
 
 .gs-feedback-not-found-container {
+    position: relative;
+    isolation: isolate;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     text-align: center;
-    padding: 40px 20px;
+    gap: 12px;
+    min-height: 176px;
+    padding: 30px 24px 32px;
     width: 100%;
-    /* Garante que ocupe toda a largura se estiver dentro de um grid */
-    grid-column: 1 / -1; 
-    border: 2px dashed var(--gs-borda);
-    border-radius: var(--gs-raio-borda-card);
-    background-color: var(--gs-fundo-pagina);
-    margin-top: 20px;
+    grid-column: 1 / -1;
+    overflow: hidden;
+    border: 1px solid #e1eaf1;
+    border-radius: 14px;
+    background: linear-gradient(180deg, var(--gs-fundo-card) 0%, var(--gs-fundo-alternativo) 100%);
+    box-shadow: 0 8px 22px rgba(44, 62, 80, 0.05);
+    margin: 16px 0 8px;
+    animation: gs-fadeIn 0.2s ease-out;
+}
+
+.gs-feedback-not-found-container::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--gs-primaria), #73c5ef);
+}
+
+.gs-feedback-not-found-container::after {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    width: 150px;
+    height: 150px;
+    right: -76px;
+    bottom: -94px;
+    border-radius: 50%;
+    background: rgba(52, 152, 219, 0.06);
+}
+
+.gs-feedback-not-found-container--compacto {
+    min-height: 112px;
+    padding: 20px 16px 22px;
+    gap: 8px;
+    border-radius: 12px;
+    margin: 8px 0;
 }
 
 .gs-feedback-not-found-icone {
-    font-size: 3rem;
-    color: #ced4da;
-    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 64px;
+    height: 64px;
+    flex: 0 0 64px;
+    border: 1px solid rgba(52, 152, 219, 0.18);
+    border-radius: 20px;
+    background: #edf7fd;
+    color: var(--gs-primaria);
+    font-size: 1.65rem;
+    box-shadow: inset 0 0 0 7px rgba(52, 152, 219, 0.05);
+}
+
+.gs-feedback-not-found-container--compacto .gs-feedback-not-found-icone {
+    width: 48px;
+    height: 48px;
+    flex-basis: 48px;
+    border-radius: 15px;
+    font-size: 1.25rem;
+    box-shadow: inset 0 0 0 5px rgba(52, 152, 219, 0.05);
+}
+
+.gs-feedback-not-found-conteudo {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
 }
 
 .gs-feedback-not-found-titulo {
-    font-size: 1.3rem;
-    font-weight: 600;
+    font-size: 1.08rem;
+    font-weight: 700;
     color: var(--gs-secundaria);
-    margin: 0 0 10px 0;
-}
-
-.gs-feedback-not-found-mensagem {
-    font-size: 1rem;
-    color: var(--gs-texto-secundario);
-    max-width: 450px;
-    line-height: 1.6;
+    line-height: 1.35;
     margin: 0;
 }
 
+.gs-feedback-not-found-mensagem {
+    font-size: 0.9rem;
+    color: var(--gs-texto-secundario);
+    max-width: 480px;
+    line-height: 1.5;
+    margin: 0;
+}
+
+.gs-feedback-not-found-container--compacto .gs-feedback-not-found-titulo {
+    font-size: 0.98rem;
+}
+
+.gs-feedback-not-found-container--compacto .gs-feedback-not-found-mensagem {
+    font-size: 0.82rem;
+}
+
 .gs-feedback-not-found-acoes {
-    margin-top: 25px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 6px;
+}
+
+@media (max-width: 600px) {
+    .gs-feedback-not-found-container {
+        min-height: 158px;
+        padding: 24px 16px 26px;
+    }
+
+    .gs-feedback-not-found-icone {
+        width: 56px;
+        height: 56px;
+        flex-basis: 56px;
+        border-radius: 17px;
+        font-size: 1.45rem;
+    }
+
+    .gs-feedback-not-found-container--compacto {
+        min-height: 112px;
+        padding: 18px 14px 20px;
+    }
+
+    .gs-feedback-not-found-container--compacto .gs-feedback-not-found-icone {
+        width: 48px;
+        height: 48px;
+        flex-basis: 48px;
+        border-radius: 15px;
+        font-size: 1.25rem;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .gs-feedback-not-found-container {
+        animation: none;
+    }
 }
 
 /* ==========================================================================

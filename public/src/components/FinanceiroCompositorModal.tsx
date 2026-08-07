@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import UIAutocompleteAPI, { type AutocompleteItem } from './UIAutocompleteAPI.tsx';
 import UISearchableSelect, { type SearchableOption } from './UISearchableSelect.tsx';
 import FinanceiroModalShell, { FinanceiroResumoOperacao } from './FinanceiroModalShell';
+import UICarregando from './UICarregando';
 import { fetchFinanceiro } from '../utils/financeiro-api';
 import { mostrarMensagem, mostrarPromptTexto } from '../../js/utils/popups.js';
 import type {
@@ -922,7 +923,7 @@ export default function FinanceiroCompositorModal({
           {((!categoriaId && sugestoes.categorias[0]) || (!contato?.id && sugestoes.contatos[0]))
             && estrutura !== 'compra' && (
             <div className="fc-composer-suggestion">
-              <i className={`fas ${buscandoSugestoes ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles'}`} aria-hidden="true" />
+              {buscandoSugestoes ? <UICarregando variante="inline" /> : <i className="fas fa-wand-magic-sparkles" aria-hidden="true" />}
               <div>
                 <strong>
                   Sugestão do histórico:

@@ -93,6 +93,8 @@ export default function OPSelecaoVarianteCorte({
     });
   }, [gruposDeVariantes, termoFiltrado]);
 
+  const buscaVariante = termoFiltrado.trim();
+
   return (
     <div className="op-corte-variante-container">
       <div className="op-corte-filtro-wrapper">
@@ -106,8 +108,10 @@ export default function OPSelecaoVarianteCorte({
       {variantesFiltradas.length === 0 ? (
         <UIFeedbackNotFound
           icon="fa-search"
-          titulo="Nenhuma Variação Encontrada"
-          mensagem={`Não encontramos nada com "${termoFiltrado}".`}
+          titulo={buscaVariante ? 'Nenhuma variação encontrada' : 'Nenhuma variação cadastrada'}
+          mensagem={buscaVariante
+            ? `Não encontramos cores ou variações para “${buscaVariante}”. Tente outro termo.`
+            : 'Este produto ainda não possui cores ou variações cadastradas.'}
         />
       ) : (
         <div className="op-corte-vitrine-container">

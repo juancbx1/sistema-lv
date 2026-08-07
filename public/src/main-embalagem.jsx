@@ -378,7 +378,7 @@ function PainelComFab() {
     return (
         <React.Fragment>
             <PainelEmbalagem />
-            <BotaoBuscaFunil permissoes={permissoes} />
+            <BotaoBuscaFunil permissoes={permissoes} usarCarregamentoPadrao />
             <AlertasFAB />
         </React.Fragment>
     );

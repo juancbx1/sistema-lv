@@ -8,6 +8,7 @@ async function init() {
     if (!auth) return;
 
     document.body.classList.add('autenticado');
+    document.getElementById('lv-initial-page-loader')?.remove();
 
     const container = document.getElementById('root');
     if (container) ReactDOM.createRoot(container).render(<PGPainelPage />);

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import { fetchFinanceiro } from '../utils/financeiro-api';
 import type { FinanceiroConfigPanel, FinanceiroContato } from '../utils/financeiro-types';
 import { useFinanceiro } from './FinanceiroContext';
@@ -205,7 +206,12 @@ export default function FinanceiroConfiguracoes() {
               </table>
             </div>
             {!config.contas.length && (
-              <p className="fc-config-vazio">Nenhuma conta bancária cadastrada.</p>
+              <UIFeedbackNotFound
+                variante="compacto"
+                icon="fa-building-columns"
+                titulo="Nenhuma conta bancária cadastrada"
+                mensagem="Cadastre uma conta para começar a usar o Financeiro."
+              />
             )}
           </section>
         )}
@@ -254,11 +260,12 @@ export default function FinanceiroConfiguracoes() {
               </table>
             </div>
             {!favorecidosFiltrados.length && (
-              <p className="fc-config-vazio">
-                {buscaFavorecidos
-                  ? 'Nenhum favorecido encontrado para esta busca.'
-                  : 'Nenhum favorecido cadastrado.'}
-              </p>
+              <UIFeedbackNotFound
+                variante="compacto"
+                icon={buscaFavorecidos ? 'fa-search' : 'fa-user-tag'}
+                titulo={buscaFavorecidos ? 'Nenhum favorecido encontrado' : 'Nenhum favorecido cadastrado'}
+                mensagem={buscaFavorecidos ? 'Tente ajustar a busca.' : 'Cadastre um favorecido para lançar despesas.'}
+              />
             )}
           </section>
         )}
@@ -310,8 +317,13 @@ export default function FinanceiroConfiguracoes() {
                         </tr>
                       )) : (
                         <tr>
-                          <td colSpan={2} className="fc-config-vazio-inline">
-                            Nenhuma categoria neste grupo.
+                          <td colSpan={2}>
+                            <UIFeedbackNotFound
+                              variante="compacto"
+                              icon="fa-tags"
+                              titulo="Nenhuma categoria neste grupo"
+                              mensagem="Adicione uma categoria para organizar os lançamentos."
+                            />
                           </td>
                         </tr>
                       )}
@@ -322,11 +334,12 @@ export default function FinanceiroConfiguracoes() {
             ))}
 
             {!gruposFiltrados.length && (
-              <p className="fc-config-vazio">
-                {buscaCategorias
-                  ? 'Nenhum grupo ou categoria encontrado para esta busca.'
-                  : 'Nenhum grupo cadastrado.'}
-              </p>
+              <UIFeedbackNotFound
+                variante="compacto"
+                icon={buscaCategorias ? 'fa-search' : 'fa-layer-group'}
+                titulo={buscaCategorias ? 'Nenhum grupo ou categoria encontrado' : 'Nenhum grupo cadastrado'}
+                mensagem={buscaCategorias ? 'Tente ajustar a busca.' : 'Crie um grupo para começar a organizar categorias.'}
+              />
             )}
           </section>
         )}

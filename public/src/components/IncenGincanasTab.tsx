@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 // @ts-expect-error popups JS legados sem declaração TypeScript
 import { mostrarMensagem, mostrarConfirmacao } from '/js/utils/popups.js';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import IncenGincanaCard from './IncenGincanaCard';
 import IncenGincanaModal from './IncenGincanaModal';
 import IncenGincanaRankingModal from './IncenGincanaRankingModal';
@@ -177,10 +178,12 @@ export default function IncenGincanasTab({ modalNovaGincanaAberto, onFecharModal
                 {carregando ? (
                     <UICarregando variante="bloco" />
                 ) : gincanas.length === 0 ? (
-                    <div className="incen-lista-vazia">
-                        <i className="fas fa-trophy"></i>
-                        <p>Nenhuma gincana encontrada neste filtro.</p>
-                    </div>
+                    <UIFeedbackNotFound
+                        variante="compacto"
+                        icon="fa-trophy"
+                        titulo="Nenhuma gincana encontrada"
+                        mensagem="Não há gincanas correspondentes ao filtro atual."
+                    />
                 ) : (
                     <div className="incen-gincana-grid">
                         {gincanas.map(g => (

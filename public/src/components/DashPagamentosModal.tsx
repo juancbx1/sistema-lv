@@ -2,6 +2,8 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 // @ts-expect-error m�dulo JS legado sem tipos
 import { fetchAPI } from '/js/utils/api-utils';
 import type { DashCicloPagamentoResumo, DashUsuario, DashComissaoHistoricoItem, DashPremioItem, DashMeusPremiosResponse } from '../utils/dashboard-types';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
+import UICarregando from './UICarregando';
 
 function formatarData(iso?: string | null) {
     if (!iso) return '—';
@@ -286,9 +288,14 @@ function AbaComissoes({ pagamentoCicloFechado, historico, loading }: {
 
             <div className="ds-pag-lista-scroll">
                 {loading ? (
-                    <div className="ds-spinner" style={{ margin: '20px auto' }} />
+                    <UICarregando variante="bloco" tamanho="sm" texto="Carregando histórico..." />
                 ) : historico.length === 0 ? (
-                    <p className="ds-pag-vazio-inline">Nenhum pagamento anterior.</p>
+                    <UIFeedbackNotFound
+                        variante="compacto"
+                        icon="fa-receipt"
+                        titulo="Nenhum pagamento anterior"
+                        mensagem="Os pagamentos concluídos aparecerão aqui."
+                    />
                 ) : (
                     grupoAtual.map((pgto, idx) => (
                         <div key={idx} className="ds-pag-historico-linha">
@@ -333,7 +340,7 @@ function AbaPremiacoes({ pendentes, pagos, loading }: {
             </p>
 
             {loading ? (
-                <div className="ds-spinner" style={{ margin: '30px auto' }} />
+                <UICarregando variante="bloco" tamanho="sm" texto="Carregando pagamentos..." />
             ) : (
                 <>
                     {pendentes.length > 0 ? (
@@ -356,11 +363,12 @@ function AbaPremiacoes({ pendentes, pagos, loading }: {
                             </div>
                         </div>
                     ) : (
-                        <div className="ds-pag-vazio">
-                            <i className="fas fa-trophy" style={{ opacity: 0.3 }} />
-                            <p>Nenhum prêmio pendente.</p>
-                            <small>Participe das gincanas e ganhe prêmios toda sexta!</small>
-                        </div>
+                        <UIFeedbackNotFound
+                            variante="compacto"
+                            icon="fa-trophy"
+                            titulo="Nenhum prêmio pendente"
+                            mensagem="Participe das gincanas e ganhe prêmios toda sexta!"
+                        />
                     )}
 
                     {pagos.length > 0 && (

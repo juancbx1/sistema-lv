@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import LancamentoFinanceiroCard from './LancamentoFinanceiroCard.tsx';
 import FiltrosLancamentos from './FiltrosLancamentos.tsx';
 import FinanceiroGuiaLancamentos from './FinanceiroGuiaLancamentos.tsx';
-import UINaoEncontradoBusca from './UINaoEncontradoBusca.tsx';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import UICarregando from './UICarregando';
 import { fetchFinanceiro } from '../utils/financeiro-api';
 import type { FinanceiroFilters, FinanceiroLancamento } from '../utils/financeiro-types';
@@ -175,10 +175,10 @@ export default function LancamentosView() {
             />
           ))
         ) : (
-          <UINaoEncontradoBusca
+          <UIFeedbackNotFound
             icon="fa-search"
-            title="Nenhum Lançamento Encontrado"
-            message="Tente ajustar os filtros de busca ou o período selecionado para encontrar o que você procura."
+            titulo="Nenhum lançamento encontrado"
+            mensagem="Tente ajustar os filtros de busca ou o período selecionado para encontrar o que você procura."
           />
         )}
       </div>

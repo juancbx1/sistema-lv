@@ -4,6 +4,7 @@ import { fetchAPI } from '/js/utils/api-utils.js';
 import { verificarAutenticacao } from '/js/utils/auth.js';
 import UIHeaderPagina from './components/UIHeaderPagina';
 import UICarregando from './components/UICarregando';
+import UIFeedbackNotFound from './components/UIFeedbackNotFound';
 import UIBloqueio from './components/UIBloqueio';
 import UCCard from './components/UCCard.jsx';
 import UCDrawerEdicao from './components/UCDrawerEdicao.jsx';
@@ -47,6 +48,7 @@ export default function MainUsuarios() {
         const init = async () => {
             const auth = await verificarAutenticacao('usuarios-cadastrados.html', ['acesso-usuarios-cadastrados']);
             if (!auth) return;
+            document.getElementById('lv-initial-page-loader')?.remove();
             await carregarUsuarios();
         };
         init();
@@ -109,7 +111,12 @@ export default function MainUsuarios() {
                                 Ativos <span className="uc-secao-count">{ativos.length}</span>
                             </h2>
                             {ativos.length === 0 ? (
-                                <p className="uc-sem-resultados">Nenhum usuário ativo encontrado.</p>
+                                <UIFeedbackNotFound
+                                    variante="compacto"
+                                    icon="fa-users"
+                                    titulo="Nenhum usuário ativo encontrado"
+                                    mensagem="Não há pessoas ativas para exibir neste contexto."
+                                />
                             ) : (
                                 <div className="uc-grid">
                                     {ativos.map(u => (

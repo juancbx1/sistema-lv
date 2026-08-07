@@ -4,6 +4,7 @@ import useTypewriter from '../hooks/useTypewriter';
 import useContador from '../hooks/useContador.js';
 import OPAgenteFaseScan from './OPAgenteFaseScan.jsx';
 import UIBloqueio from './UIBloqueio';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 
 interface ProdutoGrade {
   variacao?: string | null;
@@ -521,15 +522,12 @@ export default function OPCortesAgente({
           </div>
 
           {plano.length === 0 && (
-            <div className="op-agente-vazio">
-              <div className="op-agente-vazio-icone">
-                <i className="fas fa-check-circle"></i>
-              </div>
-              <div className="op-agente-vazio-texto">
-                <strong>Estoque de cortes em dia!</strong>
-                <span>Todas as demandas pendentes têm corte disponível.</span>
-              </div>
-            </div>
+            <UIFeedbackNotFound
+              variante="compacto"
+              icon="fa-check-circle"
+              titulo="Estoque de cortes em dia"
+              mensagem="Todas as demandas pendentes têm corte disponível."
+            />
           )}
 
           {plano.length > 0 && (

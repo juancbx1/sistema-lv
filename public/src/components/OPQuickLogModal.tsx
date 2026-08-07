@@ -424,7 +424,7 @@ export default function OPQuickLogModal({
                   <UIFeedbackNotFound
                     icon="fa-search"
                     titulo="Nenhum produto encontrado"
-                    mensagem={`Nenhum produto ou variante corresponde a "${busca}".`}
+                    mensagem={`Não encontramos produtos ou variantes para “${busca}”. Tente outro termo.`}
                   />
                 ) : (
                   <div className="op-quicklog-lista">

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFinanceiro } from './FinanceiroContext';
+import UICarregando from './UICarregando';
 
 interface AlertStatus { count: number; total: number; }
 interface HeaderStatus { contasAtrasadas: AlertStatus; contasVencendoHoje: AlertStatus; }
@@ -48,7 +49,7 @@ export default function FinanceiroHeader() {
   }, [tokens.header, carregar]);
 
   if (loading || !data) {
-    return <div className="financeiro-status-react fc-status-summary-loading"><span className="fc-status-loading-dot" /> Atualizando monitoramento financeiro...</div>;
+    return <div className="financeiro-status-react fc-status-summary-loading"><UICarregando variante="inline" tamanho="sm" /> Atualizando monitoramento financeiro...</div>;
   }
 
   const totalAlertas = data.contasAtrasadas.count + data.contasVencendoHoje.count;

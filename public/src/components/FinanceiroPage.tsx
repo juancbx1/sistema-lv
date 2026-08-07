@@ -31,7 +31,12 @@ function FinanceiroShell() {
   useEffect(() => {
     let ativo = true;
     void verificarAutenticacao('admin/financeiro.html', ['acesso-financeiro'])
-      .then((auth) => { if (ativo && auth) document.body.classList.add('autenticado'); })
+      .then((auth) => {
+        if (ativo && auth) {
+          document.body.classList.add('autenticado');
+          document.getElementById('lv-initial-page-loader')?.remove();
+        }
+      })
       .catch(() => undefined);
     return () => { ativo = false; };
   }, []);

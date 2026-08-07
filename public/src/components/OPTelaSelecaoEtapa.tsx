@@ -445,6 +445,7 @@ export default function OPTelaSelecaoEtapa({
   const textoMeta = termoFiltro
     ? `${totalFiltrado} resultado${totalFiltrado !== 1 ? 's' : ''} de ${totalDisponivel}`
     : `${totalDisponivel} tarefa${totalDisponivel !== 1 ? 's' : ''} disponível${totalDisponivel !== 1 ? 'is' : ''}`;
+  const buscaTarefa = termoFiltro.trim();
   const qtdSelecionados = selecionados.length;
   const textoBotao = qtdSelecionados === 1 ? 'Atribuir 1 Tarefa' : `Atribuir ${qtdSelecionados} Tarefas`;
   const podeAtribuir = temPermissao('atribuir-tarefa');
@@ -543,7 +544,19 @@ export default function OPTelaSelecaoEtapa({
             );
           })
         ) : (
-          <UIFeedbackNotFound icon="fa-check-square" titulo="Nenhuma Tarefa" mensagem="..." />
+          <UIFeedbackNotFound
+            icon="fa-clipboard-list"
+            titulo={buscaTarefa
+              ? 'Nenhuma tarefa encontrada'
+              : sugestao
+                ? 'Nenhuma outra tarefa'
+                : 'Nenhuma tarefa disponível'}
+            mensagem={buscaTarefa
+              ? `Não encontramos tarefas para “${buscaTarefa}”. Tente outro produto, variante ou processo.`
+              : sugestao
+                ? 'A sugestão acima é a única tarefa disponível no momento.'
+                : 'Não há tarefas compatíveis com este funcionário no momento.'}
+          />
         )}
       </div>
 

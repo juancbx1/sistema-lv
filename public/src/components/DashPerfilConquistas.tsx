@@ -1,4 +1,5 @@
 import React from 'react';
+import UICarregando from './UICarregando';
 import type { DashConquistaItem } from '../utils/dashboard-types';
 
 // Teaser visual da feature futura: conquistas que geram pontos para o cofre
@@ -48,7 +49,7 @@ export default function DashPerfilConquistas({ total, desbloqueadas, lista, load
         return (
             <div className="perfil-secao">
                 <div className="perfil-secao-titulo">🏅 Conquistas do Ciclo</div>
-                <div className="ds-spinner" style={{ margin: '10px auto' }} />
+                <UICarregando variante="bloco" tamanho="sm" />
             </div>
         );
     }

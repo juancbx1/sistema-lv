@@ -3,6 +3,8 @@ import ReactDOM from 'react-dom';
 // @ts-expect-error módulo JS legado sem tipos
 import { fetchAPI } from '/js/utils/api-utils';
 import type { DashTabelaProduto } from '../utils/dashboard-types';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
+import UICarregando from './UICarregando';
 
 export default function DashTabelaPontosModal({ onClose }: { onClose: () => void }) {
     const [dados, setDados] = useState<DashTabelaProduto[] | null>(null);
@@ -36,12 +38,15 @@ export default function DashTabelaPontosModal({ onClose }: { onClose: () => void
 
                 {loading ? (
                     <div style={{ padding: '30px', textAlign: 'center' }}>
-                        <div className="ds-spinner"></div>
+                        <UICarregando variante="bloco" tamanho="sm" texto="Carregando tabela..." />
                     </div>
                 ) : !dados || dados.length === 0 ? (
-                    <div style={{ padding: '20px', textAlign: 'center', color: '#999', fontSize: '0.88rem' }}>
-                        Nenhum produto encontrado no seu histórico recente.
-                    </div>
+                    <UIFeedbackNotFound
+                        variante="compacto"
+                        icon="fa-box-open"
+                        titulo="Nenhum produto encontrado"
+                        mensagem="Não há produtos no seu histórico recente."
+                    />
                 ) : (
                     <div style={{ maxHeight: '60vh', overflowY: 'auto', paddingRight: '4px' }}>
                         {dados.map((produto, pi) => {

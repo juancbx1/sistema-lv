@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import { fetchFinanceiro } from '../utils/financeiro-api';
 import type { FinanceiroCategoria, FinanceiroRegraImportacao } from '../utils/financeiro-types';
 import { useFinanceiro } from './FinanceiroContext';
@@ -137,7 +138,12 @@ export default function FinanceiroRegrasImportacao() {
       {loading ? (
         <UICarregando variante="bloco" tamanho="md" texto="Carregando regras..." />
       ) : regras.length === 0 ? (
-        <p className="fc-import-vazio">Nenhuma regra ainda. Crie manualmente ou aprove importações para aprender.</p>
+        <UIFeedbackNotFound
+          variante="compacto"
+          icon="fa-wand-magic-sparkles"
+          titulo="Nenhuma regra ainda"
+          mensagem="Crie uma regra manualmente ou aprove importações para aprender."
+        />
       ) : (
         <ul className="fc-regras-lista">
           {regras.map((r) => (

@@ -6,6 +6,7 @@ import { mostrarToast } from '../utils/cpag-feedback';
 import type { CpagSelectOption, CpagUsuario, CpagVtMovimento, CpagVtSaldo } from '../utils/cpag-types';
 import { temPermissao } from '../utils/bloqueio';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import UIBloqueio from './UIBloqueio';
 import CPAGVtAjusteConsumoModal from './CPAGVtAjusteConsumoModal';
 
@@ -215,7 +216,12 @@ export default function CPAGVtSaldoPainel({ usuarios }: Props) {
           <div className="cpg-vt-extrato">
             <h4>Extrato recente</h4>
             {!saldo.ultimos_movimentos?.length && (
-              <p className="cpg-vt-extrato-vazio">Nenhum movimento ainda. Após a migration e recargas, o extrato aparece aqui.</p>
+              <UIFeedbackNotFound
+                variante="compacto"
+                icon="fa-receipt"
+                titulo="Nenhum movimento ainda"
+                mensagem="Após a migration e as recargas, o extrato aparecerá aqui."
+              />
             )}
             <ul className="cpg-vt-mov-lista">
               {(saldo.ultimos_movimentos || []).map((m: CpagVtMovimento) => (
@@ -252,7 +258,12 @@ export default function CPAGVtSaldoPainel({ usuarios }: Props) {
       )}
 
       {!carregando && !sel && (
-        <p className="cpg-vt-extrato-vazio">Selecione um empregado com passagem configurada.</p>
+        <UIFeedbackNotFound
+          variante="compacto"
+          icon="fa-user-check"
+          titulo="Selecione um empregado"
+          mensagem="Escolha alguém com passagem configurada para consultar o extrato."
+        />
       )}
 
       <CPAGVtAjusteConsumoModal

@@ -1116,7 +1116,7 @@ export default function FinanceiroAprovacoes() {
                           >
                             {busy ? (
                               <>
-                                <i className="fas fa-spinner fa-spin" /> Processando…
+                                <UICarregando variante="inline" /> Processando…
                               </>
                             ) : (
                               <>
@@ -1332,7 +1332,7 @@ export default function FinanceiroAprovacoes() {
                             >
                               {busy ? (
                                 <>
-                                  <i className="fas fa-spinner fa-spin" /> Reativando…
+                                  <UICarregando variante="inline" /> Reativando…
                                 </>
                               ) : (
                                 <>

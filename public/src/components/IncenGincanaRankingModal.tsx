@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 // @ts-expect-error popups JS legados sem declaração TypeScript
 import { mostrarMensagem } from '/js/utils/popups.js';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import type {
     Gincana,
     GincanaPremiacao,
@@ -188,10 +189,12 @@ export default function IncenGincanaRankingModal({ gincana, onFechar }: IncenGin
                     {carregando ? (
                         <UICarregando variante="bloco" />
                     ) : ranking.length === 0 ? (
-                        <div className="incen-lista-vazia">
-                            <i className="fas fa-users"></i>
-                            <p>Nenhum participante encontrado.</p>
-                        </div>
+                        <UIFeedbackNotFound
+                            variante="compacto"
+                            icon="fa-users"
+                            titulo="Nenhum participante encontrado"
+                            mensagem="Ainda não há participantes para exibir nesta gincana."
+                        />
                     ) : (
                         <div className="incen-ranking-tabela-wrap">
                             <table className="incen-ranking-tabela">

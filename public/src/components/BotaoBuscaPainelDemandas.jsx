@@ -8,6 +8,7 @@ import BotaoBuscaModalConcluidas from './BotaoBuscaModalConcluidas.jsx';
 import { calcularStatusDemanda, STATUS_META } from '/src/utils/demandaStatus.js';
 import { LoaderIA } from './UIAgenteIA';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import PDAgenteDemandas from './PDAgenteDemandas.jsx';
 
 const normalizarTexto = (t) =>
@@ -58,7 +59,7 @@ function extrairPrimeiroNome() {
     } catch (_) { return null; }
 }
 
-export default function PainelDemandas({ onIniciarProducao, permissoes = [], onClose }) {
+export default function PainelDemandas({ onIniciarProducao, permissoes = [], usarCarregamentoPadrao = false, onClose }) {
     const nomeUsuario = extrairPrimeiroNome();
 
     const [demandasAgregadas, setDemandasAgregadas] = useState([]);
@@ -407,15 +408,12 @@ export default function PainelDemandas({ onIniciarProducao, permissoes = [], onC
                         {recarregando ? (
                             <UICarregando variante="bloco" texto="Atualizando pipeline..." />
                         ) : secoesVisiveis.length === 0 ? (
-                            <div className="pd-vazio">
-                                <i className="fas fa-search"></i>
-                                <div className="pd-vazio-titulo">Nenhuma demanda encontrada</div>
-                                <div className="pd-vazio-sub">
-                                    {termoBusca || filtroPrioridade
-                                        ? 'Tente ajustar os filtros.'
-                                        : 'Tudo em dia!'}
-                                </div>
-                            </div>
+                            <UIFeedbackNotFound
+                                variante="compacto"
+                                icon={termoBusca || filtroPrioridade ? 'fa-search' : 'fa-check-circle'}
+                                titulo="Nenhuma demanda encontrada"
+                                mensagem={termoBusca || filtroPrioridade ? 'Tente ajustar os filtros.' : 'Tudo em dia!'}
+                            />
                         ) : (
                             secoesVisiveis.map(secao => (
                                 <SecaoEstagio
@@ -439,11 +437,13 @@ export default function PainelDemandas({ onIniciarProducao, permissoes = [], onC
                 <BotaoBuscaModalAddDemanda
                     onClose={() => setModalAddAberto(false)}
                     onDemandaCriada={() => fetchDiagnostico(true)}
+                    usarCarregamentoPadrao={usarCarregamentoPadrao}
                 />
             )}
             <BotaoBuscaModalConcluidas
                 isOpen={modalHistoricoAberto}
                 onClose={() => setModalHistoricoAberto(false)}
+                usarCarregamentoPadrao={usarCarregamentoPadrao}
             />
         </>
     );

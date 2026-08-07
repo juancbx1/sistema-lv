@@ -382,7 +382,7 @@ export default function ArremateTelaSelecaoProduto({
                                 disabled={carregandoLote}
                             >
                                 {carregandoLote
-                                    ? <><div className="spinner-btn-interno"></div> Atribuindo...</>
+                                    ? <><UICarregando variante="inline" /> Atribuindo...</>
                                     : <><i className="fas fa-check"></i> Confirmar Atribuição ({itensSelecionados.length} produto{itensSelecionados.length !== 1 ? 's' : ''})</>
                                 }
                             </button>

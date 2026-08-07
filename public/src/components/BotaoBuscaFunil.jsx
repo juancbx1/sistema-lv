@@ -6,7 +6,7 @@ import { calcularStatusDemanda } from '/src/utils/demandaStatus.js';
 
 const POLLING_INTERVAL = 3 * 60 * 1000; // 3 minutos
 
-export default function BotaoBuscaFunil({ onIniciarProducao, permissoes }) {
+export default function BotaoBuscaFunil({ onIniciarProducao, permissoes, usarCarregamentoPadrao = false }) {
     const [modalAberto, setModalAberto]         = useState(false);
     const [countAguardando, setCountAguardando] = useState(0); // demandas em AGUARDANDO
     const [countCostura, setCountCostura]       = useState(0); // demandas em COSTURA
@@ -153,6 +153,7 @@ export default function BotaoBuscaFunil({ onIniciarProducao, permissoes }) {
                                 }
                             }}
                             permissoes={permissoes}
+                            usarCarregamentoPadrao={usarCarregamentoPadrao}
                             onClose={handleClose}
                         />
                     </div>

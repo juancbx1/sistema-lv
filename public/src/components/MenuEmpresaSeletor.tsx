@@ -1,6 +1,7 @@
 import { createPortal } from 'react-dom';
 import useDialogFocus from '../hooks/useDialogFocus';
 import type { MenuEmpresa } from '../utils/menu-types';
+import UICarregando from './UICarregando';
 
 interface Props {
   aberto: boolean;
@@ -104,15 +105,7 @@ export default function MenuEmpresaSeletor({
                   </small>
                 </span>
                 <span className="ml-company-option-status" aria-hidden="true">
-                  <i
-                    className={
-                      trocando
-                        ? 'fa-solid fa-spinner fa-spin'
-                        : ativa
-                          ? 'fa-solid fa-check'
-                          : 'fa-solid fa-chevron-right'
-                    }
-                  />
+                  {trocando ? <UICarregando variante="inline" /> : <i className={`fa-solid ${ativa ? 'fa-check' : 'fa-chevron-right'}`} />}
                 </span>
               </button>
             );

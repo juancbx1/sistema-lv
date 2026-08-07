@@ -8,6 +8,7 @@ import OPFiltros from './OPFiltros.tsx';
 import OPPaginacaoWrapper from './OPPaginacaoWrapper.tsx';
 import OPCentralEncerramento from './OPCentralEncerramento.jsx';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 
 // @ts-expect-error utilitário JS legado sem declaração TypeScript
 import { obterProdutos as obterProdutosDoStorage } from '/js/utils/storage.js';
@@ -271,9 +272,12 @@ export default function OPGerenciamentoTela({
                 onCancelar={handleCancelarOP}
               />
             )) : (
-              <p style={{ textAlign: 'center', gridColumn: '1 / -1' }}>
-                Nenhuma Ordem de Produção encontrada para os filtros aplicados.
-              </p>
+              <UIFeedbackNotFound
+                variante="compacto"
+                icon="fa-clipboard-list"
+                titulo="Nenhuma ordem de produção encontrada"
+                mensagem="Não há ordens correspondentes aos filtros aplicados."
+              />
             )}
           </div>
 

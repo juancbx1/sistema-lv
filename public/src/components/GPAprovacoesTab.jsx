@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import GPAprovacaoCard from './GPAprovacaoCard.jsx';
 
 const LIMIT = 10;
@@ -83,10 +84,12 @@ export default function GPAprovacoesTab({ onDecisao }) {
                 {carregandoPendentes ? (
                     <UICarregando variante="bloco" />
                 ) : pendentes.length === 0 ? (
-                    <div className="gp-estado-vazio">
-                        <i className="fas fa-check-circle"></i>
-                        <p>Nenhuma solicitação pendente</p>
-                    </div>
+                    <UIFeedbackNotFound
+                        variante="compacto"
+                        icon="fa-check-circle"
+                        titulo="Nenhuma solicitação pendente"
+                        mensagem="Tudo certo por aqui."
+                    />
                 ) : (
                     <div className="gp-aprovacoes-lista">
                         {pendentes.map(s => (
@@ -122,10 +125,12 @@ export default function GPAprovacoesTab({ onDecisao }) {
                 {carregandoHistorico ? (
                     <UICarregando variante="bloco" />
                 ) : historico.length === 0 ? (
-                    <div className="gp-estado-vazio">
-                        <i className="fas fa-inbox"></i>
-                        <p>Nenhum registro no histórico</p>
-                    </div>
+                    <UIFeedbackNotFound
+                        variante="compacto"
+                        icon="fa-inbox"
+                        titulo="Nenhum registro no histórico"
+                        mensagem="As decisões aparecerão aqui quando forem registradas."
+                    />
                 ) : (
                     <>
                         <div className="gp-aprovacoes-lista">

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import { fetchFinanceiro } from '../utils/financeiro-api';
 import { useFinanceiro } from './FinanceiroContext';
 
@@ -206,13 +207,12 @@ export default function FinanceiroNotificacoes() {
           )}
 
           {!loading && !error && items.length === 0 && (
-            <div className="fc-notif-estado">
-              <span className="fc-notif-estado-icone" aria-hidden>
-                <i className="fas fa-inbox" />
-              </span>
-              <strong>Nenhuma notificação</strong>
-              <p>Quando houver aprovações ou recusas, elas aparecem aqui.</p>
-            </div>
+            <UIFeedbackNotFound
+              variante="compacto"
+              icon="fa-inbox"
+              titulo="Nenhuma notificação"
+              mensagem="Quando houver aprovações ou recusas, elas aparecerão aqui."
+            />
           )}
 
           {!loading && !error && items.length > 0 && (

@@ -1,6 +1,7 @@
 import type { DragEvent } from 'react';
 import type { MenuItem } from '../utils/menu-types';
 import { itemMenuEstaAtivo } from '../utils/menu-catalogo';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 
 interface Props {
   itens: MenuItem[];
@@ -40,10 +41,12 @@ export default function MenuFavoritos({
       </div>
 
       {itens.length === 0 ? (
-        <div className="ml-favorites-empty">
-          <i className="fa-regular fa-star" aria-hidden="true" />
-          <span>Use a estrela nos módulos para montar seus atalhos.</span>
-        </div>
+        <UIFeedbackNotFound
+          variante="compacto"
+          icon="fa-star"
+          titulo="Nenhum favorito ainda"
+          mensagem="Use a estrela nos módulos para montar seus atalhos."
+        />
       ) : (
         <ol className="ml-favorites-list">
           {visiveis.map((item, indice) => (

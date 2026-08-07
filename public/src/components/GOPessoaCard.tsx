@@ -1,5 +1,6 @@
 import React, { type CSSProperties } from 'react';
 import UIBloqueio from './UIBloqueio';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import { classificarVinculo } from './GOVinculoModal';
 import type { GOPessoa, GOVinculo } from '../utils/go-types';
 
@@ -133,7 +134,14 @@ export default function GOPessoaCard({ pessoa, empresaAtivaId, onEditarVinculo, 
                         </div>
                     );
                 })}
-                {vinculosAtivos.length === 0 && <p className="go-sem-vinculo">Nenhum vínculo ativo.</p>}
+                {vinculosAtivos.length === 0 && (
+                    <UIFeedbackNotFound
+                        variante="compacto"
+                        icon="fa-link-slash"
+                        titulo="Nenhum vínculo ativo"
+                        mensagem="Esta pessoa não possui um vínculo ativo neste contexto."
+                    />
+                )}
                 {vinculosEncerrados.length > 0 && (
                     <details className="go-vinculos-encerrados" open={vinculosAtivos.length === 0}>
                         <summary>{vinculosEncerrados.length} vínculo(s) encerrado(s)</summary>

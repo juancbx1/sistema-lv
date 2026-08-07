@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import type { DashBlocoSemana, DashDiaDetalhe, DashEventoCalendario } from '../utils/dashboard-types';
 
 const CORES_META = {
@@ -134,7 +135,14 @@ export default function DashTabelaCiclo({ blocos, diasDetalhes, eventosCalendari
     };
 
     if (blocosVisiveis.length === 0) {
-        return <div style={{ padding: '20px', textAlign: 'center', color: '#666' }}>Nenhum dado disponível.</div>;
+        return (
+            <UIFeedbackNotFound
+                variante="compacto"
+                icon="fa-chart-line"
+                titulo="Nenhum dado disponível"
+                mensagem="Ainda não há dados para este ciclo."
+            />
+        );
     }
 
     return (

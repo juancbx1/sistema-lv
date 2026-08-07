@@ -1,8 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  limparContextoEmpresaLocal,
-  salvarContextoEmpresaLocal,
-} from '../../js/utils/auth.js';
+import { salvarContextoEmpresaLocal } from '../../js/utils/auth.js';
 import type {
   MenuContextoEmpresa,
   MenuEmpresa,
@@ -88,7 +85,9 @@ function limparCachesDaEmpresaAnterior() {
       .filter((chave) => prefixos.some((prefixo) => chave.startsWith(prefixo)))
       .forEach((chave) => storage.removeItem(chave));
   });
-  limparContextoEmpresaLocal();
+  // A identidade antiga será sobrescrita logo abaixo pela nova empresa.
+  // Não limpar empresaAtiva aqui: o fallback intermediário faria o loader
+  // voltar para LV durante a troca de contexto.
 }
 
 export default function useMenuContexto() {

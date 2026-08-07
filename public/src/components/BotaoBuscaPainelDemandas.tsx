@@ -17,6 +17,7 @@ import { calcularStatusDemanda, STATUS_META } from '/src/utils/demandaStatus.js'
 import { LoaderIA } from './UIAgenteIA';
 import type { LoaderIAFase, LoaderIAMensagemFinal } from './UIAgenteIA';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import PDAgenteDemandas from './PDAgenteDemandas.tsx';
 import type { OpInicioProducaoDados } from '../utils/op-types';
 
@@ -62,6 +63,7 @@ interface SecaoEstagio {
 interface PainelDemandasProps {
   onIniciarProducao: (dados: OpInicioProducaoDados) => void;
   permissoes?: string[];
+  usarCarregamentoPadrao?: boolean;
   onClose: () => void;
 }
 
@@ -78,11 +80,13 @@ interface SecaoEstagioProps {
 interface ModalAdicionarDemandaProps {
   onClose: () => void;
   onDemandaCriada: () => void | Promise<void>;
+  usarCarregamentoPadrao?: boolean;
 }
 
 interface ModalConcluidasProps {
   isOpen: boolean;
   onClose: () => void;
+  usarCarregamentoPadrao?: boolean;
 }
 
 const ModalAdicionarDemanda = BotaoBuscaModalAddDemanda as unknown as ComponentType<ModalAdicionarDemandaProps>;
@@ -178,6 +182,7 @@ function extrairPrimeiroNome(): string | null {
 export default function PainelDemandas({
   onIniciarProducao,
   permissoes = [],
+  usarCarregamentoPadrao = false,
   onClose,
 }: PainelDemandasProps) {
   const nomeUsuario = extrairPrimeiroNome();
@@ -523,13 +528,12 @@ export default function PainelDemandas({
             {recarregando ? (
               <UICarregando variante="bloco" texto="Atualizando pipeline..." />
             ) : secoesVisiveis.length === 0 ? (
-              <div className="pd-vazio">
-                <i className="fas fa-search"></i>
-                <div className="pd-vazio-titulo">Nenhuma demanda encontrada</div>
-                <div className="pd-vazio-sub">
-                  {termoBusca || filtroPrioridade ? 'Tente ajustar os filtros.' : 'Tudo em dia!'}
-                </div>
-              </div>
+              <UIFeedbackNotFound
+                variante="compacto"
+                icon={termoBusca || filtroPrioridade ? 'fa-search' : 'fa-check-circle'}
+                titulo="Nenhuma demanda encontrada"
+                mensagem={termoBusca || filtroPrioridade ? 'Tente ajustar os filtros.' : 'Tudo em dia!'}
+              />
             ) : (
               secoesVisiveis.map((secao) => (
                 <SecaoEstagio
@@ -552,11 +556,13 @@ export default function PainelDemandas({
         <ModalAdicionarDemanda
           onClose={() => setModalAddAberto(false)}
           onDemandaCriada={() => fetchDiagnostico(true)}
+          usarCarregamentoPadrao={usarCarregamentoPadrao}
         />
       )}
       <ModalConcluidas
         isOpen={modalHistoricoAberto}
         onClose={() => setModalHistoricoAberto(false)}
+        usarCarregamentoPadrao={usarCarregamentoPadrao}
       />
     </>
   );

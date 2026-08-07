@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import FinanceiroModalShell from './FinanceiroModalShell';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import { fetchFinanceiro } from '../utils/financeiro-api';
 import { mostrarConfirmacao, mostrarMensagem } from '../../js/utils/popups.js';
 
@@ -115,7 +116,7 @@ export default function FinanceiroAgendaHistoricoModal({
             <span>{registros.length} registro{registros.length === 1 ? '' : 's'} no histórico</span>
           </div>
           <button type="button" className="fc-btn fc-btn-outline" onClick={() => void carregar()} disabled={loading}>
-            <i className={`fas ${loading ? 'fa-spinner fa-spin' : 'fa-rotate'}`} aria-hidden="true" />
+            {loading ? <UICarregando variante="inline" /> : <i className="fas fa-rotate" aria-hidden="true" />}
             Atualizar
           </button>
         </div>
@@ -123,11 +124,12 @@ export default function FinanceiroAgendaHistoricoModal({
         {loading ? (
           <UICarregando variante="bloco" tamanho="md" texto="Carregando exclusões da Agenda..." />
         ) : registros.length === 0 ? (
-          <div className="fc-agenda-history__empty">
-            <i className="fas fa-box-open" aria-hidden="true" />
-            <strong>Nenhum agendamento excluído</strong>
-            <span>Quando um agendamento ou lote for removido, ele aparecerá aqui.</span>
-          </div>
+          <UIFeedbackNotFound
+            variante="compacto"
+            icon="fa-box-open"
+            titulo="Nenhum agendamento excluído"
+            mensagem="Quando um agendamento ou lote for removido, ele aparecerá aqui."
+          />
         ) : (
           <div className="fc-agenda-history__list">
             {registros.map((registro) => {
@@ -172,7 +174,7 @@ export default function FinanceiroAgendaHistoricoModal({
                     onClick={() => void recuperar(registro)}
                     disabled={Boolean(recuperandoId)}
                   >
-                    <i className={`fas ${recuperando ? 'fa-spinner fa-spin' : 'fa-rotate-left'}`} aria-hidden="true" />
+                    {recuperando ? <UICarregando variante="inline" /> : <i className="fas fa-rotate-left" aria-hidden="true" />}
                     {recuperando ? 'Recuperando...' : 'Recuperar'}
                   </button>
                 </article>

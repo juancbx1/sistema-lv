@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 
 import { getImagemVariacao } from '../utils/ArremateProdutoHelpers.js';
+import UICarregando from './UICarregando';
 
 
 export default function TelaConfirmacaoQtd({ item, tiktik, onVoltar, onConfirmar }) {
@@ -163,7 +164,7 @@ export default function TelaConfirmacaoQtd({ item, tiktik, onVoltar, onConfirmar
                 onClick={handleConfirmar}
                 disabled={carregando || quantidadeNumerica <= 0 || quantidadeNumerica > saldoDisponivel}
             >
-                {carregando ? <div className="spinner-btn-interno"></div> : <i className="fas fa-check"></i>}
+                {carregando ? <UICarregando variante="inline" /> : <i className="fas fa-check"></i>}
                 {carregando ? 'Atribuindo...' : ' Lançar Arremate'}
             </button>
         </div>

@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import imgDefaultAvatar from '../assets/default-avatar.png';
 // @ts-expect-error módulo JS legado sem tipos
 import { fetchAPI } from '/js/utils/api-utils';
+// @ts-expect-error módulo JS legado sem tipos
+import { obterEmpresaAtivaLocal } from '/js/utils/auth.js';
 import DashRankingMenu from './DashRankingMenu';
 import DashVtSaldoCard from './DashVtSaldoCard';
 import DashVersionFooter from './DashVersionFooter';
@@ -12,14 +14,8 @@ import type { DashUsuario, DashRankingSemana, DashVtSaldo } from '../utils/dashb
 import type { MenuContextoEmpresa, MenuEmpresa } from '../utils/menu-types';
 
 function lerEmpresaAtivaLocal(): MenuEmpresa | null {
-    try {
-        const raw = localStorage.getItem('empresaAtiva') || sessionStorage.getItem('empresaAtiva');
-        if (!raw) return null;
-        const empresa = JSON.parse(raw) as MenuEmpresa;
-        return empresa?.id ? empresa : null;
-    } catch {
-        return null;
-    }
+    const empresa = obterEmpresaAtivaLocal() as MenuEmpresa | null;
+    return empresa?.id ? empresa : null;
 }
 
 function MenuItem({ icone, label, onClick, ativo = false }: {

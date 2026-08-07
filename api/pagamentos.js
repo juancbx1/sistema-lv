@@ -91,15 +91,6 @@ async function carregarVinculoEmpregado(
     return vinculo;
 }
 
-function exigirProducaoDisponivel(vinculo) {
-    if (!vinculo.eh_legada) {
-        throw erroPagamento(
-            409,
-            'Comissões baseadas em produção serão liberadas após a migração da cadeia produtiva desta empresa.'
-        );
-    }
-}
-
 async function carregarCategoriasPagamento(dbClient, empresaId, chavesNecessarias) {
     const nomes = chavesNecessarias.map((chave) => {
         const nome = NOMES_CATEGORIAS_PAGAMENTO[chave];
@@ -211,7 +202,6 @@ router.get('/calcular', async (req, res) => {
 
         switch (tipo_pagamento) {
             case 'COMISSAO':
-                exigirProducaoDisponivel(usuario);
                 if (!competencia) return res.status(400).json({ error: 'Competência (Mês/Ano) é obrigatória.' });
                 periodoDetalhe = competencia; // Ex: "Janeiro/2026"
 
@@ -283,10 +273,10 @@ router.get('/calcular', async (req, res) => {
 
                 // Busca Produção
                 let queryAtiv = `
-                    SELECT data, pontos_gerados FROM producoes WHERE funcionario_id = $1 AND data BETWEEN $2 AND $3
+                    SELECT data, pontos_gerados FROM producoes WHERE funcionario_id = $1 AND empresa_id = $4 AND data BETWEEN $2 AND $3
                 `;
                 if (tipoUsuario === 'tiktik') {
-                    queryAtiv += ` UNION ALL SELECT data_lancamento as data, pontos_gerados FROM arremates WHERE usuario_tiktik_id = $1 AND data_lancamento BETWEEN $2 AND $3 AND tipo_lancamento = 'PRODUCAO'`;
+                    queryAtiv += ` UNION ALL SELECT data_lancamento as data, pontos_gerados FROM arremates WHERE usuario_tiktik_id = $1 AND empresa_id = $4 AND data_lancamento BETWEEN $2 AND $3 AND tipo_lancamento = 'PRODUCAO'`;
                 }
                 queryAtiv += ` UNION ALL
                     SELECT data_referencia::timestamptz as data, pontos as pontos_gerados
@@ -569,9 +559,6 @@ router.post('/efetuar', async (req, res) => {
             req.empresaId,
             { exigirAtivo: true, exigirElegivel: true }
         );
-        if (tipoPagamento === 'COMISSAO') {
-            exigirProducaoDisponivel(vinculo);
-        }
         if (!vinculo.id_contato_financeiro) {
             throw erroPagamento(
                 409,
@@ -1198,7 +1185,6 @@ router.get('/recibos/dados', async (req, res) => {
             req.empresaId,
             { exigirAtivo: false }
         );
-        exigirProducaoDisponivel(usuario);
         const tipoUsuario = usuario.tipos?.includes('tiktik') ? 'tiktik' : 'costureira';
         const nivelUsuario = usuario.nivel || 1;
 
@@ -1230,10 +1216,10 @@ router.get('/recibos/dados', async (req, res) => {
 
         // 2. Busca Produção + Arremates + Pontos Extras
         let queryText = `
-            SELECT data, pontos_gerados FROM producoes WHERE funcionario_id = $1 AND data BETWEEN $2 AND $3
+            SELECT data, pontos_gerados FROM producoes WHERE funcionario_id = $1 AND empresa_id = $4 AND data BETWEEN $2 AND $3
         `;
         if (tipoUsuario === 'tiktik') {
-            queryText += ` UNION ALL SELECT data_lancamento as data, pontos_gerados FROM arremates WHERE usuario_tiktik_id = $1 AND data_lancamento BETWEEN $2 AND $3 AND tipo_lancamento = 'PRODUCAO'`;
+            queryText += ` UNION ALL SELECT data_lancamento as data, pontos_gerados FROM arremates WHERE usuario_tiktik_id = $1 AND empresa_id = $4 AND data_lancamento BETWEEN $2 AND $3 AND tipo_lancamento = 'PRODUCAO'`;
         }
         queryText += ` UNION ALL
             SELECT data_referencia::timestamptz as data, pontos as pontos_gerados

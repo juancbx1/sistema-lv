@@ -3,7 +3,6 @@
    ============================================================ */
 
 /* ── Loading / Erro / Vazio ──────────────────────────────── */
-.pg-loading,
 .pg-erro {
     display: flex;
     align-items: center;
@@ -31,16 +30,6 @@
 .op-cadeia-bloqueada i { font-size: 2rem; color: var(--gs-primaria); }
 .pg-bloqueio strong,
 .op-cadeia-bloqueada strong { color: var(--gs-texto); }
-
-.pg-spinner {
-    width: 32px;
-    height: 32px;
-    border: 3px solid var(--gs-borda);
-    border-top-color: var(--gs-primaria);
-    border-radius: 50%;
-    animation: gs-spin 0.8s linear infinite;
-    flex-shrink: 0;
-}
 
 .pg-vazio {
     display: flex;
@@ -1399,4 +1388,19 @@
     margin: 0;
     padding-top: 4px;
     border-top: 1px solid var(--gs-borda);
+}
+
+/* Mantém o mesmo respiro do card principal usado em Ordens de Produção. */
+@media (max-width: 1024px) {
+    body {
+        margin-left: 0;
+        padding: 40px 40px 10px 40px;
+    }
+}
+
+@media (max-width: 480px) {
+    body {
+        margin-left: 0;
+        padding: 15px 10px;
+    }
 }

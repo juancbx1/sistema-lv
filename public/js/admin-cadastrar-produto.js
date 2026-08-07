@@ -1,6 +1,8 @@
 import { verificarAutenticacao } from '/js/utils/auth.js';
+import { htmlUICarregando, removerCarregamentoInicial } from './utils/ui-carregando.js';
 import { obterProdutos, invalidateCache } from '/js/utils/storage.js';
 import { PRODUTOS, PRODUTOSKITS, MAQUINAS, PROCESSOS } from '/js/utils/prod-proc-maq.js';
+import { htmlUIFeedbackNotFound } from './utils/ui-feedback.js';
 
 // --- Variáveis Globais ---
 let produtos = [];
@@ -105,6 +107,7 @@ async function inicializarPagina() {
     // DEPOIS:
     window.addEventListener('hashchange', handleHashChange);
     handleHashChange(); // Executa uma vez para tratar o estado inicial da URL
+    removerCarregamentoInicial();
 }
 
 // SUBSTITUA TODA A FUNÇÃO EM admin-cadastrar-produto.js
@@ -325,7 +328,11 @@ function handleNavigation(hash) {
 function loadProductTable(filteredProdutos) {
     elements.productTableBody.innerHTML = '';
     if (!filteredProdutos || filteredProdutos.length === 0) {
-        elements.productTableBody.innerHTML = `<tr><td colspan="6" style="text-align:center;">Nenhum produto encontrado.</td></tr>`;
+        elements.productTableBody.innerHTML = `<tr><td colspan="6">${htmlUIFeedbackNotFound({
+            icon: 'fa-box-open',
+            titulo: 'Nenhum produto encontrado',
+            mensagem: 'Não há produtos correspondentes à busca.',
+        })}</td></tr>`;
         return;
     }
     filteredProdutos.forEach(produto => {
@@ -653,7 +660,11 @@ function loadGrade() {
     elements.gradeHeader.innerHTML = headerHTML;
 
     if (gradeTemp.length === 0 && headers.length > 0) { // Só mostra mensagem se houver variações definidas
-        elements.gradeBody.innerHTML = `<tr><td colspan="${headers.length + (isKit ? 3 : 2)}" style="text-align:center;">Nenhuma combinação de grade gerada.</td></tr>`;
+        elements.gradeBody.innerHTML = `<tr><td colspan="${headers.length + (isKit ? 3 : 2)}">${htmlUIFeedbackNotFound({
+            icon: 'fa-table-list',
+            titulo: 'Nenhuma combinação gerada',
+            mensagem: 'Defina os valores das variações para montar a grade.',
+        })}</td></tr>`;
         return;
     }
     if (gradeTemp.length === 0 && headers.length === 0 && isKit) {
@@ -834,9 +845,9 @@ async function handleImagemChange(event, tipo) {
 
     // Mostra um spinner enquanto faz o upload
     if (tipo === 'principal') {
-        previewElement.parentElement.innerHTML += '<div class="spinner-btn-interno" style="position:absolute; z-index:5;"></div>';
+        previewElement.parentElement.innerHTML += htmlUICarregando({ variante: 'inline', tamanho: 'sm' });
     } else {
-        previewElement.innerHTML = '<div class="spinner-btn-interno"></div>';
+        previewElement.innerHTML = htmlUICarregando({ variante: 'inline', tamanho: 'sm' });
     }
     
     if (tipo === 'grade') {
@@ -890,8 +901,8 @@ async function handleImagemChange(event, tipo) {
     } finally {
         // Limpa o spinner e o valor do input de arquivo
         input.value = '';
-        const spinner = document.querySelector('.cp-imagem-placeholder .spinner-btn-interno');
-        spinner?.remove();
+    const spinner = document.querySelector('.cp-imagem-placeholder .ui-cg');
+    spinner?.remove();
     }
 }
 
@@ -1034,6 +1045,11 @@ window.abrirModalSelecaoImagem = function(index) {
     const modal = document.getElementById('modalSelecionarImagem');
     const galeria = document.getElementById('galeriaImagensExistentes');
     const msgGaleriaVazia = galeria.querySelector('.cp-galeria-vazia-msg');
+    msgGaleriaVazia.innerHTML = htmlUIFeedbackNotFound({
+        icon: 'fa-images',
+        titulo: 'Nenhuma imagem disponível',
+        mensagem: 'Envie uma imagem para poder reaproveitá-la nas variações.',
+    });
     galeria.innerHTML = ''; 
     galeria.appendChild(msgGaleriaVazia);
 

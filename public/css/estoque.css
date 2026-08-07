@@ -343,31 +343,6 @@
 /*------------------------------------*\
     #UTILITÁRIOS (Spinner) - NOVOS COM PREFIXO ES-
 \*------------------------------------*/
-.es-spinner {
-    display: flex; 
-    justify-content: center; 
-    align-items: center;
-    padding: 25px; 
-    font-size: 1rem; 
-    color: var(--gs-secundaria); /* Cor do texto do spinner */
-    min-height: 60px;
-}
-.es-spinner::before {
-    content: ''; 
-    display: inline-block; 
-    width: 22px; /* Tamanho do spinner */
-    height: 22px;
-    margin-right: 12px; 
-    border: 3px solid var(--gs-borda, #ccc); /* Cor da borda base do spinner */
-    border-top-color: var(--gs-primaria); /* Cor da parte que gira */
-    border-radius: 50%; 
-    animation: es-spin 1s linear infinite;
-}
-@keyframes es-spin { 
-    0% { transform: rotate(0deg); } 
-    100% { transform: rotate(360deg); } 
-}
-
 .spinner-btn-interno { /* Se for usar spinner dentro de botões */
     width: 1em; height: 1em; border-width: 2px; margin-right: 8px;
     border-style: solid; border-color: rgba(255,255,255,0.3);

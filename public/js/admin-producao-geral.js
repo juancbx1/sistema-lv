@@ -6,6 +6,7 @@
 import { verificarAutenticacao } from '/js/utils/auth.js';
 import { mostrarMensagem } from '/js/utils/popups.js'; // Usaremos para feedback
 import { adicionarBotaoFechar } from '/js/utils/botoes-fechar.js';
+import { htmlUIFeedbackNotFound } from './utils/ui-feedback.js';
 
 // ==========================================================================
 // 2. VARIÁVEIS GLOBAIS E ESTADO DA APLICAÇÃO
@@ -255,7 +256,11 @@ async function renderizarRankingERadar(atividades, regrasDeMetas) {
     }
 
     if (listaFuncionarios.length === 0) {
-        const msg = '<p style="text-align:center; padding: 20px;">Nenhuma atividade registrada.</p>';
+        const msg = htmlUIFeedbackNotFound({
+            icon: 'fa-users',
+            titulo: 'Nenhuma atividade registrada',
+            mensagem: 'Não há atividades para exibir hoje.',
+        });
         rankingContainer.innerHTML = msg;
         metasContainer.innerHTML = msg;
         return;
@@ -556,7 +561,11 @@ function renderizarListaProdutosLupa(atividadesFuncionario) {
     if (cardsHTML.length > 0) {
         container.innerHTML = cardsHTML;
     } else {
-        container.innerHTML = '<p style="text-align:center; padding: 20px;">Nenhuma produção registrada para este funcionário hoje.</p>';
+        container.innerHTML = htmlUIFeedbackNotFound({
+            icon: 'fa-industry',
+            titulo: 'Nenhuma produção registrada',
+            mensagem: 'Este funcionário ainda não registrou produção hoje.',
+        });
     }
 }
 
@@ -695,7 +704,11 @@ function abrirModalDetalhesCostura() {
         <h2 class="pg-modal-titulo">Produção Detalhada da Costura (Hoje)</h2>
         <p class="pg-modal-subtitulo">O que foi produzido hoje, item por item.</p>
         <div class="pg-modal-lista-container pg-layout-cards-v2">
-            ${cardsDeProdutoHTML.length > 0 ? cardsDeProdutoHTML : '<p>Nenhuma atividade de costura encontrada.</p>'}
+            ${cardsDeProdutoHTML.length > 0 ? cardsDeProdutoHTML : htmlUIFeedbackNotFound({
+                icon: 'fa-shirt',
+                titulo: 'Nenhuma atividade de costura encontrada',
+                mensagem: 'Não há atividades de costura para este período.',
+            })}
         </div>
     `;
 
@@ -770,7 +783,11 @@ function renderizarFeedAtividades(atividades) {
     const atividadesDaPagina = atividades.slice(inicio, fim);
 
     if (atividadesDaPagina.length === 0) {
-        feedContainer.innerHTML = '<p style="text-align:center; padding: 20px;">Nenhuma atividade neste período.</p>';
+        feedContainer.innerHTML = htmlUIFeedbackNotFound({
+            icon: 'fa-calendar-xmark',
+            titulo: 'Nenhuma atividade neste período',
+            mensagem: 'Não há registros para o período selecionado.',
+        });
         paginacaoContainer.style.display = 'none';
         return;
     }

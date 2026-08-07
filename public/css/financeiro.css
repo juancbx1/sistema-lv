@@ -3839,42 +3839,6 @@
 }
 
 /* ==========================================================================
-   11. COMPONENTES DE UI (Não Encontrado)
-   ========================================================================== */
-
-.fc-nao-encontrado-container {
-    text-align: center;
-    padding: 40px 20px;
-    margin: 20px auto;
-    max-width: 450px;
-    background-color: var(--gs-fundo-alternativo);
-    border-radius: var(--gs-raio-borda-card);
-    border: 1px dashed var(--gs-borda);
-    opacity: 0.8;
-}
-
-.nao-encontrado-icone {
-    font-size: 3rem;
-    color: var(--gs-primaria);
-    opacity: 0.5;
-    margin-bottom: 20px;
-}
-
-.nao-encontrado-titulo {
-    font-size: 1.3rem;
-    font-weight: 600;
-    color: var(--gs-texto-principal);
-    margin: 0 0 10px 0;
-}
-
-.nao-encontrado-mensagem {
-    font-size: 0.95rem;
-    color: var(--gs-texto-secundario);
-    line-height: 1.6;
-    margin: 0;
-}
-
-/* ==========================================================================
    9. RESPONSIVIDADE
    ========================================================================== */
 
@@ -4452,7 +4416,7 @@ body { margin-left: 0; padding: 40px 40px 10px 40px;
 
 /* Refinamento do dashboard financeiro — saldo inteligente e alertas leves */
 
-.financeiro-status-react.fc-status-board { margin-bottom: 18px; padding: 18px 20px; border: 1px solid var(--gs-borda); border-radius: 18px; background: linear-gradient(110deg, var(--gs-branco), color-mix(in srgb, var(--gs-fundo-alternativo) 55%, var(--gs-branco))); box-shadow: 0 10px 28px rgba(35, 52, 79, .06); }
+.financeiro-status-react.fc-status-board { margin: 20px 0 20px; padding: 18px 20px; border: 1px solid var(--gs-borda); border-radius: 18px; background: linear-gradient(110deg, var(--gs-branco), color-mix(in srgb, var(--gs-fundo-alternativo) 55%, var(--gs-branco))); box-shadow: 0 10px 28px rgba(35, 52, 79, .06); }
 
 .fc-status-board-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 15px; }
 

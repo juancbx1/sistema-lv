@@ -3,6 +3,9 @@ import { verificarAutenticacao } from '/js/utils/auth.js';
 import { obterProdutos, invalidateCache } from '/js/utils/storage.js';
 import { mostrarMensagem, mostrarConfirmacao } from '/js/utils/popups.js';
 import { adicionarBotaoFechar } from '/js/utils/botoes-fechar.js';
+import { htmlUIFeedbackNotFound } from './utils/ui-feedback.js';
+import { htmlUICarregando } from './utils/ui-carregando.js';
+import { removerCarregamentoInicial } from './utils/ui-carregando.js';
 
 // --- Variáveis Globais ---
 let permissoesGlobaisEstoque = [];
@@ -178,7 +181,7 @@ async function abrirModalConfigurarNiveis() {
     // Reseta o estado do modal antes de abrir
     const tbody = document.getElementById('tbodyConfigNiveis');
     if (!tbody) return;
-    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;"><div class="es-spinner"></div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5">${htmlUICarregando({ variante: 'bloco', tamanho: 'sm' })}</td></tr>`;
     document.getElementById('buscaProdutoNiveisModal').value = '';
     
     // Mostra o modal
@@ -220,7 +223,11 @@ function renderizarTabelaConfigNiveis(itensParaRenderizar) {
     tbody.innerHTML = ''; 
 
     if (!itensParaRenderizar || itensParaRenderizar.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;">Nenhum produto/variação para configurar.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5">${htmlUIFeedbackNotFound({
+            icon: 'fa-sliders',
+            titulo: 'Nenhum produto para configurar',
+            mensagem: 'Não há produtos ou variações disponíveis para configurar.',
+        })}</td></tr>`;
         return;
     }
 
@@ -332,7 +339,7 @@ async function salvarNiveisEmLote() {
     const btnSalvarLoteEl = document.getElementById('btnSalvarNiveisEmLote');
     const originalText = btnSalvarLoteEl.textContent;
     btnSalvarLoteEl.disabled = true;
-    btnSalvarLoteEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Salvando...';
+    btnSalvarLoteEl.innerHTML = `${htmlUICarregando({ variante: 'inline', tamanho: 'sm' })} Salvando...`;
 
     try {
         await fetchEstoqueAPI('/niveis-estoque/batch', { method: 'POST', body: JSON.stringify({ configs: configsParaSalvar }) });
@@ -386,7 +393,7 @@ async function carregarHistoricoGeralEstoque(page = 1) {
     historicoGeralEstoquePage = page;
     const tbody = document.getElementById('tabelaHistoricoGeralEstoqueBody');
     const paginacaoContainer = document.getElementById('paginacaoHistoricoGeralEstoque');
-    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;"><div class="es-spinner"></div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4">${htmlUICarregando({ variante: 'bloco', tamanho: 'sm' })}</td></tr>`;
 
     try {
         const tipoEvento = document.getElementById('filtroEventoEstoque').value;
@@ -404,7 +411,11 @@ async function carregarHistoricoGeralEstoque(page = 1) {
 
         tbody.innerHTML = '';
         if (rows.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;">Nenhum evento encontrado para os filtros selecionados.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="4">${htmlUIFeedbackNotFound({
+                icon: 'fa-calendar-xmark',
+                titulo: 'Nenhum evento encontrado',
+                mensagem: 'Não há eventos para os filtros selecionados.',
+            })}</td></tr>`;
         } else {
             rows.forEach(evento => {
                 const tr = tbody.insertRow();
@@ -582,7 +593,7 @@ async function carregarTabelaEstoque(searchTerm = null, page = 1) {
     currentPageEstoqueTabela = parseInt(page) || 1;
     const container = document.getElementById('estoqueCardsContainer');
     if (!container) return;
-    container.innerHTML = `<div class="es-spinner" style="grid-column: 1 / -1;">Atualizando itens...</div>`;
+    container.innerHTML = htmlUICarregando({ texto: 'Atualizando itens...' });
     
     try {
         let dadosDeSaldo;
@@ -697,7 +708,11 @@ function renderizarCardsConsulta(itensDeEstoque, produtosDefinicoes, niveisDeAle
     container.innerHTML = '';
 
     if (itensDeEstoque.length === 0) {
-        container.innerHTML = `<p style="text-align: center; grid-column: 1 / -1;">Nenhum item encontrado.</p>`;
+        container.innerHTML = htmlUIFeedbackNotFound({
+            icon: 'fa-box-open',
+            titulo: 'Nenhum item encontrado',
+            mensagem: 'Não há itens correspondentes aos filtros atuais.',
+        });
         return;
     }
 
@@ -922,7 +937,7 @@ function voltarDaFilaParaEstoque() {
 
 function renderizarFilaDeProducao() {
     const container = document.getElementById('filaProducaoContainer');
-    container.innerHTML = `<div class="es-spinner"></div>`;
+    container.innerHTML = htmlUICarregando({ variante: 'bloco', tamanho: 'sm' });
 
     // 1. Pega os valores dos filtros da fila
     const statusFiltro = document.getElementById('filtroFilaStatusSelect').value;
@@ -996,7 +1011,11 @@ function renderizarFilaDeProducao() {
 
     container.innerHTML = '';
     if (itensParaRenderizar.length === 0) {
-        container.innerHTML = '<p style="text-align: center;">Nenhum item na fila de prioridades com os filtros selecionados.</p>';
+        container.innerHTML = htmlUIFeedbackNotFound({
+            icon: 'fa-list-ol',
+            titulo: 'Nenhum item na fila de prioridades',
+            mensagem: 'Não há itens correspondentes aos filtros selecionados.',
+        });
         return;
     }
 
@@ -1081,7 +1100,11 @@ function renderizarPromessasEmProducao() {
     contadorBadge.style.display = promessasAtivas.length > 0 ? 'inline-block' : 'none';
 
     if (promessasAtivas.length === 0) {
-        container.innerHTML = '<p style="text-align: center;">Nenhum item em produção no momento.</p>';
+        container.innerHTML = htmlUIFeedbackNotFound({
+            icon: 'fa-industry',
+            titulo: 'Nenhum item em produção',
+            mensagem: 'Não há itens em produção neste momento.',
+        });
         return;
     }
 
@@ -1215,7 +1238,7 @@ function iniciarTimerContagemRegressiva(promessa) {
 async function salvarPrioridades() {
     const btn = document.getElementById('btnSalvarPrioridades');
     btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Salvando...';
+    btn.innerHTML = `${htmlUICarregando({ variante: 'inline', tamanho: 'sm' })} Salvando...`;
     
     const cards = document.querySelectorAll('#filaProducaoContainer .es-fila-card');
     const prioridadesPayload = Array.from(cards).map((card, index) => ({
@@ -1372,7 +1395,7 @@ function prepararViewMovimento() {
     // Carrega o histórico para o item selecionado
     const historicoBody = document.getElementById('historicoMovimentacoesBody');
     if (historicoBody) {
-        historicoBody.innerHTML = '<tr><td colspan="6"><div class="es-spinner"></div></td></tr>';
+        historicoBody.innerHTML = `<tr><td colspan="6">${htmlUICarregando({ variante: 'bloco', tamanho: 'sm' })}</td></tr>`;
         carregarHistoricoMovimentacoes(item.produto_id, item.variante_nome, 1);
     }
 
@@ -1431,7 +1454,7 @@ async function iniciarProcessoDeEstorno(movimentoId, saldoParaEstorno, botao) {
     }
 
     botao.disabled = true;
-    botao.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    botao.innerHTML = htmlUICarregando({ variante: 'inline', tamanho: 'sm' });
 
     try {
         const response = await fetchEstoqueAPI('/estoque/estornar-movimento', {
@@ -1579,7 +1602,7 @@ async function arquivarItemEstoque() {
     const btnArquivar = document.getElementById('arquivarItemBtn');
     if(btnArquivar) {
         btnArquivar.disabled = true;
-        btnArquivar.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        btnArquivar.innerHTML = htmlUICarregando({ variante: 'inline', tamanho: 'sm' });
     }
 
     try {
@@ -1653,7 +1676,7 @@ async function salvarMovimentoManualEstoque() {
     const salvarBtn = document.getElementById('salvarMovimentoBtn');
     const originalSalvarBtnText = salvarBtn.innerHTML;
     salvarBtn.disabled = true;
-    salvarBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Salvando...';
+    salvarBtn.innerHTML = `${htmlUICarregando({ variante: 'inline', tamanho: 'sm' })} Salvando...`;
 
     try {
         const resultado = await fetchEstoqueAPI('/estoque/movimento-manual', {
@@ -1744,7 +1767,7 @@ function handleHashChangeEstoque() {
         // Sempre que voltamos para a lista, é uma boa prática recarregar os dados
         // para refletir quaisquer mudanças feitas.
         const tbodyEstoque = document.getElementById('estoqueTableBody');
-        if (tbodyEstoque) tbodyEstoque.innerHTML = `<tr><td colspan="4" style="text-align:center;"><div class="es-spinner"></div> Atualizando lista...</td></tr>`;
+        if (tbodyEstoque) tbodyEstoque.innerHTML = `<tr><td colspan="4">${htmlUICarregando({ variante: 'bloco', tamanho: 'sm', texto: 'Atualizando lista...' })}</td></tr>`;
         
         carregarTabelaEstoque(searchTermAtual, currentPageEstoqueTabela).catch(err => {
             console.error("Erro ao recarregar tabela de estoque via handleHashChange:", err);
@@ -1760,7 +1783,7 @@ async function abrirModalArquivados() {
     if (!modal) return;
     
     const tbody = document.getElementById('tabelaItensArquivadosBody');
-    if(tbody) tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;"><div class="es-spinner"></div> Carregando...</td></tr>';
+    if(tbody) tbody.innerHTML = `<tr><td colspan="4">${htmlUICarregando({ variante: 'bloco', tamanho: 'sm', texto: 'Carregando...' })}</td></tr>`;
     
     modal.style.display = 'flex';
     adicionarBotaoFechar(modal, fecharModalArquivados);
@@ -1789,7 +1812,11 @@ function renderizarTabelaArquivados(itens) {
     tbody.innerHTML = '';
 
     if (!itens || itens.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Nenhum item arquivado.</td></tr>';
+        tbody.innerHTML = `<tr><td colspan="4">${htmlUIFeedbackNotFound({
+            icon: 'fa-box-archive',
+            titulo: 'Nenhum item arquivado',
+            mensagem: 'Os itens arquivados aparecerão aqui.',
+        })}</td></tr>`;
         return;
     }
 
@@ -1824,7 +1851,7 @@ async function handleRestaurarItemClick(event) {
     if (!confirmado) return;
 
     targetButton.disabled = true;
-    targetButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    targetButton.innerHTML = htmlUICarregando({ variante: 'inline', tamanho: 'sm' });
 
     try {
         await fetchEstoqueAPI(`/estoque/arquivados/${sku}`, { method: 'DELETE' });
@@ -1854,7 +1881,7 @@ function abrirModalHistorico() {
     const tbodyHistorico = document.getElementById('historicoMovimentacoesTableBody');
     const paginacaoHistorico = document.getElementById('paginacaoHistoricoMovimentacoes');
     
-    if(tbodyHistorico) tbodyHistorico.innerHTML = `<tr><td colspan="5" style="text-align:center;"><div class="es-spinner"></div> Carregando...</td></tr>`;
+    if(tbodyHistorico) tbodyHistorico.innerHTML = `<tr><td colspan="5">${htmlUICarregando({ variante: 'bloco', tamanho: 'sm', texto: 'Carregando...' })}</td></tr>`;
     if(paginacaoHistorico) paginacaoHistorico.style.display = 'none';
 
     if (modalHistoricoElement) modalHistoricoElement.style.display = 'flex';
@@ -1872,7 +1899,7 @@ async function carregarHistoricoMovimentacoes(produtoId, varianteNome, page) {
     const paginacaoContainer = document.getElementById('paginacaoHistoricoMovimentacoes');
     if (!tbody || !paginacaoContainer) return;
 
-    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;"><div class="es-spinner">Carregando...</div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6">${htmlUICarregando({ variante: 'bloco', tamanho: 'sm', texto: 'Carregando...' })}</td></tr>`;
     paginacaoContainer.innerHTML = '';
 
     try {
@@ -1908,7 +1935,11 @@ function renderizarHistoricoMovimentacoes(movimentos) {
     tbody.innerHTML = '';
 
     if (!movimentos || movimentos.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Nenhuma movimentação encontrada.</td></tr>';
+        tbody.innerHTML = `<tr><td colspan="6">${htmlUIFeedbackNotFound({
+            icon: 'fa-arrow-right-arrow-left',
+            titulo: 'Nenhuma movimentação encontrada',
+            mensagem: 'Não há movimentações para exibir.',
+        })}</td></tr>`;
         return;
     }
     
@@ -2040,7 +2071,11 @@ function renderizarProdutosBase() {
         listaProdutosBase = listaProdutosBase.filter(p => p.produto_nome.toLowerCase().includes(termoBusca));
     }
     if (listaProdutosBase.length === 0) {
-        container.innerHTML = '<p style="text-align: center; grid-column: 1 / -1;">Nenhum produto encontrado.</p>';
+        container.innerHTML = htmlUIFeedbackNotFound({
+            icon: 'fa-box-open',
+            titulo: 'Nenhum produto encontrado',
+            mensagem: 'Não há produtos correspondentes à busca.',
+        });
         return;
     }
 
@@ -2157,7 +2192,11 @@ function renderizarCardsDeVariacao() {
     }
     
     if (variacoesDoProduto.length === 0) {
-        container.innerHTML = '<p style="text-align: center; grid-column: 1 / -1;">Nenhuma variação encontrada com os filtros selecionados.</p>';
+        container.innerHTML = htmlUIFeedbackNotFound({
+            icon: 'fa-sliders',
+            titulo: 'Nenhuma variação encontrada',
+            mensagem: 'Não há variações correspondentes aos filtros selecionados.',
+        });
         return;
     }
 
@@ -2397,7 +2436,7 @@ async function confirmarSaidaEstoque() {
     const btnConfirmar = document.getElementById('btnConfirmarSaidaEstoque');
     const originalBtnHTML = btnConfirmar.innerHTML;
     btnConfirmar.disabled = true;
-    btnConfirmar.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Registrando...';
+    btnConfirmar.innerHTML = `${htmlUICarregando({ variante: 'inline', tamanho: 'sm' })} Registrando...`;
 
     try {
         await fetchEstoqueAPI('/estoque/movimento-em-lote', {
@@ -2497,7 +2536,7 @@ async function prepararViewInventario() {
     const containerEmAndamento = document.getElementById('containerInventarioEmAndamento');
 
     // Mostra um spinner enquanto carrega
-    historicoBody.innerHTML = `<tr><td colspan="6" style="text-align:center;"><div class="es-spinner"></div> Carregando histórico...</td></tr>`;
+    historicoBody.innerHTML = `<tr><td colspan="6">${htmlUICarregando({ variante: 'bloco', tamanho: 'sm', texto: 'Carregando histórico...' })}</td></tr>`;
     btnIniciarNovo.disabled = true;
     containerEmAndamento.classList.add('hidden');
 
@@ -2534,7 +2573,7 @@ async function iniciarNovoInventario() {
     const overlay = document.getElementById('inventarioLoadingOverlay');
 
     btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Iniciando...';
+    btn.innerHTML = `${htmlUICarregando({ variante: 'inline', tamanho: 'sm' })} Iniciando...`;
     overlay.classList.remove('hidden');
 
     try {
@@ -2565,7 +2604,11 @@ function renderizarHistoricoInventario(sessoes) {
     tbody.innerHTML = '';
 
     if (!sessoes || sessoes.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;">Nenhum inventário finalizado encontrado.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6">${htmlUIFeedbackNotFound({
+            icon: 'fa-clipboard-check',
+            titulo: 'Nenhum inventário finalizado',
+            mensagem: 'Os inventários concluídos aparecerão aqui.',
+        })}</td></tr>`;
         return;
     }
 
@@ -2609,7 +2652,7 @@ async function abrirModalDetalhesInventario(idSessao) {
     
     // Mostra o modal e um spinner
     modal.style.display = 'flex';
-    tbody.innerHTML = `<tr><td colspan="4"><div class="es-spinner"></div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4">${htmlUICarregando({ variante: 'bloco', tamanho: 'sm' })}</td></tr>`;
     
     try {
         const dados = await fetchEstoqueAPI(`/inventario/sessoes/${idSessao}`);
@@ -2626,7 +2669,11 @@ async function abrirModalDetalhesInventario(idSessao) {
 
         tbody.innerHTML = ''; // Limpa o spinner
         if (itensDivergentes.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;">Nenhuma divergência foi encontrada neste inventário.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="4">${htmlUIFeedbackNotFound({
+                icon: 'fa-check-circle',
+                titulo: 'Nenhuma divergência encontrada',
+                mensagem: 'Este inventário não possui diferenças para ajustar.',
+            })}</td></tr>`;
             return;
         }
 
@@ -2673,7 +2720,7 @@ async function mostrarTelaDeContagem(idSessao) {
     const container = document.getElementById('inventarioItensContainer');
     const overlay = document.getElementById('inventarioLoadingOverlay');
     overlay.classList.remove('hidden');
-    container.innerHTML = `<div class="es-spinner"></div> Carregando itens...`;
+    container.innerHTML = htmlUICarregando({ texto: 'Carregando itens...' });
 
     try {
         // AGORA USANDO A API REAL
@@ -2718,7 +2765,11 @@ function renderizarItensDeContagem(itens) {
     container.innerHTML = '';
 
     if (!itens || itens.length === 0) {
-        container.innerHTML = `<p style="text-align:center;">Nenhum item para contar nesta sessão.</p>`;
+        container.innerHTML = htmlUIFeedbackNotFound({
+            icon: 'fa-clipboard-list',
+            titulo: 'Nenhum item para contar',
+            mensagem: 'Não há itens disponíveis nesta sessão de inventário.',
+        });
         return;
     }
 
@@ -3016,7 +3067,7 @@ async function finalizarInventario() {
     if (!confirmado) return;
 
     btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Finalizando...';
+    btn.innerHTML = `${htmlUICarregando({ variante: 'inline', tamanho: 'sm' })} Finalizando...`;
 
     try {
         const resultado = await fetchEstoqueAPI(`/inventario/sessoes/${sessaoInventarioAtiva.id}/finalizar`, {
@@ -3269,6 +3320,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         usuarioLogadoEstoque = auth.usuario;
         document.body.classList.add('autenticado');
         await inicializarPaginaEstoque();
+        removerCarregamentoInicial();
     } catch (error) {
         console.error('[Estoque DOMContentLoaded] Erro:', error);
         mostrarMensagem('Erro crítico ao carregar a página de estoque.', 'erro');

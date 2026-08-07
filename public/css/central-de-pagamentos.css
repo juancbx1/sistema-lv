@@ -58,6 +58,8 @@ body {
     padding: 25px;
     box-shadow: var(--cpg-sombra-padrao);
     border: 1px solid var(--cpg-cor-borda);
+    margin: 20px 0 0;
+
 }
 
 .cpg-section-title { 
@@ -175,25 +177,6 @@ body {
 .cpg-alerta-card .titulo { font-size: 1rem; font-weight: 700; text-transform: uppercase; display: flex; align-items: center; gap: 10px; }
 .cpg-alerta-card .dados-principais { text-align: right; margin: 15px 0; }
 .cpg-alerta-card .contador { font-size: 2.5rem; font-weight: 700; line-height: 1; }
-
-.cpg-spinner {
-    display: flex; 
-    justify-content: center; 
-    align-items: center;
-    padding: 40px 25px;
-    font-size: 0.9rem; 
-    color: var(--cpg-cor-texto-secundario);
-    gap: 10px;
-}
-.cpg-spinner::before {
-    content: '';
-    width: 20px;
-    height: 20px;
-    border: 3px solid #e9ecef;
-    border-top-color: var(--cpg-cor-primaria);
-    border-radius: 50%;
-    animation: cpg-spin 1s linear infinite;
-}
 
 /* Estilo para botões de ícone no cabeçalho */
 .cpg-header-actions {
@@ -1235,20 +1218,6 @@ body {
 }
 
 /* Estilos para o Spinner de Carregamento Global */
-.cpg-spinner-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(244, 246, 248, 0.8); /* Fundo semi-transparente */
-    z-index: 9999;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    backdrop-filter: blur(2px);
-}
-
 /* Novo container para alinhar verticalmente */
 .cpg-spinner-container {
     display: flex;
@@ -1257,43 +1226,7 @@ body {
     gap: 20px; /* Espaço entre as bolinhas e o texto */
 }
 
-.cpg-spinner-dots {
-    display: flex;
-    gap: 15px;
-}
-
-.cpg-spinner-dots div {
-    width: 15px;
-    height: 15px;
-    border-radius: 50%;
-    background-color: var(--cpg-cor-primaria);
-    animation: cpg-pulsar 1.4s infinite ease-in-out both;
-}
-
-.cpg-spinner-dots div:nth-child(1) {
-    animation-delay: -0.32s;
-}
-
-.cpg-spinner-dots div:nth-child(2) {
-    animation-delay: -0.16s;
-}
-
 /* Novo estilo para o texto */
-.cpg-spinner-texto {
-    font-size: 1rem;
-    font-weight: 500;
-    color: var(--cpg-cor-texto-secundario);
-    letter-spacing: 0.5px;
-}
-
-@keyframes cpg-pulsar {
-    0%, 80%, 100% {
-        transform: scale(0);
-    } 40% {
-        transform: scale(1.0);
-    }
-}
-
 /* Estilos para a Aba de Passagens */
 .cpg-passagem-layout {
     display: grid;
@@ -1493,6 +1426,7 @@ body {
     padding: 25px;
     text-align: center;
     box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+    margin: 20px 0 0;
 }
 
 .cpg-money-display {

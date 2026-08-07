@@ -6,6 +6,8 @@ import { renderizarPaginacao as renderizarPaginacaoJS } from './utils/Paginacao.
 window.renderizarPaginacao = renderizarPaginacaoJS;
 
 import { inicializarControlador, atualizarDadosControlador } from './utils/ControladorFiltros.js';
+import { htmlUIFeedbackNotFound } from './utils/ui-feedback.js';
+import { htmlUICarregando } from './utils/ui-carregando.js';
 
 // --- Variáveis Globais --- 
 let usuarioLogado = null;
@@ -196,7 +198,11 @@ async function renderizarPainelStatus() {
         let contadorInativos = 0;
 
         if (tiktiks.length === 0) {
-            containerDisponiveis.innerHTML = '<p>Nenhum usuário do tipo "TikTik" encontrado.</p>';
+            containerDisponiveis.innerHTML = htmlUIFeedbackNotFound({
+                icon: 'fa-user-slash',
+                titulo: 'Nenhum TikTik encontrado',
+                mensagem: 'Não há usuários desse tipo disponíveis neste momento.',
+            });
             return;
         }
 
@@ -932,9 +938,9 @@ async function abrirModoFoco(tiktik) {
     
     modal.querySelector('#focoAvatar').src = tiktik.avatar_url || '/img/placeholder-image.png';
     modal.querySelector('#focoTitulo').innerHTML = `Desempenho de Hoje`;
-    modal.querySelector('#focoMetricas').innerHTML = '<div class="spinner"></div>';
-    modal.querySelector('#focoResumoProdutos').innerHTML = '<div class="spinner">Calculando resumo...</div>';
-    modal.querySelector('#focoTarefas').innerHTML = '<div class="spinner"></div>';
+    modal.querySelector('#focoMetricas').innerHTML = htmlUICarregando({ variante: 'bloco', tamanho: 'sm' });
+    modal.querySelector('#focoResumoProdutos').innerHTML = htmlUICarregando({ variante: 'bloco', tamanho: 'sm', texto: 'Calculando resumo...' });
+    modal.querySelector('#focoTarefas').innerHTML = htmlUICarregando({ variante: 'bloco', tamanho: 'sm' });
 
 
     // 1. Definimos a função de clique em uma variável
@@ -1009,8 +1015,16 @@ function renderizarTarefasFoco(dados) {
     const { sessoes } = dados;
 
     if (!sessoes || sessoes.length === 0) {
-        resumoContainer.innerHTML = '<p>Nenhum produto finalizado hoje.</p>';
-        tarefasContainer.innerHTML = '<p>Nenhuma tarefa finalizada hoje.</p>';
+        resumoContainer.innerHTML = htmlUIFeedbackNotFound({
+            icon: 'fa-box-open',
+            titulo: 'Nenhum produto finalizado hoje',
+            mensagem: 'O resumo do dia aparecerá aqui quando houver produção concluída.',
+        });
+        tarefasContainer.innerHTML = htmlUIFeedbackNotFound({
+            icon: 'fa-list-check',
+            titulo: 'Nenhuma tarefa finalizada hoje',
+            mensagem: 'As tarefas concluídas aparecerão aqui.',
+        });
         return;
     }
 
@@ -1049,7 +1063,11 @@ function renderizarTarefasFoco(dados) {
             </div>
         `).join('');
     } else {
-        resumoContainer.innerHTML = '<p>Nenhum produto finalizado hoje.</p>';
+        resumoContainer.innerHTML = htmlUIFeedbackNotFound({
+            icon: 'fa-box-open',
+            titulo: 'Nenhum produto finalizado hoje',
+            mensagem: 'Não há produtos concluídos para este período.',
+        });
     }
 
     // --- 3. Renderizar os Cards de Tarefas Detalhadas ---
@@ -1086,7 +1104,11 @@ function renderizarTarefasFoco(dados) {
             `;
         }).join('');
     } else {
-        tarefasContainer.innerHTML = '<p>Nenhuma tarefa finalizada hoje.</p>';
+        tarefasContainer.innerHTML = htmlUIFeedbackNotFound({
+            icon: 'fa-list-check',
+            titulo: 'Nenhuma tarefa finalizada hoje',
+            mensagem: 'Não há tarefas concluídas para este período.',
+        });
     }
 }
 
@@ -1242,7 +1264,7 @@ async function lancarArremateAgregado() {
     lancamentosArremateEmAndamento.add(lockKey);
 
     btnLancar.disabled = true;
-    btnLancar.innerHTML = '<div class="spinner-btn-interno"></div> Lançando...';
+    btnLancar.innerHTML = `${htmlUICarregando({ variante: 'inline', tamanho: 'sm' })} Lançando...`;
 
     try {
         let quantidadeRestante = quantidadeTotal;
@@ -1345,7 +1367,7 @@ async function handleEstornoClick(event) {
     if (!confirmado) return;
     
     button.disabled = true;
-    button.innerHTML = '<div class="spinner-btn-interno" style="border-top-color: white;"></div>';
+    button.innerHTML = `${htmlUICarregando({ variante: 'inline', tamanho: 'sm' })}`;
 
     try {
         await fetchFromAPI('/arremates/estornar', {
@@ -1408,7 +1430,7 @@ async function buscarErenderizarHistoricoArremates(page = 1) {
     const tabelaWrapper = modal.querySelector('#historicoArrematesTabelaWrapper');
     const paginacaoContainer = modal.querySelector('#historicoArrematesPaginacao');
     
-    tabelaWrapper.innerHTML = '<div class="spinner">Buscando histórico...</div>';
+    tabelaWrapper.innerHTML = htmlUICarregando({ texto: 'Buscando histórico...' });
     paginacaoContainer.innerHTML = '';
 
     try {
@@ -1442,7 +1464,11 @@ function renderizarTabelaHistoricoArremates(eventos, pagination) {
     const paginacaoContainer = modal.querySelector('#historicoArrematesPaginacao');
 
     if (!eventos || eventos.length === 0) {
-        tabelaWrapper.innerHTML = '<p style="text-align: center;">Nenhum evento encontrado para os filtros selecionados.</p>';
+        tabelaWrapper.innerHTML = htmlUIFeedbackNotFound({
+            icon: 'fa-calendar-xmark',
+            titulo: 'Nenhum evento encontrado',
+            mensagem: 'Não há eventos para os filtros selecionados.',
+        });
         return;
     }
 
@@ -1692,7 +1718,7 @@ function configurarEventListeners() {
 async function carregarHistoricoDoProduto(produtoId, variante, page = 1) {
     const container = document.getElementById('historicoProdutoContainer');
     const paginacaoContainer = document.getElementById('historicoProdutoPaginacao');
-    container.innerHTML = '<div class="spinner">Carregando histórico do produto...</div>';
+    container.innerHTML = htmlUICarregando({ texto: 'Carregando histórico do produto...' });
     paginacaoContainer.innerHTML = '';
 
     try {
@@ -1709,7 +1735,11 @@ async function carregarHistoricoDoProduto(produtoId, variante, page = 1) {
         const { rows: historico, pagination } = response;
         
         if (historico.length === 0) {
-            container.innerHTML = '<p style="text-align: center;">Nenhum lançamento encontrado para este produto.</p>';
+            container.innerHTML = htmlUIFeedbackNotFound({
+                icon: 'fa-receipt',
+                titulo: 'Nenhum lançamento encontrado',
+                mensagem: 'Não há lançamentos para este produto.',
+            });
             return;
         }
 

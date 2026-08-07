@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Embalagem de Produtos</title>
     <link rel="stylesheet" href="/css/global-style.css">
+    <script src="/js/utils/empresa-carregamento-bootstrap.js"></script>
     <link rel="stylesheet" href="/css/menu-lateral.css">
     <link rel="stylesheet" href="/css/embalagem-de-produtos.css">
     <link rel="stylesheet" href="/css/popups.css">
@@ -16,7 +17,10 @@
     <!--  contêiner do spinner global aqui. -->
     <!-- ======================================================= -->
     <div id="carregamentoGlobal" class="gs-carregamento-global-container visivel">
-        <div class="gs-spinner-global"></div>
+        <div class="ui-cg ui-cg--bloco" role="status" aria-live="polite" aria-label="Carregando" style="--ui-cg-empresa-cor:#2563eb;--ui-cg-empresa-contraste:#ffffff;">
+            <div class="ui-cg-spinner ui-cg-spinner--lg"><span class="ui-cg-nucleo-halo" aria-hidden="true"></span><span class="ui-cg-orbita ui-cg-orbita--interna" aria-hidden="true"><i class="ui-cg-no ui-cg-no--a"></i><i class="ui-cg-no ui-cg-no--b"></i></span><span class="ui-cg-orbita ui-cg-orbita--externa" aria-hidden="true"><i class="ui-cg-no ui-cg-no--c"></i></span><span class="ui-cg-nucleo-marca" aria-hidden="true">LV</span></div>
+            <span class="ui-cg-etapas" aria-hidden="true"><i></i><i></i><i></i></span><span class="ui-cg-texto">Organizando seu ambiente...</span>
+        </div>
     </div>
 
 
@@ -69,7 +73,7 @@
 
                 <div id="sugestaoConteudo" class="ep-sugestao-conteudo">
                     <!-- O conteúdo será totalmente gerado pelo JS agora -->
-                    <div class="spinner">Analisando estoque...</div>
+                    <div class="ui-cg ui-cg--bloco" role="status" aria-live="polite" aria-label="Analisando estoque" style="--ui-cg-empresa-cor:#2563eb;--ui-cg-empresa-contraste:#ffffff;"><div class="ui-cg-spinner ui-cg-spinner--sm"><span class="ui-cg-nucleo-halo" aria-hidden="true"></span><span class="ui-cg-orbita ui-cg-orbita--interna" aria-hidden="true"><i class="ui-cg-no ui-cg-no--a"></i><i class="ui-cg-no ui-cg-no--b"></i></span><span class="ui-cg-orbita ui-cg-orbita--externa" aria-hidden="true"><i class="ui-cg-no ui-cg-no--c"></i></span><span class="ui-cg-nucleo-marca" aria-hidden="true">LV</span></div><span class="ui-cg-texto">Analisando estoque...</span></div>
                 </div>
             </div>
 
@@ -201,7 +205,7 @@
                                     <!-- O conteúdo será preenchido pelo JavaScript -->
                                     <tr>
                                         <td colspan="6" style="text-align: center;">
-                                            <div class="spinner">Carregando histórico...</div>
+                                            <div class="ui-cg ui-cg--bloco" role="status" aria-live="polite" aria-label="Carregando histórico" style="--ui-cg-empresa-cor:#2563eb;--ui-cg-empresa-contraste:#ffffff;"><div class="ui-cg-spinner ui-cg-spinner--sm"><span class="ui-cg-nucleo-halo" aria-hidden="true"></span><span class="ui-cg-orbita ui-cg-orbita--interna" aria-hidden="true"><i class="ui-cg-no ui-cg-no--a"></i><i class="ui-cg-no ui-cg-no--b"></i></span><span class="ui-cg-orbita ui-cg-orbita--externa" aria-hidden="true"><i class="ui-cg-no ui-cg-no--c"></i></span><span class="ui-cg-nucleo-marca" aria-hidden="true">LV</span></div><span class="ui-cg-texto">Carregando histórico...</span></div>
                                         </td>
                                     </tr>
                                 </tbody>

@@ -7,16 +7,23 @@ export function limparContextoEmpresaLocal() {
   localStorage.removeItem('empresaId');
   sessionStorage.removeItem('empresaAtiva');
   sessionStorage.removeItem('empresaId');
+  window.LVEmpresaCarregamento?.limpar?.();
 }
 
 export function salvarContextoEmpresaLocal(usuario, storage = localStorage) {
   if (!usuario?.empresa_ativa?.id) return;
   storage.setItem('empresaId', String(usuario.empresa_ativa.id));
   storage.setItem('empresaAtiva', JSON.stringify(usuario.empresa_ativa));
+  window.LVEmpresaCarregamento?.definirEmpresa?.(usuario.empresa_ativa);
 }
 
 export function obterEmpresaAtivaLocal() {
-  const storages = [sessionStorage, localStorage];
+  const empresaDoBootstrap = window.LVEmpresaCarregamento?.obterEmpresaAtiva?.();
+  if (empresaDoBootstrap?.id) return empresaDoBootstrap;
+
+  const storages = sessionStorage.getItem('impersonation_token')
+    ? [sessionStorage, localStorage]
+    : [localStorage, sessionStorage];
   for (const storage of storages) {
     try {
       const raw = storage.getItem('empresaAtiva');

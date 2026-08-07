@@ -407,12 +407,6 @@
     min-height: 44px;
 }
 
-.go-sem-vinculo {
-    margin: 0;
-    color: var(--go-muted);
-    font-size: .85rem;
-}
-
 .go-vinculos-encerrados summary {
     min-height: 40px;
     color: var(--go-muted);

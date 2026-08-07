@@ -5,46 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Meu Dashboard</title>
     <link rel="stylesheet" href="/css/global-style.css">
+    <script src="/js/utils/empresa-carregamento-bootstrap.js"></script>
     <link rel="stylesheet" href="/css/dashboard.css">
     <link rel="stylesheet" href="/css/popups.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <link rel="stylesheet" href="https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
-    <style>
-        html, body { background: #f0f2f5; }
-        #lv-boot-loader {
-            display: flex;
-            min-height: 100vh;
-            align-items: center;
-            justify-content: center;
-            color: #17324d;
-            background: #f0f2f5;
-            font: 500 14px/1.4 Inter, "Segoe UI", sans-serif;
-        }
-        #lv-boot-loader-inner { display: grid; justify-items: center; gap: 14px; }
-        #lv-boot-loader-spinner {
-            width: 52px;
-            height: 52px;
-            border: 3px solid rgba(37, 99, 235, .15);
-            border-top-color: #2563eb;
-            border-radius: 50%;
-            animation: lv-boot-spin .8s linear infinite;
-        }
-        #lv-boot-loader-label { color: #718096; }
-        @keyframes lv-boot-spin { to { transform: rotate(360deg); } }
-        @media (prefers-reduced-motion: reduce) { #lv-boot-loader-spinner { animation: none; } }
-    </style>
 </head>
 
 <body>
     
     <!-- O REACT VAI RENDERIZAR TUDO AQUI -->
     <div id="root-dashboard">
-        <div id="lv-boot-loader" role="status" aria-live="polite">
-            <div id="lv-boot-loader-inner">
-                <span id="lv-boot-loader-spinner" aria-hidden="true"></span>
-                <span id="lv-boot-loader-label">Organizando seu ambiente...</span>
-            </div>
-        </div>
+        <div class="ui-cg ui-cg--pagina" role="status" aria-live="polite" aria-label="Carregando" style="--ui-cg-empresa-cor:#2563eb;--ui-cg-empresa-contraste:#ffffff;"><div class="ui-cg-spinner ui-cg-spinner--lg"><span class="ui-cg-nucleo-halo" aria-hidden="true"></span><span class="ui-cg-orbita ui-cg-orbita--interna" aria-hidden="true"><i class="ui-cg-no ui-cg-no--a"></i><i class="ui-cg-no ui-cg-no--b"></i></span><span class="ui-cg-orbita ui-cg-orbita--externa" aria-hidden="true"><i class="ui-cg-no ui-cg-no--c"></i></span><span class="ui-cg-nucleo-marca" aria-hidden="true">LV</span></div><span class="ui-cg-etapas" aria-hidden="true"><i></i><i></i><i></i></span><span class="ui-cg-texto">Organizando seu ambiente...</span></div>
     </div>
 
     <!-- Scripts -->

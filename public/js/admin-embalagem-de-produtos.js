@@ -6,6 +6,8 @@ import { obterProdutos as obterProdutosDoStorage, invalidateCache as invalidateP
 import { adicionarBotaoFechar } from '/js/utils/botoes-fechar.js';
 import { inicializarControlador } from './utils/ControladorFiltros.js';
 import { renderizarPaginacao } from './utils/Paginacao.js';
+import { htmlUIFeedbackNotFound } from './utils/ui-feedback.js';
+import { htmlUICarregando } from './utils/ui-carregando.js';
 
 
 // --- Variáveis Globais ---
@@ -46,14 +48,11 @@ function controlarOverlayProcessamento(mostrar, texto = 'Processando...') {
     if (!overlay) {
         overlay = document.createElement('div');
         overlay.className = 'ep-detalhe-processando-overlay';
-        overlay.innerHTML = `
-            <div class="spinner-overlay"></div>
-            <p class="texto-overlay">${texto}</p>
-        `;
+        overlay.innerHTML = htmlUICarregando({ variante: 'bloco', tamanho: 'md', texto });
         detalheViewEl.appendChild(overlay);
     }
 
-    const textoEl = overlay.querySelector('.texto-overlay');
+    const textoEl = overlay.querySelector('.ui-cg-texto');
     if (textoEl) textoEl.textContent = texto;
 
     if (mostrar) {
@@ -199,7 +198,7 @@ async function carregarHistoricoEmbalagem(produtoRefId, page) {
 
     if (!tbodyEl || !paginacaoEl) return;
     
-    tbodyEl.innerHTML = `<tr><td colspan="6" style="text-align:center;"><div class="spinner">Carregando...</div></td></tr>`;
+    tbodyEl.innerHTML = `<tr><td colspan="6">${htmlUICarregando({ variante: 'bloco', tamanho: 'sm', texto: 'Carregando...' })}</td></tr>`;
     paginacaoEl.style.display = 'none';
 
     if (!produtoRefId) {
@@ -231,7 +230,7 @@ async function carregarArrematesDeOrigem(page = 1) { // Agora aceita o número d
 
     const container = document.getElementById('retornarArremateContainer');
     const paginacaoContainer = document.getElementById('retornarArrematePaginacao');
-    container.innerHTML = '<div class="spinner">Carregando...</div>';
+    container.innerHTML = htmlUICarregando({ texto: 'Carregando...' });
     paginacaoContainer.innerHTML = ''; // Limpa a paginação antiga
 
     try {
@@ -248,7 +247,11 @@ async function carregarArrematesDeOrigem(page = 1) { // Agora aceita o número d
         const { rows: arrematesComSaldo, pagination } = response;
     
         if (arrematesComSaldo.length === 0) {
-            container.innerHTML = '<p style="text-align: center;">Nenhum lançamento de arremate com saldo encontrado para este item.</p>';
+            container.innerHTML = htmlUIFeedbackNotFound({
+                icon: 'fa-box-open',
+                titulo: 'Nenhum lançamento com saldo',
+                mensagem: 'Não há lançamentos de arremate disponíveis para este item.',
+            });
             return;
         }
 
@@ -303,7 +306,7 @@ window.handleEstornoDeArremateClick = async (button) => {
     if (!confirmado) return;
     
     button.disabled = true;
-    button.innerHTML = '<div class="spinner-btn-interno" style="border-top-color: white;"></div>';
+    button.innerHTML = `${htmlUICarregando({ variante: 'inline', tamanho: 'sm' })}`;
     
      try {
         await fetchFromAPI('/arremates/estornar', {
@@ -333,7 +336,11 @@ function renderizarHistoricoEmbalagem(registros) {
     tbodyEl.innerHTML = '';
 
     if (!registros || registros.length === 0) {
-        tbodyEl.innerHTML = '<tr><td colspan="6" style="text-align:center;">Nenhuma embalagem registrada para este item.</td></tr>';
+        tbodyEl.innerHTML = `<tr><td colspan="6">${htmlUIFeedbackNotFound({
+            icon: 'fa-box',
+            titulo: 'Nenhuma embalagem registrada',
+            mensagem: 'O histórico de embalagens deste item está vazio.',
+        })}</td></tr>`;
         return;
     }
 
@@ -392,7 +399,7 @@ async function handleEstornoClick(event) {
     if (!confirmado) return;
     
     button.disabled = true;
-    button.innerHTML = '<div class="spinner-btn-interno" style="width:12px; height:12px; border-width:2px; margin:0;"></div>';
+    button.innerHTML = `${htmlUICarregando({ variante: 'inline', tamanho: 'sm' })}`;
 
     try {
         await fetchFromAPI(`/embalagens/estornar`, {
@@ -574,7 +581,11 @@ function renderizarCardsDaPagina(produtosParaRenderizar, page = 1) {
   containerEl.innerHTML = '';
 
   if (produtosDaPagina.length === 0) {
-    containerEl.innerHTML = `<p style="text-align: center; padding: 20px; grid-column: 1 / -1;">Nenhum produto encontrado com os filtros aplicados.</p>`;
+    containerEl.innerHTML = htmlUIFeedbackNotFound({
+        icon: 'fa-box-open',
+        titulo: 'Nenhum produto encontrado',
+        mensagem: 'Não há produtos correspondentes aos filtros aplicados.',
+    });
     // Mesmo sem produtos, chamamos a renderização da paginação para que ela possa se esconder.
     renderizarPaginacao(paginationContainerEl, totalPages, currentPage, (newPage) => {
         renderizarCardsDaPagina(produtosParaRenderizar, newPage);
@@ -1169,7 +1180,11 @@ async function carregarKitsDisponiveisNova(produtoBaseId, varianteBase) {
 
 
     if (kitsQueUtilizamOComponente.length === 0) {
-        kitsListEl.innerHTML = '<p class="ep-placeholder-kits" style="color: var(--ep-cor-cinza-texto-secundario);">Nenhum kit cadastrado utiliza este item base como componente.</p>';
+        kitsListEl.innerHTML = htmlUIFeedbackNotFound({
+            icon: 'fa-cubes',
+            titulo: 'Nenhum kit encontrado',
+            mensagem: 'Nenhum kit cadastrado utiliza este item como componente.',
+        });
         return;
     }
 
@@ -1284,7 +1299,7 @@ async function carregarTabelaKitNova(kitNome, variacaoKitSelecionada) {
 
     // Reset inicial da UI
     kitErrorMessageEl.classList.add('hidden');
-    kitTableBodyEl.innerHTML = `<tr><td colspan="4"><div class="spinner">Analisando disponibilidade dos componentes...</div></td></tr>`;
+    kitTableBodyEl.innerHTML = `<tr><td colspan="4">${htmlUICarregando({ variante: 'bloco', tamanho: 'sm', texto: 'Analisando disponibilidade dos componentes...' })}</td></tr>`;
     qtdEnviarKitsInputEl.disabled = true;
     qtdDisponivelKitsSpanEl.textContent = '0';
     kitAcaoMontagemWrapperEl.style.display = 'none';
@@ -1434,7 +1449,7 @@ async function carregarHistoricoGeral(page = 1) {
     historicoGeralCurrentPage = page;
     const tabelaWrapper = document.getElementById('historicoGeralTabelaWrapper');
     const paginacaoContainer = document.getElementById('historicoGeralPaginacao');
-    tabelaWrapper.innerHTML = '<div class="spinner">Buscando histórico...</div>';
+    tabelaWrapper.innerHTML = htmlUICarregando({ texto: 'Buscando histórico...' });
     paginacaoContainer.innerHTML = '';
 
     try {
@@ -1450,7 +1465,11 @@ async function carregarHistoricoGeral(page = 1) {
         const { rows: eventos, pagination } = response;
 
         if (eventos.length === 0) {
-            tabelaWrapper.innerHTML = '<p style="text-align: center;">Nenhum evento encontrado para os filtros selecionados.</p>';
+            tabelaWrapper.innerHTML = htmlUIFeedbackNotFound({
+                icon: 'fa-calendar-xmark',
+                titulo: 'Nenhum evento encontrado',
+                mensagem: 'Não há eventos para os filtros selecionados.',
+            });
             return;
         }
 
@@ -1510,7 +1529,7 @@ async function carregarSugestoesDeEstoque(produtoId, variante, sku) {
     if (!painel || !conteudo) return;
 
     painel.style.display = 'none';
-    conteudo.innerHTML = '<div class="spinner">Analisando estoque...</div>';
+    conteudo.innerHTML = htmlUICarregando({ texto: 'Analisando estoque...' });
 
     try {
         const params = new URLSearchParams({

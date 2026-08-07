@@ -629,24 +629,6 @@ body {
     cursor: grabbing;
 }
 
-.ml-favorites-empty {
-    display: flex;
-    min-height: 64px;
-    align-items: center;
-    gap: 10px;
-    padding: 11px;
-    border: 1px dashed #cbd5e1;
-    border-radius: 11px;
-    color: var(--ml-muted);
-    font-size: 0.72rem;
-    line-height: 1.35;
-}
-
-.ml-favorites-empty > i {
-    color: #f59e0b;
-    font-size: 1rem;
-}
-
 .ml-show-all {
     display: flex;
     width: 100%;

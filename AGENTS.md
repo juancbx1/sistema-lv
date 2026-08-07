@@ -409,6 +409,12 @@ O prefixo do nome do componente é sempre a **abreviação da página/área** à
 
 **Componentes reutilizados entre páginas:** quando um componente precisar ser usado em mais de uma área, o prefixo deve deixar claro que é compartilhado — a forma exata será definida caso a caso conforme o projeto avança, evoluindo o prefixo `UI*` para algo mais semântico.
 
+### Navegação por abas padronizada
+
+`UITabNav`, em `public/src/components/UITabNav.tsx`, é o componente oficial para navegação de nível de página com múltiplas visões. Toda página que possuir abas deve reutilizá-lo; não criar manualmente `nav.gs-tab-nav` ou botões `gs-tab-btn`.
+
+Cada item deve informar `id`, `label` e, quando fizer sentido, `icon`, `badge` ou `dot`. Bloqueios de permissão devem usar a propriedade `locked` do componente. O estilo e as animações ficam centralizados em `public/css/global-style.css`; páginas não devem criar sobrescritas locais para `.gs-tab-nav` ou `.gs-tab-btn`. Subnavegações internas podem ter componentes próprios quando não representarem a navegação principal da página.
+
 ### Estados vazios padronizados
 
 `UIFeedbackNotFound` é o componente oficial para estados de listas, tabelas, buscas e resultados sem dados em toda a aplicação. Usar `variante="compacto"` em modais, tabelas, dropdowns e regiões internas. Não usar para carregamento, erros, bloqueios de módulo, placeholders de avatar/imagem ou mensagens de status operacional; esses estados mantêm seus componentes e tratamentos próprios.
@@ -539,7 +545,7 @@ O desenvolvimento é organizado por **áreas** (cada área = uma página do sist
     </UIHeaderPagina>
 
     {/* tabs — apenas se a página tiver múltiplas visões */}
-    <nav className="gs-tab-nav">...</nav>
+    <UITabNav items={tabs} activeId={visaoAtual} onChange={setVisaoAtual} />
 
     <div className="gs-conteudo-pagina">
         <div className="gs-card">

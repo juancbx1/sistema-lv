@@ -9717,27 +9717,6 @@ body.autenticado {
 }
 
 /* ==========================================================================
-   DOT PULSANTE NA ABA DE OPs (substitui badge numérico)
-   ========================================================================== */
-
-.op-tab-pulso-dot {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: #ef4444;
-    margin-left: 6px;
-    flex-shrink: 0;
-    vertical-align: middle;
-    animation: op-tab-dot-pulso 1.8s ease-in-out infinite;
-}
-
-@keyframes op-tab-dot-pulso {
-    0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
-    50%       { opacity: 0.85; transform: scale(1.1); box-shadow: 0 0 0 4px rgba(239, 68, 68, 0); }
-}
-
-/* ==========================================================================
    BOTÃO FECHAR NO TOPO DO RESULTADO DO AGENTE (OPCentralEncerramento)
    ========================================================================== */
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import UIHeaderPagina from './UIHeaderPagina';
+import UITabNav from './UITabNav';
 import UICarregando from './UICarregando';
 import { verificarAutenticacao } from '../../js/utils/auth.js';
 import { FinanceiroProvider, useFinanceiro } from './FinanceiroContext';
@@ -99,22 +100,16 @@ function FinanceiroShell() {
         </button>
       </UIHeaderPagina>
 
-      <nav className="gs-tab-nav">
-        {([
-          { id: 'dashboard' as FinanceiroTab, icon: 'fa-chart-pie', label: 'Dashboard' },
-          { id: 'lancamentos' as FinanceiroTab, icon: 'fa-exchange-alt', label: 'Lançamentos' },
-          { id: 'agenda' as FinanceiroTab, icon: 'fa-calendar-alt', label: 'Agenda' },
-        ]).map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            className={`gs-tab-btn fc-tab-btn${isMain && tab === item.id ? ' ativo active' : ''}`}
-            onClick={() => setTab(item.id)}
-          >
-            <i className={`fas ${item.icon}`} /> {item.label}
-          </button>
-        ))}
-      </nav>
+      <UITabNav
+        ariaLabel="Áreas do financeiro"
+        activeId={isMain ? tab : ''}
+        onChange={(id) => setTab(id as FinanceiroTab)}
+        items={[
+          { id: 'dashboard', icon: 'fa-chart-pie', label: 'Dashboard' },
+          { id: 'lancamentos', icon: 'fa-exchange-alt', label: 'Lançamentos' },
+          { id: 'agenda', icon: 'fa-calendar-alt', label: 'Agenda' },
+        ]}
+      />
 
       <div className="gs-conteudo-pagina">
         <FinanceiroHeader />

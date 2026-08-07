@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 
 import UIHeaderPagina from './components/UIHeaderPagina';
+import UITabNav from './components/UITabNav';
 import ArreMatePainelAtividades from './components/ArreMatePainelAtividades.jsx';
 import ArremateExternoTela from './components/ArremateExternoTela.jsx';
 import AtribuicaoModal from './components/ArremateAtribuicaoModal.jsx';
@@ -81,26 +82,16 @@ function App() {
                 </button>
             </UIHeaderPagina>
 
-            <nav className="gs-tab-nav">
-                <button
-                    className={`gs-tab-btn ${tabAtiva === 'painel' ? 'ativo' : ''}`}
-                    onClick={() => setTabAtiva('painel')}
-                >
-                    <i className="fas fa-users"></i> Painel
-                </button>
-                <button
-                    className={`gs-tab-btn ${tabAtiva === 'perda' ? 'ativo' : ''}`}
-                    onClick={() => setTabAtiva('perda')}
-                >
-                    <i className="fas fa-exclamation-triangle"></i> Registrar Perda
-                </button>
-                <button
-                    className={`gs-tab-btn ${tabAtiva === 'externo' ? 'ativo' : ''}`}
-                    onClick={() => setTabAtiva('externo')}
-                >
-                    <i className="fas fa-user-tie"></i> P. Externo
-                </button>
-            </nav>
+            <UITabNav
+                ariaLabel="Visões de arremates"
+                activeId={tabAtiva}
+                onChange={setTabAtiva}
+                items={[
+                    { id: 'painel', label: 'Painel', icon: 'fa-users' },
+                    { id: 'perda', label: 'Registrar Perda', icon: 'fa-exclamation-triangle' },
+                    { id: 'externo', label: 'P. Externo', icon: 'fa-user-tie' },
+                ]}
+            />
 
             <div className="gs-conteudo-pagina">
                 {tabAtiva === 'painel' && (

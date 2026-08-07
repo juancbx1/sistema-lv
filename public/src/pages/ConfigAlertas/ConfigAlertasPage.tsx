@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { mostrarMensagem } from '../../../js/utils/popups.js';
 import UIHeaderPagina from '../../components/UIHeaderPagina';
+import UITabNav from '../../components/UITabNav';
 import ConfigAlertasGerais from '../../components/ConfigAlertasGerais';
 import AvisosPopupAdmin from '../../components/AvisosPopupAdmin';
 import AvisosPopupGaleria from '../../components/AvisosPopupGaleria';
@@ -46,20 +47,15 @@ export default function ConfigAlertasPage() {
                 )}
             </UIHeaderPagina>
 
-            <nav className="gs-tab-nav">
-                <button
-                    className={`gs-tab-btn ${aba === 'alertas' ? 'ativo' : ''}`}
-                    onClick={() => setAba('alertas')}
-                >
-                    <i className="fas fa-bell"></i> Alertas Gerais
-                </button>
-                <button
-                    className={`gs-tab-btn ${aba === 'avisos' ? 'ativo' : ''}`}
-                    onClick={() => setAba('avisos')}
-                >
-                    <i className="fas fa-bullhorn"></i> Avisos Popups
-                </button>
-            </nav>
+            <UITabNav
+                ariaLabel="Áreas da central de alertas"
+                activeId={aba}
+                onChange={(id) => setAba(id as ConfigAlertasAba)}
+                items={[
+                    { id: 'alertas', label: 'Alertas Gerais', icon: 'fa-bell' },
+                    { id: 'avisos', label: 'Avisos Popups', icon: 'fa-bullhorn' },
+                ]}
+            />
 
             <div className="gs-conteudo-pagina">
                 {aba === 'alertas' && (

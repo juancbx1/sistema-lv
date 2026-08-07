@@ -43,10 +43,6 @@
     font-weight: 700;
 }
 
-.gs-tab-nav button {
-    min-height: 48px;
-}
-
 .go-toolbar {
     display: flex;
     align-items: center;
@@ -1167,10 +1163,6 @@
 
     .go-header-contexto {
         display: none;
-    }
-
-    .gs-tab-nav {
-        overflow-x: auto;
     }
 
     .go-toolbar > *,

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import UIHeaderPagina from './UIHeaderPagina';
-import UIBloqueio from './UIBloqueio';
+import UITabNav from './UITabNav';
 import GPRegistrosTab from './GPRegistrosTab.jsx';
 import GPAprovacoesTab from './GPAprovacoesTab.jsx';
 import { temPermissao } from '../utils/bloqueio';
@@ -29,23 +29,25 @@ export default function GPPage() {
         <>
             <UIHeaderPagina titulo="Gerenciar Produção" />
 
-            <nav className="gs-tab-nav">
-                <button
-                    className={`gs-tab-btn ${aba === 'registros' ? 'ativo' : ''}`}
-                    onClick={() => setAba('registros')}
-                >
-                    Registros de Produção
-                </button>
-                <UIBloqueio permissao="ver-painel-aprovacoes-producao" mensagem="Você não tem permissão para ver o painel de aprovações.">
-                    <button
-                        className={`gs-tab-btn ${aba === 'aprovacoes' ? 'ativo' : ''}`}
-                        onClick={() => setAba('aprovacoes')}
-                    >
-                        Aprovações
-                        {pendentes > 0 && <span className="gs-tab-badge">{pendentes}</span>}
-                    </button>
-                </UIBloqueio>
-            </nav>
+            <UITabNav
+                ariaLabel="Áreas do gerenciamento de produção"
+                activeId={aba}
+                onChange={setAba}
+                items={[
+                    { id: 'registros', label: 'Registros de Produção', icon: 'fa-list-alt' },
+                    {
+                        id: 'aprovacoes',
+                        label: 'Aprovações',
+                        icon: 'fa-check-circle',
+                        badge: pendentes > 0 ? pendentes : undefined,
+                        badgeLabel: pendentes > 0 ? `${pendentes} aprovações pendentes` : undefined,
+                        locked: {
+                            permissao: 'ver-painel-aprovacoes-producao',
+                            mensagem: 'Você não tem permissão para ver o painel de aprovações.',
+                        },
+                    },
+                ]}
+            />
 
             <div className="gs-conteudo-pagina">
                 {aba === 'registros' && <GPRegistrosTab />}

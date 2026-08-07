@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import UIHeaderPagina from './UIHeaderPagina';
+import UITabNav from './UITabNav';
 import PermissoesEditor from './PermissoesEditor.jsx';
 import PermissoesAuditoriaTab from './PermissoesAuditoriaTab.jsx';
 
@@ -10,20 +11,15 @@ export default function PermissoesPage() {
         <>
             <UIHeaderPagina titulo="Gerenciar Permissões" />
 
-            <nav className="gs-tab-nav">
-                <button
-                    className={`gs-tab-btn${abaAtiva === 'permissoes' ? ' ativo' : ''}`}
-                    onClick={() => setAbaAtiva('permissoes')}
-                >
-                    <i className="fas fa-shield-alt"></i> Permissões
-                </button>
-                <button
-                    className={`gs-tab-btn${abaAtiva === 'auditoria' ? ' ativo' : ''}`}
-                    onClick={() => setAbaAtiva('auditoria')}
-                >
-                    <i className="fas fa-history"></i> Auditoria
-                </button>
-            </nav>
+            <UITabNav
+                ariaLabel="Áreas de gerenciamento de permissões"
+                activeId={abaAtiva}
+                onChange={setAbaAtiva}
+                items={[
+                    { id: 'permissoes', label: 'Permissões', icon: 'fa-shield-alt' },
+                    { id: 'auditoria', label: 'Auditoria', icon: 'fa-history' },
+                ]}
+            />
 
             <div className="gs-conteudo-pagina">
                 {abaAtiva === 'permissoes' && <PermissoesEditor />}

@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 // @ts-expect-error módulo JS legado sem tipos
 import { verificarAutenticacao } from '/js/utils/auth.js';
 import UIHeaderPagina from './components/UIHeaderPagina';
+import UITabNav from './components/UITabNav';
 import UICarregando from './components/UICarregando';
 import IncenGincanasTab from './components/IncenGincanasTab';
 import IncenMetasTab from './components/IncenMetasTab';
@@ -46,32 +47,17 @@ function App() {
                 )}
             </UIHeaderPagina>
 
-            <nav className="gs-tab-nav">
-                <button
-                    className={`gs-tab-btn ${aba === 'gincanas' ? 'ativo' : ''}`}
-                    onClick={() => setAba('gincanas')}
-                >
-                    <i className="fas fa-trophy"></i> Gincanas
-                </button>
-                <button
-                    className={`gs-tab-btn ${aba === 'metas' ? 'ativo' : ''}`}
-                    onClick={() => setAba('metas')}
-                >
-                    <i className="fas fa-bullseye"></i> Metas e Comissões
-                </button>
-                <button
-                    className={`gs-tab-btn ${aba === 'pontos' ? 'ativo' : ''}`}
-                    onClick={() => setAba('pontos')}
-                >
-                    <i className="fas fa-star"></i> Pontos por Atividade
-                </button>
-                <button
-                    className={`gs-tab-btn ${aba === 'pagamentos' ? 'ativo' : ''}`}
-                    onClick={() => setAba('pagamentos')}
-                >
-                    <i className="fas fa-coins"></i> Pagamentos
-                </button>
-            </nav>
+            <UITabNav
+                ariaLabel="Áreas de incentivos"
+                activeId={aba}
+                onChange={(id) => setAba(id as IncenAba)}
+                items={[
+                    { id: 'gincanas', label: 'Gincanas', icon: 'fa-trophy' },
+                    { id: 'metas', label: 'Metas e Comissões', icon: 'fa-bullseye' },
+                    { id: 'pontos', label: 'Pontos por Atividade', icon: 'fa-star' },
+                    { id: 'pagamentos', label: 'Pagamentos', icon: 'fa-coins' },
+                ]}
+            />
 
             <div className="gs-conteudo-pagina">
                 {aba === 'gincanas' && (

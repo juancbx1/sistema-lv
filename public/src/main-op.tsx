@@ -4,6 +4,7 @@ import { Component, type ComponentType, type ErrorInfo, type ReactNode, useCallb
 import { createRoot } from 'react-dom/client';
 
 import UIHeaderPagina from './components/UIHeaderPagina';
+import UITabNav from './components/UITabNav';
 import OPPainelAtividades from './components/OPPainelAtividades.jsx';
 import OPGerenciamentoTela from './components/OPGerenciamentoTela.tsx';
   import OPCortesTela from './components/OPCortesTela.tsx';
@@ -176,21 +177,23 @@ function App() {
           </button>
         </UIBloqueio>
       </UIHeaderPagina>
-      <nav className="gs-tab-nav">
-        <button type="button" className={`gs-tab-btn ${visaoAtual === 'painel' ? 'ativo' : ''}`} onClick={() => setVisaoAtual('painel')}>
-          <i className="fas fa-users" /> Painel
-        </button>
-        <button type="button" className={`gs-tab-btn ${visaoAtual === 'gerenciamento' ? 'ativo' : ''}`} onClick={() => setVisaoAtual('gerenciamento')}>
-          <i className="fas fa-list-alt" /> OPs
-          {qtdOpsPendentes > 0 && <span className="op-tab-pulso-dot" title="Há OPs prontas para finalizar" />}
-        </button>
-        <button type="button" className={`gs-tab-btn ${visaoAtual === 'cortes' ? 'ativo' : ''}`} onClick={() => setVisaoAtual('cortes')}>
-          <i className="fas fa-cut" /> Cortes
-        </button>
-        <button type="button" className={`gs-tab-btn ${visaoAtual === 'externo' ? 'ativo' : ''}`} onClick={() => setVisaoAtual('externo')}>
-          <i className="fas fa-user-tie" /> P. Externo
-        </button>
-      </nav>
+      <UITabNav
+        ariaLabel="Visões das ordens de produção"
+        activeId={visaoAtual}
+        onChange={(id) => setVisaoAtual(id as OpVisao)}
+        items={[
+          { id: 'painel', label: 'Painel', icon: 'fa-users' },
+          {
+            id: 'gerenciamento',
+            label: 'OPs',
+            icon: 'fa-list-alt',
+            dot: qtdOpsPendentes > 0,
+            dotLabel: 'Há OPs prontas para finalizar',
+          },
+          { id: 'cortes', label: 'Cortes', icon: 'fa-cut' },
+          { id: 'externo', label: 'P. Externo', icon: 'fa-user-tie' },
+        ]}
+      />
       <div className="gs-conteudo-pagina">
         {visaoAtual === 'painel' && <OPPainelAtividades />}
         {visaoAtual === 'gerenciamento' && (

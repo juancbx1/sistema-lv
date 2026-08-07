@@ -1,4 +1,5 @@
 import type { CpagTab } from '../utils/cpag-types';
+import UITabNav from './UITabNav';
 
 interface CPAGTabsProps {
   activeTab: CpagTab;
@@ -15,20 +16,11 @@ const tabs: Array<{ id: CpagTab; label: string; icon: string }> = [
 
 export default function CPAGTabs({ activeTab, setActiveTab }: CPAGTabsProps) {
   return (
-    <nav className="gs-tab-nav" role="tablist" aria-label="Tipos de pagamento">
-      {tabs.map((tab) => (
-        <button
-          key={tab.id}
-          type="button"
-          role="tab"
-          aria-selected={activeTab === tab.id}
-          className={`gs-tab-btn ${activeTab === tab.id ? 'ativo' : ''}`}
-          onClick={() => setActiveTab(tab.id)}
-        >
-          <i className={`fas ${tab.icon}`} aria-hidden="true"></i>
-          <span>{tab.label}</span>
-        </button>
-      ))}
-    </nav>
+    <UITabNav
+      ariaLabel="Tipos de pagamento"
+      activeId={activeTab}
+      onChange={(id) => setActiveTab(id as CpagTab)}
+      items={tabs}
+    />
   );
 }

@@ -3,12 +3,12 @@ import { fetchAPI } from '../../js/utils/api-utils.js';
 import { verificarAutenticacao } from '../../js/utils/auth.js';
 import { mostrarConfirmacao, mostrarMensagem } from '../../js/utils/popups.js';
 import UIHeaderPagina from './UIHeaderPagina';
+import UITabNav from './UITabNav';
 import GOPessoasTab from './GOPessoasTab';
 import GOEmpresasTab from './GOEmpresasTab';
 import GOPessoaModal from './GOPessoaModal';
 import GOVinculoModal, { classificarVinculo } from './GOVinculoModal';
 import GOEmpresaModal from './GOEmpresaModal';
-import UIBloqueio from './UIBloqueio';
 import type {
     GOAba,
     GOAuthResult,
@@ -202,16 +202,20 @@ export default function GestaoOrganizacionalPage() {
                     </span>
                 </span>
             </UIHeaderPagina>
-            <nav className="gs-tab-nav" aria-label="Áreas da gestão organizacional">
-                <button className={`gs-tab-btn${aba === 'pessoas' ? ' ativo' : ''}`} onClick={() => setAba('pessoas')}>
-                    <i className="fas fa-users"></i> Pessoas e Acessos
-                </button>
-                <UIBloqueio permissao="visualizar-empresas">
-                    <button className={`gs-tab-btn${aba === 'empresas' ? ' ativo' : ''}`} onClick={() => setAba('empresas')}>
-                        <i className="fas fa-building"></i> Empresas
-                    </button>
-                </UIBloqueio>
-            </nav>
+            <UITabNav
+                ariaLabel="Áreas da gestão organizacional"
+                activeId={aba}
+                onChange={(id) => setAba(id as GOAba)}
+                items={[
+                    { id: 'pessoas', label: 'Pessoas e Acessos', icon: 'fa-users' },
+                    {
+                        id: 'empresas',
+                        label: 'Empresas',
+                        icon: 'fa-building',
+                        locked: { permissao: 'visualizar-empresas' },
+                    },
+                ]}
+            />
             <div className="gs-conteudo-pagina">
                 {aba === 'pessoas' ? (
                     <GOPessoasTab

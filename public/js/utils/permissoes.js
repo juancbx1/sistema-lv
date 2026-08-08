@@ -1,5 +1,38 @@
 // public/js/utils/permissoes.js
 
+export const PERMISSAO_AUDITORIA_GESTAO = 'acesso-auditoria-gestao-organizacional';
+export const PERMISSAO_AUDITORIA_GESTAO_LEGADA = 'acesso-permissoes-usuarios';
+export const PERMISSOES_AUDITORIA_GESTAO = Object.freeze([
+    PERMISSAO_AUDITORIA_GESTAO,
+    PERMISSAO_AUDITORIA_GESTAO_LEGADA,
+]);
+
+// During migration, the database may contain either identifier.
+// The interface uses only the canonical identifier; persistence expands the
+// alias to keep older versions compatible.
+export function normalizarPermissoesParaInterface(permissoes = []) {
+    const normalizadas = new Set(Array.isArray(permissoes) ? permissoes : []);
+    if (PERMISSOES_AUDITORIA_GESTAO.some((id) => normalizadas.has(id))) {
+        normalizadas.delete(PERMISSAO_AUDITORIA_GESTAO_LEGADA);
+        normalizadas.add(PERMISSAO_AUDITORIA_GESTAO);
+    }
+    return Array.from(normalizadas);
+}
+
+export function expandirAliasesPermissoes(permissoes = []) {
+    const expandidas = new Set(Array.isArray(permissoes) ? permissoes : []);
+    if (PERMISSOES_AUDITORIA_GESTAO.some((id) => expandidas.has(id))) {
+        expandidas.add(PERMISSAO_AUDITORIA_GESTAO);
+        expandidas.add(PERMISSAO_AUDITORIA_GESTAO_LEGADA);
+    }
+    return Array.from(expandidas);
+}
+
+export function temPermissaoAuditoriaGestao(permissoes = []) {
+    const lista = Array.isArray(permissoes) ? permissoes : [];
+    return PERMISSOES_AUDITORIA_GESTAO.some((id) => lista.includes(id));
+}
+
 // ==========================================================================
 // 1. DEFINIÇÃO DAS PERMISSÕES DISPONÍVEIS (COM CATEGORIA)
 // Esta é a fonte da verdade para todas as permissões no sistema.
@@ -48,9 +81,9 @@ export const permissoesDisponiveis = [
     // --- USUÁRIOS E PERMISSÕES ---
     { id: 'acesso-usuarios-cadastrados', label: 'Ver Tela de Usuários Cadastrados', categoria: 'Usuários e Permissões' },
     { id: 'acesso-cadastrar-usuario', label: 'Ver Tela de Cadastrar Usuário', categoria: 'Usuários e Permissões' },
-    // ID mantido para compatibilidade com permissões já gravadas. A tela antiga
-    // foi removida; este acesso agora libera a Auditoria da Gestão Organizacional.
-    { id: 'acesso-permissoes-usuarios', label: 'Ver Auditoria da Gestão Organizacional', categoria: 'Gestão Organizacional' },
+    { id: PERMISSAO_AUDITORIA_GESTAO, label: 'Ver Auditoria da Gestão Organizacional', categoria: 'Gestão Organizacional' },
+    // Alias técnico mantido até a conclusão do backfill. Não aparece no catálogo.
+    { id: PERMISSAO_AUDITORIA_GESTAO_LEGADA, label: 'Ver Auditoria da Gestão Organizacional', categoria: 'Gestão Organizacional', somenteCompatibilidade: true },
     { id: 'acesso-cadastrar-usuarios', label: 'Ação: Cadastrar novos usuários', categoria: 'Usuários e Permissões' },
     { id: 'editar-usuarios', label: 'Ação: Editar dados de usuários', categoria: 'Usuários e Permissões' },
     { id: 'adicionar-ferias', label: 'Ação: Adicionar Férias', categoria: 'Usuários e Permissões' },
@@ -162,6 +195,10 @@ export const permissoesDisponiveis = [
     
 ];
 
+export const permissoesCatalogoVisivel = permissoesDisponiveis.filter(
+    (permissao) => !permissao.somenteCompatibilidade
+);
+
 
 // ==========================================================================
 // 2. PERMISSÕES PADRÃO POR TIPO DE USUÁRIO
@@ -207,7 +244,7 @@ export const permissoesPorTipo = {
     ],
 
     // Admin tem acesso a tudo, sempre.
-    admin: permissoesDisponiveis.map(p => p.id)
+    admin: permissoesCatalogoVisivel.map(p => p.id)
 };
 
 
@@ -218,7 +255,7 @@ export const permissoesPorTipo = {
 // Isso facilita muito a criação dos grupos na interface (como o acordeão).
 // ==========================================================================
 
-export const permissoesCategorizadas = permissoesDisponiveis.reduce((acc, permissao) => {
+export const permissoesCategorizadas = permissoesCatalogoVisivel.reduce((acc, permissao) => {
     // Se uma permissão não tiver categoria, ela vai para um grupo 'Outras'.
     const categoria = permissao.categoria || 'Outras'; 
     

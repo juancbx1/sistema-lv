@@ -2460,3 +2460,29 @@ autorizacao. O proximo ponto de partida esta em
   respeitando a empresa em foco. O identificador de permissao
   `acesso-permissoes-usuarios` foi mantido apenas por compatibilidade com
   registros existentes e passou a representar a visualizacao dessa auditoria.
+
+## Migração do identificador de auditoria da Gestão Organizacional — 2026-08-07
+
+- O identificador canônico passou a ser
+  `acesso-auditoria-gestao-organizacional`.
+- A aplicação opera em dual-read e dual-write durante a transição: aceita o
+  identificador canônico e o alias `acesso-permissoes-usuarios`, oculta o alias
+  no catálogo da interface e persiste ambos quando a permissão é atribuída.
+- O editor normaliza registros antigos para o identificador canônico na tela;
+  ao remover a permissão, os dois aliases são removidos, evitando que o código
+  legado reapareça silenciosamente.
+- A migration aditiva e a validação somente leitura ficam em
+  `_planejamento/migration-permissao-auditoria-go-canonica-v1.sql` e
+  `_planejamento/validar-permissao-auditoria-go-canonica-v1.sql`.
+- A remoção definitiva do alias ainda não foi feita. Ela só poderá ocorrer
+  depois de uma janela de observação com a dual-read/dual-write funcionando.
+- O ensaio local foi concluído em 2026-08-07 sobre uma restauração UTF-8
+  descartável do backup pré-Fase 7. A migration foi executada duas vezes e o
+  validador retornou `aprovado: true` nas duas execuções, com zero linhas
+  somente com um dos identificadores e um único marcador em
+  `sistema_migrations`. O clone e as portas isoladas foram removidos ao final.
+- A migration foi executada e validada na Neon em 2026-08-08 após autorização
+  explícita: a pré-validação encontrou 2 registros somente com o alias antigo;
+  a pós-validação retornou `aprovado: true`, com 2 linhas contendo ambos os
+  identificadores, zero linhas parciais e um único marcador em
+  `sistema_migrations`.

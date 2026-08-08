@@ -12,7 +12,7 @@ export interface UITabNavItem {
     dot?: boolean;
     dotLabel?: string;
     locked?: {
-        permissao: string;
+        permissao: string | readonly string[];
         mensagem?: string;
     };
 }

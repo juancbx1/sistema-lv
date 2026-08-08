@@ -7,7 +7,11 @@ import jwt from 'jsonwebtoken';
 import express from 'express';
 import multer from 'multer';
 import { put } from '@vercel/blob';
-import { permissoesDisponiveis as frontendPermissoesDisponiveis, permissoesPorTipo as frontendPermissoesPorTipo } from '../public/js/utils/permissoes.js';
+import {
+    expandirAliasesPermissoes,
+    permissoesDisponiveis as frontendPermissoesDisponiveis,
+    permissoesPorTipo as frontendPermissoesPorTipo,
+} from '../public/js/utils/permissoes.js';
 import { registrarAuditoria } from './audit.js';
 
 types.setTypeParser(1114, str => str);
@@ -162,6 +166,13 @@ export async function atualizarStatusUsuarioDB(usuarioId, novoStatus, empresaId)
 // NOVA FUNÇÃO: getPermissoesCompletasUsuarioDB
 // ---------------------------------------------------------------
 const backendPermissoesValidas = new Set(frontendPermissoesDisponiveis.map(p => p.id));
+
+function normalizarPermissoesPersistidas(permissoes) {
+    const validas = Array.isArray(permissoes)
+        ? permissoes.filter((permissao) => backendPermissoesValidas.has(permissao))
+        : [];
+    return expandirAliasesPermissoes([...new Set(validas)]);
+}
 
 export async function getPermissoesCompletasUsuarioDB(dbClient, usuarioId, empresaId = null) {
     let localClient = dbClient; // Usa o cliente passado, se houver
@@ -670,7 +681,7 @@ router.put('/', async (req, res) => {
         if (elegivel_pagamento !== undefined) { fieldsToUpdate.push(`elegivel_pagamento = $${paramIndex++}`); values.push(elegivel_pagamento); }
         
         if (permissoesIndividuais !== undefined) {
-            const permissoesValidas = permissoesIndividuais.filter(p => backendPermissoesValidas.has(p));
+            const permissoesValidas = normalizarPermissoesPersistidas(permissoesIndividuais);
             fieldsToUpdate.push(`permissoes = $${paramIndex++}`);
             values.push(permissoesValidas);
         }
@@ -747,7 +758,7 @@ router.put('/', async (req, res) => {
         );
 
         if (permissoesIndividuais !== undefined) {
-            const permissoesValidasParaSalvar = permissoesIndividuais.filter(p => backendPermissoesValidas.has(p));
+            const permissoesValidasParaSalvar = normalizarPermissoesPersistidas(permissoesIndividuais);
             await registrarAuditoria(null, usuarioLogado, 'permissoes.alteradas', 'usuario', id, {
                 usuario_alvo_id: id,
                 usuario_alvo_nome: usuarioAtualizado?.nome || String(id),
@@ -798,7 +809,7 @@ router.put('/batch', async (req, res) => {
                     throw new Error('Formato inválido: id ou permissoes ausentes/inválidos para um dos usuários.');
                 }
                 // Filtra para garantir que apenas permissões válidas sejam salvas
-                const permissoesValidasParaSalvar = permissoesIndividuaisNovas.filter(p => backendPermissoesValidas.has(p));
+                const permissoesValidasParaSalvar = normalizarPermissoesPersistidas(permissoesIndividuaisNovas);
 
                 // Busca nome e permissões anteriores para o diff de auditoria
                 const infoResult = await dbCliente.query('SELECT nome, permissoes FROM usuarios WHERE id = $1', [id]);

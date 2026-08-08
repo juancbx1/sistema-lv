@@ -6,6 +6,7 @@ import jwt from 'jsonwebtoken';
 import express from 'express';
 import { getPermissoesCompletasUsuarioDB } from './usuarios.js';
 import { normalizarEmpresaId, obterEmpresaIdDoContexto } from './contexto-empresa.js';
+import { temPermissaoAuditoriaGestao } from '../public/js/utils/permissoes.js';
 
 const router = express.Router();
 const pool = new Pool({
@@ -67,7 +68,7 @@ async function resolverEmpresaAuditoria(req, dbClient) {
 
 // GET /api/audit-log
 // Query params: usuario_id, acao, entidade, data_inicio, data_fim, page (default 1), limit (default 50)
-// Permissão: acesso-permissoes-usuarios
+// Permissão: acesso-auditoria-gestao-organizacional (compatível com o alias legado)
 router.get('/', async (req, res) => {
     const { usuarioLogado } = req;
     let dbClient;
@@ -75,7 +76,7 @@ router.get('/', async (req, res) => {
         dbClient = await pool.connect();
         const empresaId = await resolverEmpresaAuditoria(req, dbClient);
         const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, empresaId);
-        if (!permissoes.includes('acesso-permissoes-usuarios')) {
+        if (!temPermissaoAuditoriaGestao(permissoes)) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
 
@@ -125,7 +126,7 @@ router.get('/usuarios', async (req, res) => {
         dbClient = await pool.connect();
         const empresaId = await resolverEmpresaAuditoria(req, dbClient);
         const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, empresaId);
-        if (!permissoes.includes('acesso-permissoes-usuarios')) {
+        if (!temPermissaoAuditoriaGestao(permissoes)) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
         const result = await dbClient.query(

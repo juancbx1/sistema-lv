@@ -1,6 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import UIBloqueio from './UIBloqueio';
-import { permissoesDisponiveis, permissoesPorTipo } from '../../js/utils/permissoes.js';
+import {
+    normalizarPermissoesParaInterface,
+    permissoesCatalogoVisivel,
+    permissoesDisponiveis,
+    permissoesPorTipo,
+} from '../../js/utils/permissoes.js';
 import type { GOPessoa, GOVinculo } from '../utils/go-types';
 
 interface CatalogoPermissao {
@@ -16,11 +21,12 @@ interface GOPermissoesResumoProps {
 }
 
 const catalogo = permissoesDisponiveis as CatalogoPermissao[];
+const catalogoVisivel = permissoesCatalogoVisivel as CatalogoPermissao[];
 
 const permissoesPorTipoSeguro = permissoesPorTipo as Record<string, string[]>;
 
 function permissoesHerdadas(vinculo: GOVinculo): string[] {
-    if ((vinculo.tipos || []).includes('administrador')) return catalogo.map((item) => item.id);
+    if ((vinculo.tipos || []).includes('administrador')) return catalogoVisivel.map((item) => item.id);
     return [...new Set((vinculo.tipos || []).flatMap((tipo) => permissoesPorTipoSeguro[tipo] || []))];
 }
 
@@ -31,7 +37,7 @@ function rotuloPermissao(id: string): string {
 export default function GOPermissoesResumo({ pessoa, vinculo, onEditarVinculo }: GOPermissoesResumoProps) {
     const [expandido, setExpandido] = useState(false);
     const administrador = (vinculo.tipos || []).includes('administrador');
-    const individuais = vinculo.permissoes || [];
+    const individuais = normalizarPermissoesParaInterface(vinculo.permissoes || []);
     const herdadas = useMemo(() => permissoesHerdadas(vinculo), [vinculo]);
     const exibidas = expandido ? individuais : individuais.slice(0, 5);
     const excedentes = Math.max(0, individuais.length - exibidas.length);

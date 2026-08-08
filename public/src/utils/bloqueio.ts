@@ -6,10 +6,12 @@
  * Verifica se o usuário logado tem uma permissão específica.
  * Lê do localStorage (populado pelo auth.js a cada page load).
  */
-export function temPermissao(permissao: string): boolean {
+export function temPermissao(permissao: string | readonly string[]): boolean {
     try {
         const lista = JSON.parse(localStorage.getItem('permissoes') || '[]') as unknown;
-        return Array.isArray(lista) && lista.includes(permissao);
+        if (!Array.isArray(lista)) return false;
+        const exigidas = Array.isArray(permissao) ? permissao : [permissao];
+        return exigidas.some((item) => lista.includes(item));
     } catch {
         return false;
     }

@@ -1,5 +1,8 @@
 import React, { useMemo, useState, type FormEvent, type MouseEvent } from 'react';
-import { permissoesDisponiveis } from '../../js/utils/permissoes.js';
+import {
+    normalizarPermissoesParaInterface,
+    permissoesCatalogoVisivel,
+} from '../../js/utils/permissoes.js';
 import GOIdentidadeCampos from './GOIdentidadeCampos';
 import UICarregando from './UICarregando';
 import type {
@@ -13,7 +16,7 @@ import type {
     GOVinculoForm,
 } from '../utils/go-types';
 
-const catalogoPermissoes = permissoesDisponiveis as GOPermissaoCatalogo[];
+const catalogoPermissoes = permissoesCatalogoVisivel as GOPermissaoCatalogo[];
 
 export const TIPOS_VINCULO: Array<[string, string]> = [
     ['administrador', 'Administrador'],
@@ -138,7 +141,7 @@ function validarJornada(valor: GOVinculoForm): string {
 function permissoesEfetivas(vinculo?: GOVinculo | GOVinculoForm | null): string[] {
     return (vinculo?.tipos || []).includes('administrador')
         ? catalogoPermissoes.map((item) => item.id)
-        : (vinculo?.permissoes || []);
+        : normalizarPermissoesParaInterface(vinculo?.permissoes || []);
 }
 
 export function classificarVinculo(
@@ -574,6 +577,7 @@ export default function GOVinculoModal({ pessoa, vinculo, empresas, focoInicialP
         const inicial = { ...VINCULO_INICIAL, ...JORNADA_INICIAL, ...(vinculo || {}) } as GOVinculoForm;
         return {
             ...inicial,
+            permissoes: normalizarPermissoesParaInterface(inicial.permissoes),
             dias_trabalho: normalizarDiasInput(inicial.dias_trabalho),
             data_admissao: normalizarDataInput(inicial.data_admissao),
             data_demissao: normalizarDataInput(inicial.data_demissao),

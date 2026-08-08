@@ -2,6 +2,10 @@ import 'dotenv/config';
 import pkg from 'pg';
 const { Pool } = pkg;
 import jwt from 'jsonwebtoken';
+import {
+  expandirAliasesPermissoes,
+  permissoesValidas,
+} from '../../public/js/utils/permissoes.js';
 
 const pool = new Pool({
   connectionString: process.env.POSTGRES_URL,
@@ -40,9 +44,12 @@ export default async (req, res) => {
         if (!id || !Array.isArray(permissoes)) {
           throw new Error('Formato inválido: id ou permissoes ausentes/inválidos');
         }
+        const permissoesValidasParaSalvar = expandirAliasesPermissoes(
+          [...new Set(permissoes.filter((permissao) => permissoesValidas.has(permissao)))]
+        );
         await client.query(
           'UPDATE usuarios SET permissoes = $1 WHERE id = $2',
-          [permissoes, id]
+          [permissoesValidasParaSalvar, id]
         );
       }
       await client.query('COMMIT');

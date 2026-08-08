@@ -24,6 +24,7 @@ import type {
 } from '../utils/go-types';
 import type { GOPessoaSalvarPayload } from './GOPessoaModal';
 import type { GOVinculoSalvarPayload } from './GOVinculoModal';
+import { PERMISSOES_AUDITORIA_GESTAO } from '../../js/utils/permissoes.js';
 
 export default function GestaoOrganizacionalPage() {
     const [aba, setAba] = useState<GOAba>('pessoas');
@@ -52,7 +53,11 @@ export default function GestaoOrganizacionalPage() {
         const iniciar = async () => {
             const auth = await verificarAutenticacao(
                 'gestao-organizacional.html',
-                ['acesso-gestao-organizacional', 'acesso-usuarios-cadastrados', 'acesso-permissoes-usuarios'],
+                [
+                    'acesso-gestao-organizacional',
+                    'acesso-usuarios-cadastrados',
+                    ...PERMISSOES_AUDITORIA_GESTAO,
+                ],
                 'any'
             ) as GOAuthResult | null | false | undefined;
             if (!auth) return;
@@ -216,7 +221,7 @@ export default function GestaoOrganizacionalPage() {
                         id: 'auditoria',
                         label: 'Auditoria',
                         icon: 'fa-history',
-                        locked: { permissao: 'acesso-permissoes-usuarios' },
+                        locked: { permissao: PERMISSOES_AUDITORIA_GESTAO },
                     },
                 ]}
             />

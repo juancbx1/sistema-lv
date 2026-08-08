@@ -2,7 +2,10 @@ import 'dotenv/config';
 import express from 'express';
 import bcrypt from 'bcrypt';
 import pg from 'pg';
-import { permissoesValidas } from '../public/js/utils/permissoes.js';
+import {
+    expandirAliasesPermissoes,
+    permissoesValidas,
+} from '../public/js/utils/permissoes.js';
 
 const { Pool } = pg;
 const router = express.Router();
@@ -135,7 +138,9 @@ function normalizarTipos(valor) {
 function normalizarPermissoes(valor) {
     if (valor === undefined || valor === null) return [];
     if (!Array.isArray(valor)) throw erro(400, 'Permissões inválidas.');
-    return [...new Set(valor.filter((item) => permissoesValidas.has(item)))];
+    return expandirAliasesPermissoes(
+        [...new Set(valor.filter((item) => permissoesValidas.has(item)))]
+    );
 }
 
 function gerarCodigoEmpresa(nomeFantasia) {

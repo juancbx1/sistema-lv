@@ -146,6 +146,7 @@ export interface GOPermissaoCatalogo {
     id: string;
     label: string;
     categoria: string;
+    somenteCompatibilidade?: boolean;
 }
 
 export interface GOAuthUsuario {

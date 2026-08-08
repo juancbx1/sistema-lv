@@ -43,7 +43,7 @@ import { useMemo, type CSSProperties, type MouseEvent, type ReactNode } from 're
 import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio';
 
 interface UIBloqueioProps {
-    permissao: string;
+    permissao: string | readonly string[];
     mensagem?: string;
     style?: CSSProperties;
     children: ReactNode;

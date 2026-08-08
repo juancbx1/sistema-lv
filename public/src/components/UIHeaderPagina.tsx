@@ -10,9 +10,7 @@ export default function UIHeaderPagina({ titulo, children }: UIHeaderPaginaProps
     return (
         <div className="gs-cabecalho-pagina">
             <h1>{titulo}</h1>
-            <div className="gs-botoes-cabecalho">
-                {children}
-            </div>
+            {children ? <div className="gs-botoes-cabecalho">{children}</div> : null}
         </div>
     );
 }

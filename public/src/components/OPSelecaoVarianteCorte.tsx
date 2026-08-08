@@ -125,6 +125,7 @@ export default function OPSelecaoVarianteCorte({
                 className="op-corte-variante-card"
                 style={{ position: 'relative' }}
               >
+                <div className="card-borda-charme" aria-hidden="true"></div>
                 <div
                   className="op-corte-produto-imagem-container"
                   onClick={() =>

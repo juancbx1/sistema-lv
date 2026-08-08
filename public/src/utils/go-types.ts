@@ -1,7 +1,7 @@
 // Tipos de domínio da Gestão Organizacional.
 
 export type GOEscopo = 'atual' | 'global';
-export type GOAba = 'pessoas' | 'empresas';
+export type GOAba = 'pessoas' | 'empresas' | 'auditoria';
 
 export type GOTipoVinculo =
     | 'administrador'
@@ -66,7 +66,10 @@ export interface GOVinculo {
     id: number;
     empresa_id: number;
     empresa_nome?: string | null;
+    empresa_codigo?: string | null;
     empresa_cor?: string | null;
+    empresa_logo_url?: string | null;
+    empresa_ativa?: boolean | null;
     empresa_principal?: boolean | null;
     tipos?: GOTipoVinculo[] | null;
     permissoes?: string[] | null;
@@ -160,4 +163,5 @@ export type GOModalEmpresa = Partial<GOEmpresa> | Record<string, never>;
 export interface GOModalVinculo {
     pessoa: GOPessoa;
     vinculo: GOVinculo | null;
+    focoInicial?: 'permissoes';
 }

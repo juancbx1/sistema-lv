@@ -19,6 +19,30 @@
 //   4. Se dashboard[] não estiver vazio, adicione versao_dashboard com o próximo número da sequência da dashboard
 
 export const changelog = [
+
+    {
+        versao: '1.46.0',
+        data: '07/08/2026',
+        admin: [
+            'Gestão Organizacional recebeu um redesign completo para tablet, desktop e celular, com empresa em foco destacada, vínculos multiempresa separados e ações de edição e encerramento mais acessíveis',
+            'Permissões individuais agora ficam concentradas no vínculo da pessoa, com resumo das permissões atribuídas, catálogo recolhível, busca e edição também disponível no cadastro de novos vínculos',
+            'Auditoria foi incorporada à Gestão Organizacional com filtros, paginação e isolamento pela empresa em foco; a antiga página de Permissões de Usuários foi removida definitivamente',
+            'Cards de OPs, cortes, produção externa, gerenciamento e produção geral receberam a padronização visual Borda Charme, com contorno, raio e faixa de status consistentes',
+        ],
+        dashboard: [],
+    },
+
+    {
+        versao: '1.45.0',
+        data: '07/08/2026',
+        admin: [
+            'Todas as paginas agora recebem corretamente tela carregamento padronizada do sistema. Cada empresa possui sua propria tela de carregamento.'
+
+        ],
+        dashboard: [],
+    },
+
+
     {
         versao: '1.44.0',
         data: '06/08/2026',

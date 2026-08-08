@@ -6,6 +6,7 @@ import UIHeaderPagina from './UIHeaderPagina';
 import UITabNav from './UITabNav';
 import GOPessoasTab from './GOPessoasTab';
 import GOEmpresasTab from './GOEmpresasTab';
+import GOAuditoriaTab from './GOAuditoriaTab';
 import GOPessoaModal from './GOPessoaModal';
 import GOVinculoModal, { classificarVinculo } from './GOVinculoModal';
 import GOEmpresaModal from './GOEmpresaModal';
@@ -51,7 +52,7 @@ export default function GestaoOrganizacionalPage() {
         const iniciar = async () => {
             const auth = await verificarAutenticacao(
                 'gestao-organizacional.html',
-                ['acesso-gestao-organizacional', 'acesso-usuarios-cadastrados'],
+                ['acesso-gestao-organizacional', 'acesso-usuarios-cadastrados', 'acesso-permissoes-usuarios'],
                 'any'
             ) as GOAuthResult | null | false | undefined;
             if (!auth) return;
@@ -184,7 +185,11 @@ export default function GestaoOrganizacionalPage() {
         }
     };
 
-    const empresaAtiva = empresas.find((item) => item.id === empresaAtivaId);
+    const verPessoasEmpresaId = async (empresaId: number) => {
+        const empresa = empresas.find((item) => item.id === empresaId);
+        if (empresa) await verPessoasEmpresa(empresa);
+    };
+
     const pessoaModal = modalPessoa && 'id' in modalPessoa && modalPessoa.id
         ? modalPessoa as GOPessoa
         : null;
@@ -194,15 +199,7 @@ export default function GestaoOrganizacionalPage() {
 
     return (
         <>
-            <UIHeaderPagina titulo="Gestão Organizacional">
-                <span className="go-header-contexto">
-                    <i className="fas fa-building"></i>
-                    <span>
-                        <strong>{empresaAtiva?.nome_fantasia || 'Empresa ativa'}</strong>
-                        <code>{empresaAtiva?.codigo || 'carregando-contexto'}</code>
-                    </span>
-                </span>
-            </UIHeaderPagina>
+            <UIHeaderPagina titulo="Gestão Organizacional" />
             <UITabNav
                 ariaLabel="Áreas da gestão organizacional"
                 activeId={aba}
@@ -214,6 +211,12 @@ export default function GestaoOrganizacionalPage() {
                         label: 'Empresas',
                         icon: 'fa-building',
                         locked: { permissao: 'visualizar-empresas' },
+                    },
+                    {
+                        id: 'auditoria',
+                        label: 'Auditoria',
+                        icon: 'fa-history',
+                        locked: { permissao: 'acesso-permissoes-usuarios' },
                     },
                 ]}
             />
@@ -228,11 +231,12 @@ export default function GestaoOrganizacionalPage() {
                         escopo={escopo}
                         onEscopo={mudarEscopo}
                         onNovaPessoa={() => setModalPessoa({})}
-                        onEditarVinculo={(pessoa, vinculo) => setModalVinculo({ pessoa, vinculo })}
+                        onEditarVinculo={(pessoa, vinculo, foco) => setModalVinculo({ pessoa, vinculo, focoInicial: foco })}
                         onNovoVinculo={(pessoa) => setModalVinculo({ pessoa, vinculo: null })}
                         onEncerrarVinculo={encerrarVinculo}
+                        onSelecionarEmpresa={verPessoasEmpresaId}
                     />
-                ) : (
+                ) : aba === 'empresas' ? (
                     <GOEmpresasTab
                         empresas={empresas}
                         empresaAtivaId={empresaAtivaId}
@@ -240,6 +244,13 @@ export default function GestaoOrganizacionalPage() {
                         onNova={() => setModalEmpresa({})}
                         onEditar={setModalEmpresa}
                         onVerPessoas={verPessoasEmpresa}
+                    />
+                ) : (
+                    <GOAuditoriaTab
+                        empresas={empresas}
+                        empresaAtivaId={empresaAtivaId}
+                        empresaFocoId={empresaFocoId}
+                        escopo={escopo}
                     />
                 )}
             </div>
@@ -264,6 +275,7 @@ export default function GestaoOrganizacionalPage() {
                     pessoa={modalVinculo.pessoa}
                     vinculo={modalVinculo.vinculo}
                     empresas={empresas}
+                    focoInicialPermissoes={modalVinculo.focoInicial === 'permissoes'}
                     onClose={() => setModalVinculo(null)}
                     onSalvar={salvarVinculo}
                 />

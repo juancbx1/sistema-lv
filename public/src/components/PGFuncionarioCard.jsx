@@ -14,12 +14,6 @@ const STATUS_CONFIG = {
     ALOCADO_EXTERNO: { label: 'Externo',    cor: '#8e44ad' },
 };
 
-function gradientePorTipo(tipos) {
-    const t = Array.isArray(tipos) ? tipos : [];
-    if (t.includes('tiktik')) return 'linear-gradient(to bottom, #f59e0b, #d97706)';
-    return 'linear-gradient(to bottom, #3b82f6, #2563eb)';
-}
-
 function proximaMeta(pts, bronze, prata, ouro) {
     if (!bronze || !prata || !ouro) return null;
     if (pts >= ouro)   return { valor: ouro,   label: '🥇 ouro' };
@@ -33,7 +27,6 @@ function PGFuncionarioCard({ funcionario: f, posicao, onSelecionar, filtroDia, t
     const status = STATUS_CONFIG[f.status_atual] || { label: f.status_atual || '–', cor: '#95a5a6' };
     const tipos = Array.isArray(f.tipos) ? f.tipos : [];
     const tipoLabel = tipos.includes('tiktik') ? 'Tiktik' : 'Costureira';
-    const bordaGradient = gradientePorTipo(tipos);
 
     const tipoPrimario = (tipos[0] || 'costureira').toLowerCase();
     const metas = todasMetas?.[tipoPrimario]?.[f.nivel] || [];
@@ -44,8 +37,6 @@ function PGFuncionarioCard({ funcionario: f, posicao, onSelecionar, filtroDia, t
 
     return (
         <div className="pg-func-card" onClick={() => onSelecionar(f.id)}>
-            <div className="card-borda-charme" style={{ background: bordaGradient }}></div>
-
             <div className="pg-func-topo">
                 <span className="pg-func-posicao">#{posicao}</span>
                 <div className="pg-func-foto-wrap">

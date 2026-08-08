@@ -18,6 +18,7 @@ interface ProdutoCardProps {
 function ProdutoCard({ produto, onSelect }: ProdutoCardProps) {
   return (
     <div className="op-corte-produto-card" onClick={() => onSelect(produto)}>
+      <div className="card-borda-charme" aria-hidden="true"></div>
       <div className="op-corte-produto-imagem-container">
         <img src={produto.imagem || '/img/placeholder-image.png'} alt={produto.nome} />
       </div>

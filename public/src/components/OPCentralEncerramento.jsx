@@ -544,6 +544,7 @@ export default function OPCentralEncerramento({ opsPendentesGlobal = 0, onAbrirL
                                             className={`op-agente-item ${sel ? 'selecionado' : ''} ${parcial ? 'parcial' : ''}`}
                                             onClick={() => toggleSelecao(op)}
                                         >
+                                            <div className="card-borda-charme" aria-hidden="true"></div>
                                             <div className={`op-agente-item-check ${sel ? 'ativo' : ''} ${parcial ? 'parcial' : ''}`}>
                                                 {sel && <i className="fas fa-check"></i>}
                                             </div>

@@ -497,7 +497,7 @@ export default function OPCortesAgente({
       )}
 
       {agentState === 'done' && (
-        <div className="op-cortes-agente-resultado">
+        <div className={`op-cortes-agente-resultado${plano.length === 0 ? ' vazio' : ''}`}>
           <div className="op-agente-res-header">
             <div className={`op-agente-res-badge${plano.length === 0 ? ' vazio' : ''}`}>
               <i className={`fas ${plano.length === 0 ? 'fa-check-circle' : 'fa-clipboard-list'}`}></i>
@@ -545,7 +545,7 @@ export default function OPCortesAgente({
                       className={`op-cortes-agente-card ${cobertoParcial ? 'parcial' : ''}`}
                       style={{ '--card-idx': indice } as CSSProperties}
                     >
-                      <div className="card-borda-charme"></div>
+                      <div className="card-borda-charme" aria-hidden="true"></div>
                       <div className="op-cortes-agente-card-corpo">
                         <img
                           src={item.imagem || '/img/placeholder-image.png'}

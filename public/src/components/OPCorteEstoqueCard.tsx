@@ -89,7 +89,7 @@ export default function OPCorteEstoqueCard({
 
   return (
     <div className={classeItem}>
-      <div className="card-borda-charme"></div>
+      <div className="card-borda-charme" aria-hidden="true"></div>
 
       <div className="op-corte-item-topo">
         <img src={getImagem()} alt={variante} className="op-corte-item-img" />

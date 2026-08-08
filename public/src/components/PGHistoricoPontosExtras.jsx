@@ -77,11 +77,6 @@ function PGHistoricoPontosExtras({ dataReferencia }) {
         });
     }
 
-    function corTipo(tipos) {
-        const t = Array.isArray(tipos) ? tipos : [];
-        return t.includes('tiktik') ? '#f59e0b' : '#3b82f6';
-    }
-
     return (
         <div className="gs-card pg-historico-pe">
             <div
@@ -119,11 +114,6 @@ function PGHistoricoPontosExtras({ dataReferencia }) {
                             key={r.id}
                             className={`pg-pe-registro ${r.cancelado ? 'pg-pe-registro--cancelado' : ''}`}
                         >
-                            <div
-                                className="card-borda-charme"
-                                style={{ background: r.cancelado ? '#9e9e9e' : corTipo(r.funcionario_tipos) }}
-                            ></div>
-
                             <div className="pg-pe-registro-corpo">
                                 <div className="pg-pe-registro-topo">
                                     <span className="pg-pe-nome">{r.funcionario_nome}</span>

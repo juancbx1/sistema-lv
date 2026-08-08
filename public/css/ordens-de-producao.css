@@ -1855,7 +1855,6 @@ body.autenticado {
     background-color: var(--op-cor-branco);
     border-radius: var(--op-raio-borda-card);
     box-shadow: var(--op-sombra-card);
-    border-left: 4px solid #e2e8f0;
 }
 
 .op-filtro-busca-wrapper {
@@ -8755,6 +8754,63 @@ body.autenticado {
 }
 
 /* ==========================================================================
+   PILOTO — BORDA-CHARME V2 NA ABA OPs
+   Referência visual: grupo atual do menu lateral.
+   Contorno suave + raio único de 14px + faixa interna de 3px.
+   ========================================================================== */
+
+.op-aba-gerenciamento .op-card-react,
+.op-aba-gerenciamento .op-agente-item,
+.op-aba-gerenciamento .op-lote-item {
+    --op-charme-cor: #3b82f6;
+    position: relative;
+    border: 1px solid var(--gs-borda, #dcdfe4);
+    border-radius: 14px;
+    box-shadow: 0 2px 7px rgba(15, 23, 42, 0.05);
+    overflow: hidden;
+}
+
+.op-aba-gerenciamento .op-card-react .card-borda-charme,
+.op-aba-gerenciamento .op-agente-item .card-borda-charme,
+.op-aba-gerenciamento .op-lote-item .card-borda-charme {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    width: auto;
+    height: auto;
+    border-radius: inherit;
+    background: transparent;
+    box-shadow: inset 3px 0 0 var(--op-charme-cor);
+    pointer-events: none;
+    transition: box-shadow 0.2s ease;
+}
+
+/* Card principal de OP: status é definido no pai, não na borda. */
+.op-aba-gerenciamento .op-card-react {
+    --op-charme-cor: #94a3b8;
+    overflow: hidden !important;
+}
+.op-aba-gerenciamento .op-card-react.status-em-aberto,
+.op-aba-gerenciamento .op-card-react.status-produzindo { --op-charme-cor: #94a3b8; }
+.op-aba-gerenciamento .op-card-react.status-finalizado { --op-charme-cor: #007bff; }
+.op-aba-gerenciamento .op-card-react.status-cancelada { --op-charme-cor: #dc3545; }
+.op-aba-gerenciamento .op-card-react.status-pronta-finalizar { --op-charme-cor: #22c55e; }
+.op-aba-gerenciamento .op-card-react.status-radar-atencao { --op-charme-cor: #f59e0b; }
+.op-aba-gerenciamento .op-card-react.status-radar-critico { --op-charme-cor: #ef4444; }
+
+.op-aba-gerenciamento .op-agente-item {
+    --op-charme-cor: #3b82f6;
+    padding-left: 13px;
+}
+.op-aba-gerenciamento .op-agente-item.parcial { --op-charme-cor: #f97316; }
+.op-aba-gerenciamento .op-agente-item.selecionado {
+    background: #f8fbff;
+}
+
+.op-aba-gerenciamento .op-lote-item { --op-charme-cor: #3b82f6; }
+.op-aba-gerenciamento .op-lote-item.parcial { --op-charme-cor: #f97316; }
+
+/* ==========================================================================
    REDESIGN DOS CARDS DE JORNADA — segunda fatia visual
    ========================================================================== */
 
@@ -11056,5 +11112,82 @@ body.autenticado {
         padding: 12px 0 0;
         border-top: 1px solid #e3ebf3;
         border-left: 0;
+    }
+}
+
+/* ============================================================================
+   BORDA-CHARME V2 — ABA CORTES E ABA P. EXTERNO
+   Mesmo contrato visual do piloto de OPs: raio de 14px e faixa interna
+   acompanhando o contorno do card por meio de box-shadow inset.
+   ============================================================================ */
+
+.op-aba-cortes .op-corte-produto-card,
+.op-aba-cortes .op-corte-variante-card,
+.op-aba-cortes .op-corte-resumo-card,
+.op-aba-cortes .op-corte-item,
+.op-aba-cortes .op-cortes-agente-card,
+.op-aba-cortes .op-quicklog-fila-item,
+.op-aba-externo .op-card-react,
+.op-aba-externo .op-item-confirmacao-card,
+.op-aba-externo .op-externo-historico-item {
+    --op-charme-cor: #3b82f6;
+    position: relative;
+    border: 1px solid var(--gs-borda, #dcdfe4);
+    border-radius: 14px;
+    box-shadow: 0 2px 7px rgba(15, 23, 42, 0.05);
+    overflow: hidden;
+}
+
+.op-aba-cortes .op-corte-produto-card .card-borda-charme,
+.op-aba-cortes .op-corte-variante-card .card-borda-charme,
+.op-aba-cortes .op-corte-resumo-card .card-borda-charme,
+.op-aba-cortes .op-corte-item .card-borda-charme,
+.op-aba-cortes .op-cortes-agente-card .card-borda-charme,
+.op-aba-cortes .op-quicklog-fila-item .card-borda-charme,
+.op-aba-externo .op-card-react .card-borda-charme,
+.op-aba-externo .op-item-confirmacao-card .card-borda-charme,
+.op-aba-externo .op-externo-historico-item .card-borda-charme {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    width: auto;
+    height: auto;
+    border-radius: inherit;
+    background: transparent !important;
+    box-shadow: inset 3px 0 0 var(--op-charme-cor);
+    pointer-events: none;
+    transition: box-shadow 0.2s ease;
+}
+
+/* Cortes: a cor acompanha o produto e o estado do estoque. */
+.op-aba-cortes .op-quicklog-fila-item { --op-charme-cor: #3b82f6; }
+.op-aba-cortes .op-corte-produto-card,
+.op-aba-cortes .op-corte-variante-card,
+.op-aba-cortes .op-corte-resumo-card { --op-charme-cor: #3b82f6; }
+.op-aba-cortes .op-corte-item { --op-charme-cor: #22c55e; }
+.op-aba-cortes .op-corte-item--com-demanda { --op-charme-cor: #3b82f6; }
+.op-aba-cortes .op-corte-item--urgente { --op-charme-cor: #f97316; }
+.op-aba-cortes .op-cortes-agente-card { --op-charme-cor: #dc2626; }
+.op-aba-cortes .op-cortes-agente-card.parcial { --op-charme-cor: #f59e0b; }
+
+/* P. Externo: a cor acompanha a etapa representada pelo produto. */
+.op-aba-externo .op-card-react { --op-charme-cor: #3498db; overflow: hidden !important; }
+.op-aba-externo .op-card-react.borda-corte { --op-charme-cor: #8e44ad; }
+.op-aba-externo .op-card-react.borda-etapa-final { --op-charme-cor: #e74c3c; }
+.op-aba-externo .op-card-react.selecionado-lote {
+    background: #f0f8ff;
+}
+.op-aba-externo .op-card-react.op-card-unificado {
+    background: #f5f3ff;
+}
+.op-aba-externo .op-item-confirmacao-card { --op-charme-cor: #3498db; }
+.op-aba-externo .op-item-confirmacao-card.borda-corte { --op-charme-cor: #8e44ad; }
+.op-aba-externo .op-item-confirmacao-card.borda-etapa-final { --op-charme-cor: #e74c3c; }
+.op-aba-externo .op-externo-historico-item { --op-charme-cor: #3b82f6; }
+
+@media (max-width: 600px) {
+    .op-aba-cortes .op-corte-produto-card,
+    .op-aba-cortes .op-corte-variante-card {
+        border-radius: 14px;
     }
 }

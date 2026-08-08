@@ -80,7 +80,6 @@ export default function OPModalLote({ isOpen, ops, onClose, onConcluido }) {
     return (
         <div className="op-lote-modal-overlay" onClick={handleFechar}>
             <div className="op-lote-modal" onClick={e => e.stopPropagation()}>
-
                 {resultado ? (
                     /* --- Tela de resultado pós-finalização --- */
                     <div className="op-lote-resultado">

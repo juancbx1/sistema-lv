@@ -263,6 +263,7 @@ export interface GOVinculoCamposProps {
     mostrarPrincipal?: boolean;
     mostrarSaida?: boolean;
     vinculosOrigem?: GOVinculo[];
+    focoInicialPermissoes?: boolean;
 }
 
 export function GOVinculoCampos({
@@ -271,8 +272,10 @@ export function GOVinculoCampos({
     mostrarPrincipal = true,
     mostrarSaida = false,
     vinculosOrigem = [],
+    focoInicialPermissoes = false,
 }: GOVinculoCamposProps) {
-    const [mostrarPermissoes, setMostrarPermissoes] = useState(false);
+    const [mostrarPermissoes, setMostrarPermissoes] = useState(Boolean(focoInicialPermissoes));
+    const [mostrarTodasAtribuidas, setMostrarTodasAtribuidas] = useState(false);
     const [buscaPermissao, setBuscaPermissao] = useState('');
     const administrador = (valor.tipos || []).includes('administrador');
     const prestadorPeloTipo = (valor.tipos || []).includes('prestador_externo');
@@ -295,6 +298,20 @@ export function GOVinculoCampos({
                 item.label.toLowerCase().includes(busca) || item.id.includes(busca))
             : catalogoPermissoes;
     }, [buscaPermissao]);
+    const permissoesAtribuidas = valor.permissoes || [];
+    const permissoesVisiveis = mostrarTodasAtribuidas
+        ? permissoesAtribuidas
+        : permissoesAtribuidas.slice(0, 6);
+    const permissoesAtribuidasExcedentes = Math.max(0, permissoesAtribuidas.length - permissoesVisiveis.length);
+
+    const alternarCatalogo = () => {
+        const proximoEstado = !mostrarPermissoes;
+        setMostrarPermissoes(proximoEstado);
+        if (!proximoEstado) {
+            setBuscaPermissao('');
+            setMostrarTodasAtribuidas(false);
+        }
+    };
 
     const alternarLista = (campo: 'tipos' | 'permissoes', item: string) => {
         const atual = (valor[campo] as string[] | undefined) || [];
@@ -479,28 +496,52 @@ export function GOVinculoCampos({
                     </div>
                 </section>
             ) : (
-                <section className="go-form-secao">
-                    <button type="button" className="go-acordeao-btn" onClick={() => setMostrarPermissoes((atual) => !atual)}>
-                        <span><i className="fas fa-key"></i> Permissões individuais <small>{(valor.permissoes || []).length} selecionadas</small></span>
-                        <i className={`fas fa-chevron-${mostrarPermissoes ? 'up' : 'down'}`}></i>
-                    </button>
+                <section className="go-form-secao go-permissoes-edicao">
+                    <div className="go-permissoes-edicao-cabecalho">
+                        <div>
+                            <span className="go-modal-eyebrow">Acessos deste vínculo</span>
+                            <h3><i className="fas fa-key"></i> Permissões individuais</h3>
+                            <p>{(valor.permissoes || []).length ? `${(valor.permissoes || []).length} permissão(ões) já atribuída(s) a esta pessoa nesta empresa.` : 'Nenhuma permissão individual foi atribuída ainda.'}</p>
+                        </div>
+                        <button
+                            type="button"
+                            className="go-permissoes-toggle"
+                            aria-expanded={mostrarPermissoes}
+                            aria-controls="go-permissoes-catalogo"
+                            onClick={alternarCatalogo}
+                        >
+                            <i className={`fas fa-${mostrarPermissoes ? 'chevron-up' : 'plus'}`}></i>
+                            {mostrarPermissoes ? 'Ocultar catálogo' : 'Adicionar permissão'}
+                        </button>
+                    </div>
+                    <div className="go-permissoes-selecionadas">
+                        {permissoesAtribuidas.length ? (
+                            <div className="go-permissoes-selecionadas-lista">
+                                {permissoesVisiveis.map((id) => {
+                                    const item = catalogoPermissoes.find((permissao) => permissao.id === id);
+                                    return <span key={id} className="go-permissao-chip go-permissao-chip--editor"><strong>{item?.label || id}</strong><small>{item?.categoria || 'Catálogo'}</small></span>;
+                                })}
+                                {permissoesAtribuidasExcedentes > 0 && (
+                                    <button
+                                        type="button"
+                                        className="go-permissao-chip go-permissao-chip--mais"
+                                        onClick={() => setMostrarTodasAtribuidas((atual) => !atual)}
+                                    >
+                                        {mostrarTodasAtribuidas ? 'Recolher permissões' : `+${permissoesAtribuidasExcedentes} outras`}
+                                    </button>
+                                )}
+                            </div>
+                        ) : <span className="go-permissoes-editor-vazio"><i className="fas fa-circle-info"></i> Use o botão acima para carregar o catálogo completo do sistema.</span>}
+                    </div>
                     {mostrarPermissoes && (
-                        <div className="go-permissoes">
-                            <input
-                                className="go-busca"
-                                placeholder="Buscar permissão..."
-                                value={buscaPermissao}
-                                onChange={(e) => setBuscaPermissao(e.target.value)}
-                            />
+                        <div id="go-permissoes-catalogo" className="go-permissoes go-permissoes-catalogo">
+                            <label className="go-permissoes-busca"><i className="fas fa-search"></i><input placeholder="Buscar no catálogo de permissões..." value={buscaPermissao} onChange={(e) => setBuscaPermissao(e.target.value)} /></label>
                             <div className="go-permissoes-lista">
                                 {permissoesFiltradas.map((item) => (
-                                    <label key={item.id}>
-                                        <input
-                                            type="checkbox"
-                                            checked={(valor.permissoes || []).includes(item.id)}
-                                            onChange={() => alternarLista('permissoes', item.id)}
-                                        />
+                                    <label key={item.id} className={(valor.permissoes || []).includes(item.id) ? 'selecionada' : ''}>
+                                        <input type="checkbox" checked={(valor.permissoes || []).includes(item.id)} onChange={() => alternarLista('permissoes', item.id)} />
                                         <span><strong>{item.label}</strong><small>{item.categoria}</small></span>
+                                        {(valor.permissoes || []).includes(item.id) && <i className="fas fa-check"></i>}
                                     </label>
                                 ))}
                             </div>
@@ -522,11 +563,12 @@ interface GOVinculoModalProps {
     pessoa: GOPessoa;
     vinculo: GOVinculo | null;
     empresas: GOEmpresa[];
+    focoInicialPermissoes?: boolean;
     onClose: () => void;
     onSalvar: (form: GOVinculoSalvarPayload) => Promise<void>;
 }
 
-export default function GOVinculoModal({ pessoa, vinculo, empresas, onClose, onSalvar }: GOVinculoModalProps) {
+export default function GOVinculoModal({ pessoa, vinculo, empresas, focoInicialPermissoes = false, onClose, onSalvar }: GOVinculoModalProps) {
     const [empresaId, setEmpresaId] = useState<string | number>(vinculo?.empresa_id || '');
     const [form, setForm] = useState<GOVinculoForm>(() => {
         const inicial = { ...VINCULO_INICIAL, ...JORNADA_INICIAL, ...(vinculo || {}) } as GOVinculoForm;
@@ -631,6 +673,7 @@ export default function GOVinculoModal({ pessoa, vinculo, empresas, onClose, onS
                         onChange={setForm}
                         mostrarSaida={Boolean(vinculo && !form.ativo)}
                         vinculosOrigem={vinculo ? [] : (pessoa.vinculos || [])}
+                        focoInicialPermissoes={focoInicialPermissoes}
                     />
                     {erro && <p className="go-form-erro"><i className="fas fa-exclamation-circle"></i> {erro}</p>}
                 </div>

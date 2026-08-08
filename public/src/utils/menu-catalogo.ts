@@ -127,15 +127,6 @@ export const MENU_ITENS: MenuItem[] = [
     modulo: 'gestao-organizacional',
     aliases: ['/admin/usuarios-cadastrados.html'],
   },
-  {
-    id: 'permissoes',
-    rotulo: 'Permissões de Usuários',
-    href: '/admin/permissoes-usuarios.html',
-    icone: 'fa-solid fa-user-shield',
-    grupo: 'organizacao',
-    permissao: 'acesso-permissoes-usuarios',
-    modulo: 'permissoes',
-  },
 ];
 
 export const MENU_FAVORITOS_PADRAO = [

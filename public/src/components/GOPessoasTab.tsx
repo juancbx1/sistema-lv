@@ -3,7 +3,10 @@ import UICarregando from './UICarregando';
 import UIFeedbackNotFound from './UIFeedbackNotFound';
 import UIBloqueio from './UIBloqueio';
 import GOPessoaCard from './GOPessoaCard';
+import GOFuncaoFiltro, { GO_FUNCOES } from './GOFuncaoFiltro';
 import type { GOEmpresa, GOEscopo, GOPessoa, GOVinculo } from '../utils/go-types';
+
+type GOStatusPessoas = 'ativos' | 'todos';
 
 interface GOPessoasTabProps {
     pessoas: GOPessoa[];
@@ -14,9 +17,18 @@ interface GOPessoasTabProps {
     escopo: GOEscopo;
     onEscopo: (escopo: GOEscopo) => void;
     onNovaPessoa: () => void;
-    onEditarVinculo: (pessoa: GOPessoa, vinculo: GOVinculo) => void;
+    onEditarVinculo: (pessoa: GOPessoa, vinculo: GOVinculo, foco?: 'permissoes') => void;
     onNovoVinculo: (pessoa: GOPessoa) => void;
     onEncerrarVinculo: (pessoa: GOPessoa, vinculo: GOVinculo) => void;
+    onSelecionarEmpresa: (empresaId: number) => void;
+}
+
+const rotulosFuncoes = Object.fromEntries(GO_FUNCOES) as Record<string, string>;
+
+function empresaDoContexto(empresas: GOEmpresa[], empresaAtivaId: number | null, empresaFocoId: number | null, escopo: GOEscopo) {
+    if (empresaFocoId) return empresas.find((empresa) => empresa.id === empresaFocoId) || null;
+    if (escopo === 'atual' && empresaAtivaId) return empresas.find((empresa) => empresa.id === empresaAtivaId) || null;
+    return null;
 }
 
 export default function GOPessoasTab({
@@ -31,120 +43,133 @@ export default function GOPessoasTab({
     onEditarVinculo,
     onNovoVinculo,
     onEncerrarVinculo,
+    onSelecionarEmpresa,
 }: GOPessoasTabProps) {
     const [busca, setBusca] = useState('');
-    const [tipo, setTipo] = useState('');
+    const [funcoes, setFuncoes] = useState<string[]>([]);
+    const [status, setStatus] = useState<GOStatusPessoas>('ativos');
+    const empresaContextoId = empresaFocoId || (escopo === 'atual' ? empresaAtivaId : null);
+    const empresaContexto = empresaDoContexto(empresas, empresaAtivaId, empresaFocoId, escopo);
+
     const filtradas = useMemo(() => {
         const termo = busca.trim().toLowerCase();
-        const empresaDoContexto = empresaFocoId || (escopo === 'atual' ? empresaAtivaId : null);
         return pessoas.filter((pessoa) => {
             const vinculos = pessoa.vinculos || [];
-            const encontrou = !termo || [pessoa.nome, pessoa.nome_usuario, pessoa.email]
-                .some((valor) => String(valor || '').toLowerCase().includes(termo));
-            const vinculosDoEscopo = empresaDoContexto
-                ? vinculos.filter((item) => item.empresa_id === empresaDoContexto)
+            const vinculosDoEscopo = empresaContextoId
+                ? vinculos.filter((item) => item.empresa_id === empresaContextoId)
                 : escopo === 'global'
-                ? vinculos
-                : vinculos.filter((item) => item.empresa_id === empresaAtivaId);
-            return encontrou
-                && vinculosDoEscopo.length > 0
-                && (!tipo || vinculosDoEscopo.some((item) => item.tipos?.includes(tipo)));
+                    ? vinculos
+                    : vinculos.filter((item) => item.empresa_id === empresaAtivaId);
+            const encontrou = !termo || [
+                pessoa.nome,
+                pessoa.nome_usuario,
+                pessoa.email,
+                ...vinculosDoEscopo.map((vinculo) => vinculo.empresa_nome),
+            ].some((valor) => String(valor || '').toLowerCase().includes(termo));
+            const encontrouFuncao = !funcoes.length || vinculosDoEscopo.some((vinculo) =>
+                (vinculo.tipos || []).some((tipo) => funcoes.includes(tipo))
+            );
+            return encontrou && encontrouFuncao && vinculosDoEscopo.length > 0;
         });
-    }, [pessoas, busca, tipo, escopo, empresaAtivaId, empresaFocoId]);
+    }, [pessoas, busca, funcoes, escopo, empresaAtivaId, empresaContextoId]);
 
-    const ativos = filtradas.filter((pessoa) => (pessoa.vinculos || []).some((item) =>
-        item.ativo && (
-            empresaFocoId
-                ? item.empresa_id === empresaFocoId
-                : (escopo === 'global' || item.empresa_id === empresaAtivaId)
-        )));
-    const antigos = filtradas.filter((pessoa) => !ativos.includes(pessoa));
-    const empresaContextoId = empresaFocoId || (escopo === 'atual' ? empresaAtivaId : null);
-    const empresaContextoNome = empresas.find((item) => item.id === empresaContextoId)?.nome_fantasia;
-    const vinculosEncerradosDoContexto = antigos.flatMap((pessoa) =>
-        (pessoa.vinculos || []).filter((vinculo) =>
-            !vinculo.ativo
-            && (!empresaContextoId || vinculo.empresa_id === empresaContextoId)
-        )
-    );
-    const temExSocios = vinculosEncerradosDoContexto.some((vinculo) =>
-        (vinculo.tipos || []).some((tipoVinculo) => tipoVinculo === 'socio' || tipoVinculo === 'ex_socio')
-    );
-    const temExPrestadores = vinculosEncerradosDoContexto.some((vinculo) =>
-        (vinculo.tipos || []).includes('prestador_externo') || Boolean(vinculo.is_freelance)
-    );
-    const temExEmpregados = vinculosEncerradosDoContexto.some((vinculo) =>
-        !(vinculo.tipos || []).some((tipoVinculo) =>
-            tipoVinculo === 'socio'
-            || tipoVinculo === 'ex_socio'
-            || tipoVinculo === 'prestador_externo'
-        )
-        && !vinculo.is_freelance
-    );
-    const totalCategoriasAntigas = [temExSocios, temExPrestadores, temExEmpregados].filter(Boolean).length;
-    const categoriaAntigos = totalCategoriasAntigas > 1
-        ? 'Ex-integrantes'
-        : temExSocios
-            ? 'Ex-sócios'
-            : temExPrestadores
-                ? 'Ex-prestadores'
-                : 'Ex-empregados';
-    const rotuloAntigos = empresaContextoNome
-        ? `${categoriaAntigos} — ${empresaContextoNome}`
-        : `${categoriaAntigos} das empresas`;
+    const possuiVinculoAtivoNoEscopo = (pessoa: GOPessoa) => {
+        const vinculos = pessoa.vinculos || [];
+        return vinculos.some((item) => item.ativo && (
+            empresaContextoId ? item.empresa_id === empresaContextoId : escopo === 'global' || item.empresa_id === empresaAtivaId
+        ));
+    };
+
+    const ativos = filtradas.filter(possuiVinculoAtivoNoEscopo);
+    const antigos = filtradas.filter((pessoa) => !possuiVinculoAtivoNoEscopo(pessoa));
+    const pessoasVisiveis = status === 'todos' ? filtradas : ativos;
+    const nomeContexto = empresaContexto?.nome_fantasia || 'Todas as empresas';
+    const temFiltros = Boolean(busca.trim() || funcoes.length);
 
     return (
         <>
             <section className="go-toolbar gs-card gs-card--compacto">
-                <div className="go-toolbar-busca">
+                <label className="go-toolbar-busca go-toolbar-busca--redesign">
                     <i className="fas fa-search"></i>
-                    <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome, usuário ou e-mail" />
+                    <input value={busca} onChange={(event) => setBusca(event.target.value)} placeholder="Buscar por nome, usuário, e-mail ou empresa" aria-label="Buscar pessoas" />
+                </label>
+                <GOFuncaoFiltro selecionadas={funcoes} onChange={setFuncoes} />
+                <div className="go-status-filtro" aria-label="Filtrar status">
+                    <button type="button" className={status === 'ativos' ? 'ativo' : ''} onClick={() => setStatus('ativos')}><i className="fas fa-user-check"></i> Ativas</button>
+                    <button type="button" className={status === 'todos' ? 'ativo' : ''} onClick={() => setStatus('todos')}><i className="fas fa-layer-group"></i> Todos</button>
                 </div>
-                <select value={tipo} onChange={(e) => setTipo(e.target.value)} aria-label="Filtrar por função">
-                    <option value="">Todas as funções</option>
-                    <option value="administrador">Administradores</option>
-                    <option value="supervisor">Supervisores</option>
-                    <option value="lider_setor">Líderes</option>
-                    <option value="costureira">Costureiras</option>
-                    <option value="tiktik">TikTik</option>
-                    <option value="cortador">Cortadores</option>
-                    <option value="prestador_externo">Prestadores externos</option>
-                </select>
                 <div className="go-segmentado">
-                    <button className={escopo === 'atual' ? 'ativo' : ''} onClick={() => onEscopo('atual')}><i className="fas fa-building"></i> Empresa atual</button>
+                    <button type="button" className={escopo === 'atual' && !empresaFocoId ? 'ativo' : ''} onClick={() => onEscopo('atual')}><i className="fas fa-building"></i> Empresa atual</button>
                     <UIBloqueio permissao="visualizar-todas-empresas">
-                        <button className={escopo === 'global' ? 'ativo' : ''} onClick={() => onEscopo('global')}><i className="fas fa-sitemap"></i> Visão global</button>
+                        <button type="button" className={escopo === 'global' && !empresaFocoId ? 'ativo' : ''} onClick={() => onEscopo('global')}><i className="fas fa-sitemap"></i> Visão global</button>
                     </UIBloqueio>
                 </div>
                 <UIBloqueio permissao="acesso-cadastrar-usuarios">
-                    <button className="gs-btn gs-btn-primario" onClick={onNovaPessoa}><i className="fas fa-user-plus"></i> Nova pessoa</button>
+                    <button type="button" className="gs-btn gs-btn-primario go-nova-pessoa" onClick={onNovaPessoa}><i className="fas fa-user-plus"></i> Nova pessoa</button>
                 </UIBloqueio>
             </section>
 
             {carregando ? <UICarregando variante="bloco" /> : (
                 <>
-                    <section className="go-secao">
-                        <div className="go-secao-cabecalho">
-                            <div><span className="go-eyebrow">{empresaFocoId ? empresas.find((item) => item.id === empresaFocoId)?.nome_fantasia : escopo === 'global' ? 'Organização completa' : empresas.find((item) => item.id === empresaAtivaId)?.nome_fantasia}</span><h2>Pessoas ativas <small>{ativos.length}</small></h2></div>
+                    <section className="go-secao go-secao--pessoas">
+                        <div className="go-secao-cabecalho go-secao-cabecalho--contexto">
+                            <div className="go-secao-cabecalho-titulo">
+                                <span className="go-contexto-icone"><i className="fas fa-building"></i></span>
+                                <div>
+                                    <span className="go-eyebrow">Empresa em foco</span>
+                                    <h2>{nomeContexto} <small>{pessoasVisiveis.length}</small></h2>
+                                    <p>{empresaContexto ? 'Visualizando os vínculos desta empresa' : 'Visão consolidada da organização'}</p>
+                                </div>
+                            </div>
+                            <div className="go-secao-cabecalho-contexto">
+                                <span><i className="fas fa-shield-halved"></i> Contexto empresarial</span>
+                                <strong>{empresaContexto ? 'Empresa em foco' : 'Organização completa'}</strong>
+                                <small>{ativos.length} com vínculo ativo · {antigos.length} encerrado(s)</small>
+                            </div>
                         </div>
-                        {ativos.length ? (
-                            <div className="go-pessoas-grid">
-                                {ativos.map((pessoa) => <GOPessoaCard key={pessoa.id} pessoa={pessoa} empresaAtivaId={empresaAtivaId} onEditarVinculo={onEditarVinculo} onNovoVinculo={onNovoVinculo} onEncerrarVinculo={onEncerrarVinculo} />)}
+                        {pessoasVisiveis.length ? (
+                            <div className="go-pessoas-grid go-pessoas-grid--redesign">
+                                {pessoasVisiveis.map((pessoa) => (
+                                    <GOPessoaCard
+                                        key={pessoa.id}
+                                        pessoa={pessoa}
+                                        empresaAtivaId={empresaAtivaId}
+                                        empresaFocoId={empresaFocoId}
+                                        escopo={escopo}
+                                        onEditarVinculo={onEditarVinculo}
+                                        onNovoVinculo={onNovoVinculo}
+                                        onEncerrarVinculo={onEncerrarVinculo}
+                                        onSelecionarEmpresa={onSelecionarEmpresa}
+                                    />
+                                ))}
                             </div>
                         ) : (
                             <UIFeedbackNotFound
                                 variante="compacto"
                                 icon="fa-users"
                                 titulo="Nenhuma pessoa encontrada"
-                                mensagem="Não há pessoas ativas neste contexto."
+                                mensagem={temFiltros ? 'Ajuste a busca ou os filtros para encontrar outras pessoas.' : 'Não há pessoas ativas neste contexto.'}
                             />
                         )}
                     </section>
-                    {antigos.length > 0 && (
-                        <details className="go-ex-membros gs-card">
-                            <summary><span><i className="fas fa-user-clock"></i> {rotuloAntigos}</span><strong>{antigos.length}</strong></summary>
-                            <div className="go-pessoas-grid">
-                                {antigos.map((pessoa) => <GOPessoaCard key={pessoa.id} pessoa={pessoa} empresaAtivaId={empresaAtivaId} onEditarVinculo={onEditarVinculo} onNovoVinculo={onNovoVinculo} onEncerrarVinculo={onEncerrarVinculo} />)}
+
+                    {status === 'ativos' && antigos.length > 0 && (
+                        <details className="go-ex-membros gs-card go-ex-membros--redesign">
+                            <summary><span><i className="fas fa-clock-rotate-left"></i> Vínculos encerrados neste contexto</span><strong>{antigos.length}</strong></summary>
+                            <div className="go-pessoas-grid go-pessoas-grid--redesign">
+                                {antigos.map((pessoa) => (
+                                    <GOPessoaCard
+                                        key={pessoa.id}
+                                        pessoa={pessoa}
+                                        empresaAtivaId={empresaAtivaId}
+                                        empresaFocoId={empresaFocoId}
+                                        escopo={escopo}
+                                        onEditarVinculo={onEditarVinculo}
+                                        onNovoVinculo={onNovoVinculo}
+                                        onEncerrarVinculo={onEncerrarVinculo}
+                                        onSelecionarEmpresa={onSelecionarEmpresa}
+                                    />
+                                ))}
                             </div>
                         </details>
                     )}

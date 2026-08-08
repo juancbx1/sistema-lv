@@ -23,7 +23,7 @@ const MODULOS_POR_PREFIXO = [
     ['/pontos-extras', 'producao-geral'],
     ['/real-producao', 'producao-geral'],
     ['/avisos-popup', 'alertas'],
-    ['/audit-log', 'permissoes'],
+    ['/audit-log', 'gestao-organizacional'],
     ['/niveis-estoque', 'estoque'],
     ['/embalagens', 'embalagem'],
     ['/financeiro', 'financeiro'],

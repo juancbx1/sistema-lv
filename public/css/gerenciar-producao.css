@@ -298,13 +298,25 @@
 }
 
 .gp-card {
+    --gp-charme-cor: #3b82f6;
+    position: relative;
     display: flex;
     align-items: stretch;
     background: #fff;
-    border: 1px solid #e2e8f0;
-    border-radius: 10px;
+    border: 1px solid var(--gs-borda, #dcdfe4);
+    border-radius: 14px;
     overflow: hidden;
     transition: box-shadow 0.15s;
+}
+
+.gp-card .card-borda-charme {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    border-radius: inherit;
+    background: transparent;
+    box-shadow: inset 3px 0 0 var(--gp-charme-cor);
+    pointer-events: none;
 }
 
 .gp-card:hover {
@@ -1037,19 +1049,10 @@
     border-radius: 10px;
     border: 1px solid #e2e8f0;
     background: #fff;
-}
-
-.gp-aprovacao-card .card-borda-charme {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 6px;
-    height: 100%;
-    border-radius: 10px 0 0 10px;
+    padding:20px;
 }
 
 .gp-aprovacao-card-corpo {
-    padding: 14px 16px 14px 22px;
     display: flex;
     flex-direction: column;
     gap: 12px;

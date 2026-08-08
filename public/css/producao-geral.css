@@ -412,7 +412,7 @@
     background: var(--gs-branco);
     border-radius: var(--gs-raio-borda-card);
     box-shadow: var(--gs-sombra-padrao);
-    padding: 14px 16px 14px 22px;
+    padding: 14px 16px;
     cursor: pointer;
     transition: box-shadow 0.15s, transform 0.1s;
     display: flex;
@@ -422,14 +422,6 @@
 .pg-func-card:hover {
     box-shadow: var(--gs-sombra-hover);
     transform: translateY(-1px);
-}
-.pg-func-card .card-borda-charme {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 6px;
-    height: 100%;
-    border-radius: 8px 0 0 8px;
 }
 .pg-func-topo {
     display: flex;
@@ -1293,22 +1285,13 @@
     background: var(--gs-fundo-alternativo);
     border: 1px solid var(--gs-borda);
     border-radius: 8px;
-    padding: 12px 14px 12px 22px;
+    padding: 12px 14px;
     display: flex;
     gap: 10px;
 }
 
 .pg-pe-registro--cancelado {
     opacity: 0.6;
-}
-
-.pg-pe-registro .card-borda-charme {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 6px;
-    height: 100%;
-    border-radius: 8px 0 0 8px;
 }
 
 .pg-pe-registro-corpo {

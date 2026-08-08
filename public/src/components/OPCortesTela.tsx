@@ -556,7 +556,8 @@ export default function OPCortesTela() {
   };
 
   return (
-    <div className="op-cortes-tela">
+    <div className="op-aba-cortes">
+      <div className="op-cortes-tela">
       {passo > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: '15px' }}>
           <button className="btn-voltar-header" onClick={voltarPasso}>
@@ -640,6 +641,7 @@ export default function OPCortesTela() {
           corteExistente={corteParaOP}
         />
       )}
+      </div>
     </div>
   );
 }

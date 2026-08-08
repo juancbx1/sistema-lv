@@ -515,6 +515,7 @@ export default function OPQuickLogModal({
                 <div className="op-quicklog-fila-itens">
                   {fila.map((item, indice) => (
                     <div key={indice} className="op-quicklog-fila-item">
+                      <div className="card-borda-charme" aria-hidden="true"></div>
                       <img src={item.imagem} alt={item.produtoNome} className="op-quicklog-item-img" />
                       <div className="op-quicklog-item-info">
                         <div className="op-quicklog-item-nome">{item.produtoNome}</div>

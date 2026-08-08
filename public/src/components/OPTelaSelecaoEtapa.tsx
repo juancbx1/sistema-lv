@@ -114,19 +114,13 @@ function OPEtapaCard({
 
   return (
     <div
-      className={`op-card-react ${selecionado ? 'selecionado-lote' : ''} ${unificadoAtivo ? 'op-card-unificado' : ''}`}
+      className={`op-card-react ${bordaClasse} ${selecionado ? 'selecionado-lote' : ''} ${unificadoAtivo ? 'op-card-unificado' : ''}`}
       onClick={() => onToggle(etapa)}
       style={{
         cursor: 'pointer',
-        border: selecionado
-          ? '2px solid var(--op-cor-azul-claro)'
-          : unificadoAtivo
-            ? '2px solid #6366f1'
-            : '1px solid transparent',
-        backgroundColor: selecionado ? '#f0f8ff' : unificadoAtivo ? '#f5f3ff' : '#fff',
       }}
     >
-      <div className={`card-borda-charme ${bordaClasse}`}></div>
+      <div className="card-borda-charme" aria-hidden="true"></div>
       <div className="op-card-checkbox-wrapper">
         <div className={`op-card-checkbox ${selecionado ? 'marcado' : ''}`}></div>
       </div>

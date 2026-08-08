@@ -5,7 +5,7 @@ const { Pool } = pkg;
 import jwt from 'jsonwebtoken';
 import express from 'express';
 import { getPermissoesCompletasUsuarioDB } from './usuarios.js';
-import { obterEmpresaIdDoContexto } from './contexto-empresa.js';
+import { normalizarEmpresaId, obterEmpresaIdDoContexto } from './contexto-empresa.js';
 
 const router = express.Router();
 const pool = new Pool({
@@ -26,15 +26,54 @@ router.use(async (req, res, next) => {
     catch (error) { res.status(error.statusCode || 500).json({ error: error.message }); }
 });
 
+async function resolverEmpresaAuditoria(req, dbClient) {
+    const empresaAtivaId = obterEmpresaIdDoContexto(req);
+    const empresaSolicitadaId = normalizarEmpresaId(req.query.empresa_id);
+    const empresaId = empresaSolicitadaId || empresaAtivaId;
+
+    if (empresaId === empresaAtivaId) return empresaAtivaId;
+
+    if (req.superadministrador) {
+        const empresaResult = await dbClient.query(
+            'SELECT id FROM empresas WHERE id = $1 AND ativa',
+            [empresaId]
+        );
+        if (!empresaResult.rows[0]) {
+            const error = new Error('Empresa nao encontrada ou inativa.');
+            error.statusCode = 403;
+            throw error;
+        }
+        return empresaId;
+    }
+
+    const vinculoResult = await dbClient.query(
+        `SELECT ue.id
+           FROM usuarios_empresas ue
+           JOIN empresas e ON e.id = ue.empresa_id AND e.ativa
+          WHERE ue.usuario_id = $1
+            AND ue.empresa_id = $2
+            AND ue.ativo
+          LIMIT 1`,
+        [req.usuarioLogado.id, empresaId]
+    );
+    if (!vinculoResult.rows[0]) {
+        const error = new Error('Voce nao possui vinculo ativo com esta empresa.');
+        error.statusCode = 403;
+        throw error;
+    }
+
+    return empresaId;
+}
+
 // GET /api/audit-log
 // Query params: usuario_id, acao, entidade, data_inicio, data_fim, page (default 1), limit (default 50)
 // Permissão: acesso-permissoes-usuarios
 router.get('/', async (req, res) => {
     const { usuarioLogado } = req;
-    const empresaId = obterEmpresaIdDoContexto(req);
     let dbClient;
     try {
         dbClient = await pool.connect();
+        const empresaId = await resolverEmpresaAuditoria(req, dbClient);
         const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, empresaId);
         if (!permissoes.includes('acesso-permissoes-usuarios')) {
             return res.status(403).json({ error: 'Permissão negada.' });
@@ -71,6 +110,7 @@ router.get('/', async (req, res) => {
         });
     } catch (error) {
         console.error('[GET /api/audit-log]', error);
+        if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
         res.status(500).json({ error: 'Erro ao buscar logs de auditoria.' });
     } finally {
         if (dbClient) dbClient.release();
@@ -80,10 +120,10 @@ router.get('/', async (req, res) => {
 // GET /api/audit-log/usuarios — lista todos os usuários ativos (para o filtro de select)
 router.get('/usuarios', async (req, res) => {
     const { usuarioLogado } = req;
-    const empresaId = obterEmpresaIdDoContexto(req);
     let dbClient;
     try {
         dbClient = await pool.connect();
+        const empresaId = await resolverEmpresaAuditoria(req, dbClient);
         const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, empresaId);
         if (!permissoes.includes('acesso-permissoes-usuarios')) {
             return res.status(403).json({ error: 'Permissão negada.' });
@@ -105,6 +145,7 @@ router.get('/usuarios', async (req, res) => {
         res.status(200).json(result.rows);
     } catch (error) {
         console.error('[GET /api/audit-log/usuarios]', error);
+        if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
         res.status(500).json({ error: 'Erro ao buscar usuários.' });
     } finally {
         if (dbClient) dbClient.release();

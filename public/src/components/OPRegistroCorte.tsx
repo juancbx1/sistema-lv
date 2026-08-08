@@ -121,6 +121,7 @@ export default function OPRegistroCorte({
   return (
     <div className="op-corte-registro-container">
       <div className="op-corte-resumo-card">
+        <div className="card-borda-charme" aria-hidden="true"></div>
         <img src={imagemFinal} alt={produto.nome} />
         <div className="op-corte-resumo-info">
           <h4>{produto.nome}</h4>

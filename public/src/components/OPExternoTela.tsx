@@ -239,8 +239,9 @@ export default function OPExternoTela() {
   };
 
   return (
-    <div className="gs-card op-externo-tela-wrapper">
-      <div className="op-modal-header op-externo-tela-header">
+    <div className="op-aba-externo">
+      <div className="gs-card op-externo-tela-wrapper">
+        <div className="op-modal-header op-externo-tela-header">
         <div className="op-modal-header-esquerda">
           {tela !== 'tipo' && (
             <button className="btn-voltar-header" onClick={handleVoltar}>
@@ -267,18 +268,18 @@ export default function OPExternoTela() {
           </div>
         </div>
         <div className="op-modal-header-direita"></div>
-      </div>
-
-      {tela !== 'historico' && (
-        <div
-          className="op-modal-aviso-hora-extra"
-          style={{ background: '#f0f9ff', borderLeftColor: '#0ea5e9', color: '#0c4a6e' }}
-        >
-          <i className="fas fa-info-circle"></i> Produção realizada por prestador externo — registrada com rastreabilidade completa
         </div>
-      )}
 
-      <div className="op-modal-body op-externo-tela-body">
+        {tela !== 'historico' && (
+          <div
+            className="op-modal-aviso-hora-extra"
+            style={{ background: '#f0f9ff', borderLeftColor: '#0ea5e9', color: '#0c4a6e' }}
+          >
+            <i className="fas fa-info-circle"></i> Produção realizada por prestador externo — registrada com rastreabilidade completa
+          </div>
+        )}
+
+        <div className="op-modal-body op-externo-tela-body">
         {tela === 'tipo' && (
           <div className="op-externo-tipo-wrapper">
             <div className="op-externo-tipo-grid">
@@ -308,8 +309,8 @@ export default function OPExternoTela() {
                 const key = `${item.produto_id}-${item.variante}-${item.processo}`;
                 const qtd = quantidades[key] !== undefined ? quantidades[key] : item.quantidade_disponivel;
                 return (
-                  <div key={key} className="op-item-confirmacao-card">
-                    <div className="card-borda-charme borda-etapa-normal"></div>
+                  <div key={key} className="op-item-confirmacao-card borda-etapa-normal">
+                    <div className="card-borda-charme" aria-hidden="true"></div>
                     <div className="item-info-visual">
                       <img
                         src={item.imagem_produto || '/img/placeholder-image.png'}
@@ -464,6 +465,7 @@ export default function OPExternoTela() {
                   const tipoIcone = tipoCostureira ? 'fa-tshirt' : 'fa-cut';
                   return (
                     <div key={item.id} className="op-externo-historico-item">
+                      <div className="card-borda-charme" aria-hidden="true"></div>
                       <div className="op-externo-historico-info">
                         <span className="op-externo-historico-produto">{item.produto_nome}</span>
                         {item.variacao && <span className="op-externo-historico-variante">{item.variacao}</span>}
@@ -507,6 +509,7 @@ export default function OPExternoTela() {
             )}
           </div>
         )}
+        </div>
       </div>
     </div>
   );

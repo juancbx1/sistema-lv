@@ -1717,5 +1717,21 @@ que descrevem etapas pendentes permanecem como histórico.
   `api/dashboard.js:1209-1210`, as alterações paralelas e as remoções visuais
   de OP continuam fora de qualquer pacote sem decisão explícita.
 
+## Fechamento do pacote Home/Admin — 2026-08-07
+
+- A migration `multiempresas-fase9-home-admin-v1` foi executada e validada na
+  Neon com `aprovado: true`.
+- O modulo `home-admin` esta marcado como `multiempresa_pronto` e habilitado
+  para `lojas-variara` e `neila-confeccoes`, sem empresas ativas pendentes.
+- O pacote nao criou tabelas empresariais. O endpoint contextualizado auditado
+  foi `/api/configuracoes/publicas`.
+- A composicao usada foi `_planejamento/migration-multiempresas-fase9-home-admin.sql`
+  e `_planejamento/validacao-multiempresas-fase9-home-admin.sql`.
+- A pagina independente de permissoes foi removida sem redirecionamento. A
+  auditoria foi incorporada como aba da Gestao Organizacional, com isolamento
+  pela empresa em foco. O identificador `acesso-permissoes-usuarios` foi
+  mantido somente por compatibilidade com registros existentes e agora libera
+  a visualizacao da auditoria integrada.
+
 A Fase 8 está liberada e a Fase 9 está em andamento; não reabrir G11/G12 por
 causa das seções históricas anteriores.

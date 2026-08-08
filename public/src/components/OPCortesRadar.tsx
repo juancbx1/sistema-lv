@@ -66,7 +66,7 @@ export default function OPCortesRadar({
   const tempo = calcTempoDesde(ultimoLancamento?.data);
 
   return (
-    <div className="op-cortes-radar">
+    <div className={`op-cortes-radar${inativo ? ' inativo' : ''}`}>
       <div className="op-cortes-pulso">
         <div className="op-cortes-pulso-esq">
           <span className="op-pulso-dot" title="Sistema conectado"></span>

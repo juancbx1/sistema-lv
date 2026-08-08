@@ -91,8 +91,8 @@ export function OPCard({ op, onClick, onCancelar }: OpCardProps) {
   const varianteTexto = op.variante && op.variante !== '-' ? op.variante : 'Padrão';
 
   return (
-    <div className="op-card-react" onClick={handleClick}>
-      <div className={`card-borda-charme ${statusClass}`}></div>
+    <div className={`op-card-react ${statusClass}`} onClick={handleClick}>
+      <div className="card-borda-charme" aria-hidden="true"></div>
 
       {podeCancelar && (
         <button

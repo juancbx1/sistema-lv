@@ -678,7 +678,7 @@ A coluna **Troca contínua** indica se a página já elimina o intervalo vazio e
 
 | Financeiro | `financeiro.css` | ✅ | ✅ | ✅ | ✅ | ✅ | Migração React+TS **encerrada** (2026-07-27). Árvore única (`main-financeiro.tsx` + `FinanceiroPage` + `FinanceiroContext`), sem multi-root/bridges/legado. Troca empresarial sem reload concluída na `1.40.3`: atualiza token/contexto no mesmo documento, remonta apenas o `FinanceiroProvider` e mantém a transição até `lv:financeiro-pronto`. CSS limpo. Typecheck/build OK; validação manual das abas OK. **Novas features liberadas.** Plano: `_planejamento/migrando-financeiro-para-typescript.md`. |
 
-| Gerenciar Permissões | `permissoes-usuarios.css` | ✅ | ❌ | ✅ | ✅ | ❓ | Concluída 2026-05-23. Duas abas: Permissões + Auditoria. Prefixo `Permissoes*`. Editor: lista plana com search bar (substituiu acordeão) — filtra permissões em tempo real; exclui ex-membros e prestadores da lista de usuários. Auditoria: paginação clássica 12/pág com `gs-paginacao-*`; dropdown de usuários busca tabela `usuarios` (não só audit_log). Infraestrutura: `api/audit.js` + `api/audit-log.js` + tabela `audit_log`. JS legado `admin-permissoes-usuarios.js` deletado. |
+| Auditoria da Gestão Organizacional | `gestao-organizacional.css` | ✅ | ✅ | ✅ | ✅ | ❓ | Migrada em 2026-08-07 para a aba Auditoria da Gestão Organizacional. O histórico usa `api/audit-log.js`, paginação, filtros por usuário/ação/período e isolamento pela empresa em foco. A rota independente e os componentes `Permissoes*` foram removidos. |
 
 | Gestão Organizacional | `gestao-organizacional.css` | ✅ | ✅ | ✅ | ✅ | ❓ | Fase 5 concluída e aprovada em produção em 2026-07-28. Prefixo `GO*`. Migrado para TypeScript em 02/08/2026 (`main-gestao-organizacional.tsx` + árvore `GO*`/`GestaoOrganizacionalPage` + `go-types.ts`). Typecheck ok. Identidade e vínculo editados juntos, múltiplas empresas, encerramento contextual, cópia opcional de permissões e URL antiga compatível. |
 
@@ -964,88 +964,73 @@ spinner intermediário ou ocultação por CSS.
 
 ---
 
-## Identidade Visual — Borda-Charme
+## Identidade Visual — Borda-Charme (padrão global)
 
-A **borda-charme** é um dos elementos visuais mais marcantes e consistentes do sistema. É uma barra vertical de **6px de largura** posicionada na lateral esquerda de todos os cards de produto e popups. Ela muda de cor para indicar o status ou contexto do item.
+A **borda-charme** é parte obrigatória da identidade visual dos cards que representam produtos, variantes ou ordens de produção. O padrão aprovado é o mesmo usado no grupo selecionado do menu lateral: contorno externo suave, cantos arredondados e uma faixa interna de destaque que acompanha o recorte arredondado do card.
+
+A adoção ocorre em duas camadas:
+
+1. **Regra estrutural global:** todo card novo ou refatorado de produto deve obedecer ao contrato abaixo.
+2. **Migração visual gradual:** cards existentes serão convertidos página por página, preservando a semântica de cada domínio e validando as cores com o usuário.
+
+Arremates, Embalagens de Produto e Estoque permanecem fora da migração visual desta iniciativa até autorização específica. Isso não libera a criação de cards novos nesses módulos fora do padrão.
 
 ### Implementação obrigatória
 
-**JSX — sempre um `<div>` vazio com a classe global:**
+**JSX — todo card de produto deve conter a classe padrão única:**
 
 ```jsx
-<div className="meu-card">
-    <div className="card-borda-charme"></div>
+<div className="meu-card status-a">
+    <div className="card-borda-charme" aria-hidden="true"></div>
     {/* restante do conteúdo */}
 </div>
 ```
 
-**CSS — o posicionamento completo deve ser declarado no contexto do card pai, dentro do CSS da página:**
+**CSS — geometria padrão do card e da borda:**
 
 ```css
-/* O card pai precisa de position:relative e overflow:hidden */
 .meu-card {
+    --card-charme-cor: var(--gs-primaria, #3b82f6);
     position: relative;
-    overflow: hidden;       /* essencial: garante que as bordas arredondadas funcionem */
-    border-radius: 10px;    /* o valor pode variar, mas deve existir */
+    overflow: hidden;
+    border: 1px solid var(--gs-borda, #dcdfe4);
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 2px 7px rgba(15, 23, 42, 0.05);
 }
 
-/* Declaração completa da borda-charme no contexto do card.
-   ATENÇÃO: .card-borda-charme NÃO tem definição global de posicionamento —
-   cada página/contexto precisa declarar os estilos de posicionamento e tamanho.
-   Copie sempre este bloco completo ao criar um novo card. */
+/* Overlay completo: o box-shadow inset acompanha automaticamente o raio do pai. */
 .meu-card .card-borda-charme {
     position: absolute;
-    left: 0;
-    top: 0;
-    width: 6px;
-    height: 100%;
-    background-color: var(--cor-padrao);
-    border-radius: 10px 0 0 10px; /* DEVE acompanhar o border-radius do card pai */
+    inset: 0;
+    z-index: 2;
+    border-radius: inherit;
+    background: transparent;
+    box-shadow: inset 3px 0 0 var(--card-charme-cor);
+    pointer-events: none;
 }
 
-/* Variações de cor por status/modificador no pai */
-.meu-card.status-a .card-borda-charme { background-color: var(--cor-a); }
-.meu-card.status-b .card-borda-charme { background-color: var(--cor-b); }
+/* A cor sempre é definida no pai. */
+.meu-card.status-a { --card-charme-cor: var(--cor-a); }
+.meu-card.status-b { --card-charme-cor: var(--cor-b); }
 ```
 
 ### Regras críticas
 
-1. **`border-radius` da borda-charme deve ser igual ao do card pai** — se o card tem `border-radius: 10px`, a borda-charme usa `border-radius: 10px 0 0 10px`. Se o card tem `8px`, usa `8px 0 0 8px`. Sem isso os cantos superiores e inferiores esquerdos ficam quadrados.
+1. **Todo card que representa produto, variante ou OP deve usar `card-borda-charme`.** Filtros, agentes, radares, painéis, containers, modais gerais e botões de escolha não devem usar a borda charme apenas por possuírem contorno ou sombra.
+2. **A geometria padrão é `border: 1px solid var(--gs-borda, #dcdfe4)`, `border-radius: 14px`, sombra discreta e faixa interna de 3px.** A borda externa cinza é fixa e independente da cor da borda-charme. O padrão vale para cards pequenos e grandes.
+3. **A borda deve ser um overlay com `inset: 0`, `border-radius: inherit` e `box-shadow: inset 3px 0 0`.** Não usar uma barra independente com `width`, `height: 100%` ou cantos hardcoded, pois ela não acompanha corretamente o arco do card.
+4. **O card pai precisa de `position: relative` e `overflow: hidden`.** Isso garante que o contorno e a faixa respeitem os quatro cantos arredondados.
+5. **A cor fica em uma variável/modificador do card pai**, nunca em classe de variante na própria borda e nunca como estilo inline no elemento `card-borda-charme`.
+6. **As cores são definidas por página e contexto.** A geometria é global; a semântica de azul, verde, âmbar, vermelho etc. deve ser documentada no CSS da página e não inferida pela classe global.
+7. **A faixa não pode bloquear interação.** Manter `pointer-events: none` e usar `aria-hidden="true"` quando ela for puramente decorativa.
+8. **Cards legados de produto podem permanecer temporariamente fora do padrão somente durante uma migração aprovada.** Ao criar ou refatorar um card de produto, aplicar imediatamente o contrato novo; cards de interface que não representam produto permanecem sem a borda charme.
 
-2. **O card pai obrigatoriamente precisa de `overflow: hidden`** — sem isso a borda-charme pode vazar para fora dos cantos arredondados em alguns browsers (especialmente Safari/iOS).
+### Estado do piloto
 
-3. **Nunca colocar a cor diretamente na classe global** — a cor sempre vai no contexto do pai (`.meu-card .card-borda-charme { background-color: ... }`), nunca em `.card-borda-charme { background-color: ... }` sozinha.
+A aba **OPs** de Ordens de Produção foi a primeira implementação aprovada. Seu padrão está em `public/css/ordens-de-producao.css`, escopado ao wrapper `.op-aba-gerenciamento`. As próximas páginas devem seguir o contrato global acima e ser migradas individualmente antes de qualquer alteração ampla no sistema.
 
-4. **Nunca implementar variações de cor via classe na própria borda** (ex: `.card-borda-charme.status-x`) — use sempre o modificador no elemento pai e descenda o seletor.
-
-5. **`card-borda-charme` é o nome padrão e único** — não criar outras classes de borda charme (ex: `.minha-borda`, `.borda-esquerda`). Padronização é o ponto.
-
-6. **Todo novo card deve incluir a borda-charme** — não é opcional. Faz parte da identidade visual estabelecida.
-
-### Exemplo real — Estoque de Cortes (`op-corte-item`)
-
-```css
-.op-corte-item {
-    position: relative;
-    overflow: hidden;
-    border-radius: 10px;
-}
-
-.op-corte-item .card-borda-charme {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 6px;
-    height: 100%;
-    background-color: #22c55e;      /* verde: disponível */
-    border-radius: 10px 0 0 10px;   /* acompanha os 10px do card */
-}
-
-.op-corte-item--com-demanda .card-borda-charme { background-color: #3b82f6; } /* azul */
-.op-corte-item--urgente     .card-borda-charme { background-color: #f97316; } /* laranja */
-```
-
-> **Atenção a cards legados:** cards mais antigos do sistema (como `oa-card-arremate-react`) usam `border-radius: var(--gs-raio-borda-card)` no pai e `border-radius: 8px 0 0 8px` na borda-charme. Estão funcionando, mas não precisam ser corrigidos agora. **Ao criar ou refatorar qualquer card, aplique o padrão acima com o `border-radius` alinhado.**
+O plano executável, a ordem das páginas, os gates de validação e os critérios de conclusão ficam em `_planejamento/plano-borda-charme-global.md`. Atualizar esse arquivo após cada frente aprovada.
 
 ---
 
@@ -1181,7 +1166,7 @@ Qualquer novo código que crie cortes via `POST /api/cortes` **não deve enviar 
 - Sem essa correção, OPs finalizadas em lote não chegavam à fila de arremates (quantidade era 0)
 
 ### global-style.css — Dependência obrigatória para todas as páginas admin
-O `global-style.css` define `body { visibility: hidden }` e `body.autenticado { visibility: visible }`. Páginas sem ele ficam com o body visível mas **sem os estilos dos agentes globais** (FAB + modal sem formatação). Todas as páginas `/admin/*.html` devem incluir `global-style.css` antes dos outros CSS. Páginas que estavam sem e foram corrigidas: `gerenciar-producao.html`, `permissoes-usuarios.html`, `ponto-por-processo.html`, `cadastrar-produto.html`.
+O `global-style.css` define `body { visibility: hidden }` e `body.autenticado { visibility: visible }`. Páginas sem ele ficam com o body visível mas **sem os estilos dos agentes globais** (FAB + modal sem formatação). Todas as páginas `/admin/*.html` devem incluir `global-style.css` antes dos outros CSS. Páginas que estavam sem e foram corrigidas: `gerenciar-producao.html`, `ponto-por-processo.html`, `cadastrar-produto.html`.
 
 ---
 
@@ -2454,3 +2439,24 @@ Nao ha incidente urgente conhecido neste momento. Nao repetir smokes de dominio
 ja aprovados, nao executar novas migrations e nao publicar novo commit sem
 autorizacao. O proximo ponto de partida esta em
 `_planejamento/RETOMADA-FASE9-POS-CENTRAL-2026-08-06.md`.
+
+## Atualizacao operacional — Home/Admin — 2026-08-07
+
+- A migration `multiempresas-fase9-home-admin-v1` foi executada e validada na
+  Neon com `aprovado: true`.
+- O catalogo marcou `home-admin` como `multiempresa_pronto` e as empresas
+  ativas `lojas-variara` e `neila-confeccoes` ficaram habilitadas.
+- O Home/Admin nao possui tabelas empresariais proprias nesta etapa. O endpoint
+  contextualizado e `/api/configuracoes/publicas`, que retorna configuracoes
+  publicas do ambiente.
+- A validacao confirmou zero empresas ativas pendentes e a migration registrada
+  em `sistema_migrations`. Os SQLs de migration e validacao ficam em
+  `_planejamento/migration-multiempresas-fase9-home-admin.sql` e
+  `_planejamento/validacao-multiempresas-fase9-home-admin.sql`.
+- Nenhum commit, push, deploy ou staging foi feito. A rota independente de
+  permissoes de usuarios foi removida apos a integracao da auditoria na Gestao
+  Organizacional.
+- O `audit-log` agora e exposto pela aba Auditoria da Gestao Organizacional,
+  respeitando a empresa em foco. O identificador de permissao
+  `acesso-permissoes-usuarios` foi mantido apenas por compatibilidade com
+  registros existentes e passou a representar a visualizacao dessa auditoria.

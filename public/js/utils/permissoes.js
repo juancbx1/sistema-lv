@@ -48,7 +48,9 @@ export const permissoesDisponiveis = [
     // --- USUÁRIOS E PERMISSÕES ---
     { id: 'acesso-usuarios-cadastrados', label: 'Ver Tela de Usuários Cadastrados', categoria: 'Usuários e Permissões' },
     { id: 'acesso-cadastrar-usuario', label: 'Ver Tela de Cadastrar Usuário', categoria: 'Usuários e Permissões' },
-    { id: 'acesso-permissoes-usuarios', label: 'Ver Tela de Gerenciar Permissões', categoria: 'Usuários e Permissões' },
+    // ID mantido para compatibilidade com permissões já gravadas. A tela antiga
+    // foi removida; este acesso agora libera a Auditoria da Gestão Organizacional.
+    { id: 'acesso-permissoes-usuarios', label: 'Ver Auditoria da Gestão Organizacional', categoria: 'Gestão Organizacional' },
     { id: 'acesso-cadastrar-usuarios', label: 'Ação: Cadastrar novos usuários', categoria: 'Usuários e Permissões' },
     { id: 'editar-usuarios', label: 'Ação: Editar dados de usuários', categoria: 'Usuários e Permissões' },
     { id: 'adicionar-ferias', label: 'Ação: Adicionar Férias', categoria: 'Usuários e Permissões' },

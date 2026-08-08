@@ -7,24 +7,14 @@ function formatarDataHora(isoString) {
     return new Date(isoString).toLocaleString('pt-BR');
 }
 
-const CORES_CHARME = {
-    pendente:  '#f59e0b',
-    aprovada:  '#22c55e',
-    rejeitada: '#ef4444',
-    cancelada: '#94a3b8',
-};
-
 export default function GPAprovacaoCard({ solicitacao: s, onDecisao }) {
     const [decidindo, setDecidindo] = useState(null); // 'aprovada' | 'rejeitada' | null
     const podeAprovar = temPermissao('aprovar-exclusao-producao');
     const snap = s.snapshot || {};
-    const cor  = CORES_CHARME[s.status] || '#94a3b8';
 
     return (
         <>
             <div className="gp-aprovacao-card">
-                <div className="card-borda-charme" style={{ backgroundColor: cor }}></div>
-
                 <div className="gp-aprovacao-card-corpo">
                     <div className="gp-aprovacao-grid">
                         <span className="gp-snapshot-label">Funcionário:</span><span>{snap.funcionario || '—'}</span>

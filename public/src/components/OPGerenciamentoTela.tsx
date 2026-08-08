@@ -218,7 +218,7 @@ export default function OPGerenciamentoTela({
   const primeiroNome = (usuarioLogado?.nome || '').split(' ')[0] || null;
 
   return (
-    <>
+    <div className="op-aba-gerenciamento">
       <OPFiltros onFiltroChange={handleFiltroChange} />
 
       {!isFirstLoadRef.current && (
@@ -307,6 +307,6 @@ export default function OPGerenciamentoTela({
         onClose={() => setModalLoteAberto(false)}
         onConcluido={handleConcluirLote}
       />
-    </>
+    </div>
   );
 }

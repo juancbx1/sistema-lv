@@ -171,6 +171,7 @@ export default function OPFormulario({
   return (
     <div className="op-corte-registro-container">
       <div className="op-corte-resumo-card">
+        <div className="card-borda-charme" aria-hidden="true"></div>
         <img src={imagemVariante} alt={corteSelecionado.produto || ''} />
         <div className="op-corte-resumo-info">
           <h4>{corteSelecionado.produto}</h4>

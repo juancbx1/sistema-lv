@@ -40,6 +40,8 @@ export default function GPCard({
 
     return (
         <div className="gp-card">
+            <div className="card-borda-charme" aria-hidden="true"></div>
+
             {/* Coluna A — Funcionário */}
             <div className="gp-card-col-a">
                 <div

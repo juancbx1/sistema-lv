@@ -24,6 +24,7 @@ export default defineConfig({
   // A RAIZ DO NOSSO SITE É A PASTA 'public'.
   // O servidor de desenvolvimento vai rodar a partir daqui.
   root: 'public',
+  appType: 'mpa',
 
   // Injeta a versão do package.json como constante global em todo o JS/JSX.
   // Usar como: __APP_VERSION__ (string literal em tempo de build)

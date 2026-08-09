@@ -6,6 +6,18 @@ Versionamento segue [SemVer](https://semver.org/lang/pt-BR/): `MAJOR.MINOR.PATCH
 
 ---
 
+## [1.46.0] — 2026-08-09
+
+### Alterado
+- Página de Embalagem de Produtos migrada para React + TypeScript, com cards
+  responsivos, filtros compactos, modal de unidades e kits, histórico e
+  inteligência de estoque.
+- Embalagem unitária e montagem de kits agora possuem confirmação, feedback de
+  sucesso/erro, controle de quantidade aprimorado e limpeza do legado específico
+  da página.
+
+---
+
 ## Como versionar
 
 ```bash

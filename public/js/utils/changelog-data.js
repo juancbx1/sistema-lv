@@ -22,12 +22,14 @@ export const changelog = [
 
     {
         versao: '1.46.0',
-        data: '07/08/2026',
+        data: '09/08/2026',
         admin: [
             'Gestão Organizacional recebeu um redesign completo para tablet, desktop e celular, com empresa em foco destacada, vínculos multiempresa separados e ações de edição e encerramento mais acessíveis',
             'Permissões individuais agora ficam concentradas no vínculo da pessoa, com resumo das permissões atribuídas, catálogo recolhível, busca e edição também disponível no cadastro de novos vínculos',
             'Auditoria foi incorporada à Gestão Organizacional com filtros, paginação e isolamento pela empresa em foco; a antiga página de Permissões de Usuários foi removida definitivamente',
             'Cards de OPs, cortes, produção externa, gerenciamento e produção geral receberam a padronização visual Borda Charme, com contorno, raio e faixa de status consistentes',
+            'A página de Embalagem de Produtos foi migrada para React + TypeScript, com cards, filtros compactos, modal de unidades e kits, histórico e inteligência de estoque, mantendo APIs e dependências compartilhadas compatíveis',
+            'Os fluxos de embalagem unitária e montagem de kits agora possuem confirmação, feedback de sucesso e erro, controle de quantidade com edição vazia e limpeza do legado específico da página',
         ],
         dashboard: [],
     },

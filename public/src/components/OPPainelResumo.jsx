@@ -38,7 +38,7 @@ export default function OPPainelResumo({
                 </div>
                 <button
                     type="button"
-                    className="op-redesign-refresh"
+                    className="gs-btn-refresh"
                     onClick={onRefresh}
                     disabled={isRefreshing}
                     aria-label="Atualizar dados do painel"

@@ -21,6 +21,17 @@
 export const changelog = [
 
     {
+        versao: '1.46.1',
+        data: '09/08/2026',
+        admin: [
+            'A Home administrativa foi completamente redesenhada em React + TypeScript, com changelog dinâmico, busca central de comandos, sugestões contextuais, foco diário e acessos recentes',
+            'A área de atalhos e favoritos foi removida da Home; novidades, foco diário e acessos recentes agora formam um resumo responsivo em computadores, tablets e celulares',
+            'Foco diário e acessos recentes ficaram mais seguros contra dados locais inválidos, e o cabeçalho agora contabiliza somente as áreas liberadas para o usuário',
+        ],
+        dashboard: [],
+    },
+
+    {
         versao: '1.46.0',
         data: '09/08/2026',
         admin: [

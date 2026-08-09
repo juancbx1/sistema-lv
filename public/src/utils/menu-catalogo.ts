@@ -135,6 +135,16 @@ export const MENU_FAVORITOS_PADRAO = [
   'gestao-organizacional',
 ];
 
+export function menuItemTemPermissao(
+  item: Pick<MenuItem, 'permissao'>,
+  permissoes: ReadonlySet<string> | readonly string[],
+) {
+  if (!item.permissao) return true;
+  const exigidas = Array.isArray(item.permissao) ? item.permissao : [item.permissao];
+  const listaPermissoes = Array.from(permissoes);
+  return exigidas.some((permissao) => listaPermissoes.includes(permissao));
+}
+
 export function itemMenuEstaAtivo(item: MenuItem, pathname = window.location.pathname) {
   return item.href === pathname || Boolean(item.aliases?.includes(pathname));
 }

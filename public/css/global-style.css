@@ -8286,6 +8286,41 @@ font-weight: 500;
     margin-bottom: 20px;
 }
 
+.gs-bloqueio-popup-pagina {
+    margin: 0 0 10px;
+    color: #475569;
+    font-size: 0.78rem;
+    line-height: 1.45;
+}
+
+.gs-bloqueio-popup-pagina strong {
+    color: #1e293b;
+}
+
+.gs-bloqueio-popup--pagina .gs-bloqueio-popup-icone {
+    color: #2563eb;
+    background: #eff6ff;
+}
+
+.gs-bloqueio-popup--pagina {
+    width: min(calc(100% - 48px), 520px);
+    max-width: 520px;
+    padding: 36px 40px 32px;
+}
+
+.gs-bloqueio-popup--pagina .gs-bloqueio-popup-titulo {
+    font-size: 1.18rem;
+}
+
+.gs-bloqueio-popup--pagina .gs-bloqueio-popup-mensagem {
+    font-size: 0.96rem;
+    line-height: 1.65;
+}
+
+.gs-bloqueio-popup--pagina .gs-bloqueio-popup-pagina {
+    font-size: 0.84rem;
+}
+
 .gs-bloqueio-popup-btn {
     width: 100%;
 }
@@ -8317,6 +8352,10 @@ font-weight: 500;
     .gs-bloqueio-popup {
         padding: 24px 20px 20px;
         border-radius: 14px;
+    }
+    .gs-bloqueio-popup--pagina {
+        width: min(calc(100% - 40px), 500px);
+        padding: 32px 28px 28px;
     }
     .gs-bloqueio-popup-icone {
         width: 46px;

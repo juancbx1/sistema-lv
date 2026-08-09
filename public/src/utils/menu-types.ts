@@ -33,6 +33,8 @@ export interface MenuItem {
   permissao?: string;
   modulo?: string;
   aliases?: string[];
+  bloqueado?: boolean;
+  motivoBloqueio?: 'permissao' | 'modulo';
 }
 
 export type MenuGrupoId =

@@ -162,6 +162,31 @@ Neon, commit ou deploy.
   do diff e validação antes do push. O procedimento fica em
   `_planejamento/multiempresas-controle-de-arquivos.md`.
 
+### Home administrativa — redesign aprovado em 2026-08-09
+
+- A Home administrativa foi reconstruída como cockpit de trabalho responsivo,
+  com código próprio da página integralmente em React + TypeScript. Utilitários
+  globais compartilhados, como autenticação e a fonte do changelog, continuam
+  em JavaScript e não devem ser duplicados apenas para atender essa página.
+- O bloco Novidades no ar deve consumir `public/js/utils/changelog-data.js`, que
+  permanece como fonte de verdade das notas. O histórico e o estado de leitura
+  reutilizam `/api/preferencias-menu` e a mesma preferência do menu lateral.
+- Em 2026-08-09, o bloco de atalhos e favoritos foi removido integralmente da
+  Home por decisão do usuário. A área não deve receber um substituto até novo
+  direcionamento.
+- `MENU_ITENS`, permissões do usuário e módulos habilitados continuam
+  alimentando a central de comandos, as sugestões contextuais e os acessos
+  recentes, sem criar um catálogo paralelo de páginas ou permissões na Home.
+- A experiência atual inclui central de novidades dinâmica, busca/central de
+  comandos, acessos recentes, foco diário e sugestões contextuais por horário.
+- Foco diário e acessos recentes não criam domínio empresarial nem API nova:
+  são preferências locais isoladas por usuário e empresa. A lista de foco usa
+  também a data local na chave para começar vazia a cada novo dia.
+- O redesign deve continuar funcional em desktop, tablet e celular, respeitar
+  navegação por teclado, foco de dialogs e `prefers-reduced-motion`.
+- No resumo de contexto, a empresa ativa deve ser identificada como “Empresa
+  selecionada”.
+
 ### Dashboard dos empregados — decisões de interface aprovadas em 2026-08-03
 
 - A sidebar deve manter os cards Meu cartão VT e Ranking da semana, mas o
@@ -682,7 +707,7 @@ A coluna **Troca contínua** indica se a página já elimina o intervalo vazio e
 
 | Gestão Organizacional | `gestao-organizacional.css` | ✅ | ✅ | ✅ | ✅ | ❓ | Fase 5 concluída e aprovada em produção em 2026-07-28. Prefixo `GO*`. Migrado para TypeScript em 02/08/2026 (`main-gestao-organizacional.tsx` + árvore `GO*`/`GestaoOrganizacionalPage` + `go-types.ts`). Typecheck ok. Identidade e vínculo editados juntos, múltiplas empresas, encerramento contextual, cópia opcional de permissões e URL antiga compatível. |
 
-| Home / Admin | `home.css` | ✅ | ✅ | ❌ | ❌ | ❓ | Migrada para TypeScript em 02/08/2026 (`main-home.tsx` + `HOMEHeader` / `HOMENews` / `HOMEQuickActions` + `home-types.ts`). Typecheck ok. `AlertasFAB` permanece em JSX. |
+| Home / Admin | `home.css` | ✅ | ✅ | ❌ | ❌ | ❓ | Migrada para TypeScript em 02/08/2026 (`main-home.tsx` + componentes `HOME*` + `home-types.ts`). O bloco `HOMEQuickActions` foi removido em 09/08/2026 por decisão do usuário. `AlertasFAB` permanece em JSX. |
 
 | Gerenciar Produção | `gerenciar-producao.css` | ✅ | ❌ | ✅ | ✅ | ❓ | Concluída 2026-05-27. Prefixo `GP*`. Carregamento automático últimos 3 dias ao abrir. Fluxo duplo de exclusão: direta (`excluir-registro-producao-direto`) ou solicitação com aprovação (`excluir-registro-producao`). Painel de Aprovações com fila pendentes + histórico paginado + filtros. Permissões: `excluir-registro-producao`, `excluir-registro-producao-direto`, `ver-painel-aprovacoes-producao`, `aprovar-exclusao-producao`. Tabela `producoes_solicitacoes_exclusao` com snapshot JSONB e lock FOR UPDATE. Migration: `_planejamento/migration-gerenciar-producao-solicitacoes.sql`. API: `api/gerenciar-producao.js`. |
 
@@ -1517,8 +1542,9 @@ Fora do escopo da Fase 5 (APIs): `api/gincanas*.js` permanecem em JS.
 | `main-home.tsx` | Entry + auth + montagem no `#home-react-root` |
 | `HOMEHeader.tsx` | Saudação por horário + data por extenso |
 | `HOMENews.tsx` | Card de novidades |
-| `HOMEQuickActions.tsx` | Atalhos filtrados por permissão |
-| `utils/home-types.ts` | Usuário, auth e ações rápidas |
+| `HOMEFocus.tsx` / `HOMERecents.tsx` | Foco diário e acessos recentes |
+| `HOMECommandPalette.tsx` | Central de comandos filtrada por contexto |
+| `utils/home-types.ts` | Usuário, autenticação e workspace da Home |
 | `admin/home.html` | Script: `/src/main-home.tsx` |
 
 Fora do escopo desta fase (permanece JSX): `AlertasFAB.jsx` — FAB compartilhado.

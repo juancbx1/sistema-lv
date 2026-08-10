@@ -5,6 +5,8 @@ const { Pool } = pkg;
 import jwt from 'jsonwebtoken';
 import express from 'express';
 import { obterEmpresaIdDoContexto } from './contexto-empresa.js';
+import { anexarEtapasCanonicas } from './utils/etapas-produto.js';
+import { obterEstruturaOrigensProdutoPronto, construirCteOrigensProdutoPronto } from './utils/origens-produto-pronto.js';
 
 // Importar a função de buscar permissões completas
 import { getPermissoesCompletasUsuarioDB } from './usuarios.js'; // Verifique o caminho
@@ -107,7 +109,7 @@ router.get('/', async (req, res) => {
         res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate'); // HTTP 1.1.
         res.setHeader('Pragma', 'no-cache'); // HTTP 1.0.
         res.setHeader('Expires', '0'); // Proxies.
-        res.status(200).json(result.rows);
+        res.status(200).json(result.rows.map(anexarEtapasCanonicas));
 
     } catch (error) {
         console.error('[router/produtos GET] Erro:', error.message, error.stack ? error.stack.substring(0,300) : "");
@@ -131,6 +133,10 @@ router.get('/por-nome', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id, empresaId);
+        if (!permissoesCompletas.includes('ver-lista-produtos')) {
+            return res.status(403).json({ error: 'Permissão negada para consultar produtos.' });
+        }
         const queryText = `SELECT * FROM produtos WHERE empresa_id = $1 AND nome = $2 LIMIT 1`;
         const result = await dbClient.query(queryText, [empresaId, nome]);
 
@@ -138,7 +144,7 @@ router.get('/por-nome', async (req, res) => {
             return res.status(404).json({ error: 'Produto não encontrado.' });
         }
         
-        res.status(200).json(result.rows[0]);
+        res.status(200).json(anexarEtapasCanonicas(result.rows[0]));
 
     } catch (error) {
         console.error(`[API GET /produtos/por-nome] Erro:`, error);
@@ -206,12 +212,15 @@ router.post('/', async (req, res) => {
             criado_em AS "dataCriacao",
             data_atualizacao AS "dataAtualizacao";
             `;
+        const etapasTiktikPayload = Array.isArray(produto.etapasTiktik)
+            ? produto.etapasTiktik
+            : (Array.isArray(produto.etapastiktik) ? produto.etapastiktik : []);
         const values = [
             empresaId, produto.nome, produto.sku || null, produto.gtin || null,
             produto.unidade || null, produto.estoque || 0, produto.imagem || null,
             JSON.stringify(produto.tipos || []), JSON.stringify(produto.variacoes || []),
             JSON.stringify(produto.estrutura || []), JSON.stringify(produto.etapas || []),
-            JSON.stringify(produto.etapasTiktik || []), JSON.stringify(produto.grade || []),
+            JSON.stringify(etapasTiktikPayload), JSON.stringify(produto.grade || []),
             isKitValue
         ];
         // Não precisamos mais de lógica condicional para values.push(produto.data_criacao)
@@ -241,7 +250,7 @@ router.post('/', async (req, res) => {
             statusCode = 201; // Created
         }
 
-        res.status(statusCode).json(produtoRetornado);
+        res.status(statusCode).json(anexarEtapasCanonicas(produtoRetornado));
 
     } catch (error) {
         console.error('[router/produtos POST] Erro:', error.message, error.stack ? error.stack.substring(0,300) : "");
@@ -290,12 +299,15 @@ router.put('/:id', async (req, res) => {
             WHERE id = $14 AND empresa_id = $15
             RETURNING *;
         `;
+        const etapasTiktikPayload = Array.isArray(produto.etapasTiktik)
+            ? produto.etapasTiktik
+            : (Array.isArray(produto.etapastiktik) ? produto.etapastiktik : []);
         const values = [
             produto.nome, produto.sku || null, produto.gtin || null,
             produto.unidade || null, produto.estoque || 0, produto.imagem || null,
             JSON.stringify(produto.tipos || []), JSON.stringify(produto.variacoes || []),
             JSON.stringify(produto.estrutura || []), JSON.stringify(produto.etapas || []),
-            JSON.stringify(produto.etapasTiktik || []), JSON.stringify(produto.grade || []),
+            JSON.stringify(etapasTiktikPayload), JSON.stringify(produto.grade || []),
             isKitValue,
             id,
             empresaId
@@ -306,7 +318,7 @@ router.put('/:id', async (req, res) => {
             return res.status(404).json({ error: 'Produto não encontrado para atualização.' });
         }
         
-        res.status(200).json(result.rows[0]);
+        res.status(200).json(anexarEtapasCanonicas(result.rows[0]));
 
     } catch (error) {
         // ... (código de tratamento de erro, igual ao da sua rota POST)
@@ -336,10 +348,12 @@ router.get('/search-arremate', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        const estruturaOrigens = await obterEstruturaOrigensProdutoPronto(dbClient);
+        const cteOrigens = construirCteOrigensProdutoPronto(estruturaOrigens.origens);
 
         // A query que busca apenas produtos COM SALDO PENDENTE
         const query = `
-            WITH op_producao_final AS (
+            ${cteOrigens}, op_producao_final AS (
                 SELECT
                     op.numero, op.produto_id, op.variante,
                     COALESCE((SELECT NULLIF(TRIM(etapa->>'quantidade'), '')::numeric FROM jsonb_array_elements(op.etapas) AS etapa WHERE etapa->>'lancado' = 'true' AND etapa->>'quantidade' IS NOT NULL AND TRIM(etapa->>'quantidade') <> '' ORDER BY etapa->>'data_lancamento' DESC LIMIT 1), op.quantidade)::numeric AS quantidade_produzida
@@ -347,10 +361,21 @@ router.get('/search-arremate', async (req, res) => {
                 WHERE op.status = 'finalizado'
                   AND op.empresa_id = $2
             ),
-            op_arrematado_total AS (
-                SELECT op_numero, SUM(quantidade_arrematada) as total_arrematado
+            op_arrematado_lancamentos AS (
+                SELECT op_numero, quantidade_disponibilizada AS quantidade
+                  FROM OrigensProdutoProntoCompat
+                 WHERE empresa_id = $2
+
+                UNION ALL
+
+                SELECT op_numero, quantidade_arrematada AS quantidade
                 FROM arremates
-                WHERE tipo_lancamento IN ('PRODUCAO', 'PERDA')
+                WHERE empresa_id = $2
+                  AND tipo_lancamento = 'PERDA'
+            ),
+            op_arrematado_total AS (
+                SELECT op_numero, SUM(quantidade) AS total_arrematado
+                  FROM op_arrematado_lancamentos
                 GROUP BY op_numero
             )
             SELECT

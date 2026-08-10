@@ -30,7 +30,7 @@ export interface MenuItem {
   href: string;
   icone: string;
   grupo: MenuGrupoId;
-  permissao?: string;
+  permissao?: string | readonly string[];
   modulo?: string;
   aliases?: string[];
   bloqueado?: boolean;

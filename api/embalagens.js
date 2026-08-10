@@ -7,6 +7,17 @@ import jwt from 'jsonwebtoken';
 import express from 'express';
 import { obterEmpresaIdDoContexto } from './contexto-empresa.js';
 import { getPermissoesCompletasUsuarioDB } from './usuarios.js'; // Ajuste o caminho se necessário
+import { verificarEAtualizarDemandasPorSKU } from './utils/diagnosticoProducao.js';
+import {
+    alocarOrigensProdutoPronto,
+    auditarOrigensProdutoPronto,
+    construirCteOrigensProdutoPronto,
+    estornarAlocacoesEmbalagem,
+    listarOrigensProdutoProntoDisponiveis,
+    obterEstruturaOrigensProdutoPronto,
+    registrarAlocacoesEmbalagem,
+    serializarAlocacoesCompativeis,
+} from './utils/origens-produto-pronto.js';
 
 const router = express.Router();
 const pool = new Pool({
@@ -180,8 +191,13 @@ router.post('/estornar', async (req, res) => {
             `Estorno referente à embalagem #${id_embalagem_realizada}`
         ]);
 
-        // 4. ATUALIZA OS ARREMATES para "devolver" a quantidade ao saldo "Pronto para Embalar".
-        if (tipo_embalagem === 'UNIDADE') {
+        // 4. Devolve o saldo às origens canônicas ou, na ausência delas, aos
+        // lotes legados. As alocações normalizadas são a autoridade nova.
+        const estornoCanonico = await estornarAlocacoesEmbalagem(dbClient, {
+            empresaId: req.empresaId,
+            embalagemId: id_embalagem_realizada,
+        });
+        if (!estornoCanonico && tipo_embalagem === 'UNIDADE') {
             const movEstoqueOriginalRes = await dbClient.query(
                 `SELECT em.origem_arremate_id
                    FROM estoque_movimentos em
@@ -196,10 +212,22 @@ router.post('/estornar', async (req, res) => {
                     `UPDATE arremates SET quantidade_ja_embalada = quantidade_ja_embalada - $1 WHERE id = $2 AND empresa_id = $3`,
                     [quantidade_embalada, arremateOrigemId, req.empresaId]
                 );
+            } else if (Array.isArray(componentes_consumidos) && componentes_consumidos.length > 0) {
+                for (const componente of componentes_consumidos) {
+                    if (!componente.id_arremate || !componente.quantidade_usada) continue;
+                    await dbClient.query(
+                        `UPDATE arremates
+                            SET quantidade_ja_embalada = quantidade_ja_embalada - $1
+                          WHERE id = $2
+                            AND empresa_id = $3
+                            AND quantidade_ja_embalada >= $1`,
+                        [componente.quantidade_usada, componente.id_arremate, req.empresaId],
+                    );
+                }
             } else {
-                throw new Error(`Não foi possível rastrear o arremate de origem para a embalagem de UNIDADE #${id_embalagem_realizada}.`);
+                throw new Error(`Não foi possível rastrear a origem para a embalagem de UNIDADE #${id_embalagem_realizada}.`);
             }
-        } else if (tipo_embalagem === 'KIT' && componentes_consumidos) {
+        } else if (!estornoCanonico && tipo_embalagem === 'KIT' && componentes_consumidos) {
             // Se for KIT, itera sobre o JSON de componentes salvos para reverter cada um.
             for(const componente of componentes_consumidos) {
                 // A lógica aqui assume que `componentes_consumidos` é um array de objetos com `{id_arremate, quantidade_usada}`
@@ -211,7 +239,7 @@ router.post('/estornar', async (req, res) => {
                     [componente.quantidade_usada, componente.id_arremate, req.empresaId]
                 );
             }
-        } else {
+        } else if (!estornoCanonico) {
              // Lança um erro se não for possível rastrear a origem, forçando o ROLLBACK.
              throw new Error(`Não foi possível rastrear a origem dos arremates para a embalagem #${id_embalagem_realizada}.`);
         }
@@ -234,6 +262,203 @@ router.post('/estornar', async (req, res) => {
             await dbClient.query('ROLLBACK');
         }
         res.status(500).json({ error: 'Erro interno ao estornar a embalagem.', details: error.message });
+    } finally {
+        if (dbClient) dbClient.release();
+    }
+});
+
+// POST /api/embalagens/unidade
+// Consome as origens FIFO, cria a embalagem e registra a entrada no estoque
+// na mesma transação. O endpoint antigo de estoque permanece compatível.
+router.post('/unidade', async (req, res) => {
+    const { usuarioLogado } = req;
+    const empresaId = req.empresaId;
+    const idempotencyKey = String(
+        req.get('Idempotency-Key') || req.body?.idempotency_key || '',
+    ).trim();
+    const {
+        produto_id,
+        variante_nome,
+        quantidade_embalada,
+        observacao,
+    } = req.body || {};
+
+    if (!idempotencyKey) {
+        return res.status(400).json({ error: 'Idempotency-Key é obrigatória para registrar a embalagem.' });
+    }
+    if (idempotencyKey.length > 200) {
+        return res.status(400).json({ error: 'Idempotency-Key excede o limite de 200 caracteres.' });
+    }
+
+    const quantidade = Number(quantidade_embalada);
+    if (!Number.isInteger(quantidade) || quantidade <= 0 || !produto_id) {
+        return res.status(400).json({ error: 'Produto e quantidade inteira positiva são obrigatórios.' });
+    }
+
+    let dbClient;
+    let transacaoAberta = false;
+    try {
+        dbClient = await pool.connect();
+        const permissoes = await getPermissoesCompletasUsuarioDB(
+            dbClient,
+            usuarioLogado.id,
+            empresaId,
+        );
+        if (!permissoes.includes('lancar-embalagem')) {
+            return res.status(403).json({ error: 'Permissão negada para registrar embalagem.' });
+        }
+
+        const produtoResult = await dbClient.query(
+            'SELECT id, sku, grade FROM produtos WHERE id = $1 AND empresa_id = $2',
+            [Number(produto_id), empresaId],
+        );
+        if (produtoResult.rowCount === 0) {
+            return res.status(404).json({ error: 'Produto não encontrado na empresa ativa.' });
+        }
+        const produto = produtoResult.rows[0];
+        const varianteBanco = !variante_nome || variante_nome === '-' ? null : String(variante_nome);
+        const grade = Array.isArray(produto.grade) ? produto.grade : [];
+        const gradeSelecionada = grade.find((item) => (
+            String(item?.variacao || '') === String(varianteBanco || '')
+        ));
+        const produtoRefId = gradeSelecionada?.sku || produto.sku;
+        if (!produtoRefId) {
+            return res.status(409).json({ error: 'O produto não possui SKU para entrada no estoque.' });
+        }
+
+        await dbClient.query('BEGIN');
+        transacaoAberta = true;
+        await dbClient.query(
+            'SELECT pg_advisory_xact_lock(hashtext($1))',
+            [`embalagem:${empresaId}:${idempotencyKey}`],
+        );
+        const repeticao = await dbClient.query(`
+            SELECT id, movimento_estoque_id, produto_embalado_id,
+                   variante_embalada_nome, quantidade_embalada
+              FROM embalagens_realizadas
+             WHERE empresa_id = $1
+               AND idempotency_key = $2
+             FOR UPDATE
+        `, [empresaId, idempotencyKey]);
+        if (repeticao.rowCount > 0) {
+            const existente = repeticao.rows[0];
+            if (
+                existente.produto_embalado_id !== Number(produto_id)
+                || existente.variante_embalada_nome !== varianteBanco
+                || existente.quantidade_embalada !== quantidade
+            ) {
+                const error = new Error('Idempotency-Key já utilizada com outro payload.');
+                error.statusCode = 409;
+                throw error;
+            }
+            await dbClient.query('COMMIT');
+            transacaoAberta = false;
+            return res.status(200).json({
+                message: 'Embalagem já registrada anteriormente.',
+                embalagem_id: existente.id,
+                movimento_estoque_id: existente.movimento_estoque_id,
+                idempotente: true,
+            });
+        }
+
+        const { estrutura, alocacoes } = await alocarOrigensProdutoPronto(dbClient, {
+            empresaId,
+            produtoId: Number(produto_id),
+            variante: varianteBanco,
+            quantidade,
+        });
+        const origensCompat = serializarAlocacoesCompativeis(alocacoes);
+        const embalagemResult = await dbClient.query(`
+            INSERT INTO embalagens_realizadas (
+                empresa_id,
+                idempotency_key,
+                tipo_embalagem,
+                produto_embalado_id,
+                variante_embalada_nome,
+                produto_ref_id,
+                quantidade_embalada,
+                usuario_responsavel_id,
+                observacao,
+                status,
+                componentes_consumidos
+            )
+            VALUES ($1, $2, 'UNIDADE', $3, $4, $5, $6, $7, $8, 'ATIVO', $9)
+            RETURNING id
+        `, [
+            empresaId,
+            idempotencyKey,
+            Number(produto_id),
+            varianteBanco,
+            produtoRefId,
+            quantidade,
+            usuarioLogado.id,
+            observacao || null,
+            JSON.stringify(origensCompat),
+        ]);
+        const embalagemId = embalagemResult.rows[0].id;
+
+        await registrarAlocacoesEmbalagem(dbClient, {
+            empresaId,
+            embalagemId,
+            alocacoes,
+            estrutura,
+        });
+
+        const movimentoQuery = estrutura.estoqueEmbalagem
+            ? `INSERT INTO estoque_movimentos (
+                    empresa_id, idempotency_key, produto_id, variante_nome,
+                    quantidade, tipo_movimento, embalagem_origem_id,
+                    usuario_responsavel, observacao
+               ) VALUES ($1, $2, $3, $4, $5, 'ENTRADA_PRODUCAO', $6, $7, $8)
+               RETURNING id`
+            : `INSERT INTO estoque_movimentos (
+                    empresa_id, idempotency_key, produto_id, variante_nome,
+                    quantidade, tipo_movimento, usuario_responsavel, observacao
+               ) VALUES ($1, $2, $3, $4, $5, 'ENTRADA_PRODUCAO', $6, $7)
+               RETURNING id`;
+        const movimentoParams = estrutura.estoqueEmbalagem
+            ? [
+                empresaId, idempotencyKey, Number(produto_id), varianteBanco,
+                quantidade, embalagemId,
+                usuarioLogado.nome || usuarioLogado.nome_usuario,
+                observacao || `Embalagem de ${quantidade} unidade(s)`,
+            ]
+            : [
+                empresaId, idempotencyKey, Number(produto_id), varianteBanco,
+                quantidade,
+                usuarioLogado.nome || usuarioLogado.nome_usuario,
+                observacao || `Embalagem de ${quantidade} unidade(s)`,
+            ];
+        const movimentoResult = await dbClient.query(movimentoQuery, movimentoParams);
+        const movimentoId = movimentoResult.rows[0].id;
+        await dbClient.query(`
+            UPDATE embalagens_realizadas
+               SET movimento_estoque_id = $1
+             WHERE id = $2
+               AND empresa_id = $3
+        `, [movimentoId, embalagemId, empresaId]);
+
+        await dbClient.query('COMMIT');
+        transacaoAberta = false;
+        verificarEAtualizarDemandasPorSKU(pool, Number(produto_id), varianteBanco)
+            .catch((error) => console.error('[BACKGROUND-TASK] Falha após embalagem:', error));
+        return res.status(201).json({
+            message: 'Embalagem registrada e entrada no estoque concluída.',
+            embalagem_id: embalagemId,
+            movimento_estoque_id: movimentoId,
+            origens_consumidas: alocacoes.length,
+        });
+    } catch (error) {
+        if (dbClient && transacaoAberta) {
+            await dbClient.query('ROLLBACK').catch(() => undefined);
+        }
+        console.error('[API POST /embalagens/unidade] Erro:', error);
+        return res.status(error.statusCode || 500).json({
+            error: error.message || 'Erro ao registrar embalagem.',
+            ...(error.saldoDisponivel !== undefined
+                ? { saldoDisponivel: error.saldoDisponivel }
+                : {}),
+        });
     } finally {
         if (dbClient) dbClient.release();
     }
@@ -275,6 +500,74 @@ router.get('/contagem-hoje', async (req, res) => {
     }
 });
 
+// GET /api/embalagens/origens
+// Contrato único para a UI: fontes canônicas novas e arremates ainda legados.
+router.get('/origens', async (req, res) => {
+    const { produto_id, variante } = req.query;
+    if (!produto_id) {
+        return res.status(400).json({ error: 'produto_id é obrigatório.' });
+    }
+
+    let dbClient;
+    try {
+        dbClient = await pool.connect();
+        const permissoes = await getPermissoesCompletasUsuarioDB(
+            dbClient,
+            req.usuarioLogado.id,
+            req.empresaId,
+        );
+        if (!permissoes.includes('acesso-embalagem-de-produtos')) {
+            return res.status(403).json({ error: 'Permissão negada para visualizar origens de embalagem.' });
+        }
+
+        const { rows } = await listarOrigensProdutoProntoDisponiveis(dbClient, {
+            empresaId: req.empresaId,
+            produtoId: Number(produto_id),
+            variante,
+        });
+        return res.status(200).json({
+            rows: rows.map((origem) => ({
+                ...origem,
+                quantidade_arrematada: origem.quantidade_disponibilizada,
+                quantidade_ja_embalada: origem.quantidade_consumida,
+                data_lancamento: origem.data_disponibilizacao,
+            })),
+        });
+    } catch (error) {
+        console.error('[API GET /embalagens/origens] Erro:', error);
+        return res.status(500).json({ error: 'Erro ao buscar origens para embalagem.', details: error.message });
+    } finally {
+        if (dbClient) dbClient.release();
+    }
+});
+
+// GET /api/embalagens/origens/auditoria
+// Leitura operacional para conferir referências canônicas sem alterar dados.
+router.get('/origens/auditoria', async (req, res) => {
+    let dbClient;
+    try {
+        dbClient = await pool.connect();
+        const permissoes = await getPermissoesCompletasUsuarioDB(
+            dbClient,
+            req.usuarioLogado.id,
+            req.empresaId,
+        );
+        if (!permissoes.includes('acesso-embalagem-de-produtos')) {
+            return res.status(403).json({ error: 'Permissão negada para auditar origens de embalagem.' });
+        }
+        const resultado = await auditarOrigensProdutoPronto(dbClient, req.empresaId);
+        return res.status(200).json(resultado);
+    } catch (error) {
+        console.error('[API GET /embalagens/origens/auditoria] Erro:', error);
+        return res.status(500).json({
+            error: 'Erro ao auditar origens de embalagem.',
+            details: error.message,
+        });
+    } finally {
+        if (dbClient) dbClient.release();
+    }
+});
+
 
 // GET /api/embalagens/fila - NOVO ENDPOINT DEDICADO PARA A FILA DE EMBALAGEM
 router.get('/fila', async (req, res) => {
@@ -289,37 +582,36 @@ router.get('/fila', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        const estrutura = await obterEstruturaOrigensProdutoPronto(dbClient);
+        const cteOrigens = construirCteOrigensProdutoPronto(estrutura.origens);
         
         let queryParams = [req.empresaId];
         let paramIndex = 2;
         
         // --- ETAPA 1: Construir a Query Base ---
         let baseQuery = `
-            WITH ArrematesComSaldo AS (
-                -- Primeiro, encontramos os arremates que ainda têm saldo
+            ${cteOrigens},
+            OrigensComSaldo AS (
                 SELECT
                     empresa_id,
                     produto_id, 
                     variante, 
                     op_numero,
-                    (quantidade_arrematada - quantidade_ja_embalada) as saldo
-                FROM arremates
+                    data_disponibilizacao,
+                    (quantidade_disponibilizada - quantidade_consumida) AS saldo
+                FROM OrigensProdutoProntoCompat
                 WHERE empresa_id = $1
-                  AND tipo_lancamento = 'PRODUCAO'
-                  AND (quantidade_arrematada - quantidade_ja_embalada) > 0
+                  AND (quantidade_disponibilizada - quantidade_consumida) > 0
             )
-            -- Agora, usamos esses arremates para buscar as informações corretas
             SELECT
                 ars.produto_id,
                 p.nome as produto,
                 ars.variante,
                 SUM(ars.saldo)::integer as total_disponivel_para_embalar,
-                -- A MUDANÇA CRUCIAL: Usamos a data_final da OP como base para a data mais antiga
-                MIN(op.data_final) as data_lancamento_mais_antiga,
-                MAX(op.data_final) as data_lancamento_mais_recente
-            FROM ArrematesComSaldo ars
+                MIN(COALESCE(op.data_final, ars.data_disponibilizacao)) as data_lancamento_mais_antiga,
+                MAX(COALESCE(op.data_final, ars.data_disponibilizacao)) as data_lancamento_mais_recente
+            FROM OrigensComSaldo ars
             JOIN produtos p ON ars.produto_id = p.id AND p.empresa_id = ars.empresa_id
-            -- Usamos LEFT JOIN para o caso de uma OP ter sido deletada mas o arremate ainda existir
             LEFT JOIN ordens_de_producao op ON ars.op_numero = op.numero AND op.empresa_id = ars.empresa_id
             GROUP BY ars.empresa_id, ars.produto_id, p.nome, ars.variante
         `;
@@ -544,17 +836,19 @@ router.get('/fila/contagem-antigos', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        const estrutura = await obterEstruturaOrigensProdutoPronto(dbClient);
+        const cteOrigens = construirCteOrigensProdutoPronto(estrutura.origens);
         
         const query = `
+            ${cteOrigens}
             SELECT COUNT(*)
             FROM (
                 SELECT 1
-                FROM arremates a
-                WHERE a.empresa_id = $1
-                  AND a.tipo_lancamento = 'PRODUCAO'
-                  AND a.data_lancamento < NOW() - INTERVAL '2 days'
-                GROUP BY a.produto_id, a.variante
-                HAVING SUM(a.quantidade_arrematada - a.quantidade_ja_embalada) > 0
+                FROM OrigensProdutoProntoCompat o
+                WHERE o.empresa_id = $1
+                  AND o.data_disponibilizacao < NOW() - INTERVAL '2 days'
+                GROUP BY o.produto_id, o.variante
+                HAVING SUM(o.quantidade_disponibilizada - o.quantidade_consumida) > 0
             ) as subquery;
         `;
         

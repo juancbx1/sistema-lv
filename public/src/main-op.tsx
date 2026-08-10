@@ -13,6 +13,7 @@ import OPCriarModal from './components/OPCriarModal.tsx';
   import OPExternoTela from './components/OPExternoTela.tsx';
 import BotaoBuscaFunil from './components/BotaoBuscaFunil.tsx';
 import AlertasFAB from './components/AlertasFAB.jsx';
+import ProducaoHistoricoModal from './components/ProducaoHistoricoModal.jsx';
 import UIBloqueio from './components/UIBloqueio';
 import UICarregando from './components/UICarregando';
 
@@ -83,11 +84,16 @@ function App() {
   const [permissoes, setPermissoes] = useState<string[]>([]);
   const [opCriarModalAberto, setOpCriarModalAberto] = useState(false);
   const [opCriarModalDados, setOpCriarModalDados] = useState<OpCriarModalDados | null>(null);
+  const [historicoAberto, setHistoricoAberto] = useState(false);
 
   useEffect(() => {
     async function checkAuth() {
       try {
-        const auth = await verificarAutenticacao('ordens-de-producao.html', ['acesso-ordens-de-producao']);
+        const auth = await verificarAutenticacao(
+          'ordens-de-producao.html',
+          ['acesso-ordens-de-producao', 'acesso-ordens-de-arremates'],
+          'any',
+        );
         if (auth) {
           setEstaAutenticado(true);
           setPermissoes(auth.permissoes || []);
@@ -158,14 +164,28 @@ function App() {
   }, [estaAutenticado, verificarOpsProntas]);
 
   if (verificandoAuth) {
-    return <UICarregando variante="pagina" texto="Carregando Ordens de Produção..." />;
+    return <UICarregando variante="pagina" texto="Carregando Produções..." />;
   }
 
   if (!estaAutenticado) return null;
 
   return (
     <ErrorBoundary>
-      <UIHeaderPagina titulo="Ordens de Produção">
+      <UIHeaderPagina titulo="Produções">
+        <UIBloqueio
+          permissao={['acesso-producao-geral', 'acesso-ordens-de-producao', 'acesso-ordens-de-arremates']}
+          mensagem="Você não tem permissão para consultar o histórico geral de produções."
+        >
+          <button
+            type="button"
+            className="gs-btn gs-btn-secundario gs-btn-com-icone"
+            title="Consultar histórico geral de Produções"
+            onClick={() => setHistoricoAberto(true)}
+          >
+            <i className="fas fa-clipboard-list" />
+            <span>Histórico</span>
+          </button>
+        </UIBloqueio>
         <UIBloqueio permissao="configurar-tempos-padrao">
           <button
             type="button"
@@ -218,6 +238,11 @@ function App() {
           quantidadeSugerida={opCriarModalDados.quantidadeSugerida}
         />
       )}
+      <ProducaoHistoricoModal
+        isOpen={historicoAberto}
+        onClose={() => setHistoricoAberto(false)}
+        podeEstornar={permissoes.includes('estornar-arremate')}
+      />
       <BotaoBuscaFunilTipado
         permissoes={permissoes}
         onIniciarProducao={(dados: OpInicioProducaoDados) => {

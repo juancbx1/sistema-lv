@@ -31,7 +31,7 @@
                     <button class="cp-type-btn" data-type="variacoes" role="tab" aria-selected="false">Variações</button>
                     <button class="cp-type-btn" data-type="kits" role="tab" aria-selected="false">Kits</button>
                 </div>
-                <button id="btnAdicionarNovoProduto" class="cp-btn cp-btn-primary">
+                <button id="btnAdicionarNovoProduto" class="cp-btn cp-btn-primary" data-permissao="gerenciar-produtos">
                     <i class="fas fa-plus"></i> Adicionar Novo Produto
                 </button>
             </div>
@@ -108,7 +108,7 @@
                         <label for="estoque">Estoque:</label>
                         <input type="number" id="estoque" class="cp-input" disabled aria-disabled="true">
                     </div>
-                    <button type="submit" class="cp-btn cp-btn-submit"><i class="fas fa-save"></i> Salvar Produto</button>
+                    <button type="submit" class="cp-btn cp-btn-submit" data-permissao="gerenciar-produtos"><i class="fas fa-save"></i> Salvar Produto</button>
                 </form>
             </div>
 
@@ -117,7 +117,7 @@
                 <div class="cp-form-group">
                     <label>Imagem Principal</label>
                     <div class="cp-imagem-wrapper">
-                        <input type="file" id="imagemProduto" accept="image/*" class="hidden">
+                        <input type="file" id="imagemProduto" accept="image/*" class="hidden" data-permissao="gerenciar-produtos">
                         <label for="imagemProduto" class="cp-imagem-placeholder">
                             <img id="previewImagem" alt="Pré-visualização da imagem">
                             <div class="overlay">
@@ -126,7 +126,7 @@
                             </div>
                         </label>
                         <div class="cp-imagem-actions">
-                            <button type="button" id="removeImagem" class="cp-btn-icon-danger" title="Remover Imagem">
+                            <button type="button" id="removeImagem" class="cp-btn-icon-danger" data-permissao="gerenciar-produtos" title="Remover Imagem">
                                 <i class="fas fa-trash"></i>
                             </button>
                         </div>
@@ -136,32 +136,9 @@
 
             <!-- Aba: Produção -->
             <div class="cp-tab-content" id="producao" role="tabpanel">
-                <div class="cp-form-group">
-                    <h3>Etapas de Produção</h3>
-                    <table class="cp-table" aria-label="Etapas de produção">
-                        <thead>
-                            <tr>
-                                <th scope="col" style="width: 5%;"></th><th scope="col">Processo</th><th scope="col">Máquina</th><th scope="col">Feito Por</th><th scope="col">Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody id="stepsBody"></tbody>
-                    </table>
-                    <button type="button" class="cp-btn cp-btn-add" id="btnAddStep"><i class="fas fa-plus"></i> Add Etapa</button>
-                </div>
-                <div class="cp-form-group">
-                    <h3>Etapas de Arremate/Tik Tik</h3>
-                    <table class="cp-table" aria-label="Etapas de arremate/tik tik">
-                    <thead>
-                            <tr>
-                                <th scope="col" style="width: 5%;"></th><th scope="col">Processo</th><th scope="col">Máquina</th><th scope="col">Feito Por</th><th scope="col">Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody id="etapasTiktikBody"></tbody>
-                    </table>
-                    <button type="button" class="cp-btn cp-btn-add" id="btnAddEtapaTiktik"><i class="fas fa-plus"></i> Add Etapa</button>
-                </div>
+                <div id="etapasProducaoReact"></div>
                 <div style="text-align: right; margin-top: 20px;">
-                    <button id="btnSalvarProducao" class="cp-btn cp-btn-success">
+                    <button id="btnSalvarProducao" class="cp-btn cp-btn-success" data-permissao="gerenciar-produtos">
                         <i class="fas fa-save"></i> Salvar Etapas de Produção
                     </button>
                 </div>
@@ -174,7 +151,7 @@
                     <div id="variationsComponentContainer" class="cp-variations-container">
                         <!-- As linhas de variação serão injetadas aqui pelo JS -->
                     </div>
-                    <button type="button" class="cp-btn cp-btn-add" id="btnAddVariacao" style="margin-top: 1rem;">
+                    <button type="button" class="cp-btn cp-btn-add" id="btnAddVariacao" data-permissao="gerenciar-produtos" style="margin-top: 1rem;">
                         <i class="fas fa-plus"></i> Adicionar Outra Variação
                     </button>
                 </div>
@@ -185,7 +162,7 @@
                         <thead id="gradeHeader"></thead>
                         <tbody id="gradeBody"></tbody>
                     </table>
-                    <button id="btnSalvarGrade" class="cp-btn cp-btn-success" style="margin-top: 1rem;">
+                    <button id="btnSalvarGrade" class="cp-btn cp-btn-success" data-permissao="gerenciar-produtos" style="margin-top: 1rem;">
                         <i class="fas fa-check"></i> Salvar Grade e Variações
                     </button>
                 </div>
@@ -211,7 +188,7 @@
                     <label for="variacaoKitSelect">Variação do Componente:</label>
                     <div style="display: flex; gap: 10px;">
                         <select id="variacaoKitSelect" class="cp-select" style="flex-grow: 1;"></select>
-                        <button id="addVariacaoKitBtn" type="button" class="cp-btn cp-btn-primary">Add</button>
+                        <button id="addVariacaoKitBtn" type="button" class="cp-btn cp-btn-primary" data-permissao="gerenciar-produtos">Add</button>
                     </div>
                 </div>
                 <div class="cp-form-group">
@@ -220,7 +197,7 @@
                 </div>
                 <div class="cp-popup-buttons">
                     <button type="button" class="cp-btn cp-btn-secondary" onclick="fecharPopupConfigurarVariacao()">Cancelar</button>
-                    <button id="saveKitConfigBtn" type="button" class="cp-btn cp-btn-primary">Salvar Composição</button>
+                    <button id="saveKitConfigBtn" type="button" class="cp-btn cp-btn-primary" data-permissao="gerenciar-produtos">Salvar Composição</button>
                 </div>
             </div>
         </div>
@@ -231,10 +208,10 @@
                 <h3 id="modalSelecionarImagemTitle">Selecionar Imagem para a Variação</h3>
                 <div class="cp-form-grupo">
                     <label>Fazer um novo upload:</label>
-                    <button id="btnTriggerUpload" type="button" class="cp-btn cp-btn-primary">
+                    <button id="btnTriggerUpload" type="button" class="cp-btn cp-btn-primary" data-permissao="gerenciar-produtos">
                         <i class="fas fa-upload"></i> Escolher Arquivo do Computador
                     </button>
-                    <input type="file" id="gradeImageInput" accept="image/*" class="hidden">
+                    <input type="file" id="gradeImageInput" accept="image/*" class="hidden" data-permissao="gerenciar-produtos">
                 </div>
                 <hr style="border: 0; height: 1px; background: #eee; margin: 20px 0;">
                 <div class="cp-form-grupo">
@@ -253,6 +230,7 @@
 
     </div>
     <script src="/js/admin-cadastrar-produto.js" type="module" defer></script>
+    <script src="/src/main-cadastrar-produto.jsx" type="module"></script>
     <script src="/src/main-menu-lateral.tsx" type="module"></script>
 </body>
 </html>

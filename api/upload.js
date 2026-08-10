@@ -2,6 +2,8 @@
 import { put } from '@vercel/blob';
 import express from 'express';
 import jwt from 'jsonwebtoken';
+import { obterEmpresaIdDoContexto } from './contexto-empresa.js';
+import { getPermissoesCompletasUsuarioDB } from './usuarios.js';
 
 const router = express.Router();
 const SECRET_KEY = process.env.JWT_SECRET;
@@ -19,13 +21,24 @@ router.post('/', async (req, res) => {
     let usuarioLogado;
     try {
         const authHeader = req.headers.authorization;
-        if (!authHeader || !auth-header.startsWith('Bearer ')) {
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
             return res.status(401).json({ error: 'Token de autenticação ausente.' });
         }
         const token = authHeader.split(' ')[1];
         usuarioLogado = jwt.verify(token, SECRET_KEY); // Agora guardamos os dados do usuário
     } catch (error) {
         return res.status(401).json({ error: 'Token inválido ou expirado.' });
+    }
+
+    try {
+        const empresaId = obterEmpresaIdDoContexto(req);
+        const permissoes = await getPermissoesCompletasUsuarioDB(null, usuarioLogado.id, empresaId);
+        if (!permissoes.includes('gerenciar-produtos')) {
+            return res.status(403).json({ error: 'Permissão negada para enviar imagens de produtos.' });
+        }
+    } catch (error) {
+        console.error('ERRO AO VALIDAR PERMISSÃO DE UPLOAD:', error.message);
+        return res.status(error.statusCode || 500).json({ error: error.message || 'Falha ao validar permissão de upload.' });
     }
 
     const filename = req.headers['x-filename'];

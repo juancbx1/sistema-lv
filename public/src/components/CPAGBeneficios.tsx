@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Select from 'react-select';
 import UICarregando from './UICarregando';
+import UIBloqueio from './UIBloqueio';
 import { formatarMoeda } from '../utils/cpag-format';
 import { mostrarConfirmacao, mostrarToast } from '../utils/cpag-feedback';
 import { fetchCpag } from '../utils/cpag-api';
@@ -730,20 +731,25 @@ export default function CPAGBeneficios({ usuarios, contas }: Props) {
             </table>
           </div>
 
-          <button
-            type="button"
-            className="cpg-btn cpg-btn-primario"
-            style={{ width: '100%', marginTop: '20px', height: '50px' }}
-            onClick={() => void handleProcessar()}
-            disabled={loading || !selecionados.length || pagamentoBloqueado}
-            title={pagamentoBloqueado ? mensagemBloqueio : ''}
+          <UIBloqueio
+            permissao="permitir-pagar-beneficios"
+            mensagem="Você não tem permissão para pagar benefícios."
           >
-            {loading
-              ? 'Processando...'
-              : pagamentoBloqueado
-                ? 'Aguardando início do mês'
-                : `Pagar selecionados (${selecionados.length})`}
-          </button>
+            <button
+              type="button"
+              className="cpg-btn cpg-btn-primario"
+              style={{ width: '100%', marginTop: '20px', height: '50px' }}
+              onClick={() => void handleProcessar()}
+              disabled={loading || !selecionados.length || pagamentoBloqueado}
+              title={pagamentoBloqueado ? mensagemBloqueio : ''}
+            >
+              {loading
+                ? 'Processando...'
+                : pagamentoBloqueado
+                  ? 'Aguardando início do mês'
+                  : `Pagar selecionados (${selecionados.length})`}
+            </button>
+          </UIBloqueio>
         </>
       )}
     </div>

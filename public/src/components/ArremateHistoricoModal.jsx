@@ -1,25 +1,35 @@
 // public/src/components/ArremateHistoricoModal.jsx
-// Modal React para o Histórico Geral de Arremates (Item 7 — v2.0)
-// Substitui o modal gerado dinamicamente pelo admin-arremates.js
+// Histórico geral de Produções. O nome do arquivo permanece como alias de
+// compatibilidade enquanto a rota antiga de Arremates ainda existir.
 
 import React, { useState, useEffect, useRef } from 'react';
 import UICarregando from './UICarregando';
 import UIFeedbackNotFound from './UIFeedbackNotFound';
 import UIPaginacao from './UIPaginacao';
 import { mostrarConfirmacao, mostrarMensagem } from '/js/utils/popups.js';
+import { mostrarPopupSemPermissao } from '../utils/bloqueio';
 
 // --- Configuração por tipo de lançamento ---
 const TIPO_CONFIG = {
-    PRODUCAO:        { label: 'Lançamento', cor: 'var(--gs-primaria)', icone: 'fa-cut' },
-    PERDA:           { label: 'Perda',      cor: '#f59e0b',            icone: 'fa-exclamation-triangle' },
-    ESTORNO:         { label: 'Estorno',    cor: '#94a3b8',            icone: 'fa-undo' },
-    PRODUCAO_ANULADA:{ label: 'Anulado',   cor: '#94a3b8',            icone: 'fa-ban' },
+    CONCLUSAO_OP:          { label: 'Produção da OP', cor: 'var(--gs-primaria)', icone: 'fa-gears' },
+    CONCLUSAO_POS_OP:      { label: 'Arremate pós-OP', cor: '#7c3aed', icone: 'fa-wand-magic-sparkles' },
+    PERDA:                 { label: 'Perda', cor: '#f59e0b', icone: 'fa-exclamation-triangle' },
+    CANCELAMENTO_TAREFA:   { label: 'Cancelamento', cor: '#94a3b8', icone: 'fa-ban' },
+    PRODUCAO_ANULADA:      { label: 'Produção anulada', cor: '#94a3b8', icone: 'fa-ban' },
+    EMBALAGEM_UNIDADE:     { label: 'Embalagem', cor: '#ea580c', icone: 'fa-box-open' },
+    EMBALAGEM_KIT:         { label: 'Kit embalado', cor: '#ea580c', icone: 'fa-cubes' },
+    ESTORNO_PRODUCAO:      { label: 'Estorno de produção', cor: '#64748b', icone: 'fa-undo' },
+    ESTORNO_EMBALAGEM:     { label: 'Estorno de embalagem', cor: '#64748b', icone: 'fa-undo' },
+    ESTOQUE:               { label: 'Estoque', cor: '#0f766e', icone: 'fa-warehouse' },
 };
 
 const TIPOS_FILTRO = [
     { value: 'todos',    label: 'Todos' },
-    { value: 'PRODUCAO', label: 'Lançamentos' },
+    { value: 'CONCLUSAO', label: 'Conclusões' },
     { value: 'PERDA',    label: 'Perdas' },
+    { value: 'CANCELAMENTO', label: 'Cancelamentos' },
+    { value: 'EMBALAGEM', label: 'Embalagem' },
+    { value: 'ESTOQUE', label: 'Estoque' },
     { value: 'ESTORNO',  label: 'Estornos' },
 ];
 
@@ -30,6 +40,10 @@ const PERIODOS_FILTRO = [
     { value: 'mes_atual', label: 'Mês atual' },
 ];
 
+function tokenDaSessaoAtual() {
+    return sessionStorage.getItem('impersonation_token') || localStorage.getItem('token');
+}
+
 function fmtDataHora(iso) {
     if (!iso) return '';
     return new Date(iso).toLocaleString('pt-BR', {
@@ -39,19 +53,29 @@ function fmtDataHora(iso) {
     });
 }
 
+function rotuloCategoriaPerda(categoria) {
+    if (categoria === 'PRODUTO_AVARIADO') return 'Produto avariado';
+    if (categoria === 'QUANTIDADE_ERRADA') return 'Quantidade errada';
+    if (categoria === 'DIVERGENCIA_SALDO' || categoria === 'LANCAMENTO_ERRADO') return 'Quantidade errada';
+    return categoria || 'Categoria não informada';
+}
+
 // Janela de 2h para permitir desfazer
 function podeMostrarDesfazer(item) {
     return (
-        item.tipo_lancamento === 'PRODUCAO' &&
-        (Date.now() - new Date(item.data_lancamento).getTime()) < 2 * 60 * 60 * 1000
+        item.tipo_evento === 'CONCLUSAO_POS_OP' &&
+        item.arremate_id &&
+        (Date.now() - new Date(item.data_evento).getTime()) < 2 * 60 * 60 * 1000
     );
 }
 
 // --- Sub-componente: card horizontal de um evento do histórico ---
-function HistoricoCard({ item, onDesfazer, desfazendoId }) {
-    const tipo = TIPO_CONFIG[item.tipo_lancamento] || TIPO_CONFIG.PRODUCAO;
-    const mostraTiktik = item.tipo_lancamento !== 'PERDA';
-    const nomeAtor = item.usuario_tiktik || item.lancado_por || 'N/A';
+function HistoricoCard({ item, onDesfazer, desfazendoId, podeEstornar }) {
+    const tipo = item.tipo_evento?.startsWith('ESTOQUE_')
+        ? TIPO_CONFIG.ESTOQUE
+        : TIPO_CONFIG[item.tipo_evento] || TIPO_CONFIG.CONCLUSAO_OP;
+    const nomeAtor = item.executor_nome || item.autor || 'N/A';
+    const quantidade = Math.abs(Number(item.quantidade) || 0);
 
     return (
         <div className="arremate-hist-card">
@@ -59,13 +83,13 @@ function HistoricoCard({ item, onDesfazer, desfazendoId }) {
 
             <img
                 src={item.produto_imagem || '/img/placeholder-image.png'}
-                alt={item.produto}
+                alt={item.produto_nome}
                 className="arremate-hist-card-img"
             />
 
             <div className="arremate-hist-card-info">
                 <div className="arremate-hist-card-topo">
-                    <span className="arremate-hist-card-nome">{item.produto || 'Produto não encontrado'}</span>
+                    <span className="arremate-hist-card-nome">{item.produto_nome || 'Produto não encontrado'}</span>
                     <span className="arremate-hist-tipo-badge" style={{ color: tipo.cor }}>
                         <i className={`fas ${tipo.icone}`}></i> {tipo.label}
                     </span>
@@ -76,29 +100,54 @@ function HistoricoCard({ item, onDesfazer, desfazendoId }) {
                 )}
 
                 <div className="arremate-hist-card-meta">
-                    {mostraTiktik && (
+                    {nomeAtor !== 'N/A' && (
                         <span><i className="fas fa-cut"></i> {nomeAtor}</span>
                     )}
                     <span>
-                        <i className="fas fa-cubes"></i> {Math.abs(item.quantidade_arrematada)} pç{Math.abs(item.quantidade_arrematada) !== 1 ? 's' : ''}
+                        <i className="fas fa-cubes"></i> {quantidade} pç{quantidade !== 1 ? 's' : ''}
                     </span>
-                    <span><i className="fas fa-clock"></i> {fmtDataHora(item.data_lancamento)}</span>
+                    <span><i className="fas fa-clock"></i> {fmtDataHora(item.data_evento)}</span>
                     {item.op_numero && (
                         <span><i className="fas fa-file-alt"></i> OP #{item.op_numero}</span>
                     )}
+                    {item.fase && (
+                        <span><i className="fas fa-layer-group"></i> {item.fase}</span>
+                    )}
+                    {item.processo && (
+                        <span><i className="fas fa-gears"></i> {item.processo}</span>
+                    )}
                 </div>
+                {item.tipo_evento === 'PERDA' && (
+                    <div className="arremate-hist-card-perda">
+                        <strong>{rotuloCategoriaPerda(item.categoria)}</strong>
+                        {item.observacao && <span> — {item.observacao}</span>}
+                    </div>
+                )}
+                {item.tipo_evento !== 'PERDA' && item.observacao && (
+                    <div className="arremate-hist-card-perda">
+                        <span>{item.observacao}</span>
+                    </div>
+                )}
             </div>
 
             {podeMostrarDesfazer(item) && (
                 <button
-                    className="arremate-hist-btn-desfazer"
-                    onClick={() => onDesfazer(item)}
-                    disabled={desfazendoId === item.id}
-                    title="Desfazer este lançamento"
+                    className={`arremate-hist-btn-desfazer${podeEstornar ? '' : ' bloqueado'}`}
+                    onClick={() => {
+                        if (!podeEstornar) {
+                            mostrarPopupSemPermissao('Seu vínculo atual não possui permissão para estornar este lançamento.');
+                            return;
+                        }
+                        onDesfazer(item);
+                    }}
+                    disabled={desfazendoId === item.arremate_id}
+                    aria-disabled={!podeEstornar || undefined}
+                    aria-label={podeEstornar ? 'Desfazer este lançamento' : 'Estornar lançamento bloqueado'}
+                    title={podeEstornar ? 'Desfazer este lançamento' : 'Estornar lançamento bloqueado'}
                 >
-                    {desfazendoId === item.id
+                    {desfazendoId === item.arremate_id
                         ? <UICarregando variante="inline" />
-                        : <><i className="fas fa-undo"></i></>
+                        : <><i className={`fas ${podeEstornar ? 'fa-undo' : 'fa-lock'}`}></i></>
                     }
                 </button>
             )}
@@ -107,13 +156,27 @@ function HistoricoCard({ item, onDesfazer, desfazendoId }) {
 }
 
 // --- Componente principal ---
-export default function ArremateHistoricoModal({ isOpen, onClose }) {
+export default function ArremateHistoricoModal({ isOpen, onClose, podeEstornar = false }) {
     const [eventos, setEventos]       = useState([]);
     const [pagination, setPagination] = useState({ currentPage: 1, totalPages: 1, totalItems: 0 });
     const [carregando, setCarregando] = useState(false);
     const [busca, setBusca]           = useState('');
     const [filtroTipo, setFiltroTipo] = useState('todos');
+    const [filtroFase, setFiltroFase] = useState('todas');
     const [filtroPeriodo, setFiltroPeriodo] = useState('7d');
+    const [filtrosDetalhados, setFiltrosDetalhados] = useState({
+        produtoBusca: '',
+        executorBusca: '',
+        opNumero: '',
+        processo: '',
+    });
+    const [filtrosDetalhadosDebounced, setFiltrosDetalhadosDebounced] = useState({
+        produtoBusca: '',
+        executorBusca: '',
+        opNumero: '',
+        processo: '',
+    });
+    const [filtrosAvancadosAbertos, setFiltrosAvancadosAbertos] = useState(false);
     const [paginaAtual, setPaginaAtual] = useState(1);
     const [desfazendoId, setDesfazendoId] = useState(null);
     const [refreshKey, setRefreshKey] = useState(0);
@@ -130,13 +193,25 @@ export default function ArremateHistoricoModal({ isOpen, onClose }) {
         return () => clearTimeout(debounceRef.current);
     }, [busca]);
 
+    useEffect(() => {
+        const timeout = setTimeout(() => {
+            setFiltrosDetalhadosDebounced(filtrosDetalhados);
+            setPaginaAtual(1);
+        }, 350);
+        return () => clearTimeout(timeout);
+    }, [filtrosDetalhados]);
+
     // Reset ao abrir
     useEffect(() => {
         if (isOpen) {
             setBusca('');
             setBuscaDebounced('');
             setFiltroTipo('todos');
+            setFiltroFase('todas');
             setFiltroPeriodo('7d');
+            setFiltrosDetalhados({ produtoBusca: '', executorBusca: '', opNumero: '', processo: '' });
+            setFiltrosDetalhadosDebounced({ produtoBusca: '', executorBusca: '', opNumero: '', processo: '' });
+            setFiltrosAvancadosAbertos(false);
             setPaginaAtual(1);
             setRefreshKey(k => k + 1);
         }
@@ -151,13 +226,17 @@ export default function ArremateHistoricoModal({ isOpen, onClose }) {
         const params = new URLSearchParams({
             busca: buscaDebounced,
             tipoEvento: filtroTipo,
+            fase: filtroFase,
             periodo: filtroPeriodo,
             page: paginaAtual,
             limit: 15,
         });
+        Object.entries(filtrosDetalhadosDebounced).forEach(([campo, valor]) => {
+            if (String(valor).trim()) params.set(campo, String(valor).trim());
+        });
 
-        const token = localStorage.getItem('token');
-        fetch(`/api/arremates/historico?${params.toString()}`, {
+        const token = tokenDaSessaoAtual();
+        fetch(`/api/producoes/historico?${params.toString()}`, {
             headers: { 'Authorization': `Bearer ${token}` },
             signal: controller.signal,
         })
@@ -170,22 +249,41 @@ export default function ArremateHistoricoModal({ isOpen, onClose }) {
             .finally(() => setCarregando(false));
 
         return () => controller.abort();
-    }, [isOpen, buscaDebounced, filtroTipo, filtroPeriodo, paginaAtual, refreshKey]);
+    }, [
+        isOpen,
+        buscaDebounced,
+        filtroTipo,
+        filtroFase,
+        filtroPeriodo,
+        filtrosDetalhadosDebounced,
+        paginaAtual,
+        refreshKey,
+    ]);
+
+    const alterarFiltroDetalhado = (campo, valor) => {
+        setFiltrosDetalhados(atual => ({ ...atual, [campo]: valor }));
+    };
+
+    const limparFiltrosDetalhados = () => {
+        setFiltrosDetalhados({ produtoBusca: '', executorBusca: '', opNumero: '', processo: '' });
+        setFiltrosDetalhadosDebounced({ produtoBusca: '', executorBusca: '', opNumero: '', processo: '' });
+        setPaginaAtual(1);
+    };
 
     const handleDesfazer = async (item) => {
         const ok = await mostrarConfirmacao(
-            `Desfazer lançamento de ${item.quantidade_arrematada} pç${item.quantidade_arrematada !== 1 ? 's' : ''} de "${item.produto}"${item.variante && item.variante !== '-' ? ` — ${item.variante}` : ''}?`,
+            `Desfazer lançamento de ${item.quantidade} pç${item.quantidade !== 1 ? 's' : ''} de "${item.produto_nome}"${item.variante && item.variante !== '-' ? ` — ${item.variante}` : ''}?`,
             'aviso'
         );
         if (!ok) return;
 
-        setDesfazendoId(item.id);
+        setDesfazendoId(item.arremate_id);
         try {
-            const token = localStorage.getItem('token');
-            const res = await fetch('/api/arremates/estornar', {
+            const token = tokenDaSessaoAtual();
+            const res = await fetch('/api/producoes/estornar', {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id_arremate: item.id }),
+                body: JSON.stringify({ id_arremate: item.arremate_id }),
             });
             if (!res.ok) {
                 const err = await res.json();
@@ -212,7 +310,7 @@ export default function ArremateHistoricoModal({ isOpen, onClose }) {
                 <div className="arremate-modal-header">
                     <div className="arremate-modal-header-esquerda"></div>
                     <div className="arremate-modal-header-centro">
-                        <h3 className="arremate-modal-titulo">Histórico de Arremates</h3>
+                        <h3 className="arremate-modal-titulo">Histórico de Produções</h3>
                         <div className="arremate-modal-header-info">
                             <span className="arremate-hist-total-badge">
                                 {pagination.totalItems} registro{pagination.totalItems !== 1 ? 's' : ''}
@@ -233,7 +331,7 @@ export default function ArremateHistoricoModal({ isOpen, onClose }) {
                         <input
                             className="arremate-busca-input"
                             type="text"
-                            placeholder="Produto, tiktik ou lançador..."
+                            placeholder="Produto, empregado, processo ou OP..."
                             value={busca}
                             onChange={e => setBusca(e.target.value)}
                         />
@@ -255,6 +353,75 @@ export default function ArremateHistoricoModal({ isOpen, onClose }) {
                             </button>
                         ))}
                     </div>
+
+                    <button
+                        type="button"
+                        className="arremate-hist-filtros-avancados-btn"
+                        aria-expanded={filtrosAvancadosAbertos}
+                        onClick={() => setFiltrosAvancadosAbertos(aberto => !aberto)}
+                    >
+                        <i className="fas fa-sliders"></i>
+                        <span>Filtros detalhados</span>
+                        <i className={`fas fa-chevron-${filtrosAvancadosAbertos ? 'up' : 'down'}`}></i>
+                    </button>
+
+                    {filtrosAvancadosAbertos && (
+                        <div className="arremate-hist-filtros-avancados">
+                            <label>
+                                <span>Produto</span>
+                                <input
+                                    className="gs-input"
+                                    value={filtrosDetalhados.produtoBusca}
+                                    onChange={e => alterarFiltroDetalhado('produtoBusca', e.target.value)}
+                                    placeholder="Nome do produto"
+                                />
+                            </label>
+                            <label>
+                                <span>Empregado</span>
+                                <input
+                                    className="gs-input"
+                                    value={filtrosDetalhados.executorBusca}
+                                    onChange={e => alterarFiltroDetalhado('executorBusca', e.target.value)}
+                                    placeholder="Nome do executor"
+                                />
+                            </label>
+                            <label>
+                                <span>OP</span>
+                                <input
+                                    className="gs-input"
+                                    value={filtrosDetalhados.opNumero}
+                                    onChange={e => alterarFiltroDetalhado('opNumero', e.target.value)}
+                                    placeholder="Número da OP"
+                                />
+                            </label>
+                            <label>
+                                <span>Processo</span>
+                                <input
+                                    className="gs-input"
+                                    value={filtrosDetalhados.processo}
+                                    onChange={e => alterarFiltroDetalhado('processo', e.target.value)}
+                                    placeholder="Nome do processo"
+                                />
+                            </label>
+                            <button
+                                type="button"
+                                className="arremate-hist-filtros-avancados-limpar"
+                                onClick={limparFiltrosDetalhados}
+                            >
+                                Limpar
+                            </button>
+                        </div>
+                    )}
+
+                    <select
+                        className="gs-select arremate-hist-periodo-select"
+                        value={filtroFase}
+                        onChange={e => { setFiltroFase(e.target.value); setPaginaAtual(1); }}
+                    >
+                        <option value="todas">Todas as fases</option>
+                        <option value="OP">Dentro da OP</option>
+                        <option value="POS_OP">Arremate pós-OP</option>
+                    </select>
 
                     <select
                         className="gs-select arremate-hist-periodo-select"
@@ -282,10 +449,11 @@ export default function ArremateHistoricoModal({ isOpen, onClose }) {
                         <div className="arremate-hist-grid">
                             {eventos.map(item => (
                                 <HistoricoCard
-                                    key={item.id}
+                                    key={`${item.origem}:${item.origem_id}`}
                                     item={item}
                                     onDesfazer={handleDesfazer}
                                     desfazendoId={desfazendoId}
+                                    podeEstornar={podeEstornar}
                                 />
                             ))}
                         </div>

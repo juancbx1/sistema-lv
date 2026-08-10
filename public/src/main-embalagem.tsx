@@ -11,7 +11,7 @@ async function bootstrap() {
   try {
     const auth = await verificarAutenticacao(
       'admin/embalagem-de-produtos.html',
-      [],
+      ['acesso-embalagem-de-produtos'],
     ) as { usuario?: unknown; permissoes?: string[] } | null | false;
 
     if (!auth) return;

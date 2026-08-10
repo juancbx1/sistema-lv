@@ -16,6 +16,7 @@ import { mostrarConfirmacao, mostrarToast } from '../utils/cpag-feedback';
 import { fetchCpag } from '../utils/cpag-api';
 import UIFeedbackNotFound from './UIFeedbackNotFound';
 import UICarregando from './UICarregando';
+import UIBloqueio from './UIBloqueio';
 import CPAGModalReciboComissao from './CPAGModalReciboComissao';
 import type { CpagIntervaloReciboEmpresa } from '../utils/cpag-types';
 import {
@@ -682,28 +683,33 @@ export default function CPAGComissao({ usuarios, contas }: Props) {
         <h2 className="cpg-section-title" style={{ border: 'none', margin: 0, padding: 0 }}>
           Cálculo de Comissão por Ciclo
         </h2>
-        <button
-          type="button"
-          className="cpg-btn cpg-btn-secundario cpg-btn-recibos"
-          onClick={() => setModalReciboAberto(true)}
-          title={
-            recibosPendentesUltimaSemana > 0
-              ? `${recibosPendentesUltimaSemana} semana(s) de recibo pendente(s) no total (última fechada: ${labelUltimaSemanaRecibo})`
-              : labelUltimaSemanaRecibo
-                ? `Nenhuma semana pendente · última fechada: ${labelUltimaSemanaRecibo}`
-                : 'Recibos semanais'
-          }
+        <UIBloqueio
+          permissao="permitir-pagar-comissao"
+          mensagem="Você não tem permissão para gerar ou consultar recibos de comissão."
         >
-          <i className="fas fa-file-invoice"></i> Recibos Semanais
-          {recibosPendentesUltimaSemana > 0 && (
-            <span
-              className="cpg-btn-badge"
-              aria-label={`${recibosPendentesUltimaSemana} semanas de recibo pendentes`}
-            >
-              {recibosPendentesUltimaSemana > 99 ? '99+' : recibosPendentesUltimaSemana}
-            </span>
-          )}
-        </button>
+          <button
+            type="button"
+            className="cpg-btn cpg-btn-secundario cpg-btn-recibos"
+            onClick={() => setModalReciboAberto(true)}
+            title={
+              recibosPendentesUltimaSemana > 0
+                ? `${recibosPendentesUltimaSemana} semana(s) de recibo pendente(s) no total (última fechada: ${labelUltimaSemanaRecibo})`
+                : labelUltimaSemanaRecibo
+                  ? `Nenhuma semana pendente · última fechada: ${labelUltimaSemanaRecibo}`
+                  : 'Recibos semanais'
+            }
+          >
+            <i className="fas fa-file-invoice"></i> Recibos Semanais
+            {recibosPendentesUltimaSemana > 0 && (
+              <span
+                className="cpg-btn-badge"
+                aria-label={`${recibosPendentesUltimaSemana} semanas de recibo pendentes`}
+              >
+                {recibosPendentesUltimaSemana > 99 ? '99+' : recibosPendentesUltimaSemana}
+              </span>
+            )}
+          </button>
+        </UIBloqueio>
       </div>
 
       <div className="cpg-form-row">
@@ -901,16 +907,21 @@ export default function CPAGComissao({ usuarios, contas }: Props) {
                 </div>
 
                 <div className="cpg-form-group" style={{ alignSelf: 'flex-end' }}>
-                  <button
-                    type="button"
-                    className="cpg-btn cpg-btn-primario"
-                    style={{ width: '100%' }}
-                    onClick={() => void handlePagar()}
-                    disabled={loadingPagamento || pagamentoBloqueado}
-                    title={pagamentoBloqueado ? mensagemBloqueio : ''}
+                  <UIBloqueio
+                    permissao="permitir-pagar-comissao"
+                    mensagem="Você não tem permissão para pagar comissões."
                   >
-                    {loadingPagamento ? 'Processando...' : 'Pagar Comissão'}
-                  </button>
+                    <button
+                      type="button"
+                      className="cpg-btn cpg-btn-primario"
+                      style={{ width: '100%' }}
+                      onClick={() => void handlePagar()}
+                      disabled={loadingPagamento || pagamentoBloqueado}
+                      title={pagamentoBloqueado ? mensagemBloqueio : ''}
+                    >
+                      {loadingPagamento ? 'Processando...' : 'Pagar Comissão'}
+                    </button>
+                  </UIBloqueio>
                 </div>
               </div>
             </div>

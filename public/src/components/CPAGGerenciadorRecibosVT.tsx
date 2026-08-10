@@ -8,6 +8,7 @@ import type { CpagLoteVT, CpagUsuario } from '../utils/cpag-types';
 import CPAGPaginacao from './CPAGPaginacao';
 import UIFeedbackNotFound from './UIFeedbackNotFound';
 import UICarregando from './UICarregando';
+import UIBloqueio from './UIBloqueio';
 
 interface Props {
   isOpen: boolean;
@@ -173,13 +174,18 @@ export default function CPAGGerenciadorRecibosVT({ isOpen, onClose }: Props) {
                     <td>{formatarMoeda(lote.valor_total)}</td>
                     <td>{lote.ja_impresso ? 'Impresso' : 'Pendente'}</td>
                     <td>
-                      <button
-                        type="button"
-                        className="cpg-btn cpg-btn-secundario"
-                        onClick={() => void gerarPDFLote(lote)}
+                      <UIBloqueio
+                        permissao="permitir-pagar-passagens"
+                        mensagem="Você não tem permissão para gerar recibos de vale-transporte."
                       >
-                        <i className="fas fa-print" /> PDF
-                      </button>
+                        <button
+                          type="button"
+                          className="cpg-btn cpg-btn-secundario"
+                          onClick={() => void gerarPDFLote(lote)}
+                        >
+                          <i className="fas fa-print" /> PDF
+                        </button>
+                      </UIBloqueio>
                     </td>
                   </tr>
                 ))}

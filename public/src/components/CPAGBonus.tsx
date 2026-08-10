@@ -4,6 +4,7 @@ import { formatarMoeda } from '../utils/cpag-format';
 import { mostrarConfirmacao, mostrarToast } from '../utils/cpag-feedback';
 import UIFeedbackNotFound from './UIFeedbackNotFound';
 import UICarregando from './UICarregando';
+import UIBloqueio from './UIBloqueio';
 import { fetchCpag } from '../utils/cpag-api';
 import type {
   CpagContaFinanceira,
@@ -180,16 +181,21 @@ export default function CPAGBonus({ usuarios, contas }: Props) {
               styles={selectStyles}
             />
           </div>
-          <button
-            type="button"
-            className="cpg-btn cpg-btn-primario"
-            style={{ width: '100%', marginTop: '15px', height: '50px', fontSize: '1.1rem' }}
-            onClick={() => void handleConcederBonus()}
-            disabled={loading}
+          <UIBloqueio
+            permissao="permitir-conceder-bonus"
+            mensagem="Você não tem permissão para conceder bônus e premiações."
           >
-            {loading ? <UICarregando variante="inline" /> : <i className="fas fa-check" />}
-            {loading ? ' Processando...' : ' Confirmar Bônus'}
-          </button>
+            <button
+              type="button"
+              className="cpg-btn cpg-btn-primario"
+              style={{ width: '100%', marginTop: '15px', height: '50px', fontSize: '1.1rem' }}
+              onClick={() => void handleConcederBonus()}
+              disabled={loading}
+            >
+              {loading ? <UICarregando variante="inline" /> : <i className="fas fa-check" />}
+              {loading ? ' Processando...' : ' Confirmar Bônus'}
+            </button>
+          </UIBloqueio>
         </div>
       </div>
     </div>

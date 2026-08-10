@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { MENU_GRUPOS, itemMenuEstaAtivo } from '../utils/menu-catalogo';
 import type { MenuItem } from '../utils/menu-types';
+import UIBloqueio from './UIBloqueio';
 
 interface Props {
   itens: MenuItem[];
@@ -64,14 +65,28 @@ export default function MenuModulos({
                   const ativo = itemMenuEstaAtivo(item);
                   return (
                     <li key={item.id}>
-                      <a
-                        className={`ml-nav-link${ativo ? ' is-active' : ''}`}
-                        href={item.href}
-                        aria-current={ativo ? 'page' : undefined}
+                      <UIBloqueio
+                        permissao={item.permissao || 'acesso-admin-geral'}
+                        bloqueado={item.bloqueado}
+                        modoBloqueio="pagina"
+                        destinoBloqueio="home"
+                        tipoBloqueio={item.motivoBloqueio || 'permissao'}
+                        pagina={item.rotulo}
+                        mensagem={item.motivoBloqueio === 'modulo'
+                          ? 'Este módulo ainda não está disponível para a empresa ativa.'
+                          : `Seu vínculo atual não possui acesso à página ${item.rotulo}.`}
+                        style={{ display: 'block', width: '100%' }}
                       >
-                        <i className={item.icone} aria-hidden="true" />
-                        <span>{item.rotulo}</span>
-                      </a>
+                        <a
+                          className={`ml-nav-link${ativo ? ' is-active' : ''}`}
+                          href={item.href}
+                          aria-current={ativo ? 'page' : undefined}
+                          aria-disabled={item.bloqueado || undefined}
+                        >
+                          <i className={item.icone} aria-hidden="true" />
+                          <span>{item.rotulo}</span>
+                        </a>
+                      </UIBloqueio>
                       <button
                         className={`ml-favorite-toggle${favorito ? ' is-favorite' : ''}`}
                         type="button"

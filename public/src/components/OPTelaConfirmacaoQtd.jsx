@@ -44,6 +44,16 @@ function calcularAvisoHorario(item, qtd, funcionario, tpp) {
     };
 }
 
+function obterChaveItemConfirmacao(item) {
+    return [
+        item.produto_id,
+        item.variante || '-',
+        item.fase || 'OP',
+        item.etapa_id || item.processo_id || item.processo,
+        item.origem_ops?.join(',') || item.opNumero || '',
+    ].join('-');
+}
+
 export default function OPTelaConfirmacaoQtd({ etapa, funcionario, onClose, tpp, modoHoraExtra }) {
     const itensLote = Array.isArray(etapa) ? etapa : [etapa];
 
@@ -101,7 +111,7 @@ export default function OPTelaConfirmacaoQtd({ etapa, funcionario, onClose, tpp,
     useEffect(() => {
         const inits = {};
         itensLote.forEach(item => {
-            const key = `${item.produto_id}-${item.variante}-${item.processo}`;
+            const key = obterChaveItemConfirmacao(item);
             inits[key] = item.quantidade_disponivel;
         });
         setQuantidades(inits);
@@ -134,7 +144,7 @@ export default function OPTelaConfirmacaoQtd({ etapa, funcionario, onClose, tpp,
             const token = localStorage.getItem('token');
 
             const payloadItens = itensLote.map(item => {
-                const key = `${item.produto_id}-${item.variante}-${item.processo}`;
+                const key = obterChaveItemConfirmacao(item);
                 const qtd = parseInt(quantidades[key]);
                 if (!qtd || qtd <= 0) return null;
                 return {
@@ -142,7 +152,13 @@ export default function OPTelaConfirmacaoQtd({ etapa, funcionario, onClose, tpp,
                     produto_id: item.produto_id,
                     variante: item.variante || '-',
                     processo: item.processo,
+                    fase: item.fase || 'OP',
+                    processo_id: item.processo_id || null,
+                    etapa_id: item.etapa_id || null,
                     quantidade: qtd,
+                    ...(item.fase === 'POS_OP' && Array.isArray(item.origens_pos_op)
+                        ? { origens_pos_op: item.origens_pos_op }
+                        : {}),
                     ...(item._unificada && { etapas_unificadas: item._grupo_unificacao.etapas }),
                 };
             }).filter(i => i !== null);
@@ -176,7 +192,7 @@ export default function OPTelaConfirmacaoQtd({ etapa, funcionario, onClose, tpp,
                         funcionario_nome: funcionario.nome,
                         produto_nome: primeiroItem ? itensLote.find(i => i.produto_id === primeiroItem.produto_id)?.produto_nome || '' : '',
                         processo: primeiroItem?.processo || '',
-                        quantidade: primeiroItem ? (parseInt(quantidades[`${primeiroItem.produto_id}-${primeiroItem.variante}-${primeiroItem.processo}`]) || 0) : 0,
+                        quantidade: primeiroItem ? (parseInt(quantidades[obterChaveItemConfirmacao(primeiroItem)]) || 0) : 0,
                     })
                 }).catch(() => {});
             }
@@ -193,12 +209,43 @@ export default function OPTelaConfirmacaoQtd({ etapa, funcionario, onClose, tpp,
         ? 'Confirmar 1 Tarefa'
         : `Confirmar ${itensLote.length} Tarefas`;
 
+    const fasesLote = [...new Set(itensLote.map(item => item?.fase === 'POS_OP' ? 'POS_OP' : 'OP'))];
+    const loteSomentePosOp = fasesLote.length === 1 && fasesLote[0] === 'POS_OP';
+    const quantidadeTotalDisponivel = itensLote.reduce(
+        (total, item) => total + (parseInt(item?.quantidade_disponivel, 10) || 0),
+        0,
+    );
+    const quantidadeTotalSelecionada = itensLote.reduce((total, item) => {
+        const key = obterChaveItemConfirmacao(item);
+        return total + (parseInt(quantidades[key], 10) || 0);
+    }, 0);
+
     return (
         <div className="op-confirmacao-container">
 
+            <div className={`op-confirmacao-resumo ${loteSomentePosOp ? 'op-confirmacao-resumo--pos-op' : ''}`}>
+                <div className="op-confirmacao-resumo-titulo">
+                    <span className="op-selecao-eyebrow">Conferência do lote</span>
+                    <strong>{itensLote.length === 1 ? '1 tarefa selecionada' : `${itensLote.length} tarefas selecionadas`}</strong>
+                </div>
+                <div className="op-confirmacao-resumo-dados">
+                    <span className="op-confirmacao-resumo-chip">
+                        <i className={`fas ${loteSomentePosOp ? 'fa-box-open' : fasesLote.length > 1 ? 'fa-layer-group' : 'fa-gears'}`}></i>
+                        {loteSomentePosOp ? 'Arremate pós-OP' : fasesLote.length > 1 ? 'Produção + pós-OP' : 'Produção da OP'}
+                    </span>
+                    <span className="op-confirmacao-resumo-efeito">
+                        <i className={`fas ${loteSomentePosOp ? 'fa-box-open' : 'fa-arrow-right'}`}></i>
+                        {loteSomentePosOp ? 'Libera para embalagem' : fasesLote.length > 1 ? 'Confira a fase de cada item' : 'Continua na OP'}
+                    </span>
+                    <span className="op-confirmacao-resumo-qtd">
+                        <strong>{quantidadeTotalSelecionada}</strong> de {quantidadeTotalDisponivel} pcs
+                    </span>
+                </div>
+            </div>
+
             <div className="op-confirmacao-lista">
                 {itensLote.map((item, idx) => {
-                    const key = `${item.produto_id}-${item.variante}-${item.processo}`;
+                    const key = obterChaveItemConfirmacao(item);
                     const chaveImagem = `${item.produto_id}-${item.variante}`;
                     const qtd = quantidades[key] !== undefined ? quantidades[key] : item.quantidade_disponivel;
                     const imgUrl = mapaImagens[chaveImagem] || '/img/placeholder-image.png';
@@ -225,12 +272,29 @@ export default function OPTelaConfirmacaoQtd({ etapa, funcionario, onClose, tpp,
                                             ))}
                                         </div>
                                     ) : (
-                                        <p className="processo">{item.processo}</p>
+                                        <>
+                                            {item.fase === 'POS_OP' && (
+                                                <span className="op-confirmacao-fase-pos-op">Arremate pós-OP</span>
+                                            )}
+                                            <p className="processo">{item.processo}</p>
+                                        </>
                                     )}
+                                    <div className={`op-confirmacao-fluxo ${item.fase === 'POS_OP' ? 'op-confirmacao-fluxo--pos-op' : ''}`}>
+                                        <span>
+                                            <i className={`fas ${item.fase === 'POS_OP' ? 'fa-box-open' : 'fa-arrow-right'}`}></i>
+                                            {item.fase === 'POS_OP' ? 'Libera para embalagem' : 'Continua na OP'}
+                                        </span>
+                                    </div>
                                     {item.origem_ops?.length > 0 && (
                                         <p className="op-confirmacao-op-link">
                                             <i className="fas fa-link"></i>
                                             {' OP #'}{item.origem_ops.slice(0, 2).join(' • #')}{item.origem_ops.length > 2 ? ` +${item.origem_ops.length - 2}` : ''}
+                                        </p>
+                                    )}
+                                    {item.origens_pos_op?.length > 1 && (
+                                        <p className="op-confirmacao-origens-consolidadas">
+                                            <i className="fas fa-layer-group"></i>
+                                            {item.origens_pos_op.length} OPs agrupadas por produto, variante e etapa
                                         </p>
                                     )}
                                 </div>

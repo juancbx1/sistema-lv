@@ -21,6 +21,7 @@ import {
 } from '../utils/cpag-recibos';
 import UIFeedbackNotFound from './UIFeedbackNotFound';
 import UICarregando from './UICarregando';
+import UIBloqueio from './UIBloqueio';
 import CPAGMultiDatePicker from './CPAGMultiDatePicker.tsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -478,17 +479,22 @@ export default function CPAGModalReciboComissao({
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    className="cpg-btn cpg-btn-primario"
-                    style={{ width: '100%', height: '50px' }}
-                    onClick={() => void handleGerarPDF()}
-                    disabled={gerandoPdf}
+                  <UIBloqueio
+                    permissao="permitir-pagar-comissao"
+                    mensagem="Você não tem permissão para gerar ou registrar recibos de comissão."
                   >
-                    {diasBloqueados.includes(diasSelecionados[0])
-                      ? 'Reimprimir recibo'
-                      : 'Gerar e salvar recibo'}
-                  </button>
+                    <button
+                      type="button"
+                      className="cpg-btn cpg-btn-primario"
+                      style={{ width: '100%', height: '50px' }}
+                      onClick={() => void handleGerarPDF()}
+                      disabled={gerandoPdf}
+                    >
+                      {diasBloqueados.includes(diasSelecionados[0])
+                        ? 'Reimprimir recibo'
+                        : 'Gerar e salvar recibo'}
+                    </button>
+                  </UIBloqueio>
                 </div>
               )}
             </div>

@@ -19,6 +19,8 @@ import FinanceiroTransferenciaModal from './FinanceiroTransferenciaModal';
 import FinanceiroEstornoModal from './FinanceiroEstornoModal';
 import FinanceiroConfiguracaoModal from './FinanceiroConfiguracaoModal';
 import FinanceiroConcessionariaModal from './FinanceiroConcessionariaModal';
+import UIBloqueio from './UIBloqueio';
+import { mostrarPopupSemPermissao } from '../utils/bloqueio';
 import type { FinanceiroTab, FinanceiroView } from '../utils/financeiro-types';
 
 function FinanceiroShell() {
@@ -52,6 +54,15 @@ function FinanceiroShell() {
   const isMain = view === 'main';
   const showFabLancamentos = isMain && tab === 'lancamentos';
   const showFabAgenda = isMain && tab === 'agenda';
+  const podeLancar = permissoes.includes('lancar-transacao');
+
+  const executarAcaoDeLancamento = (acao: () => void, mensagem: string) => {
+    if (!podeLancar) {
+      mostrarPopupSemPermissao(mensagem);
+      return;
+    }
+    acao();
+  };
 
   const headerButtons: Array<{ view: FinanceiroView; id: string; icon: string; title: string }> = [
     { view: 'aprovacoes', id: 'btnIrParaAprovacoes', icon: 'fa-check-double', title: 'Aprovações' },
@@ -77,7 +88,7 @@ function FinanceiroShell() {
       <UIHeaderPagina titulo="Financeiro">
         {headerButtons.map((button) => {
           const active = view === button.view;
-          return (
+          const control = (
             <button
               key={button.id}
               id={button.id}
@@ -88,6 +99,18 @@ function FinanceiroShell() {
             >
               <i className={`fas ${active ? 'fa-times' : button.icon}`} />
             </button>
+          );
+
+          if (button.view !== 'aprovacoes') return control;
+
+          return (
+            <UIBloqueio
+              key={button.id}
+              permissao="aprovar-alteracao-financeira"
+              mensagem="Você não tem permissão para acessar as aprovações financeiras."
+            >
+              {control}
+            </UIBloqueio>
           );
         })}
         <button
@@ -157,30 +180,36 @@ function FinanceiroShell() {
         <button
           id="btnNovaTransferencia"
           type="button"
-          className={`fc-fab fc-fab-secundario${showFabLancamentos ? '' : ' hidden'}`}
-          title="Nova Transferência"
-          onClick={openTransferenciaModal}
+          className={`fc-fab fc-fab-secundario${showFabLancamentos ? '' : ' hidden'}${!podeLancar ? ' fc-fab--bloqueado' : ''}`}
+          title={podeLancar ? 'Nova Transferência' : 'Nova transferência bloqueada'}
+          aria-label={podeLancar ? 'Nova Transferência' : 'Nova transferência bloqueada'}
+          aria-disabled={!podeLancar}
+          onClick={() => executarAcaoDeLancamento(openTransferenciaModal, 'Você não tem permissão para criar transferências financeiras.')}
         >
-          <i className="fas fa-exchange-alt" />
+          <i className={`fas ${podeLancar ? 'fa-exchange-alt' : 'fa-lock'}`} />
         </button>
         <button
           id="btnNovoLancamento"
           type="button"
-          className={`fc-fab${showFabLancamentos ? '' : ' hidden'}`}
-          title="Novo Lançamento"
-          onClick={() => openLancamentoModal(null)}
+          className={`fc-fab${showFabLancamentos ? '' : ' hidden'}${!podeLancar ? ' fc-fab--bloqueado' : ''}`}
+          title={podeLancar ? 'Novo Lançamento' : 'Novo lançamento bloqueado'}
+          aria-label={podeLancar ? 'Novo Lançamento' : 'Novo lançamento bloqueado'}
+          aria-disabled={!podeLancar}
+          onClick={() => executarAcaoDeLancamento(() => openLancamentoModal(null), 'Você não tem permissão para criar lançamentos financeiros.')}
         >
-          <i className="fas fa-plus" />
+          <i className={`fas ${podeLancar ? 'fa-plus' : 'fa-lock'}`} />
         </button>
         <button
           id="btnNovoAgendamentoFab"
           type="button"
-          className={`fc-fab${showFabAgenda ? '' : ' hidden'}`}
-          title="Novo Agendamento"
+          className={`fc-fab${showFabAgenda ? '' : ' hidden'}${!podeLancar ? ' fc-fab--bloqueado' : ''}`}
+          title={podeLancar ? 'Novo Agendamento' : 'Novo agendamento bloqueado'}
+          aria-label={podeLancar ? 'Novo Agendamento' : 'Novo agendamento bloqueado'}
+          aria-disabled={!podeLancar}
           style={{ backgroundColor: 'var(--gs-sucesso)' }}
-          onClick={() => openAgendaModal({ mode: 'agenda' })}
+          onClick={() => executarAcaoDeLancamento(() => openAgendaModal({ mode: 'agenda' }), 'Você não tem permissão para criar agendamentos financeiros.')}
         >
-          <i className="fas fa-calendar-plus" />
+          <i className={`fas ${podeLancar ? 'fa-calendar-plus' : 'fa-lock'}`} />
         </button>
       </div>
 

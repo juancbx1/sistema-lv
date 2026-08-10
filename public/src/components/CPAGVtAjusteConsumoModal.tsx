@@ -4,6 +4,7 @@ import { formatarMoeda } from '../utils/cpag-format';
 import { mostrarToast } from '../utils/cpag-feedback';
 import type { CpagVtAjustePayload, CpagVtSaldo } from '../utils/cpag-types';
 import UICarregando from './UICarregando';
+import UIBloqueio from './UIBloqueio';
 
 interface Props {
   aberto: boolean;
@@ -199,9 +200,14 @@ export default function CPAGVtAjusteConsumoModal({
           <button type="button" className="cpg-btn cpg-btn-secundario" onClick={onClose} disabled={salvando}>
             Cancelar
           </button>
-          <button type="button" className="cpg-btn cpg-btn-primario" onClick={handleSalvar} disabled={salvando}>
-            {salvando ? <UICarregando variante="inline" /> : <><i className="fas fa-check" /> Confirmar ajuste</>}
-          </button>
+          <UIBloqueio
+            permissao="ajustar-consumo-vt"
+            mensagem="Você precisa da permissão para ajustar consumo de passagem (VT)."
+          >
+            <button type="button" className="cpg-btn cpg-btn-primario" onClick={handleSalvar} disabled={salvando}>
+              {salvando ? <UICarregando variante="inline" /> : <><i className="fas fa-check" /> Confirmar ajuste</>}
+            </button>
+          </UIBloqueio>
         </footer>
       </div>
     </div>

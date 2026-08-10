@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client';
 import { verificarAutenticacao } from '/js/utils/auth.js';
 import UIHeaderPagina from './components/UIHeaderPagina';
 import UITabNav from './components/UITabNav';
+import UIBloqueio from './components/UIBloqueio';
 import UICarregando from './components/UICarregando';
 import removerCarregamentoInicial from './utils/remover-carregamento-inicial';
 import IncenGincanasTab from './components/IncenGincanasTab';
@@ -42,12 +43,17 @@ function App() {
         <>
             <UIHeaderPagina titulo="Centro de Incentivos">
                 {aba === 'gincanas' && (
-                    <button
-                        className="gs-btn gs-btn-primario"
-                        onClick={() => setModalNovaGincanaAberto(true)}
+                    <UIBloqueio
+                        permissao="gerenciar-gincanas"
+                        mensagem="Você não tem permissão para criar ou editar gincanas."
                     >
-                        <i className="fas fa-plus"></i> Nova Gincana
-                    </button>
+                        <button
+                            className="gs-btn gs-btn-primario"
+                            onClick={() => setModalNovaGincanaAberto(true)}
+                        >
+                            <i className="fas fa-plus"></i> Nova Gincana
+                        </button>
+                    </UIBloqueio>
                 )}
             </UIHeaderPagina>
 
@@ -59,7 +65,12 @@ function App() {
                     { id: 'gincanas', label: 'Gincanas', icon: 'fa-trophy' },
                     { id: 'metas', label: 'Metas e Comissões', icon: 'fa-bullseye' },
                     { id: 'pontos', label: 'Pontos por Atividade', icon: 'fa-star' },
-                    { id: 'pagamentos', label: 'Pagamentos', icon: 'fa-coins' },
+                    {
+                        id: 'pagamentos',
+                        label: 'Pagamentos',
+                        icon: 'fa-coins',
+                        locked: { permissao: 'pagar-premiacoes-gincanas' },
+                    },
                 ]}
             />
 

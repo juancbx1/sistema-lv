@@ -145,7 +145,13 @@ export interface GOClassificacaoVinculo {
 export interface GOPermissaoCatalogo {
     id: string;
     label: string;
+    descricao?: string;
+    modulo?: string;
     categoria: string;
+    pagina?: string;
+    aba?: string;
+    tipo?: 'pagina' | 'aba' | 'bloco' | 'acao' | 'escopo' | string;
+    status?: string;
     somenteCompatibilidade?: boolean;
 }
 

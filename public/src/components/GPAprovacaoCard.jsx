@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { temPermissao } from '../utils/bloqueio';
+import UIBloqueio from './UIBloqueio';
 import GPDecidirModal from './GPDecidirModal.jsx';
 
 function formatarDataHora(isoString) {
@@ -9,7 +9,6 @@ function formatarDataHora(isoString) {
 
 export default function GPAprovacaoCard({ solicitacao: s, onDecisao }) {
     const [decidindo, setDecidindo] = useState(null); // 'aprovada' | 'rejeitada' | null
-    const podeAprovar = temPermissao('aprovar-exclusao-producao');
     const snap = s.snapshot || {};
 
     return (
@@ -60,20 +59,24 @@ export default function GPAprovacaoCard({ solicitacao: s, onDecisao }) {
                         )}
 
                         {s.status === 'pendente' && (
-                            podeAprovar ? (
-                                <div className="gp-aprovacao-acoes">
+                            <div className="gp-aprovacao-acoes">
+                                <UIBloqueio
+                                    permissao="aprovar-exclusao-producao"
+                                    mensagem="Você não tem permissão para aprovar ou rejeitar exclusões de produção."
+                                >
                                     <button className="gp-btn-aprovar" onClick={() => setDecidindo('aprovada')}>
                                         <i className="fas fa-check"></i> Aprovar
                                     </button>
+                                </UIBloqueio>
+                                <UIBloqueio
+                                    permissao="aprovar-exclusao-producao"
+                                    mensagem="Você não tem permissão para aprovar ou rejeitar exclusões de produção."
+                                >
                                     <button className="gp-btn-rejeitar" onClick={() => setDecidindo('rejeitada')}>
                                         <i className="fas fa-times"></i> Rejeitar
                                     </button>
-                                </div>
-                            ) : (
-                                <p className="gp-aguardando">
-                                    <i className="fas fa-hourglass-half"></i> Aguardando decisão de aprovador
-                                </p>
-                            )
+                                </UIBloqueio>
+                            </div>
                         )}
                     </div>
                 </div>

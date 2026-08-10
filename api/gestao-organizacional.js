@@ -6,6 +6,7 @@ import {
     expandirAliasesPermissoes,
     permissoesValidas,
 } from '../public/js/utils/permissoes.js';
+import { provisionarCatalogosEmpresa } from './provisionamento-empresa.js';
 
 const { Pool } = pg;
 const router = express.Router();
@@ -528,6 +529,7 @@ router.post('/empresas', async (req, res) => {
              ON CONFLICT (empresa_id, modulo_codigo) DO NOTHING`,
             [criada.id]
         );
+        await provisionarCatalogosEmpresa(client, criada.id);
         await client.query('COMMIT');
         res.status(201).json(criada);
     } catch (error) {

@@ -11,7 +11,11 @@ async function init() {
     document.getElementById('lv-initial-page-loader')?.remove();
 
     const container = document.getElementById('root');
-    if (container) ReactDOM.createRoot(container).render(<PGPainelPage />);
+    if (container) {
+        ReactDOM.createRoot(container).render(
+            <PGPainelPage permissoes={auth.permissoes || []} />
+        );
+    }
 }
 
 init();

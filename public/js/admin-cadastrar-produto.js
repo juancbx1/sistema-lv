@@ -3,6 +3,42 @@ import { htmlUICarregando, removerCarregamentoInicial } from './utils/ui-carrega
 import { obterProdutos, invalidateCache } from '/js/utils/storage.js';
 import { PRODUTOS, PRODUTOSKITS, MAQUINAS, PROCESSOS } from '/js/utils/prod-proc-maq.js';
 import { htmlUIFeedbackNotFound } from './utils/ui-feedback.js';
+import { temPermissao, mostrarPopupSemPermissao } from '/src/utils/bloqueio';
+
+const PERMISSAO_CONSULTAR_PRODUTOS = 'ver-lista-produtos';
+const PERMISSAO_GERENCIAR_PRODUTOS = 'gerenciar-produtos';
+
+function exigirPermissao(permissao, mensagem) {
+    if (temPermissao(permissao)) return true;
+    mostrarPopupSemPermissao(mensagem, {
+        titulo: 'Ação bloqueada',
+        rotuloBotao: 'Entendi',
+    });
+    return false;
+}
+
+function exigirConsultaProdutos() {
+    return exigirPermissao(
+        PERMISSAO_CONSULTAR_PRODUTOS,
+        'Você não tem permissão para consultar os produtos deste catálogo.',
+    );
+}
+
+function exigirGerenciamentoProdutos() {
+    return exigirPermissao(
+        PERMISSAO_GERENCIAR_PRODUTOS,
+        'Você não tem permissão para criar ou editar produtos, kits e etapas de produção.',
+    );
+}
+
+function atualizarEstadoVisualDasAcoes() {
+    document.querySelectorAll('[data-permissao="gerenciar-produtos"]').forEach((controle) => {
+        const bloqueado = !temPermissao(PERMISSAO_GERENCIAR_PRODUTOS);
+        controle.classList.toggle('cp-permissao-bloqueada', bloqueado);
+        controle.setAttribute('aria-disabled', String(bloqueado));
+        controle.setAttribute('data-permissao-bloqueada', String(bloqueado));
+    });
+}
 
 // --- Variáveis Globais ---
 let produtos = [];
@@ -98,10 +134,12 @@ function deepClone(obj) {
 
 // --- Funções de Inicialização e Eventos ---
 async function inicializarPagina() {
-    await verificarAutenticacao('admin/cadastrar-produto.html', ['acesso-cadastrar-produto']);
+    const auth = await verificarAutenticacao('admin/cadastrar-produto.html', ['acesso-cadastrar-produto']);
+    if (!auth) return;
     document.body.classList.add('autenticado');
     produtos = await obterProdutos(true);
     configurarEventListeners();
+    atualizarEstadoVisualDasAcoes();
     
     // ANTES: window.addEventListener('hashchange', toggleView); toggleView();
     // DEPOIS:
@@ -117,29 +155,39 @@ function configurarEventListeners() {
     // --- Listeners para Elementos Estáticos (adicionados uma única vez) ---
 
     // Lista de Produtos e Filtros
-    document.getElementById('btnAdicionarNovoProduto')?.addEventListener('click', handleAdicionarNovoProduto);
+    document.getElementById('btnAdicionarNovoProduto')?.addEventListener('click', () => {
+        if (exigirGerenciamentoProdutos()) handleAdicionarNovoProduto();
+    });
     elements.searchProduct?.addEventListener('input', () => filterProducts());
     document.querySelectorAll('.cp-type-btn').forEach(btn => btn.addEventListener('click', () => filterProducts(btn.dataset.type)));
     
     // Formulário Principal e Abas
     document.getElementById('btnVoltarDoForm')?.addEventListener('click', () => { window.location.hash = ''; });
     elements.productForm?.addEventListener('submit', handleFormSubmit);
+    elements.imagemProduto?.addEventListener('click', (event) => {
+        if (!exigirGerenciamentoProdutos()) event.preventDefault();
+    });
     elements.imagemProduto?.addEventListener('change', (event) => handleImagemChange(event, 'principal'));
     elements.removeImagem?.addEventListener('click', handleRemoveImagem);
-    document.querySelectorAll('input[name="tipo"]').forEach(cb => cb.addEventListener('change', toggleTabs));
+    document.querySelectorAll('input[name="tipo"]').forEach(cb => {
+        cb.addEventListener('click', (event) => {
+            if (!exigirGerenciamentoProdutos()) event.preventDefault();
+        });
+        cb.addEventListener('change', toggleTabs);
+    });
 
-    // Aba de Produção
-    document.getElementById('btnAddStep')?.addEventListener('click', () => addStepRow());
-    document.getElementById('btnAddEtapaTiktik')?.addEventListener('click', () => addEtapaTiktikRow());
+    // Aba de Produção: a edição das etapas é controlada pelo componente React.
     document.getElementById('btnSalvarProducao')?.addEventListener('click', salvarEtapasProducao);
-    initializeDragAndDrop();
 
     // Aba de Variações
-    document.getElementById('btnAddVariacao')?.addEventListener('click', () => addVariacaoRow());
+    document.getElementById('btnAddVariacao')?.addEventListener('click', () => {
+        if (exigirGerenciamentoProdutos()) addVariacaoRow();
+    });
     document.getElementById('btnSalvarGrade')?.addEventListener('click', salvarGrade); 
 
     // Modal de Seleção de Imagem (para a grade)
     document.getElementById('btnTriggerUpload')?.addEventListener('click', () => {
+        if (!exigirGerenciamentoProdutos()) return;
         document.getElementById('gradeImageInput')?.click();
     });
     document.getElementById('gradeImageInput')?.addEventListener('change', (event) => handleImagemChange(event, 'grade'));
@@ -206,6 +254,7 @@ function handleHashChange() {
 }
 
 async function iniciarEdicaoProduto(nome) {
+    if (!exigirConsultaProdutos()) return;
     const overlay = document.getElementById('formLoadingOverlay');
     try {
         // Passo 1: Mostra o formulário (se não estiver visível) e ATIVA o estado de carregamento.
@@ -270,7 +319,7 @@ function limparFormularioDeEdicao() {
     document.querySelectorAll('input[name="tipo"]').forEach(cb => { cb.checked = false; });
     
     // Limpa a imagem principal
-    handleRemoveImagem();
+    limparImagemPrincipal();
 
     // Limpa o conteúdo das tabelas e containers dinâmicos
     const containersParaLimpar = [
@@ -364,6 +413,7 @@ function filterProducts(type = 'todos') {
 
 async function salvarGrade() {
     if (!editingProduct) return;
+    if (!exigirGerenciamentoProdutos()) return;
     try {
         await salvarProdutoNoBackend();
         mostrarPopup('Grade e Variações salvas com sucesso!', 'sucesso');
@@ -375,6 +425,7 @@ async function salvarGrade() {
 
 async function salvarEtapasProducao() {
     if (!editingProduct) return;
+    if (!exigirGerenciamentoProdutos()) return;
     console.log("Salvando etapas de produção...");
     try {
         // A função salvarProdutoNoBackend já coleta os dados das etapas do DOM,
@@ -388,6 +439,7 @@ async function salvarEtapasProducao() {
 
 // --- Edição de Produto ---
 function handleAdicionarNovoProduto() {
+    if (!exigirGerenciamentoProdutos()) return;
     // Define o estado para um produto novo em branco
     editingProduct = {
         id: undefined, // Sem ID, indica que é novo
@@ -420,6 +472,7 @@ function handleAdicionarNovoProduto() {
 }
 
 async function editProduct(nome) {
+    if (!exigirConsultaProdutos()) return;
     try {
         document.body.style.cursor = 'wait';
         
@@ -501,19 +554,12 @@ function loadEditForm(produto) {
     // Input de arquivo não precisa ser resetado aqui, pois é para novo upload.
     // elements.imagemProduto.value = ''; 
     
-    // --- Carregamento das Tabelas Dinâmicas (Etapas, Variações, Grade) ---
-    // Aba de Produção (Etapas Normais)
-    if (elements.stepsBody) {
-        elements.stepsBody.innerHTML = ''; // Limpa antes de adicionar
-        (produto.etapas || []).forEach(etapa => addStepRow(etapa.processo, etapa.maquina, etapa.feitoPor));
-    }
-    
-    // Aba de Produção (Etapas Tiktik)
-    if (elements.etapasTiktikBody) {
-        elements.etapasTiktikBody.innerHTML = ''; // Limpa antes de adicionar
-        // Usa a propriedade correta 'etapastiktik' (minúsculo como no seu JSON e API)
-        const etapasTiktikParaCarregar = produto.etapastiktik || []; 
-        etapasTiktikParaCarregar.forEach(etapa => addEtapaTiktikRow(etapa.processo, etapa.maquina, etapa.feitoPor));
+    // A tabela única de etapas é React. O fallback pendente cobre o intervalo
+    // entre o carregamento do produto e a montagem do componente.
+    if (typeof window.sincronizarEtapasProduto === 'function') {
+        window.sincronizarEtapasProduto(produto);
+    } else {
+        window.__produtoEtapasPendente = produto;
     }
 
     // Aba de Variações e Grade
@@ -544,6 +590,7 @@ function loadEditForm(produto) {
 
 async function handleFormSubmit(e) {
     e.preventDefault();
+    if (!exigirGerenciamentoProdutos()) return;
     try {
         await salvarProdutoNoBackend();
         alert('Produto salvo com sucesso!');
@@ -574,7 +621,7 @@ window.addVariacaoRow = function (chave = '', valores = '', index = null) {
                 <input type="text" class="cp-tag-input-field" placeholder="Digite e tecle Enter...">
             </div>
         </div>
-        <button type="button" class="cp-remove-btn" onclick="removeVariacaoRow(this)">×</button>
+        <button type="button" class="cp-remove-btn" data-permissao="gerenciar-produtos" onclick="removeVariacaoRow(this)">×</button>
     `;
     elements.variationsComponentContainer.appendChild(div);
     const tagsWrapper = div.querySelector(`#tagsWrapper${idx}`);
@@ -588,6 +635,10 @@ window.addVariacaoRow = function (chave = '', valores = '', index = null) {
     tagsWrapper.addEventListener('click', () => inputField.focus());
     inputField.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ',') {
+            if (!exigirGerenciamentoProdutos()) {
+                e.preventDefault();
+                return;
+            }
             e.preventDefault();
             const valor = inputField.value.trim();
             if (valor && !Array.from(tagsWrapper.querySelectorAll('.cp-tag')).some(t => t.firstChild.textContent.trim() === valor)) {
@@ -598,6 +649,7 @@ window.addVariacaoRow = function (chave = '', valores = '', index = null) {
         }
     });
     chaveInput.addEventListener('blur', gerarCombinacoesEAtualizarGrade);
+    atualizarEstadoVisualDasAcoes();
 }
 
 function createTag(text) {
@@ -610,6 +662,7 @@ function createTag(text) {
     removeBtn.type = "button";
     removeBtn.onclick = (e) => {
         e.stopPropagation();
+        if (!exigirGerenciamentoProdutos()) return;
         tag.remove();
         gerarCombinacoesEAtualizarGrade();
     };
@@ -618,6 +671,7 @@ function createTag(text) {
 }
 
 window.removeVariacaoRow = function (btn) {
+    if (!exigirGerenciamentoProdutos()) return;
     btn.closest('.cp-variation-row').remove();
     gerarCombinacoesEAtualizarGrade();
 }
@@ -703,28 +757,33 @@ function loadGrade() {
             const textoBotao = (item.composicao && item.composicao.length > 0 && item.composicao.some(c => c.produto_id || c.produto)) 
                                 ? 'Editar Composição' 
                                 : 'Configurar Composição';
-            composicaoDisplayHtml += `<button type="button" class="cp-btn" style="margin-top: 5px;" onclick="abrirConfigurarVariacao('${idx}')">
+             composicaoDisplayHtml += `<button type="button" class="cp-btn" data-permissao="gerenciar-produtos" style="margin-top: 5px;" onclick="abrirConfigurarVariacao('${idx}')">
                                         ${textoBotao}
                                      </button>`;
             rowHTML += `<td data-label="Composto Por">${composicaoDisplayHtml}</td>`;
         }
         
         rowHTML += `
-            <td data-label="SKU"><input type="text" class="cp-input cp-grade-sku" value="${item.sku || ''}" onblur="updateGradeSku(${idx}, this.value)"></td>
+             <td data-label="SKU"><input type="text" class="cp-input cp-grade-sku" data-permissao="gerenciar-produtos" value="${item.sku || ''}" onblur="updateGradeSku(${idx}, this.value)"></td>
             <td data-label="Imagem">
-                <div class="cp-grade-img-placeholder" onclick="abrirModalSelecaoImagem('${idx}')" title="Editar Imagem">
+                 <div class="cp-grade-img-placeholder" data-permissao="gerenciar-produtos" onclick="abrirModalSelecaoImagem('${idx}')" title="Editar Imagem">
                     ${item.imagem ? `<img src="${item.imagem}" onerror="this.onerror=null;this.src='/img/placeholder-image.png';">` : '<i class="fas fa-image"></i>'}
                 </div>
             </td>
-            <td data-label="Ações"><button type="button" class="cp-remove-btn" onclick="excluirGrade('${idx}')">X</button></td>
+             <td data-label="Ações"><button type="button" class="cp-remove-btn" data-permissao="gerenciar-produtos" onclick="excluirGrade('${idx}')">X</button></td>
         `;
         tr.innerHTML = rowHTML;
         elements.gradeBody.appendChild(tr);
     });
+    atualizarEstadoVisualDasAcoes();
 }
 
-window.updateGradeSku = (index, sku) => { if (gradeTemp[index]) gradeTemp[index].sku = sku.trim(); };
+window.updateGradeSku = (index, sku) => {
+    if (!exigirGerenciamentoProdutos()) return;
+    if (gradeTemp[index]) gradeTemp[index].sku = sku.trim();
+};
 window.excluirGrade = (index) => {
+    if (!exigirGerenciamentoProdutos()) return;
     const idx = parseInt(index);
     if (isNaN(idx) || idx < 0 || idx >= gradeTemp.length) return;
     if (confirm(`Tem certeza que deseja excluir a variação "${gradeTemp[idx].variacao}"?`)) {
@@ -735,15 +794,47 @@ window.excluirGrade = (index) => {
 
 window.salvarGrade = async () => {
     if (!editingProduct) return;
+    if (!exigirGerenciamentoProdutos()) return;
     try {
         await salvarProdutoNoBackend();
         alert('Grade e Variações salvas com sucesso!');
     } catch (error) { /* erro já tratado */ }
 };
 
+function obterEtapasDoEditorParaSalvar() {
+    const etapasCanonicas = typeof window.obterEtapasCanonicas === 'function'
+        ? window.obterEtapasCanonicas()
+        : (Array.isArray(editingProduct?.etapasCanonicas) ? editingProduct.etapasCanonicas : [
+            ...(Array.isArray(editingProduct?.etapas) ? editingProduct.etapas : []),
+            ...(Array.isArray(editingProduct?.etapasTiktik)
+                ? editingProduct.etapasTiktik
+                : (Array.isArray(editingProduct?.etapastiktik) ? editingProduct.etapastiktik : [])),
+        ]);
+
+    const etapasInvalidas = etapasCanonicas.filter(etapa =>
+        !etapa?.processo || !['OP', 'POS_OP'].includes(etapa.fase) ||
+        !Array.isArray(etapa.feitoPor) || etapa.feitoPor.length === 0
+    );
+
+    if (etapasInvalidas.length > 0) {
+        mostrarPopup('Revise as etapas: todas precisam de processo, fase e pelo menos um executor.', 'erro');
+        throw new Error('Há etapas de produção sem classificação completa.');
+    }
+
+    return {
+        etapas: etapasCanonicas.filter(etapa => etapa.fase === 'OP'),
+        etapastiktik: etapasCanonicas.filter(etapa => etapa.fase === 'POS_OP'),
+    };
+}
+
 // --- Função Principal de Salvamento ---
 async function salvarProdutoNoBackend() {
     if (!editingProduct) throw new Error('Nenhum produto para salvar.');
+    if (!exigirGerenciamentoProdutos()) {
+        const erroPermissao = new Error('Ação bloqueada por falta de permissão.');
+        erroPermissao.permissaoBloqueada = true;
+        throw erroPermissao;
+    }
     editingProduct.variacoes = Array.from(elements.variationsComponentContainer.querySelectorAll('.cp-variation-row')).map(row => ({
         chave: row.querySelector('input[id^="chaveVariacao"]').value.trim(),
         valores: Array.from(row.querySelectorAll('.cp-tag')).map(tag => tag.firstChild.textContent.trim()).join(',')
@@ -752,6 +843,7 @@ async function salvarProdutoNoBackend() {
         const skuInput = elements.gradeBody.querySelector(`tr[data-index="${idx}"] .cp-grade-sku`);
         if (skuInput) item.sku = skuInput.value.trim();
     });
+    const etapasParaSalvar = obterEtapasDoEditorParaSalvar();
     const updatedProduct = {
         ...editingProduct, // Importante para manter o ID
         nome: elements.inputProductName.value.trim(),
@@ -760,12 +852,8 @@ async function salvarProdutoNoBackend() {
         unidade: elements.unidade.value,
         tipos: Array.from(document.querySelectorAll('input[name="tipo"]:checked')).map(cb => cb.value),
         imagem: elements.previewImagem.src.includes('blob.vercel-storage.com') ? elements.previewImagem.src : (editingProduct.imagem || ''),
-        etapas: Array.from(elements.stepsBody.querySelectorAll('tr')).map(tr => ({
-            processo: tr.querySelector('.processo-select')?.value || '', maquina: tr.querySelector('.maquina-select')?.value || '', feitoPor: tr.querySelector('.feito-por-select')?.value || ''
-        })),
-        etapastiktik: Array.from(elements.etapasTiktikBody.querySelectorAll('tr')).map(tr => ({
-            processo: tr.querySelector('.processo-select')?.value || '', maquina: tr.querySelector('.maquina-select')?.value || '', feitoPor: tr.querySelector('.feito-por-select')?.value || ''
-        })),
+        etapas: etapasParaSalvar.etapas,
+        etapastiktik: etapasParaSalvar.etapastiktik,
         grade: deepClone(gradeTemp),
         variacoes: Array.from(elements.variationsComponentContainer.querySelectorAll('.cp-variation-row')).map(row => ({
             chave: row.querySelector('input[id^="chaveVariacao"]').value.trim(),
@@ -813,7 +901,7 @@ async function salvarProdutoNoBackend() {
         return savedProduct;
 
     } catch (error) {
-        mostrarPopup('Falha ao salvar o produto: ' + error.message, 'erro');
+        if (!error.permissaoBloqueada) mostrarPopup('Falha ao salvar o produto: ' + error.message, 'erro');
         console.error('Erro em salvarProdutoNoBackend:', error);
         throw error;
     }
@@ -821,6 +909,10 @@ async function salvarProdutoNoBackend() {
 
 // --- Funções Utilitárias e Popups ---
 async function handleImagemChange(event, tipo) {
+    if (!exigirGerenciamentoProdutos()) {
+        event.target.value = '';
+        return;
+    }
     const targetIndex = (tipo === 'grade') ? currentGradeIndex : null;
 
     const input = event.target;
@@ -906,7 +998,7 @@ async function handleImagemChange(event, tipo) {
     }
 }
 
-function handleRemoveImagem() {
+function limparImagemPrincipal() {
     // Limpa os dados
     elements.imagemProduto.value = '';
     elements.previewImagem.src = '';
@@ -920,6 +1012,10 @@ function handleRemoveImagem() {
     wrapper?.classList.remove('has-image'); // O '?' é uma segurança caso o elemento não seja encontrado
 }
 
+function handleRemoveImagem() {
+    if (!exigirGerenciamentoProdutos()) return;
+    limparImagemPrincipal();
+}
 
 window.switchTab = function(tabId) {
     console.log(`Tentando trocar para a aba: ${tabId}`);
@@ -1040,6 +1136,7 @@ window.toggleTabs = function() {
 };
 
 window.abrirModalSelecaoImagem = function(index) {
+    if (!exigirGerenciamentoProdutos()) return;
     console.log(`%c[AÇÃO] - abrirModalSelecaoImagem foi chamada com o índice: ${index}`, 'color: blue; font-weight: bold;');
     currentGradeIndex = parseInt(index);
     const modal = document.getElementById('modalSelecionarImagem');
@@ -1077,6 +1174,7 @@ window.abrirModalSelecaoImagem = function(index) {
 
 // Função chamada quando uma imagem da galeria é clicada
 function aplicarImagemExistente(imageUrl) {
+    if (!exigirGerenciamentoProdutos()) return;
     if (currentGradeIndex !== null && gradeTemp[currentGradeIndex]) {
         gradeTemp[currentGradeIndex].imagem = imageUrl;
         // Salva automaticamente para persistir a mudança
@@ -1178,6 +1276,7 @@ window.loadVariacoesKit = function() {
 
 
 function handleAddVariacaoKit() {
+    if (!exigirGerenciamentoProdutos()) return;
     const produtoIdComponente = elements.produtoKitSelect.value;
     const selectElement = elements.produtoKitSelect;
     const produtoNomeComponente = selectElement.options[selectElement.selectedIndex].text;
@@ -1254,11 +1353,19 @@ function renderizarComposicaoKit() {
 }
 
 
-window.atualizarQuantidadeKit = (index, qty) => { kitComposicaoTemp[index].quantidade = parseInt(qty) || 1; };
-window.removerComposicaoKit = (index) => { kitComposicaoTemp.splice(index, 1); renderizarComposicaoKit(); };
+window.atualizarQuantidadeKit = (index, qty) => {
+    if (!exigirGerenciamentoProdutos()) return;
+    kitComposicaoTemp[index].quantidade = parseInt(qty) || 1;
+};
+window.removerComposicaoKit = (index) => {
+    if (!exigirGerenciamentoProdutos()) return;
+    kitComposicaoTemp.splice(index, 1);
+    renderizarComposicaoKit();
+};
 
 
 async function salvarComposicaoKit() {
+    if (!exigirGerenciamentoProdutos()) return;
     if (currentKitVariationIndex !== null && editingProduct.grade[currentKitVariationIndex]) {
         // kitComposicaoTemp já deve ter a estrutura { produto_id, produto_nome, variacao, quantidade }
         editingProduct.grade[currentKitVariationIndex].composicao = deepClone(kitComposicaoTemp);
@@ -1286,10 +1393,6 @@ Object.assign(window, {
     // Funções do formulário principal e abas
     switchTab,
     toggleTabs,
-    
-    // Funções da aba de produção
-    addStepRow,
-    addEtapaTiktikRow,
     
     // Funções da aba de variações
     addVariacaoRow,

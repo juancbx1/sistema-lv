@@ -4,6 +4,7 @@ import { mostrarConfirmacao } from '/js/utils/popups.js';
 // @ts-expect-error utilitario JS legado sem declaracao TypeScript
 import { calcularStatusDemanda, STATUS_META } from '/src/utils/demandaStatus.js';
 import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio';
+import UIBloqueio from './UIBloqueio';
 import type { OpInicioProducaoDados } from '../utils/op-types';
 
 type DemandaStatus = 'AGUARDANDO' | 'COSTURA' | 'ARREMATE' | 'EMBALAGEM';
@@ -132,7 +133,7 @@ export default function PainelDemandaCard({
     event.stopPropagation();
     const params = new URLSearchParams({ produto_id: String(item.produto_id) });
     if (item.variante && item.variante !== '-') params.set('variante', item.variante);
-    window.location.href = `/admin/arremates.html?${params.toString()}`;
+    window.location.href = `/admin/ordens-de-producao.html?${params.toString()}`;
   };
 
   const handleIrEmbalagem = (event: MouseEvent<HTMLButtonElement>) => {
@@ -144,10 +145,19 @@ export default function PainelDemandaCard({
 
   const renderCTA = () => {
     if (statusCalculado === 'AGUARDANDO' && pendenteFila > 0) {
-      return <button className="pd-cta criar-op" onClick={handleCriarOP}><i className="fas fa-cut"></i>Criar OP</button>;
+      return (
+        <UIBloqueio
+          permissao="gerar-op"
+          mensagem="Você não tem permissão para gerar Ordens de Produção."
+        >
+          <button className="pd-cta criar-op" onClick={handleCriarOP}>
+            <i className="fas fa-cut"></i>Criar OP
+          </button>
+        </UIBloqueio>
+      );
     }
     if (statusCalculado === 'ARREMATE') {
-      return <button className="pd-cta arremate" onClick={handleIrArremate}><i className="fas fa-clipboard-check"></i>Arremate</button>;
+      return <button className="pd-cta arremate" onClick={handleIrArremate}><i className="fas fa-industry"></i>Produções</button>;
     }
     if (statusCalculado === 'EMBALAGEM') {
       return <button className="pd-cta embalagem" onClick={handleIrEmbalagem}><i className="fas fa-box-open"></i>Embalar</button>;

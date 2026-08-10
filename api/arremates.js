@@ -15,6 +15,11 @@ import {
 } from './ponto-eventos.js';
 import { reconciliarJornadaFuncionarios } from './ponto-motor.js';
 import { obterEmpresaIdDoContexto } from './contexto-empresa.js';
+import { construirEtapasCanonicas } from './utils/etapas-produto.js';
+import { registrarPerdaProducao } from './utils/registrar-perda-producao.js';
+import { listarFilaPerdasProducao } from './utils/fila-perdas-producao.js';
+import { estornarProducao } from './utils/estornar-producao.js';
+import { listarTemposArremate, buscarTempoArremate, salvarTemposArremate } from './utils/tempos-padrao.js';
 
 // --- INÍCIO DA CORREÇÃO DE FUSO HORÁRIO ---
 types.setTypeParser(1114, str => str);
@@ -26,6 +31,100 @@ const pool = new Pool({
 });
 
 const SECRET_KEY = process.env.JWT_SECRET;
+
+const CATEGORIAS_PERDA = Object.freeze({
+    QUANTIDADE_ERRADA: 'QUANTIDADE_ERRADA',
+    PRODUTO_AVARIADO: 'PRODUTO_AVARIADO',
+});
+
+function normalizarCategoriaPerda(valor) {
+    const categoria = String(valor || '').trim().toUpperCase();
+    if (categoria === CATEGORIAS_PERDA.PRODUTO_AVARIADO) return categoria;
+    if (['QUANTIDADE_ERRADA', 'DIVERGENCIA_SALDO', 'LANCAMENTO_ERRADO'].includes(categoria)) {
+        return CATEGORIAS_PERDA.QUANTIDADE_ERRADA;
+    }
+    return null;
+}
+
+function obterQuantidadeFinalProduzida(op) {
+    if (!op || !Array.isArray(op.etapas) || op.etapas.length === 0) {
+        return Number.parseInt(op?.quantidade, 10) || 0;
+    }
+    for (let i = op.etapas.length - 1; i >= 0; i -= 1) {
+        const etapa = op.etapas[i];
+        const quantidade = Number.parseInt(etapa?.quantidade, 10);
+        if (etapa?.lancado && Number.isFinite(quantidade) && quantidade >= 0) return quantidade;
+    }
+    return Number.parseInt(op.quantidade, 10) || 0;
+}
+
+async function ajustesProducaoDisponiveis(dbClient) {
+    const result = await dbClient.query(`
+        SELECT 1
+          FROM sistema_migrations
+         WHERE id = 'ajustes-producao-perdas-v1'
+         LIMIT 1
+    `);
+    return result.rowCount > 0;
+}
+
+function tipoExecutorArremate(tipos = []) {
+    if (tipos.includes('costureira')) return 'costureira';
+    if (tipos.includes('tiktik')) return 'tiktik';
+    if (tipos.includes('prestador_externo')) return 'prestador_externo';
+    return null;
+}
+
+async function estruturaPosOpDisponivel(dbClient) {
+    const result = await dbClient.query(`
+        SELECT 1
+          FROM sistema_migrations
+         WHERE id = 'pos-op-sessoes-producao-v1'
+         LIMIT 1
+    `);
+    return result.rowCount > 0;
+}
+
+async function carregarExecutorArremate(dbClient, usuarioId, empresaId, nomeFallback) {
+    const result = await dbClient.query(`
+        SELECT u.id, u.nome, ue.tipos
+          FROM usuarios u
+          JOIN usuarios_empresas ue
+            ON ue.usuario_id = u.id
+           AND ue.empresa_id = $2
+           AND ue.ativo
+         WHERE u.id = $1
+         LIMIT 1
+    `, [usuarioId, empresaId]);
+    const row = result.rows[0];
+    return {
+        id: row?.id || usuarioId,
+        nome: row?.nome || nomeFallback || 'Executor não informado',
+        tipo: tipoExecutorArremate(row?.tipos || []),
+    };
+}
+
+async function carregarEtapaPosOpArremate(dbClient, produtoId, empresaId) {
+    const result = await dbClient.query(
+        `SELECT etapas, "etapastiktik" AS etapas_tiktik
+           FROM produtos
+          WHERE id = $1
+            AND empresa_id = $2
+          LIMIT 1`,
+        [produtoId, empresaId],
+    );
+    const produto = result.rows[0];
+    const etapa = construirEtapasCanonicas({
+        etapas: produto?.etapas,
+        etapasTiktik: produto?.etapas_tiktik,
+    }).etapasCanonicas.find(item => item.fase === 'POS_OP');
+
+    return {
+        processo: etapa?.processo || 'Arrematar',
+        processoId: etapa?.processo_id || null,
+        etapaId: etapa?.id || null,
+    };
+}
 
 const verificarTokenInterna = (reqOriginal) => {
     const authHeader = reqOriginal.headers.authorization;
@@ -105,6 +204,47 @@ router.use(async (req, res, next) => {
     }
 });
 
+// A pÃ¡gina de Arremates foi substituÃ­da por ProduÃ§Ãµes e nÃ£o hÃ¡ mais
+// consumidores ativos destes escritores no frontend. Os aliases de leitura e
+// os endpoints que jÃ¡ delegam para o contrato canÃ´nico continuam disponÃ­veis.
+// Uma integraÃ§Ã£o externa legada pode ser reabilitada temporariamente com
+// PERMITIR_ESCRITORES_ARREMATES_LEGADOS=true, sem reabrir a pÃ¡gina antiga.
+const ESCRITORES_ARREMATES_LEGADOS = new Map([
+    ['POST /', '/api/producoes'],
+    ['PUT /:id_arremate/registrar-embalagem', '/api/embalagens/unidade'],
+    ['PUT /assinar-lote', null],
+    ['POST /sessoes/iniciar', '/api/producoes'],
+    ['POST /sessoes/finalizar', '/api/producoes/finalizar'],
+    ['POST /sessoes/cancelar', '/api/producao/sessoes/cancelar'],
+    ['POST /sessoes/estornar', '/api/producoes/estornar'],
+    ['POST /sessoes/iniciar-lote', '/api/producoes'],
+    ['POST /tempos-padrao', '/api/producao/tempos-padrao'],
+    ['POST /externo', '/api/producoes/externo'],
+    ['POST /registrar-perda-legado-interno', '/api/producoes/registrar-perda'],
+]);
+
+function rotaEscritorLegado(req) {
+    const chaveExata = `${req.method} ${req.path}`;
+    if (ESCRITORES_ARREMATES_LEGADOS.has(chaveExata)) return chaveExata;
+    if (req.method === 'PUT' && /^\/[^/]+\/registrar-embalagem$/.test(req.path)) {
+        return 'PUT /:id_arremate/registrar-embalagem';
+    }
+    return null;
+}
+
+router.use((req, res, next) => {
+    const rota = rotaEscritorLegado(req);
+    if (!rota || process.env.PERMITIR_ESCRITORES_ARREMATES_LEGADOS === 'true') {
+        return next();
+    }
+
+    return res.status(410).json({
+        error: 'Este escritor legado de Arremates foi desativado.',
+        codigo: 'ARREMATES_LEGADO_SOMENTE_LEITURA',
+        rota_canonica: ESCRITORES_ARREMATES_LEGADOS.get(rota),
+    });
+});
+
 // POST /api/arremates/
 router.post('/', async (req, res) => {
     const { usuarioLogado } = req;
@@ -148,17 +288,45 @@ router.post('/', async (req, res) => {
         const pontosGerados = quantidadeNum * valorPontoAplicado;
         
         const nomeDoLancador = usuarioLogado.nome || 'Sistema';
+        const posOpAtivo = await estruturaPosOpDisponivel(dbClient);
+        const etapaPosOp = posOpAtivo
+            ? await carregarEtapaPosOpArremate(dbClient, parseInt(produto_id), req.empresaId)
+            : null;
+        const executor = posOpAtivo
+            ? await carregarExecutorArremate(dbClient, usuario_tiktik_id, req.empresaId, usuario_tiktik)
+            : null;
 
-        const result = await dbClient.query(
-    `INSERT INTO arremates (empresa_id, op_numero, op_edit_id, produto_id, variante, quantidade_arrematada, usuario_tiktik, usuario_tiktik_id, lancado_por, valor_ponto_aplicado, pontos_gerados, tipo_lancamento)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
-    [
-        req.empresaId, op_numero, op_edit_id || null, parseInt(produto_id), variante || null,
-        quantidadeNum, usuario_tiktik, usuario_tiktik_id, nomeDoLancador,
-        valorPontoAplicado, pontosGerados,
-        'PRODUCAO'
-    ]
-    );
+        const result = posOpAtivo
+            ? await dbClient.query(
+                `INSERT INTO arremates (
+                    empresa_id, op_numero, op_edit_id, produto_id, variante,
+                    quantidade_arrematada, usuario_tiktik, usuario_tiktik_id,
+                    lancado_por, valor_ponto_aplicado, pontos_gerados,
+                    tipo_lancamento, fase, processo, processo_id, etapa_id,
+                    executor_id, executor_nome, executor_tipo
+                 )
+                 VALUES (
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                    'PRODUCAO', 'POS_OP', $12, $13, $14, $15, $16, $17
+                 ) RETURNING *`,
+                [
+                    req.empresaId, op_numero, op_edit_id || null, parseInt(produto_id), variante || null,
+                    quantidadeNum, usuario_tiktik, usuario_tiktik_id, nomeDoLancador,
+                    valorPontoAplicado, pontosGerados,
+                    etapaPosOp.processo, etapaPosOp.processoId, etapaPosOp.etapaId,
+                    executor.id, executor.nome, executor.tipo || 'nao_informado',
+                ],
+            )
+            : await dbClient.query(
+                `INSERT INTO arremates (empresa_id, op_numero, op_edit_id, produto_id, variante, quantidade_arrematada, usuario_tiktik, usuario_tiktik_id, lancado_por, valor_ponto_aplicado, pontos_gerados, tipo_lancamento)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
+                [
+                    req.empresaId, op_numero, op_edit_id || null, parseInt(produto_id), variante || null,
+                    quantidadeNum, usuario_tiktik, usuario_tiktik_id, nomeDoLancador,
+                    valorPontoAplicado, pontosGerados,
+                    'PRODUCAO',
+                ],
+            );
         await registrarAuditoria(dbClient, usuarioLogado, 'arremate.lancado', 'arremate', result.rows[0].id, {
             op_numero,
             funcionario_nome: usuario_tiktik,
@@ -340,9 +508,11 @@ router.get('/historico', async (req, res) => {
         const finalQueryParams = [...queryParams, limitNum, offset];
         
         const dataQuery = `
-            SELECT a.*, p.nome as produto, p.imagem as produto_imagem
+            SELECT a.*, p.nome as produto, p.imagem as produto_imagem,
+                   ap.motivo as motivo_perda, ap.observacao as observacao_perda
             FROM arremates a
             LEFT JOIN produtos p ON a.produto_id = p.id AND p.empresa_id = a.empresa_id
+            LEFT JOIN arremate_perdas ap ON ap.id = a.id_perda_origem AND ap.empresa_id = a.empresa_id
             ${whereString}
             ORDER BY a.data_lancamento DESC
             LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}`;
@@ -525,8 +695,35 @@ router.put('/assinar-lote', async (req, res) => {
 });
 
 router.post('/registrar-perda', async (req, res) => {
+    let dbClient;
+    try {
+        dbClient = await pool.connect();
+        const resultado = await registrarPerdaProducao({
+            dbClient,
+            usuarioLogado: req.usuarioLogado,
+            empresaId: req.empresaId,
+            payload: req.body,
+        });
+        res.status(201).json(resultado);
+    } catch (error) {
+        console.error('[API /arremates/registrar-perda] Erro:', error);
+        res.status(error.statusCode || 500).json({
+            error: error.message || 'Erro ao registrar a perda.',
+            details: error.statusCode ? undefined : error.message,
+        });
+    } finally {
+        if (dbClient) dbClient.release();
+    }
+});
+
+// Implementação antiga mantida apenas como referência de rollback durante a
+// janela de transição. O endpoint público acima usa o utilitário compartilhado.
+router.post('/registrar-perda-legado-interno', async (req, res) => {
     const { usuarioLogado } = req;
     const { produto_id, variante, quantidadePerdida, motivo, observacao, opsOrigem } = req.body;
+    const categoriaPerda = normalizarCategoriaPerda(motivo);
+    const quantidadePerdidaNum = Number(quantidadePerdida);
+    const observacaoNormalizada = String(observacao || '').trim();
     let dbClient;
 
     try {
@@ -536,10 +733,10 @@ router.post('/registrar-perda', async (req, res) => {
             return res.status(403).json({ error: 'Permissão negada para registrar perdas.' });
         }
         
-        if (!produto_id || !motivo || !quantidadePerdida || quantidadePerdida <= 0 || !Array.isArray(opsOrigem) || opsOrigem.length === 0) {
+        if (!produto_id || !categoriaPerda || !Number.isInteger(quantidadePerdidaNum) || quantidadePerdidaNum <= 0 || !observacaoNormalizada || !Array.isArray(opsOrigem) || opsOrigem.length === 0) {
             // Adicionamos uma validação mais robusta para opsOrigem
             console.error('[API /registrar-perda] ERRO: Dados incompletos. opsOrigem é crucial.');
-            return res.status(400).json({ error: "Dados para registro de perda estão incompletos (produto_id, motivo, quantidade, opsOrigem)." });
+            return res.status(400).json({ error: 'Informe categoria, quantidade inteira positiva, observação e ao menos uma OP de origem.' });
         }
         
         const produtoInfo = await dbClient.query('SELECT nome FROM produtos WHERE id = $1 AND empresa_id = $2', [produto_id, req.empresaId]);
@@ -550,20 +747,143 @@ router.post('/registrar-perda', async (req, res) => {
 ;
         await dbClient.query('BEGIN');
 
+        // Serializa perdas e atribuições do mesmo produto. O frontend informa as
+        // OPs candidatas, mas o saldo efetivo é sempre recalculado no backend.
+        await dbClient.query('SELECT pg_advisory_xact_lock(48191, $1)', [Number(produto_id)]);
+
+        const numerosDasOps = [...new Set(
+            opsOrigem
+                .map(op => String(op?.numero || '').trim())
+                .filter(Boolean),
+        )];
+        const opsResult = await dbClient.query(`
+            SELECT numero, edit_id, produto_id, variante, etapas, quantidade, status
+              FROM ordens_de_producao
+             WHERE empresa_id = $1
+               AND produto_id = $2
+               AND status = 'finalizado'
+               AND numero = ANY($3::varchar[])
+               AND (variante = $4 OR ($4 IS NULL AND variante IS NULL))
+             ORDER BY numero ASC
+             FOR UPDATE
+        `, [req.empresaId, Number(produto_id), numerosDasOps, variante === '-' ? null : variante]);
+
+        if (opsResult.rows.length !== numerosDasOps.length) {
+            throw new Error('Uma ou mais OPs de origem não pertencem ao produto, à variante ou à empresa ativa.');
+        }
+
+        const arrematesResult = await dbClient.query(`
+            SELECT op_numero, COALESCE(SUM(quantidade_arrematada), 0)::int AS total_lancado
+              FROM arremates
+             WHERE empresa_id = $1
+               AND produto_id = $2
+               AND (variante = $3 OR ($3 IS NULL AND variante IS NULL))
+               AND tipo_lancamento IN ('PRODUCAO', 'PERDA')
+               AND op_numero = ANY($4::varchar[])
+             GROUP BY op_numero
+        `, [req.empresaId, Number(produto_id), variante === '-' ? null : variante, numerosDasOps]);
+        const lancadoPorOp = new Map(arrematesResult.rows.map(row => [String(row.op_numero), Number(row.total_lancado) || 0]));
+
+        const sessoesProducaoResult = await dbClient.query(`
+            SELECT op_numero, COALESCE(SUM(quantidade_atribuida), 0)::int AS quantidade_em_andamento
+              FROM sessoes_trabalho_producao
+             WHERE empresa_id = $1
+               AND produto_id = $2
+               AND (variante = $3 OR ($3 IS NULL AND variante IS NULL))
+               AND status = 'EM_ANDAMENTO'
+               AND op_numero = ANY($4::varchar[])
+             GROUP BY op_numero
+        `, [req.empresaId, Number(produto_id), variante === '-' ? null : variante, numerosDasOps]);
+        const sessaoProducaoPorOp = new Map(sessoesProducaoResult.rows.map(row => [String(row.op_numero), Number(row.quantidade_em_andamento) || 0]));
+
+        const sessoesArremateResult = await dbClient.query(`
+            SELECT dados_ops
+              FROM sessoes_trabalho_arremate
+             WHERE empresa_id = $1
+               AND produto_id = $2
+               AND (variante = $3 OR ($3 IS NULL AND variante IS NULL))
+               AND status = 'EM_ANDAMENTO'
+        `, [req.empresaId, Number(produto_id), variante === '-' ? null : variante]);
+        const sessaoArrematePorOp = new Map();
+        sessoesArremateResult.rows.forEach((sessao) => {
+            const opsDaSessao = Array.isArray(sessao.dados_ops) ? sessao.dados_ops : [];
+            opsDaSessao.forEach((op) => {
+                const numero = String(op?.numero || '').trim();
+                if (!numero || !numerosDasOps.includes(numero)) return;
+                const quantidade = Math.max(0, Number(op?.saldo_op) || 0);
+                sessaoArrematePorOp.set(numero, (sessaoArrematePorOp.get(numero) || 0) + quantidade);
+            });
+        });
+
+        const saldoPorOp = new Map();
+        opsResult.rows.forEach((op) => {
+            const numero = String(op.numero);
+            const saldo = Math.max(
+                0,
+                obterQuantidadeFinalProduzida(op)
+                    - (lancadoPorOp.get(numero) || 0)
+                    - (sessaoProducaoPorOp.get(numero) || 0)
+                    - (sessaoArrematePorOp.get(numero) || 0),
+            );
+            saldoPorOp.set(numero, saldo);
+        });
+
+        let saldoTotalDisponivel = 0;
+        saldoPorOp.forEach(saldo => { saldoTotalDisponivel += saldo; });
+        if (quantidadePerdidaNum > saldoTotalDisponivel) {
+            throw new Error(`A quantidade solicitada (${quantidadePerdidaNum}) supera o saldo real disponível (${saldoTotalDisponivel}). Atualize a fila e tente novamente.`);
+        }
+
+        const opsCalculadas = [];
+        for (const numero of numerosDasOps) {
+            const saldo = saldoPorOp.get(numero) || 0;
+            if (saldo > 0) {
+                const opBanco = opsResult.rows.find(item => String(item.numero) === numero);
+                opsCalculadas.push({ ...opBanco, saldo_op: saldo });
+            }
+        }
+
+        const usaAjusteProducao = await ajustesProducaoDisponiveis(dbClient);
+        const posOpAtivo = await estruturaPosOpDisponivel(dbClient);
+        const etapaPosOp = posOpAtivo
+            ? await carregarEtapaPosOpArremate(dbClient, Number(produto_id), req.empresaId)
+            : null;
+        let ajusteProducaoId = null;
+
         // 1. Insere o registro na tabela de perdas
         const perdaQuery = `
             INSERT INTO arremate_perdas (empresa_id, produto_nome, variante_nome, quantidade_perdida, motivo, observacao, usuario_responsavel)
             VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id;
         `;
         const perdaResult = await dbClient.query(perdaQuery, [
-            req.empresaId, nomeDoProduto, variante, quantidadePerdida, motivo,
-            observacao, usuarioLogado.nome || 'Sistema'
+            req.empresaId, nomeDoProduto, variante, quantidadePerdidaNum, categoriaPerda,
+            observacaoNormalizada, usuarioLogado.nome || 'Sistema'
         ]);
         const perdaId = perdaResult.rows[0].id;
 
+        if (usaAjusteProducao) {
+            const ajusteResult = await dbClient.query(`
+                INSERT INTO ajustes_producao
+                    (empresa_id, produto_id, variante, tipo_ajuste, quantidade_total,
+                     observacao, usuario_id, usuario_nome)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                RETURNING id
+            `, [
+                req.empresaId,
+                Number(produto_id),
+                variante === '-' ? null : variante,
+                categoriaPerda,
+                quantidadePerdidaNum,
+                observacaoNormalizada,
+                usuarioLogado.id || null,
+                usuarioLogado.nome || 'Sistema',
+            ]);
+            ajusteProducaoId = ajusteResult.rows[0].id;
+        }
+
         // 2. Cria um lançamento de arremate do tipo 'PERDA' para abater do saldo
-        let quantidadeRestanteParaAbater = quantidadePerdida;
-        const opsOrdenadas = opsOrigem.sort((a, b) => a.numero - b.numero);
+        let quantidadeRestanteParaAbater = quantidadePerdidaNum;
+        const opsOrdenadas = opsCalculadas;
 
         for (const op of opsOrdenadas) {
             if (quantidadeRestanteParaAbater <= 0) {
@@ -574,16 +894,86 @@ router.post('/registrar-perda', async (req, res) => {
             const qtdAbaterDaOP = Math.min(quantidadeRestanteParaAbater, op.saldo_op);
 
             if (qtdAbaterDaOP > 0) {
-                const lancamentoPerdaQuery = `
-                    INSERT INTO arremates (empresa_id, op_numero, produto_id, variante, quantidade_arrematada, usuario_tiktik, lancado_por, tipo_lancamento, id_perda_origem, assinada)
-                    VALUES ($1, $2, $3, $4, $5, 'Sistema (Perda)', $6, 'PERDA', $7, TRUE);
-                `;
-                await dbClient.query(lancamentoPerdaQuery, [
-                    req.empresaId, op.numero, produto_id, variante, qtdAbaterDaOP,
-                    usuarioLogado.nome, perdaId
-                ]);
+                if (usaAjusteProducao) {
+                    await dbClient.query(
+                        posOpAtivo
+                            ? `INSERT INTO ajustes_producao_itens
+                                (empresa_id, ajuste_id, op_numero, etapa_id, processo_id, processo, quantidade)
+                               VALUES ($1, $2, $3, $4, $5, $6, $7)`
+                            : `INSERT INTO ajustes_producao_itens
+                                (empresa_id, ajuste_id, op_numero, quantidade)
+                               VALUES ($1, $2, $3, $4)`,
+                        posOpAtivo
+                            ? [
+                                req.empresaId,
+                                ajusteProducaoId,
+                                op.numero,
+                                etapaPosOp.etapaId,
+                                etapaPosOp.processoId,
+                                etapaPosOp.processo,
+                                qtdAbaterDaOP,
+                            ]
+                            : [req.empresaId, ajusteProducaoId, op.numero, qtdAbaterDaOP],
+                    );
+                    await dbClient.query(
+                        posOpAtivo
+                            ? `INSERT INTO arremates
+                                (empresa_id, op_numero, produto_id, variante,
+                                 quantidade_arrematada, usuario_tiktik, lancado_por,
+                                 tipo_lancamento, id_perda_origem, id_ajuste_producao,
+                                 assinada, fase, processo, processo_id, etapa_id)
+                               VALUES ($1, $2, $3, $4, $5, 'Sistema (Perda)', $6,
+                                       'PERDA', $7, $8, TRUE, 'POS_OP', $9, $10, $11)`
+                            : `INSERT INTO arremates
+                                (empresa_id, op_numero, produto_id, variante,
+                                 quantidade_arrematada, usuario_tiktik, lancado_por,
+                                 tipo_lancamento, id_perda_origem, id_ajuste_producao, assinada)
+                               VALUES ($1, $2, $3, $4, $5, 'Sistema (Perda)', $6,
+                                       'PERDA', $7, $8, TRUE)`,
+                        posOpAtivo
+                            ? [
+                                req.empresaId, op.numero, produto_id, variante, qtdAbaterDaOP,
+                                usuarioLogado.nome, perdaId, ajusteProducaoId,
+                                etapaPosOp.processo, etapaPosOp.processoId, etapaPosOp.etapaId,
+                            ]
+                            : [
+                                req.empresaId, op.numero, produto_id, variante, qtdAbaterDaOP,
+                                usuarioLogado.nome, perdaId, ajusteProducaoId,
+                            ],
+                    );
+                } else if (posOpAtivo) {
+                    await dbClient.query(`
+                        INSERT INTO arremates
+                            (empresa_id, op_numero, produto_id, variante,
+                             quantidade_arrematada, usuario_tiktik, lancado_por,
+                             tipo_lancamento, id_perda_origem, assinada,
+                             fase, processo, processo_id, etapa_id)
+                        VALUES ($1, $2, $3, $4, $5, 'Sistema (Perda)', $6,
+                                'PERDA', $7, TRUE, 'POS_OP', $8, $9, $10)
+                    `, [
+                        req.empresaId, op.numero, produto_id, variante, qtdAbaterDaOP,
+                        usuarioLogado.nome, perdaId,
+                        etapaPosOp.processo, etapaPosOp.processoId, etapaPosOp.etapaId,
+                    ]);
+                } else {
+                    await dbClient.query(`
+                        INSERT INTO arremates
+                            (empresa_id, op_numero, produto_id, variante,
+                             quantidade_arrematada, usuario_tiktik, lancado_por,
+                             tipo_lancamento, id_perda_origem, assinada)
+                        VALUES ($1, $2, $3, $4, $5, 'Sistema (Perda)', $6,
+                                'PERDA', $7, TRUE)
+                    `, [
+                        req.empresaId, op.numero, produto_id, variante, qtdAbaterDaOP,
+                        usuarioLogado.nome, perdaId,
+                    ]);
+                }
                 quantidadeRestanteParaAbater -= qtdAbaterDaOP;
             }
+        }
+
+        if (quantidadeRestanteParaAbater > 0) {
+            throw new Error('Não foi possível alocar toda a perda no saldo real das OPs selecionadas.');
         }
         
         await dbClient.query('COMMIT');
@@ -602,6 +992,26 @@ router.post('/registrar-perda', async (req, res) => {
 });
 
 router.get('/fila', async (req, res) => {
+    let dbClient;
+    try {
+        dbClient = await pool.connect();
+        const resultado = await listarFilaPerdasProducao({
+            dbClient,
+            empresaId: req.empresaId,
+            query: req.query,
+        });
+        res.status(200).json(resultado);
+    } catch (error) {
+        console.error('[API GET /arremates/fila] Erro:', error);
+        res.status(500).json({ error: 'Erro ao processar a fila de arremates.', details: error.message });
+    } finally {
+        if (dbClient) dbClient.release();
+    }
+});
+
+// Implementação antiga mantida apenas como referência de rollback durante a
+// janela de transição. A rota pública acima usa o utilitário compartilhado.
+router.get('/fila-legado-interno', async (req, res) => {
     const { 
         search, 
         sortBy = 'data_op_mais_recente', 
@@ -813,8 +1223,10 @@ router.get('/status-tiktiks', async (req, res) => {
                 AND status_data_modificacao < (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
         `, [req.empresaId]);
         
-        const temposResult = await dbClient.query('SELECT produto_id, tempo_segundos_por_peca FROM tempos_padrao_arremate WHERE empresa_id = $1', [req.empresaId]);
-        const temposMap = new Map(temposResult.rows.map(row => [row.produto_id, parseFloat(row.tempo_segundos_por_peca)]));
+        const temposMap = new Map(
+            Object.entries(await listarTemposArremate(dbClient, req.empresaId))
+                .map(([produtoId, tempo]) => [Number(produtoId), tempo]),
+        );
 
 
         // 2. Buscar todos os usuários Tiktik com seus dados e sessões atuais
@@ -1207,6 +1619,11 @@ router.post('/sessoes/finalizar', async (req, res) => {
         if (userTiktikResult.rows.length === 0 || lancadorResult.rows.length === 0) throw new Error('Usuário Tiktik ou Lançador não encontrado.');
         const nomeTiktik = userTiktikResult.rows[0].nome;
         const nomeLancador = lancadorResult.rows[0].nome;
+        const posOpAtivo = await estruturaPosOpDisponivel(dbClient);
+        const executor = posOpAtivo
+            ? await carregarExecutorArremate(dbClient, usuarioTiktikId, req.empresaId, nomeTiktik)
+            : null;
+        const etapaPosOpPorProduto = new Map();
         
         const dataFim = new Date();
 
@@ -1250,6 +1667,52 @@ router.post('/sessoes/finalizar', async (req, res) => {
                         const pontosGerados = qtdParaEstaOP * valorPontoAplicado;
 
                         // CORREÇÃO: ADICIONADO valor_ponto_aplicado E pontos_gerados NO INSERT
+                        if (posOpAtivo) {
+                            if (!etapaPosOpPorProduto.has(sessaoCorrespondente.produto_id)) {
+                                etapaPosOpPorProduto.set(
+                                    sessaoCorrespondente.produto_id,
+                                    await carregarEtapaPosOpArremate(
+                                        dbClient,
+                                        sessaoCorrespondente.produto_id,
+                                        req.empresaId,
+                                    ),
+                                );
+                            }
+                            const etapaPosOp = etapaPosOpPorProduto.get(sessaoCorrespondente.produto_id);
+                            await dbClient.query(
+                                `INSERT INTO arremates (
+                                    empresa_id, op_numero, op_edit_id, produto_id, variante,
+                                    quantidade_arrematada, usuario_tiktik_id, usuario_tiktik,
+                                    lancado_por, tipo_lancamento, id_sessao_origem,
+                                    valor_ponto_aplicado, pontos_gerados, fase, processo,
+                                    processo_id, etapa_id, executor_id, executor_nome, executor_tipo
+                                 )
+                                 VALUES (
+                                    $1, $2, $3, $4, $5, $6, $7, $8, $9, 'PRODUCAO',
+                                    $10, $11, $12, 'POS_OP', $13, $14, $15, $16, $17, $18
+                                 )`,
+                                [
+                                    req.empresaId,
+                                    op.numero,
+                                    op.edit_id,
+                                    sessaoCorrespondente.produto_id,
+                                    sessaoCorrespondente.variante,
+                                    qtdParaEstaOP,
+                                    usuarioTiktikId,
+                                    nomeTiktik,
+                                    nomeLancador,
+                                    sessaoCorrespondente.id,
+                                    valorPontoAplicado,
+                                    pontosGerados,
+                                    etapaPosOp.processo,
+                                    etapaPosOp.processoId,
+                                    etapaPosOp.etapaId,
+                                    executor.id,
+                                    executor.nome,
+                                    executor.tipo || 'nao_informado',
+                                ],
+                            );
+                        } else {
                         await dbClient.query(
                             `INSERT INTO arremates (empresa_id, op_numero, op_edit_id, produto_id, variante, quantidade_arrematada, usuario_tiktik_id, usuario_tiktik, lancado_por, tipo_lancamento, id_sessao_origem, valor_ponto_aplicado, pontos_gerados)
                              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'PRODUCAO', $10, $11, $12)`,
@@ -1268,6 +1731,7 @@ router.post('/sessoes/finalizar', async (req, res) => {
                                 pontosGerados       // $11
                             ]
                         );
+                        }
                         quantidadeRestanteParaLancar -= qtdParaEstaOP;
                     }
                 }
@@ -1335,8 +1799,7 @@ router.post('/sessoes/finalizar', async (req, res) => {
 
             if (configMetaBatida) {
                 for (const sessao of sessoes) {
-                    const tpeResult = await dbClient.query("SELECT tempo_segundos_por_peca FROM tempos_padrao_arremate WHERE produto_id = $1 AND empresa_id = $2", [sessao.produto_id, req.empresaId]);
-                    const tpe = tpeResult.rows[0]?.tempo_segundos_por_peca;
+                    const tpe = await buscarTempoArremate(dbClient, req.empresaId, sessao.produto_id);
                     
                     const detalheDaSessao = detalhes_finalizacao.find(d => d.id_sessao === sessao.id);
                     const quantidadeRealFinalizada = detalheDaSessao ? detalheDaSessao.quantidade_finalizada : 0;
@@ -1496,6 +1959,7 @@ router.post('/sessoes/estornar', async (req, res) => {
 
         // 1. Mudar o status da sessão para 'ESTORNADA'
         // Isso a remove dos cálculos de performance imediatamente.
+        const posOpAtivo = await estruturaPosOpDisponivel(dbClient);
         const updateSessaoResult = await dbClient.query(
             `UPDATE sessoes_trabalho_arremate SET status = 'ESTORNADA' WHERE id = $1 AND empresa_id = $2 AND status = 'FINALIZADA' RETURNING *`,
             [id_sessao, req.empresaId]
@@ -1517,20 +1981,55 @@ router.post('/sessoes/estornar', async (req, res) => {
         // 3. Para cada lançamento, aplicar a lógica de estorno que você já criou
         for (const arremateOriginal of arrematesParaEstornar) {
             // 3a. Cria um novo registro de log do tipo 'ESTORNO'
-            await dbClient.query(
-                `INSERT INTO arremates (empresa_id, op_numero, produto_id, variante, quantidade_arrematada, usuario_tiktik, usuario_tiktik_id, lancado_por, tipo_lancamento, assinada)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ESTORNO', true)`,
-                [
-                    req.empresaId,
-                    arremateOriginal.op_numero,
-                    arremateOriginal.produto_id,
-                    arremateOriginal.variante,
-                    arremateOriginal.quantidade_arrematada,
-                    arremateOriginal.usuario_tiktik,
-                    arremateOriginal.usuario_tiktik_id,
-                    usuarioLogado.nome || 'Sistema'
-                ]
-            );
+            if (posOpAtivo) {
+                await dbClient.query(
+                    `INSERT INTO arremates (
+                        empresa_id, op_numero, op_edit_id, produto_id, variante,
+                        quantidade_arrematada, usuario_tiktik, usuario_tiktik_id,
+                        lancado_por, tipo_lancamento, assinada, fase, processo,
+                        processo_id, etapa_id, executor_id, executor_nome, executor_tipo,
+                        id_sessao_origem
+                     )
+                     VALUES (
+                        $1, $2, $3, $4, $5, $6, $7, $8, $9, 'ESTORNO', true,
+                        $10, $11, $12, $13, $14, $15, $16, $17
+                     )`,
+                    [
+                        req.empresaId,
+                        arremateOriginal.op_numero,
+                        arremateOriginal.op_edit_id || null,
+                        arremateOriginal.produto_id,
+                        arremateOriginal.variante,
+                        arremateOriginal.quantidade_arrematada,
+                        arremateOriginal.usuario_tiktik,
+                        arremateOriginal.usuario_tiktik_id,
+                        usuarioLogado.nome || 'Sistema',
+                        arremateOriginal.fase || 'POS_OP',
+                        arremateOriginal.processo || 'Arrematar',
+                        arremateOriginal.processo_id || null,
+                        arremateOriginal.etapa_id || null,
+                        arremateOriginal.executor_id || arremateOriginal.usuario_tiktik_id || null,
+                        arremateOriginal.executor_nome || arremateOriginal.usuario_tiktik || null,
+                        arremateOriginal.executor_tipo || 'nao_informado',
+                        arremateOriginal.id_sessao_origem || null,
+                    ],
+                );
+            } else {
+                await dbClient.query(
+                    `INSERT INTO arremates (empresa_id, op_numero, produto_id, variante, quantidade_arrematada, usuario_tiktik, usuario_tiktik_id, lancado_por, tipo_lancamento, assinada)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ESTORNO', true)`,
+                    [
+                        req.empresaId,
+                        arremateOriginal.op_numero,
+                        arremateOriginal.produto_id,
+                        arremateOriginal.variante,
+                        arremateOriginal.quantidade_arrematada,
+                        arremateOriginal.usuario_tiktik,
+                        arremateOriginal.usuario_tiktik_id,
+                        usuarioLogado.nome || 'Sistema',
+                    ],
+                );
+            }
 
             // 3b. APAGA o registro de arremate original
             await dbClient.query(`DELETE FROM arremates WHERE id = $1 AND empresa_id = $2`, [arremateOriginal.id, req.empresaId]);
@@ -1550,8 +2049,29 @@ router.post('/sessoes/estornar', async (req, res) => {
 });
 
 
-// POST /api/arremates/estornar - ENDPOINT PARA ESTORNAR UM LANÇAMENTO
+// Alias legado: o escritor canônico está em /api/producoes/estornar.
 router.post('/estornar', async (req, res) => {
+    let clienteCanonico;
+    try {
+        clienteCanonico = await pool.connect();
+        const resultadoCanonico = await estornarProducao({
+            dbClient: clienteCanonico,
+            usuarioLogado: req.usuarioLogado,
+            empresaId: req.empresaId,
+            idArremate: req.body?.id_arremate,
+        });
+        return res.status(200).json(resultadoCanonico);
+    } catch (errorCanonico) {
+        console.error('[API /arremates/estornar - alias legado] Erro:', errorCanonico.message);
+        return res.status(errorCanonico.statusCode || 500).json({
+            error: errorCanonico.message || 'Erro interno ao estornar o lançamento.',
+            details: errorCanonico.statusCode ? undefined : errorCanonico.message,
+        });
+    } finally {
+        if (clienteCanonico) clienteCanonico.release();
+    }
+
+    /* Implementação inline histórica mantida apenas para rollback durante a transição.
     const { usuarioLogado } = req;
     const { id_arremate } = req.body;
     let dbClient;
@@ -1570,6 +2090,7 @@ router.post('/estornar', async (req, res) => {
         await dbClient.query('BEGIN');
 
         // 1. Busca o registro original.
+        const posOpAtivo = await estruturaPosOpDisponivel(dbClient);
         const arremateResult = await dbClient.query(`SELECT * FROM arremates WHERE id = $1 AND empresa_id = $2`, [id_arremate, req.empresaId]);
         if (arremateResult.rows.length === 0) {
             await dbClient.query('ROLLBACK');
@@ -1581,14 +2102,15 @@ router.post('/estornar', async (req, res) => {
 
         // 2. CRIA UM NOVO REGISTRO DE LOG DO TIPO 'ESTORNO'
         const logEstornoQuery = `
-            INSERT INTO arremates 
+            INSERT INTO arremates
                 (empresa_id, op_numero, op_edit_id, produto_id, variante, quantidade_arrematada,
                  usuario_tiktik, usuario_tiktik_id, lancado_por, tipo_lancamento, assinada, id_perda_origem)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'ESTORNO', true, $10)
+            RETURNING id
         `;
 
         // <<< A CORREÇÃO ESTÁ AQUI >>>
-        await dbClient.query(logEstornoQuery, [
+        const estornoInseridoResult = await dbClient.query(logEstornoQuery, [
             req.empresaId,
             arremateOriginal.op_numero,
             arremateOriginal.op_edit_id,
@@ -1600,6 +2122,31 @@ router.post('/estornar', async (req, res) => {
             usuarioLogado.nome || 'Sistema',
             null // CORRIGIDO: id_perda_origem deve ser nulo para um estorno.
         ]);
+
+        if (posOpAtivo) {
+            await dbClient.query(
+                `UPDATE arremates
+                    SET fase = 'POS_OP',
+                        processo = $1,
+                        processo_id = $2,
+                        etapa_id = $3,
+                        executor_id = $4,
+                        executor_nome = $5,
+                        executor_tipo = $6
+                  WHERE id = $7
+                    AND empresa_id = $8`,
+                [
+                    arremateOriginal.processo || 'Arrematar',
+                    arremateOriginal.processo_id || null,
+                    arremateOriginal.etapa_id || null,
+                    arremateOriginal.executor_id || arremateOriginal.usuario_tiktik_id || null,
+                    arremateOriginal.executor_nome || arremateOriginal.usuario_tiktik || null,
+                    arremateOriginal.executor_tipo || 'nao_informado',
+                    estornoInseridoResult.rows[0].id,
+                    req.empresaId,
+                ],
+            );
+        }
         
         // 3. APAGA o registro de arremate original.
         const deleteResult = await dbClient.query(`DELETE FROM arremates WHERE id = $1 AND empresa_id = $2`, [id_arremate, req.empresaId]);
@@ -1621,6 +2168,7 @@ router.post('/estornar', async (req, res) => {
     } finally {
         if (dbClient) dbClient.release();
     }
+    */
 });
 
 // GET /api/arremates/contagem-hoje - ENDPOINT PARA O DASHBOARD
@@ -1926,15 +2474,7 @@ router.get('/tempos-padrao', async (req, res) => {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
 
-        const query = `SELECT produto_id, tempo_segundos_por_peca FROM tempos_padrao_arremate WHERE empresa_id = $1`;
-        const result = await dbClient.query(query, [req.empresaId]);
-        
-        const temposMap = result.rows.reduce((acc, row) => {
-            acc[row.produto_id] = parseFloat(row.tempo_segundos_por_peca);
-            return acc;
-        }, {});
-
-        res.status(200).json(temposMap);
+        res.status(200).json(await listarTemposArremate(dbClient, req.empresaId));
 
     } catch (error) {
         console.error('[API /tempos-padrao GET] Erro:', error);
@@ -1960,21 +2500,11 @@ router.post('/tempos-padrao', async (req, res) => {
         dbClient = await pool.connect(); 
         
         const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id, req.empresaId);
-        if (!permissoes.includes('gerenciar-permissoes')) {
+        if (!permissoes.includes('configurar-tempos-padrao') && !permissoes.includes('gerenciar-permissoes')) {
             return res.status(403).json({ error: 'Permissão negada para configurar tempos padrão.' });
         }
 
         await dbClient.query('BEGIN');
-
-        const query = `
-            INSERT INTO tempos_padrao_arremate (empresa_id, produto_id, tempo_segundos_por_peca)
-            SELECT $1, u.produto_id, u.tempo_segundos_por_peca
-              FROM UNNEST($2::int[], $3::numeric[]) AS u(produto_id, tempo_segundos_por_peca)
-            ON CONFLICT (empresa_id, produto_id)
-            DO UPDATE SET 
-                tempo_segundos_por_peca = EXCLUDED.tempo_segundos_por_peca,
-                atualizado_em = CURRENT_TIMESTAMP;
-        `;
 
         const produtoIds = Object.keys(tempos).map(id => parseInt(id)).filter(id => !isNaN(id));
         const temposValores = produtoIds.map(id => parseFloat(tempos[id])).filter(tempo => !isNaN(tempo) && tempo > 0);
@@ -1985,7 +2515,7 @@ router.post('/tempos-padrao', async (req, res) => {
             return res.status(400).json({ error: 'Dados de tempos inválidos. Verifique se todos os valores são números positivos.' });
         }
         
-        await dbClient.query(query, [req.empresaId, produtoIds, temposValores]);
+        await salvarTemposArremate(dbClient, req.empresaId, produtoIds, temposValores);
         
         await dbClient.query('COMMIT');
         
@@ -2051,7 +2581,7 @@ router.post('/externo', async (req, res) => {
         }
 
         const freelanceRes = await dbClient.query(
-            `SELECT u.id, u.nome FROM usuarios u
+            `SELECT u.id, u.nome, ue.tipos FROM usuarios u
              JOIN usuarios_empresas ue
                ON ue.usuario_id = u.id
               AND ue.empresa_id = $1
@@ -2067,6 +2597,11 @@ router.post('/externo', async (req, res) => {
         const freelance = freelanceRes.rows[0];
 
         await dbClient.query('BEGIN');
+        const posOpAtivo = await estruturaPosOpDisponivel(dbClient);
+        const etapaPosOpPorProduto = new Map();
+        const executor = posOpAtivo
+            ? await carregarExecutorArremate(dbClient, freelance.id, req.empresaId, freelance.nome)
+            : null;
 
         for (const item of itens) {
             const { op_numero, op_edit_id, produto_id, variante, quantidade_arrematada } = item;
@@ -2084,17 +2619,47 @@ router.post('/externo', async (req, res) => {
             }
             const pontosGerados = qtd * valorPontoAplicado;
 
-            await dbClient.query(
-                `INSERT INTO arremates
-                    (empresa_id, op_numero, op_edit_id, produto_id, variante, quantidade_arrematada,
-                     usuario_tiktik, usuario_tiktik_id, lancado_por, valor_ponto_aplicado, pontos_gerados, tipo_lancamento)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'PRODUCAO')`,
-                [
-                    req.empresaId, op_numero, op_edit_id || null, parseInt(produto_id), variante || null, qtd,
-                    freelance.nome, freelance.id, req.usuarioLogado.nome || 'Sistema',
-                    valorPontoAplicado, pontosGerados
-                ]
-            );
+            if (posOpAtivo) {
+                if (!etapaPosOpPorProduto.has(parseInt(produto_id))) {
+                    etapaPosOpPorProduto.set(
+                        parseInt(produto_id),
+                        await carregarEtapaPosOpArremate(dbClient, parseInt(produto_id), req.empresaId),
+                    );
+                }
+                const etapaPosOp = etapaPosOpPorProduto.get(parseInt(produto_id));
+                await dbClient.query(
+                    `INSERT INTO arremates (
+                        empresa_id, op_numero, op_edit_id, produto_id, variante,
+                        quantidade_arrematada, usuario_tiktik, usuario_tiktik_id,
+                        lancado_por, valor_ponto_aplicado, pontos_gerados,
+                        tipo_lancamento, fase, processo, processo_id, etapa_id,
+                        executor_id, executor_nome, executor_tipo
+                     )
+                     VALUES (
+                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                        'PRODUCAO', 'POS_OP', $12, $13, $14, $15, $16, $17
+                     )`,
+                    [
+                        req.empresaId, op_numero, op_edit_id || null, parseInt(produto_id), variante || null, qtd,
+                        freelance.nome, freelance.id, req.usuarioLogado.nome || 'Sistema',
+                        valorPontoAplicado, pontosGerados,
+                        etapaPosOp.processo, etapaPosOp.processoId, etapaPosOp.etapaId,
+                        executor.id, executor.nome, executor.tipo || 'prestador_externo',
+                    ],
+                );
+            } else {
+                await dbClient.query(
+                    `INSERT INTO arremates
+                        (empresa_id, op_numero, op_edit_id, produto_id, variante, quantidade_arrematada,
+                         usuario_tiktik, usuario_tiktik_id, lancado_por, valor_ponto_aplicado, pontos_gerados, tipo_lancamento)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'PRODUCAO')`,
+                    [
+                        req.empresaId, op_numero, op_edit_id || null, parseInt(produto_id), variante || null, qtd,
+                        freelance.nome, freelance.id, req.usuarioLogado.nome || 'Sistema',
+                        valorPontoAplicado, pontosGerados,
+                    ],
+                );
+            }
         }
 
         await dbClient.query('COMMIT');

@@ -4,8 +4,13 @@ import UIFeedbackNotFound from './UIFeedbackNotFound';
 import { fetchFinanceiro } from '../utils/financeiro-api';
 import type { FinanceiroConfigPanel, FinanceiroContato } from '../utils/financeiro-types';
 import { useFinanceiro } from './FinanceiroContext';
+import UIBloqueio from './UIBloqueio';
 
-const TABS: Array<{ id: FinanceiroConfigPanel; label: string; icon: string }> = [
+const TABS: Array<{
+  id: FinanceiroConfigPanel;
+  label: string;
+  icon: string;
+}> = [
   { id: 'contas', label: 'Contas Bancárias', icon: 'fa-university' },
   { id: 'favorecidos', label: 'Favorecidos', icon: 'fa-user-friends' },
   { id: 'categorias', label: 'Categorias e Grupos', icon: 'fa-tags' },
@@ -173,9 +178,11 @@ export default function FinanceiroConfiguracoes() {
           <section className="fc-config-secao">
             <header className="fc-table-header">
               <h3 className="fc-table-title">{tabAtiva?.label}</h3>
-              <button type="button" className="fc-btn fc-btn-primario" onClick={() => openConfigModal({ kind: 'conta' })}>
-                <i className="fas fa-plus" /> Nova Conta
-              </button>
+              <UIBloqueio permissao="gerenciar-contas" mensagem="Você não tem permissão para criar ou editar contas bancárias.">
+                <button type="button" className="fc-btn fc-btn-primario" onClick={() => openConfigModal({ kind: 'conta' })}>
+                  <i className="fas fa-plus" /> Nova Conta
+                </button>
+              </UIBloqueio>
             </header>
             <div className="fc-tabela-responsiva">
               <table className="fc-tabela-estilizada">
@@ -196,9 +203,11 @@ export default function FinanceiroConfiguracoes() {
                       <td>{conta.agencia || '-'}</td>
                       <td>{conta.numero_conta || '-'}</td>
                       <td>
-                        <button type="button" className="fc-btn-icon" onClick={() => openConfigModal({ kind: 'conta', item: conta })}>
-                          <i className="fas fa-pencil-alt" />
-                        </button>
+                        <UIBloqueio permissao="gerenciar-contas" mensagem="Você não tem permissão para editar contas bancárias.">
+                          <button type="button" className="fc-btn-icon" onClick={() => openConfigModal({ kind: 'conta', item: conta })}>
+                            <i className="fas fa-pencil-alt" />
+                          </button>
+                        </UIBloqueio>
                       </td>
                     </tr>
                   ))}
@@ -220,9 +229,11 @@ export default function FinanceiroConfiguracoes() {
           <section className="fc-config-secao">
             <header className="fc-table-header">
               <h3 className="fc-table-title">{tabAtiva?.label}</h3>
-              <button type="button" className="fc-btn fc-btn-primario" onClick={() => openConfigModal({ kind: 'contato' })}>
-                <i className="fas fa-plus" /> Novo Favorecido
-              </button>
+              <UIBloqueio permissao="criar-favorecido" mensagem="Você não tem permissão para cadastrar favorecidos ou pagadores.">
+                <button type="button" className="fc-btn fc-btn-primario" onClick={() => openConfigModal({ kind: 'contato' })}>
+                  <i className="fas fa-plus" /> Novo Favorecido
+                </button>
+              </UIBloqueio>
             </header>
 
             <ConfigBusca
@@ -250,9 +261,11 @@ export default function FinanceiroConfiguracoes() {
                       <td>{contato.tipo || '-'}</td>
                       <td>{contato.ativo === false ? 'Inativo' : 'Ativo'}</td>
                       <td>
-                        <button type="button" className="fc-btn-icon" onClick={() => openConfigModal({ kind: 'contato', item: contato })}>
-                          <i className="fas fa-pencil-alt" />
-                        </button>
+                        <UIBloqueio permissao="gerenciar-categorias" mensagem="Você não tem permissão para editar favorecidos ou pagadores.">
+                          <button type="button" className="fc-btn-icon" onClick={() => openConfigModal({ kind: 'contato', item: contato })}>
+                            <i className="fas fa-pencil-alt" />
+                          </button>
+                        </UIBloqueio>
                       </td>
                     </tr>
                   ))}
@@ -275,12 +288,16 @@ export default function FinanceiroConfiguracoes() {
             <header className="fc-table-header">
               <h3 className="fc-table-title">{tabAtiva?.label}</h3>
               <div className="fc-config-secao-acoes">
-                <button type="button" className="fc-btn fc-btn-outline" onClick={() => openConfigModal({ kind: 'grupo' })}>
-                  <i className="fas fa-plus" /> Novo Grupo
-                </button>
-                <button type="button" className="fc-btn fc-btn-primario" onClick={() => openConfigModal({ kind: 'categoria' })}>
-                  <i className="fas fa-plus" /> Nova Categoria
-                </button>
+                <UIBloqueio permissao="gerenciar-categorias" mensagem="Você não tem permissão para gerenciar grupos financeiros.">
+                  <button type="button" className="fc-btn fc-btn-outline" onClick={() => openConfigModal({ kind: 'grupo' })}>
+                    <i className="fas fa-plus" /> Novo Grupo
+                  </button>
+                </UIBloqueio>
+                <UIBloqueio permissao="gerenciar-categorias" mensagem="Você não tem permissão para gerenciar categorias financeiras.">
+                  <button type="button" className="fc-btn fc-btn-primario" onClick={() => openConfigModal({ kind: 'categoria' })}>
+                    <i className="fas fa-plus" /> Nova Categoria
+                  </button>
+                </UIBloqueio>
               </div>
             </header>
 
@@ -306,13 +323,15 @@ export default function FinanceiroConfiguracoes() {
                         <tr key={categoria.id}>
                           <td>{categoria.nome}</td>
                           <td style={{ textAlign: 'right' }}>
-                            <button
-                              type="button"
-                              className="fc-btn-icon"
-                              onClick={() => openConfigModal({ kind: 'categoria', item: categoria })}
-                            >
-                              <i className="fas fa-pencil-alt" />
-                            </button>
+                            <UIBloqueio permissao="gerenciar-categorias" mensagem="Você não tem permissão para editar categorias financeiras.">
+                              <button
+                                type="button"
+                                className="fc-btn-icon"
+                                onClick={() => openConfigModal({ kind: 'categoria', item: categoria })}
+                              >
+                                <i className="fas fa-pencil-alt" />
+                              </button>
+                            </UIBloqueio>
                           </td>
                         </tr>
                       )) : (
@@ -352,9 +371,11 @@ export default function FinanceiroConfiguracoes() {
             <p className="fc-config-secao-texto">
               Use esta seção para gerenciar as concessionárias e taxas de vale-transporte.
             </p>
-            <button type="button" className="fc-btn fc-btn-primario" onClick={openConcessionariaModal}>
-              Gerenciar Taxas de VT
-            </button>
+            <UIBloqueio permissao="gerenciar-taxas-vt" mensagem="Você não tem permissão para gerenciar concessionárias e taxas de VT.">
+              <button type="button" className="fc-btn fc-btn-primario" onClick={openConcessionariaModal}>
+                Gerenciar Taxas de VT
+              </button>
+            </UIBloqueio>
           </section>
         )}
       </div>

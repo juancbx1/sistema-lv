@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { fetchFinanceiro } from '../utils/financeiro-api';
 import { useFinanceiro } from './FinanceiroContext';
+import UIBloqueio from './UIBloqueio';
 
 export default function FinanceiroConcessionariaModal() {
   const { concessionariaOpen, closeConcessionariaModal } = useFinanceiro();
@@ -45,9 +46,14 @@ export default function FinanceiroConcessionariaModal() {
         </form>
         <div className="fc-modal-footer">
           <button type="button" className="fc-btn fc-btn-secundario" onClick={closeConcessionariaModal}>Cancelar</button>
-          <button type="submit" form="financeiro-concessionaria-form" className="fc-btn fc-btn-primario" disabled={saving}>
-            {saving ? 'Salvando...' : 'Salvar'}
-          </button>
+          <UIBloqueio
+            permissao="gerenciar-taxas-vt"
+            mensagem="Você não tem permissão para salvar concessionárias e taxas de VT."
+          >
+            <button type="submit" form="financeiro-concessionaria-form" className="fc-btn fc-btn-primario" disabled={saving}>
+              {saving ? 'Salvando...' : 'Salvar'}
+            </button>
+          </UIBloqueio>
         </div>
       </div>
     </div>

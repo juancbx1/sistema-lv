@@ -4,7 +4,11 @@ import React, { useState } from 'react';
 import TelaSelecaoProduto from './ArremateTelaSelecaoProduto.jsx';
 import FormularioPerda from './ArremateFormularioPerda.jsx';
 
-export default function ArremateRegistrarPerdaTela({ onConcluido }) {
+export default function ArremateRegistrarPerdaTela({
+    onConcluido,
+    filaEndpoint = '/api/producoes/fila-perdas',
+    perdaEndpoint = '/api/producoes/registrar-perda',
+}) {
     const [tela, setTela] = useState('selecao_produto');
     const [itemSelecionado, setItemSelecionado] = useState(null);
 
@@ -41,10 +45,17 @@ export default function ArremateRegistrarPerdaTela({ onConcluido }) {
             </div>
 
             {tela === 'selecao_produto' && (
-                <TelaSelecaoProduto onItemSelect={handleItemSelect} />
+                <TelaSelecaoProduto
+                    onItemSelect={handleItemSelect}
+                    filaEndpoint={filaEndpoint}
+                />
             )}
             {tela === 'formulario_perda' && itemSelecionado && (
-                <FormularioPerda item={itemSelecionado} onConfirmar={handleConcluido} />
+                <FormularioPerda
+                    item={itemSelecionado}
+                    onConfirmar={handleConcluido}
+                    endpoint={perdaEndpoint}
+                />
             )}
         </div>
     );

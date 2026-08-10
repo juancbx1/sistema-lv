@@ -53,6 +53,12 @@ export interface EmbalagemFilaItem {
 
 export interface EmbalagemArremateLote {
   id: number | string;
+  origem_id?: number | string;
+  origem_tipo?: 'PRODUTO_PRONTO' | 'ARREMATE_LEGADO' | string;
+  arremate_id_legado?: number | string | null;
+  quantidade_disponibilizada?: number | string | null;
+  quantidade_consumida?: number | string | null;
+  data_disponibilizacao?: string | null;
   quantidade_arrematada?: number | string | null;
   quantidade_ja_embalada?: number | string | null;
   data_lancamento?: string | null;
@@ -100,7 +106,6 @@ export interface EmbalagemNivelEstoque {
 }
 
 export interface EmbalagemKitComponenteConsumido {
-  id_arremate: number | string;
   produto_id: number | string;
   variacao: string | null;
   quantidade_usada: number;
@@ -110,7 +115,7 @@ export interface EmbalagemKitMontagemPayload {
   kit_produto_id: number | string;
   kit_variante: string | null;
   quantidade_kits_montados: number;
-  componentes_consumidos_de_arremates: EmbalagemKitComponenteConsumido[];
+  componentes_consumidos: EmbalagemKitComponenteConsumido[];
   observacao: string | null;
 }
 

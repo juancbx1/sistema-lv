@@ -107,11 +107,9 @@ export async function listarLotesPorProdutoVariante(
   const params = new URLSearchParams({
     produto_id: String(produtoId),
     variante: variante || '-',
-    fetchAll: 'true',
-    tipo_lancamento: 'PRODUCAO',
   });
   const payload = await requestJson<ArrematesResponse>(
-    `/api/arremates?${params.toString()}`,
+    `/api/embalagens/origens?${params.toString()}`,
   );
 
   return (payload.rows || [])
@@ -157,50 +155,22 @@ export async function registrarMontagemKit(
 
 export async function registrarEmbalagemUnitaria(
   item: EmbalagemFilaItem,
-  lotes: EmbalagemArremateLote[],
+  _lotes: EmbalagemArremateLote[],
   quantidade: number,
   observacao: string,
 ): Promise<void> {
-  let restante = quantidade;
-  const lotesUsados: Array<{ lote: EmbalagemArremateLote; quantidade: number }> = [];
-
-  for (const lote of lotes) {
-    if (restante <= 0) break;
-
-    const disponivel =
-      Number(lote.quantidade_arrematada || 0) -
-      Number(lote.quantidade_ja_embalada || 0);
-    const quantidadeDesteLote = Math.min(restante, disponivel);
-
-    if (quantidadeDesteLote <= 0) continue;
-
-    await requestJson(`/api/arremates/${lote.id}/registrar-embalagem`, {
-      method: 'PUT',
-      body: JSON.stringify({
-        quantidade_que_foi_embalada_desta_vez: quantidadeDesteLote,
-      }),
-    });
-
-    lotesUsados.push({ lote, quantidade: quantidadeDesteLote });
-    restante -= quantidadeDesteLote;
-  }
-
-  if (restante > 0) {
-    throw new Error('Não foi possível alocar toda a quantidade nos lotes disponíveis.');
-  }
-
-  if (!item.sku || item.sku === 'N/A') {
-    throw new Error('Não foi possível determinar o SKU da unidade para registro.');
-  }
-
-  await requestJson('/api/estoque/entrada-producao', {
+  const chaveAleatoria = typeof globalThis.crypto?.randomUUID === 'function'
+    ? globalThis.crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  await requestJson('/api/embalagens/unidade', {
     method: 'POST',
+    headers: {
+      'Idempotency-Key': `embalagem-unidade:${item.id}:${chaveAleatoria}`,
+    },
     body: JSON.stringify({
       produto_id: item.produtoId,
       variante_nome: item.variante === '-' ? null : item.variante,
-      produto_ref_id: item.sku,
-      quantidade_entrada: quantidade,
-      id_arremate_origem: lotesUsados[0]?.lote.id || null,
+      quantidade_embalada: quantidade,
       observacao: observacao.trim() || null,
     }),
   });

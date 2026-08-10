@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import UIBloqueio from './UIBloqueio';
 
 function formatarDataCard(isoString) {
     if (!isoString) return '—';
@@ -116,32 +117,53 @@ export default function GPCard({
 
             {/* Coluna C — Ações */}
             <div className="gp-card-col-c">
-                {podeEditar && (
+                <UIBloqueio
+                    permissao="editar-registro-producao"
+                    mensagem="Você não tem permissão para editar registros de produção."
+                >
                     <button className="gp-btn-card gp-btn-card-editar" onClick={() => onEditar(p)}>
                         <i className="fas fa-edit"></i> Editar
                     </button>
-                )}
+                </UIBloqueio>
 
                 {podeExcluirDireto && !temPendente && (
-                    <button className="gp-btn-card gp-btn-card-excluir" onClick={() => onExcluir(p)}>
-                        <i className="fas fa-trash-alt"></i> Excluir
-                    </button>
+                    <UIBloqueio
+                        permissao="excluir-registro-producao-direto"
+                        mensagem="Você não tem permissão para excluir registros de produção diretamente."
+                    >
+                        <button className="gp-btn-card gp-btn-card-excluir" onClick={() => onExcluir(p)}>
+                            <i className="fas fa-trash-alt"></i> Excluir
+                        </button>
+                    </UIBloqueio>
                 )}
 
                 {!podeExcluirDireto && podeSolicitar && !temPendente && (
-                    <button className="gp-btn-card gp-btn-card-solicitar" onClick={() => onSolicitarExclusao(p)}>
-                        <i className="fas fa-paper-plane"></i> Solicitar exclusão
-                    </button>
+                    <UIBloqueio
+                        permissao="excluir-registro-producao"
+                        mensagem="Você não tem permissão para solicitar a exclusão de registros de produção."
+                    >
+                        <button className="gp-btn-card gp-btn-card-solicitar" onClick={() => onSolicitarExclusao(p)}>
+                            <i className="fas fa-paper-plane"></i> Solicitar exclusão
+                        </button>
+                    </UIBloqueio>
+                )}
+
+                {!podeExcluirDireto && !podeSolicitar && !temPendente && (
+                    <UIBloqueio
+                        permissao="excluir-registro-producao-direto"
+                        bloqueado
+                        mensagem="Você não tem permissão para excluir ou solicitar a exclusão deste registro de produção."
+                    >
+                        <button className="gp-btn-card gp-btn-card-excluir" type="button">
+                            <i className="fas fa-trash-alt"></i> Excluir
+                        </button>
+                    </UIBloqueio>
                 )}
 
                 {(podeExcluirDireto || podeSolicitar) && temPendente && (
                     <span className="gp-pendente-card" title="Exclusão aguardando aprovação">
                         <i className="fas fa-hourglass-half"></i> Aguardando
                     </span>
-                )}
-
-                {!podeEditar && !podeExcluirDireto && !podeSolicitar && (
-                    <span className="gp-sem-acoes">—</span>
                 )}
             </div>
         </div>

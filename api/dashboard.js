@@ -5,6 +5,7 @@ const { Pool } = pkg;
 import jwt from 'jsonwebtoken';
 import express from 'express';
 import { getPeriodoFiscalAtual, gerarBlocosSemanais, contarDiasUteis } from '../public/js/utils/periodos-fiscais.js';
+import { obterEstruturaOrigensProdutoPronto, construirCteOrigensProdutoPronto } from './utils/origens-produto-pronto.js';
 
 const router = express.Router();
 const pool = new Pool({
@@ -322,19 +323,19 @@ router.get('/desempenho', async (req, res) => {
         const periodo = getPeriodoFiscalAtual(new Date());
         
         // 4. Busca Atividades (CORRIGIDO: USANDO ID)
-        let queryText = `
+        const estruturaOrigens = await obterEstruturaOrigensProdutoPronto(dbClient);
+        const cteOrigens = construirCteOrigensProdutoPronto(estruturaOrigens.origens);
+        let queryText = `${cteOrigens}
             SELECT pr.id::text as id_original, pr.data, pr.pontos_gerados, pr.op_numero, pr.processo, p.nome as produto, pr.quantidade, pr.variacao, 'OP' as tipo_origem
-            FROM producoes pr JOIN produtos p ON pr.produto_id = p.id
-            WHERE pr.funcionario_id = $1 AND pr.data BETWEEN $2 AND $3
+            FROM producoes pr JOIN produtos p ON pr.produto_id = p.id AND p.empresa_id = pr.empresa_id
+            WHERE pr.funcionario_id = $1 AND pr.empresa_id = $4 AND pr.data BETWEEN $2 AND $3
         `;
-        if (tipoUsuario === 'tiktik') {
-            queryText += `
+        queryText += `
                 UNION ALL
-                SELECT ar.id::text as id_original, ar.data_lancamento as data, ar.pontos_gerados, ar.op_numero, 'Arremate' as processo, p.nome as produto, ar.quantidade_arrematada as quantidade, ar.variante as variacao, 'Arremate' as tipo_origem
-                FROM arremates ar JOIN produtos p ON ar.produto_id = p.id
-                WHERE ar.usuario_tiktik_id = $1 AND ar.tipo_lancamento = 'PRODUCAO' AND ar.data_lancamento BETWEEN $2 AND $3
+                SELECT ar.origem_id::text as id_original, ar.data_disponibilizacao as data, ar.pontos_gerados, ar.op_numero, ar.processo, p.nome as produto, ar.quantidade_disponibilizada as quantidade, ar.variante as variacao, 'Arremate' as tipo_origem
+                FROM OrigensProdutoProntoCompat ar JOIN produtos p ON ar.produto_id = p.id AND p.empresa_id = ar.empresa_id
+                WHERE ar.executor_id = $1 AND ar.empresa_id = $4 AND ar.data_disponibilizacao BETWEEN $2 AND $3
             `;
-        }
         queryText += `
             UNION ALL
             SELECT pe.id::text as id_original, pe.data_referencia as data, pe.pontos as pontos_gerados, NULL::text as op_numero, 'Pontos Extras' as processo, 'Bônus' as produto, 0 as quantidade, NULL as variacao, 'PontosExtra' as tipo_origem
@@ -621,19 +622,17 @@ router.get('/desempenho', async (req, res) => {
 
         // 9. BUSCA PARA LISTA DE DETALHAMENTO (LIVRE DE CICLO)
         // Busca as últimas 100 atividades independente da data (para histórico visual)
-        let queryLista = `
+        let queryLista = `${cteOrigens}
             SELECT pr.id::text as id_original, pr.data, pr.pontos_gerados, pr.op_numero, pr.processo, p.nome as produto, pr.quantidade, pr.variacao, 'OP' as tipo_origem
-            FROM producoes pr JOIN produtos p ON pr.produto_id = p.id
-            WHERE pr.funcionario_id = $1
+            FROM producoes pr JOIN produtos p ON pr.produto_id = p.id AND p.empresa_id = pr.empresa_id
+            WHERE pr.funcionario_id = $1 AND pr.empresa_id = $2
         `;
-        if (tipoUsuario === 'tiktik') {
-            queryLista += `
+        queryLista += `
                 UNION ALL
-                SELECT ar.id::text as id_original, ar.data_lancamento as data, ar.pontos_gerados, ar.op_numero, 'Arremate' as processo, p.nome as produto, ar.quantidade_arrematada as quantidade, ar.variante as variacao, 'Arremate' as tipo_origem
-                FROM arremates ar JOIN produtos p ON ar.produto_id = p.id
-                WHERE ar.usuario_tiktik_id = $1 AND ar.tipo_lancamento = 'PRODUCAO'
+                SELECT ar.origem_id::text as id_original, ar.data_disponibilizacao as data, ar.pontos_gerados, ar.op_numero, ar.processo, p.nome as produto, ar.quantidade_disponibilizada as quantidade, ar.variante as variacao, 'Arremate' as tipo_origem
+                FROM OrigensProdutoProntoCompat ar JOIN produtos p ON ar.produto_id = p.id AND p.empresa_id = ar.empresa_id
+                WHERE ar.executor_id = $1 AND ar.empresa_id = $2
             `;
-        }
         queryLista += `
             UNION ALL
             SELECT pe.id::text as id_original, pe.data_referencia as data, pe.pontos as pontos_gerados, NULL::text as op_numero, 'Pontos Extras' as processo, 'Bônus' as produto, 0 as quantidade, NULL as variacao, 'PontosExtra' as tipo_origem
@@ -782,6 +781,8 @@ router.get('/atividades', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        const estruturaOrigens = await obterEstruturaOrigensProdutoPronto(dbClient);
+        const cteOrigens = construirCteOrigensProdutoPronto(estruturaOrigens.origens);
         
         const userRes = await dbClient.query(
             `SELECT tipos FROM usuarios_empresas
@@ -793,15 +794,20 @@ router.get('/atividades', async (req, res) => {
         // 1. Monta a Subquery
         let subQuery = `
             SELECT pr.id, pr.data, pr.pontos_gerados, pr.op_numero, pr.processo, p.nome as nome_produto, pr.quantidade, pr.variacao, 'OP' as tipo_origem, pr.funcionario_id as uid
-            FROM producoes pr JOIN produtos p ON pr.produto_id = p.id
+            FROM producoes pr JOIN produtos p ON pr.produto_id = p.id AND p.empresa_id = $2
+            WHERE pr.empresa_id = $2
         `;
 
         if (tipoUsuario === 'tiktik') {
             subQuery += `
                 UNION ALL
-                SELECT ar.id::text as id, ar.data_lancamento as data, ar.pontos_gerados, ar.op_numero, 'Arremate' as processo, p.nome as nome_produto, ar.quantidade_arrematada as quantidade, ar.variante as variacao, 'Arremate' as tipo_origem, ar.usuario_tiktik_id as uid
-                FROM arremates ar JOIN produtos p ON ar.produto_id = p.id
-                WHERE ar.tipo_lancamento = 'PRODUCAO'
+                SELECT ar.origem_id::text as id, ar.data_disponibilizacao as data, ar.pontos_gerados,
+                       ar.op_numero, COALESCE(ar.processo, 'Arremate') as processo,
+                       p.nome as nome_produto, ar.quantidade_disponibilizada as quantidade,
+                       ar.variante as variacao, 'Arremate' as tipo_origem, ar.executor_id as uid
+                FROM OrigensProdutoProntoCompat ar
+                JOIN produtos p ON ar.produto_id = p.id AND p.empresa_id = $2
+                WHERE ar.empresa_id = $2
             `;
         }
 
@@ -863,6 +869,7 @@ router.get('/atividades', async (req, res) => {
         // 3. Query Final (SEM PAGINAÇÃO)
         // Buscamos tudo para o frontend calcular totais e paginar
         const dataQuery = `
+            ${cteOrigens}
             SELECT * FROM (${subQuery}) as uniao_atividades 
             ${whereString}
             ORDER BY data DESC
@@ -895,6 +902,8 @@ router.post('/resgatar-pontos', async (req, res) => {
 
     try {
         dbClient = await pool.connect();
+        const estruturaOrigens = await obterEstruturaOrigensProdutoPronto(dbClient);
+        const cteOrigens = construirCteOrigensProdutoPronto(estruturaOrigens.origens);
         await dbClient.query('BEGIN');
 
         // 1. Verifica saldo
@@ -940,14 +949,16 @@ router.post('/resgatar-pontos', async (req, res) => {
         );
         let pontosHoje = pontosHojeProd.rows[0].total;
 
-        if (tipoUsuario === 'tiktik') {
-            const pontosHojeArr = await dbClient.query(
-                `SELECT COALESCE(SUM(pontos_gerados), 0)::float as total FROM arremates
-                 WHERE usuario_tiktik_id = $1 AND empresa_id = $3 AND tipo_lancamento = 'PRODUCAO' AND data_lancamento::date = $2::date`,
-                [usuarioId, hojeStrSP, empresaId]
-            );
-            pontosHoje += pontosHojeArr.rows[0].total;
-        }
+        const pontosHojeArr = await dbClient.query(
+            `${cteOrigens}
+             SELECT COALESCE(SUM(pontos_gerados), 0)::float as total
+               FROM OrigensProdutoProntoCompat
+              WHERE executor_id = $1
+                AND empresa_id = $3
+                AND data_disponibilizacao::date = $2::date`,
+            [usuarioId, hojeStrSP, empresaId]
+        );
+        pontosHoje += pontosHojeArr.rows[0].total;
         const pontosHojeExtras = await dbClient.query(
             `SELECT COALESCE(SUM(pontos), 0)::float as total FROM pontos_extras
               WHERE funcionario_id = $1
@@ -1089,13 +1100,27 @@ router.get('/minha-tabela-pontos', async (req, res) => {
             : ['costura_op_costureira'];
 
         // 2. Produtos que o empregado trabalhou nos últimos 90 dias
-        const queryProdutos = tipoUsuario === 'tiktik'
-            ? `SELECT DISTINCT produto_id FROM arremates
-               WHERE usuario_tiktik_id = $1 AND data_lancamento >= NOW() - INTERVAL '90 days'`
-            : `SELECT DISTINCT produto_id FROM producoes
-               WHERE funcionario_id = $1 AND data >= NOW() - INTERVAL '90 days'`;
+        const queryProdutos = `
+            ${cteOrigens}, produtos_trabalhados AS (
+                SELECT produto_id
+                  FROM producoes
+                 WHERE funcionario_id = $1
+                   AND empresa_id = $2
+                   AND data >= NOW() - INTERVAL '90 days'
 
-        const produtosRes = await dbClient.query(queryProdutos, [usuarioId]);
+                UNION ALL
+
+                SELECT produto_id
+                  FROM OrigensProdutoProntoCompat
+                 WHERE executor_id = $1
+                   AND empresa_id = $2
+                   AND data_disponibilizacao >= NOW() - INTERVAL '90 days'
+            )
+            SELECT DISTINCT produto_id
+              FROM produtos_trabalhados
+        `;
+
+        const produtosRes = await dbClient.query(queryProdutos, [usuarioId, empresaId]);
         const produtosIds = produtosRes.rows.map(r => r.produto_id);
 
         if (produtosIds.length === 0) return res.status(200).json([]);
@@ -1152,6 +1177,8 @@ router.get('/ranking-semana', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        const estruturaOrigens = await obterEstruturaOrigensProdutoPronto(dbClient);
+        const cteOrigens = construirCteOrigensProdutoPronto(estruturaOrigens.origens);
 
         // 1. Tipo do usuário logado
         const tipoRes = await dbClient.query(
@@ -1205,31 +1232,28 @@ router.get('/ranking-semana', async (req, res) => {
         // 4. Somar pontos de cada usuário na semana
         // NOTA: pontos_extras propositalmente excluídos do ranking — seria injusto
         // com quem não recebeu bônus. O card exibe um 'i' explicando isso ao usuário.
-        let queryPontos;
-        const paramsPontos = [todosIds, inicioSemana];
+        const paramsPontos = [todosIds, inicioSemana, empresaId];
         if (fimJanela) paramsPontos.push(fimJanela);
-        const clausulaFim  = fimJanela ? 'AND data_lancamento < $3' : '';
-        const clausulaFimP = fimJanela ? 'AND data < $3' : '';
-        if (tipoUsuario === 'tiktik') {
-            queryPontos = `
-                SELECT usuario_tiktik_id AS uid, COALESCE(SUM(pontos_gerados), 0)::int AS pontos
-                FROM arremates
-                WHERE usuario_tiktik_id = ANY($1::int[])
-                AND tipo_lancamento = 'PRODUCAO'
-                AND data_lancamento >= $2
-                ${clausulaFim}
-                GROUP BY uid
-            `;
-        } else {
-            queryPontos = `
-                SELECT funcionario_id AS uid, COALESCE(SUM(pontos_gerados), 0)::int AS pontos
-                FROM producoes
-                WHERE funcionario_id = ANY($1::int[])
-                AND data >= $2
-                ${clausulaFimP}
-                GROUP BY uid
-            `;
-        }
+        const clausulaFim = fimJanela ? 'AND ts < $4' : '';
+        const queryPontos = `
+            ${cteOrigens}, pontos_semana AS (
+                SELECT funcionario_id AS uid, pontos_gerados, data AS ts
+                  FROM producoes
+                 WHERE empresa_id = $3
+
+                UNION ALL
+
+                SELECT executor_id AS uid, pontos_gerados, data_disponibilizacao AS ts
+                  FROM OrigensProdutoProntoCompat
+                 WHERE empresa_id = $3
+            )
+            SELECT uid, COALESCE(SUM(pontos_gerados), 0)::int AS pontos
+              FROM pontos_semana
+             WHERE uid = ANY($1::int[])
+               AND ts >= $2
+               ${clausulaFim}
+             GROUP BY uid
+        `;
         const pontosRes = await dbClient.query(queryPontos, paramsPontos);
 
         // 5. Incluir usuários com 0 pontos e ordenar
@@ -1302,30 +1326,27 @@ router.get('/ranking-semana', async (req, res) => {
                 // Buscar 8 semanas para trás (antes do início da semana atual)
                 const oitoSemanasAtras = new Date(inicioSemana.getTime() - 8 * 7 * 86400000);
 
-                let queryHist;
-                if (tipoUsuario === 'tiktik') {
-                    queryHist = `
-                        SELECT usuario_tiktik_id AS uid,
-                               (data_lancamento AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date AS dia,
-                               SUM(pontos_gerados)::int AS pontos
-                        FROM arremates
-                        WHERE usuario_tiktik_id = ANY($1::int[])
-                          AND tipo_lancamento = 'PRODUCAO'
-                          AND data_lancamento >= $2 AND data_lancamento < $3
-                        GROUP BY uid, dia
-                    `;
-                } else {
-                    queryHist = `
-                        SELECT funcionario_id AS uid,
-                               (data AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date AS dia,
-                               SUM(pontos_gerados)::int AS pontos
-                        FROM producoes
-                        WHERE funcionario_id = ANY($1::int[])
-                          AND data >= $2 AND data < $3
-                        GROUP BY uid, dia
-                    `;
-                }
-                const histRes = await dbClient.query(queryHist, [todosIds, oitoSemanasAtras, inicioSemana]);
+                const queryHist = `
+                    ${cteOrigens}, historico_pontos AS (
+                        SELECT funcionario_id AS uid, pontos_gerados, data AS ts
+                          FROM producoes
+                         WHERE empresa_id = $3
+
+                        UNION ALL
+
+                        SELECT executor_id AS uid, pontos_gerados, data_disponibilizacao AS ts
+                          FROM OrigensProdutoProntoCompat
+                         WHERE empresa_id = $3
+                    )
+                    SELECT uid,
+                           (ts AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date AS dia,
+                           SUM(pontos_gerados)::int AS pontos
+                      FROM historico_pontos
+                     WHERE uid = ANY($1::int[])
+                       AND ts >= $2 AND ts < $4
+                     GROUP BY uid, dia
+                `;
+                const histRes = await dbClient.query(queryHist, [todosIds, oitoSemanasAtras, empresaId, inicioSemana]);
 
                 // Agrupar por semana (Domingo–Sábado)
                 // r.dia é uma DATE SP retornada como Date UTC midnight — getUTCDay() dá o dia correto
@@ -1391,6 +1412,8 @@ router.get('/streak', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        const estruturaOrigens = await obterEstruturaOrigensProdutoPronto(dbClient);
+        const cteOrigens = construirCteOrigensProdutoPronto(estruturaOrigens.origens);
 
         const tipoRes = await dbClient.query(
             `SELECT tipos FROM usuarios_empresas
@@ -1402,26 +1425,27 @@ router.get('/streak', async (req, res) => {
         const agoraSP = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
         const hojeStr = agoraSP.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
 
-        let queryDias;
-        if (tipoUsuario === 'tiktik') {
-            queryDias = `
-                SELECT data_lancamento::date AS dia, SUM(pontos_gerados) AS pontos
-                FROM arremates
-                WHERE usuario_tiktik_id = $1
-                  AND tipo_lancamento = 'PRODUCAO'
-                  AND data_lancamento >= NOW() - INTERVAL '50 days'
-                GROUP BY dia
-            `;
-        } else {
-            queryDias = `
-                SELECT data::date AS dia, SUM(pontos_gerados) AS pontos
-                FROM producoes
-                WHERE funcionario_id = $1
-                  AND data >= NOW() - INTERVAL '50 days'
-                GROUP BY dia
-            `;
-        }
-        const diasRes = await dbClient.query(queryDias, [usuarioId]);
+        const queryDias = `
+            ${cteOrigens}, pontos_dias AS (
+                SELECT data AS ts, pontos_gerados
+                  FROM producoes
+                 WHERE funcionario_id = $1
+                   AND empresa_id = $2
+                   AND data >= NOW() - INTERVAL '50 days'
+
+                UNION ALL
+
+                SELECT data_disponibilizacao AS ts, pontos_gerados
+                  FROM OrigensProdutoProntoCompat
+                 WHERE executor_id = $1
+                   AND empresa_id = $2
+                   AND data_disponibilizacao >= NOW() - INTERVAL '50 days'
+            )
+            SELECT ts::date AS dia, SUM(pontos_gerados) AS pontos
+              FROM pontos_dias
+             GROUP BY dia
+        `;
+        const diasRes = await dbClient.query(queryDias, [usuarioId, empresaId]);
         const diasComProducao = new Set(
             diasRes.rows
                 .filter(r => parseFloat(r.pontos) > 0)
@@ -1501,6 +1525,8 @@ router.get('/conquistas-ciclo', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        const estruturaOrigens = await obterEstruturaOrigensProdutoPronto(dbClient);
+        const cteOrigens = construirCteOrigensProdutoPronto(estruturaOrigens.origens);
 
         const tipoRes = await dbClient.query(
             `SELECT ue.tipos
@@ -1514,30 +1540,29 @@ router.get('/conquistas-ciclo', async (req, res) => {
 
         const periodo = getPeriodoFiscalAtual(new Date());
 
-        let queryDias;
-        if (tipoUsuario === 'tiktik') {
-            queryDias = `
-                SELECT data_lancamento::date AS dia,
-                       SUM(pontos_gerados)::float AS pontos,
-                       COUNT(*)::int AS registros
-                FROM arremates
-                WHERE usuario_tiktik_id = $1
-                  AND tipo_lancamento = 'PRODUCAO'
-                  AND data_lancamento BETWEEN $2 AND $3
-                GROUP BY dia
-            `;
-        } else {
-            queryDias = `
-                SELECT data::date AS dia,
-                       SUM(pontos_gerados)::float AS pontos,
-                       COUNT(*)::int AS registros
-                FROM producoes
-                WHERE funcionario_id = $1
-                  AND data BETWEEN $2 AND $3
-                GROUP BY dia
-            `;
-        }
-        const diasRes = await dbClient.query(queryDias, [usuarioId, periodo.inicio, periodo.fim]);
+        const queryDias = `
+            ${cteOrigens}, pontos_dias AS (
+                SELECT data AS ts, pontos_gerados
+                  FROM producoes
+                 WHERE funcionario_id = $1
+                   AND empresa_id = $4
+                   AND data BETWEEN $2 AND $3
+
+                UNION ALL
+
+                SELECT data_disponibilizacao AS ts, pontos_gerados
+                  FROM OrigensProdutoProntoCompat
+                 WHERE executor_id = $1
+                   AND empresa_id = $4
+                   AND data_disponibilizacao BETWEEN $2 AND $3
+            )
+            SELECT ts::date AS dia,
+                   SUM(pontos_gerados)::float AS pontos,
+                   COUNT(*)::int AS registros
+              FROM pontos_dias
+             GROUP BY dia
+        `;
+        const diasRes = await dbClient.query(queryDias, [usuarioId, periodo.inicio, periodo.fim, empresaId]);
         const dias = diasRes.rows;
 
         // Meta mínima do ciclo

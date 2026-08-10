@@ -1,6 +1,7 @@
 // public/js/utils/auth.js
 
 import { permissoesDisponiveis, permissoesPorTipo, permissoesValidas } from '/js/utils/permissoes.js';
+import { salvarContextoAcessoNegado } from './acesso-negado.js';
 
 export function limparContextoEmpresaLocal() {
   localStorage.removeItem('empresaAtiva');
@@ -110,6 +111,12 @@ export async function verificarAutenticacao(pagina, permissoesRequeridas = [], m
                 : permissoesRequeridas.every(p => permissoes.includes(p));
 
             if (!temPermissao) {
+                salvarContextoAcessoNegado({
+                    pagina,
+                    permissoes: permissoesRequeridas,
+                    motivo: 'permissao',
+                    mensagem: 'Seu vínculo atual não possui o acesso necessário para abrir esta página.',
+                });
                 console.log(`[Auth API] Sem permissão (${modo}) para [${permissoesRequeridas.join(', ')}]. Redirecionando para ${paginaAcessoNegado}.`);
                 window.location.href = paginaAcessoNegado; // << Usa a URL de acesso negado correta
                 return null;

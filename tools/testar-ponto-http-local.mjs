@@ -217,6 +217,18 @@ async function testar() {
           AND tipo_evento = 'RETORNO_MANUAL'
     `, [funcionario.empresa_id, funcionario.id, dataHoje]);
     assert(retornoEvento.rowCount === 1, 'O retorno HTTP nao registrou RETORNO_MANUAL.');
+    const retornoPonto = await pool.query(`
+        SELECT horario_real_e2
+        FROM ponto_diario
+        WHERE empresa_id = $1 AND funcionario_id = $2 AND data = $3::date
+    `, [funcionario.empresa_id, funcionario.id, dataHoje]);
+    assert(retornoPonto.rows[0]?.horario_real_e2, 'O retorno manual nao gravou horario_real_e2.');
+    const retornoStatus = await pool.query(`
+        SELECT status_atual
+        FROM usuarios_empresas
+        WHERE empresa_id = $1 AND usuario_id = $2
+    `, [funcionario.empresa_id, funcionario.id]);
+    assert(retornoStatus.rows[0]?.status_atual === 'LIVRE_MANUAL', 'O retorno de empregado ocioso nao liberou o status.');
 
     const retornoRepetidoResponse = await fetch(`${baseUrl}/api/ponto/retomar-trabalho`, {
         method: 'POST',
@@ -240,6 +252,64 @@ async function testar() {
           AND tipo_evento = 'RETORNO_MANUAL'
     `, [funcionario.empresa_id, funcionario.id, dataHoje]);
     assert(retornoEventosFinais.rowCount === 1, 'O retorno manual repetido criou mais de um evento.');
+
+    const cronDepoisRetornoResponse = await fetch(`${baseUrl}/api/cron/registrar-intervalos`);
+    const cronDepoisRetornoBody = await cronDepoisRetornoResponse.json();
+    assert([200, 207].includes(cronDepoisRetornoResponse.status), `Cron depois do retorno manual falhou: ${cronDepoisRetornoResponse.status} ${JSON.stringify(cronDepoisRetornoBody)}`);
+    const retornosAutomaticos = await pool.query(`
+        SELECT id
+        FROM ponto_eventos
+        WHERE empresa_id = $1 AND funcionario_id = $2
+          AND data_jornada = $3::date
+          AND tipo_evento = 'RETORNO_ALMOCO_AUTOMATICO'
+    `, [funcionario.empresa_id, funcionario.id, dataHoje]);
+    assert(retornosAutomaticos.rowCount === 1, 'O motor criou retorno automatico duplicado depois do retorno manual.');
+
+    // Regressao: retorno manual de PAUSA antes do E3 programado deve gravar
+    // o horario efetivo do supervisor, nunca o horario previsto.
+    const retornoPausaResponse = await fetch(`${baseUrl}/api/ponto/retomar-trabalho`, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            funcionario_id: funcionario.id,
+            tipo: 'PAUSA',
+            motivo: 'Ensaio HTTP de retorno manual da pausa antes do E3',
+        }),
+    });
+    const retornoPausaBody = await retornoPausaResponse.json();
+    assert(retornoPausaResponse.status === 200, `Retorno manual de pausa HTTP falhou: ${retornoPausaResponse.status} ${JSON.stringify(retornoPausaBody)}`);
+    const retornoPausaEvento = await pool.query(`
+        SELECT tipo_evento, horario_planejado, horario_efetivo
+        FROM ponto_eventos
+        WHERE empresa_id = $1 AND funcionario_id = $2
+          AND data_jornada = $3::date
+          AND tipo_evento = 'RETORNO_MANUAL'
+          AND transicao_tipo = 'PAUSA'
+    `, [funcionario.empresa_id, funcionario.id, dataHoje]);
+    assert(retornoPausaEvento.rowCount === 1, 'O retorno manual da pausa nao registrou RETORNO_MANUAL.');
+    const retornoPausaPonto = await pool.query(`
+        SELECT horario_real_s2, horario_real_e3
+        FROM ponto_diario
+        WHERE empresa_id = $1 AND funcionario_id = $2 AND data = $3::date
+    `, [funcionario.empresa_id, funcionario.id, dataHoje]);
+    const e3Manual = String(retornoPausaPonto.rows[0]?.horario_real_e3 || '');
+    assert(e3Manual.startsWith(String(retornoPausaBody.horario_retorno)), `O retorno manual da pausa gravou E3 incorreto: ${JSON.stringify(retornoPausaPonto.rows[0])} / ${JSON.stringify(retornoPausaBody)}`);
+    assert(!e3Manual.startsWith('00:05'), `O retorno manual da pausa foi substituido pelo E3 programado: ${e3Manual}`);
+
+    const cronDepoisRetornoPausaResponse = await fetch(`${baseUrl}/api/cron/registrar-intervalos`);
+    const cronDepoisRetornoPausaBody = await cronDepoisRetornoPausaResponse.json();
+    assert([200, 207].includes(cronDepoisRetornoPausaResponse.status), `Cron depois do retorno manual da pausa falhou: ${cronDepoisRetornoPausaResponse.status} ${JSON.stringify(cronDepoisRetornoPausaBody)}`);
+    const retornosPausaAutomaticos = await pool.query(`
+        SELECT id
+        FROM ponto_eventos
+        WHERE empresa_id = $1 AND funcionario_id = $2
+          AND data_jornada = $3::date
+          AND tipo_evento = 'RETORNO_PAUSA_AUTOMATICO'
+    `, [funcionario.empresa_id, funcionario.id, dataHoje]);
+    assert(retornosPausaAutomaticos.rowCount === 1, 'O motor criou retorno automatico duplicado depois do retorno manual da pausa.');
 
     const desfazerRetornoResponse = await fetch(`${baseUrl}/api/ponto/desfazer-retomada`, {
         method: 'POST',

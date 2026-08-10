@@ -3,6 +3,7 @@ import Select from 'react-select';
 import { formatarMoeda } from '../utils/cpag-format';
 import { mostrarConfirmacao, mostrarToast } from '../utils/cpag-feedback';
 import { fetchCpag } from '../utils/cpag-api';
+import UIBloqueio from './UIBloqueio';
 import type {
   CpagContaFinanceira,
   CpagFolhaSalarioItem,
@@ -701,20 +702,25 @@ export default function CPAGSalario({ usuarios, contas }: Props) {
             </table>
           </div>
 
-          <button
-            type="button"
-            className="cpg-btn cpg-btn-primario"
-            style={{ width: '100%', marginTop: '20px', height: '50px', fontSize: '1.1rem' }}
-            onClick={() => void handleProcessarFolha()}
-            disabled={loading || !selecionados.length || pagamentoBloqueado}
-            title={pagamentoBloqueado ? mensagemBloqueio : ''}
+          <UIBloqueio
+            permissao="permitir-pagar-salarios"
+            mensagem="Você não tem permissão para pagar salários."
           >
-            {loading
-              ? 'Processando...'
-              : pagamentoBloqueado
-                ? 'Aguardando fechamento do mês'
-                : `Confirmar pagamento (${selecionados.length})`}
-          </button>
+            <button
+              type="button"
+              className="cpg-btn cpg-btn-primario"
+              style={{ width: '100%', marginTop: '20px', height: '50px', fontSize: '1.1rem' }}
+              onClick={() => void handleProcessarFolha()}
+              disabled={loading || !selecionados.length || pagamentoBloqueado}
+              title={pagamentoBloqueado ? mensagemBloqueio : ''}
+            >
+              {loading
+                ? 'Processando...'
+                : pagamentoBloqueado
+                  ? 'Aguardando fechamento do mês'
+                  : `Confirmar pagamento (${selecionados.length})`}
+            </button>
+          </UIBloqueio>
         </>
       )}
     </div>

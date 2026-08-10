@@ -6,6 +6,7 @@ import type { CpagHistoricoVT } from '../utils/cpag-types';
 import CPAGPaginacao from './CPAGPaginacao';
 import UIFeedbackNotFound from './UIFeedbackNotFound';
 import UICarregando from './UICarregando';
+import UIBloqueio from './UIBloqueio';
 
 interface Props { isOpen: boolean; onClose: () => void; usuarioId: number | string | null; }
 
@@ -61,7 +62,14 @@ export default function CPAGModalHistoricoVT({ isOpen, onClose, usuarioId }: Pro
             <table className="cpg-tabela-detalhes"><thead><tr><th>Data Pgto</th><th>Descrição</th><th>Valor</th><th>Ação</th></tr></thead>
               <tbody>{itensVisiveis.map((item) => <tr key={item.id} style={{ opacity: item.estornado_em ? 0.5 : 1 }}>
                 <td>{new Date(item.data_pagamento).toLocaleDateString('pt-BR')}</td><td>{item.descricao}{item.estornado_em && <div style={{ color: 'red', fontSize: '0.8em' }}>Estornado em {new Date(item.estornado_em).toLocaleDateString('pt-BR')}</div>}</td><td>{formatarMoeda(item.valor_liquido_pago)}</td>
-                <td>{!item.estornado_em && <button type="button" className="cpg-btn cpg-btn-aviso" onClick={() => void handleEstornar(item.id)}>Estornar</button>}</td>
+                <td>{!item.estornado_em && (
+                  <UIBloqueio
+                    permissao="efetuar-pagamento-empregado"
+                    mensagem="Você não tem permissão para estornar recargas de vale-transporte."
+                  >
+                    <button type="button" className="cpg-btn cpg-btn-aviso" onClick={() => void handleEstornar(item.id)}>Estornar</button>
+                  </UIBloqueio>
+                )}</td>
               </tr>)}</tbody>
             </table>
           )}

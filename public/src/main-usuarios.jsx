@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import { fetchAPI } from '/js/utils/api-utils.js';
 import { verificarAutenticacao } from '/js/utils/auth.js';
+import { PERMISSOES_AUDITORIA_GESTAO } from '/js/utils/permissoes.js';
 import UIHeaderPagina from './components/UIHeaderPagina';
 import UICarregando from './components/UICarregando';
 import UIFeedbackNotFound from './components/UIFeedbackNotFound';
@@ -46,7 +47,15 @@ export default function MainUsuarios() {
 
     useEffect(() => {
         const init = async () => {
-            const auth = await verificarAutenticacao('usuarios-cadastrados.html', ['acesso-usuarios-cadastrados']);
+            const auth = await verificarAutenticacao(
+                'usuarios-cadastrados.html',
+                [
+                    'acesso-gestao-organizacional',
+                    'acesso-usuarios-cadastrados',
+                    ...PERMISSOES_AUDITORIA_GESTAO,
+                ],
+                'any',
+            );
             if (!auth) return;
             document.getElementById('lv-initial-page-loader')?.remove();
             await carregarUsuarios();

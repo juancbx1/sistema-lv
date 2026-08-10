@@ -128,7 +128,7 @@ router.post('/padrao', async (req, res) => {
     try {
         dbCliente = await pool.connect();
         const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbCliente, usuarioLogado.id, empresaId);
-        if (!permissoesCompletas.includes('acesso-ponto-por-processo')) {
+        if (!permissoesCompletas.includes('gerenciar-pontos-atividade')) {
             return res.status(403).json({ error: 'Permissão negada para gerenciar configurações de pontos.' });
         }
 
@@ -215,7 +215,7 @@ router.put('/padrao/:id', async (req, res) => {
         dbCliente = await pool.connect();
         const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbCliente, usuarioLogado.id, empresaId);
 
-        if (!permissoesCompletas.includes('acesso-ponto-por-processo')) {
+        if (!permissoesCompletas.includes('gerenciar-pontos-atividade')) {
             return res.status(403).json({ error: 'Permissão negada para atualizar configuração de pontos.' });
         }
 
@@ -296,7 +296,7 @@ router.delete('/padrao/:id', async (req, res) => {
         dbCliente = await pool.connect();
         const permissoesCompletas = await getPermissoesCompletasUsuarioDB(dbCliente, usuarioLogado.id, empresaId);
 
-        if (!permissoesCompletas.includes('acesso-ponto-por-processo')) { // Ou 'excluir-ponto-por-processo'
+        if (!permissoesCompletas.includes('gerenciar-pontos-atividade')) {
             return res.status(403).json({ error: 'Permissão negada para excluir configuração de pontos.' });
         }
 

@@ -2173,3 +2173,23 @@
         font-size: 1.1rem;
     }
 }
+
+.movimento-op-btn.permissao-negada,
+.reordenar-btn.permissao-negada,
+.es-btn-icon-estorno.permissao-negada,
+#arquivarItemBtn.permissao-negada,
+#btnSalvarPrioridades.permissao-negada {
+    color: #adb5bd;
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+.movimento-op-btn.permissao-negada:hover,
+.reordenar-btn.permissao-negada:hover,
+.es-btn-icon-estorno.permissao-negada:hover,
+#arquivarItemBtn.permissao-negada:hover,
+#btnSalvarPrioridades.permissao-negada:hover {
+    transform: none;
+    box-shadow: none;
+    color: #adb5bd;
+}

@@ -14,6 +14,9 @@ import {
     TIPOS_EVENTO_TAREFA,
 } from './ponto-eventos.js';
 import { reconciliarJornadaFuncionarios } from './ponto-motor.js';
+import { construirEtapasCanonicas, encontrarEtapaCanonica } from './utils/etapas-produto.js';
+import { listarTemposProducao, salvarTemposProducao } from './utils/tempos-padrao.js';
+import { obterEstruturaOrigensProdutoPronto, construirCteOrigensProdutoPronto } from './utils/origens-produto-pronto.js';
 
 const router = express.Router();
 const pool = new Pool({
@@ -42,20 +45,50 @@ function janelaOrdinariaAberta(row, jornadaOrdinariaHoje, agoraMin) {
     if (!jornadaOrdinariaHoje) return false;
 
     const entrada1 = hhmmParaMin(row.horario_entrada_1);
-    const saida1 = hhmmParaMin(row.horario_saida_1);
-    const entrada2 = hhmmParaMin(row.horario_entrada_2);
-    const saida2 = hhmmParaMin(row.horario_saida_2);
-    const entrada3 = hhmmParaMin(row.horario_entrada_3);
     const saida3 = hhmmParaMin(row.horario_saida_3 || row.horario_saida_2 || row.horario_saida_1);
 
-    const janelas = [
-        [entrada1, saida1 || entrada2 || saida3],
-        [entrada2, saida2 || entrada3 || saida3],
-        [entrada3, saida3],
-    ].filter(([inicio, fim]) => inicio !== null && fim !== null && fim > inicio);
+    // Almoço e pausas são intervalos dentro da jornada, não encerramentos da
+    // janela ordinária. Ações como retorno manual, falta e saída antecipada
+    // continuam pertencendo à jornada entre E1 e S3.
+    if (entrada1 === null || saida3 === null || agoraMin === null) return true;
+    return agoraMin >= entrada1 && agoraMin < saida3;
+}
 
-    if (janelas.length === 0) return true;
-    return janelas.some(([inicio, fim]) => agoraMin >= inicio && agoraMin < fim);
+function etapaCanonicaDoProduto(produto, fase, etapa) {
+    return encontrarEtapaCanonica(produto, {
+        fase,
+        processo: etapa?.processo || etapa,
+        processoId: etapa?.processo_id,
+        etapaId: etapa?.id,
+    });
+}
+
+function produtoComEtapasCanonicas(produto) {
+    const canonico = construirEtapasCanonicas({
+        etapas: produto?.etapas,
+        etapasTiktik: produto?.etapas_tiktik ?? produto?.etapastiktik,
+    });
+    return { ...produto, ...canonico };
+}
+
+async function origensPosOpSessaoDisponivel(dbClient) {
+    const result = await dbClient.query(`
+        SELECT 1
+          FROM sistema_migrations
+         WHERE id = 'pos-op-origens-sessao-v1'
+         LIMIT 1
+    `);
+    return result.rowCount > 0;
+}
+
+async function fasePosOpSessaoDisponivel(dbClient) {
+    const result = await dbClient.query(`
+        SELECT 1
+          FROM sistema_migrations
+         WHERE id = 'pos-op-sessoes-producao-v1'
+         LIMIT 1
+    `);
+    return result.rowCount > 0;
 }
 
 // Middleware de autenticação (pode ser copiado de outros arquivos de API)
@@ -77,6 +110,15 @@ router.get('/meu-status', async (req, res) => {
     try {
         dbClient = await pool.connect();
         const userId = req.usuarioLogado.id;
+        const fasePosOpDisponivel = await fasePosOpSessaoDisponivel(dbClient);
+        const origensPosOpDisponivel = await origensPosOpSessaoDisponivel(dbClient);
+        const camposSessaoPosOp = [
+            fasePosOpDisponivel ? "'fase', s.fase" : null,
+            origensPosOpDisponivel ? "'origens_pos_op', s.origens_pos_op" : null,
+        ].filter(Boolean);
+        const campoSessaoPosOp = camposSessaoPosOp.length > 0
+            ? `, ${camposSessaoPosOp.join(', ')}`
+            : '';
 
         const [usuarioResult, pontoResult, pontosHojeResult] = await Promise.all([
             dbClient.query(`
@@ -101,6 +143,7 @@ router.get('/meu-status', async (req, res) => {
                                 'imagem',      COALESCE(g.imagem, p.imagem),
                                 'valor_ponto', cpp.pontos_padrao,
                                 'tpp',         tpp_ref.tempo_segundos
+                                ${campoSessaoPosOp}
                             ) ORDER BY s.id ASC
                         ) FILTER (WHERE s.id IS NOT NULL),
                         '[]'
@@ -114,7 +157,9 @@ router.get('/meu-status', async (req, res) => {
                     ON u.id = s.funcionario_id
                     AND s.empresa_id = ue.empresa_id
                     AND s.status = 'EM_ANDAMENTO'
-                LEFT JOIN produtos p ON s.produto_id = p.id
+                LEFT JOIN produtos p
+                    ON s.produto_id = p.id
+                   AND p.empresa_id = ue.empresa_id
                 LEFT JOIN LATERAL (
                     SELECT gr.imagem
                     FROM jsonb_to_recordset(
@@ -132,6 +177,7 @@ router.get('/meu-status', async (req, res) => {
                 LEFT JOIN tempos_padrao_producao tpp_ref
                     ON tpp_ref.produto_id = s.produto_id
                     AND tpp_ref.processo = s.processo
+                    AND p.id IS NOT NULL
                 WHERE u.id = $1
                 GROUP BY u.id, ue.id
             `, [userId, req.empresaId]),
@@ -151,8 +197,9 @@ router.get('/meu-status', async (req, res) => {
                 SELECT COALESCE(SUM(pontos_gerados), 0)::numeric(10,2) AS pontos_hoje
                 FROM producoes
                 WHERE funcionario_id = $1
+                  AND empresa_id = $2
                   AND (data AT TIME ZONE 'America/Sao_Paulo')::date = (NOW() AT TIME ZONE 'America/Sao_Paulo')::date
-            `, [userId]),
+            `, [userId, req.empresaId]),
         ]);
 
         if (usuarioResult.rows.length === 0) {
@@ -230,12 +277,22 @@ router.get('/status-funcionarios', async (req, res) => {
             req.usuarioLogado.id,
             req.empresaId
         );
-        if (!permissoes.includes('acesso-ordens-de-producao')) {
+        if (!permissoes.includes('acesso-ordens-de-producao')
+            && !permissoes.includes('acesso-ordens-de-arremates')) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
 
         // MUDANÇA NA QUERY: Removemos o LEFT JOIN simples e fazemos um agrupamento de sessões
         // Buscamos usuários e suas sessões ativas (agregadas em JSON array)
+        const fasePosOpDisponivel = await fasePosOpSessaoDisponivel(dbClient);
+        const origensPosOpDisponivel = await origensPosOpSessaoDisponivel(dbClient);
+        const camposSessaoPosOp = [
+            fasePosOpDisponivel ? "'fase', s.fase" : null,
+            origensPosOpDisponivel ? "'origens_pos_op', s.origens_pos_op" : null,
+        ].filter(Boolean);
+        const campoSessaoPosOp = camposSessaoPosOp.length > 0
+            ? `, ${camposSessaoPosOp.join(', ')}`
+            : '';
         const query = `
             SELECT 
                 u.id, u.nome, u.avatar_url, u.foto_oficial,
@@ -257,6 +314,7 @@ router.get('/status-funcionarios', async (req, res) => {
                             'produto_nome', p.nome,
                             'imagem', COALESCE(g.imagem, p.imagem),
                             'etapas_unificadas', s.etapas_unificadas
+                            ${campoSessaoPosOp}
                         ) ORDER BY s.id ASC
                     ) FILTER (WHERE s.id IS NOT NULL),
                     '[]'
@@ -270,7 +328,9 @@ router.get('/status-funcionarios', async (req, res) => {
               ON u.id = s.funcionario_id
              AND s.empresa_id = ue.empresa_id
              AND s.status = 'EM_ANDAMENTO'
-            LEFT JOIN produtos p ON s.produto_id = p.id
+            LEFT JOIN produtos p
+              ON s.produto_id = p.id
+             AND p.empresa_id = ue.empresa_id
             LEFT JOIN LATERAL (
                 SELECT gr.imagem
                 FROM jsonb_to_recordset(
@@ -322,10 +382,13 @@ router.get('/status-funcionarios', async (req, res) => {
                             'processo',     s.processo,
                             'quantidade',   s.quantidade_atribuida,
                             'imagem',       COALESCE(g.imagem, p.imagem)
+                            ${campoSessaoPosOp}
                         ) ORDER BY s.data_inicio
                     ) AS sessoes
                  FROM sessoes_trabalho_producao s
-                 LEFT JOIN produtos p ON s.produto_id = p.id
+                 LEFT JOIN produtos p
+                     ON s.produto_id = p.id
+                    AND p.empresa_id = $1
                  LEFT JOIN LATERAL (
                      SELECT gr.imagem
                      FROM jsonb_to_recordset(
@@ -443,8 +506,10 @@ router.get('/status-funcionarios', async (req, res) => {
                             saida_desfeita: false, saida_desfeita_por: null, saida_desfeita_em: null,
                         });
                     } else {
-                        ponto.horario_real_s1 = s1;
-                        ponto.horario_real_e2 = e2;
+                        // A projecao pode ter sido preenchida manualmente
+                        // enquanto o safety-net estava sendo calculado.
+                        ponto.horario_real_s1 = ponto.horario_real_s1 || s1;
+                        ponto.horario_real_e2 = ponto.horario_real_e2 || e2;
                     }
                     console.log(`[SAFETY-NET] Almoço fallback func ${row.id} (${row.nome}): ${s1}→${e2} (agendado)`);
                 }
@@ -477,8 +542,10 @@ router.get('/status-funcionarios', async (req, res) => {
                             saida_desfeita: false, saida_desfeita_por: null, saida_desfeita_em: null,
                         });
                     } else {
-                        pontoAtual.horario_real_s2 = s2;
-                        pontoAtual.horario_real_e3 = e3;
+                        // Nunca devolva o horario programado na resposta quando
+                        // E3 ja foi registrado manualmente antes do fallback.
+                        pontoAtual.horario_real_s2 = pontoAtual.horario_real_s2 || s2;
+                        pontoAtual.horario_real_e3 = pontoAtual.horario_real_e3 || e3;
                     }
                     console.log(`[SAFETY-NET] Pausa fallback func ${row.id} (${row.nome}): ${s2}→${e3} (agendado)`);
                 }
@@ -493,6 +560,27 @@ router.get('/status-funcionarios', async (req, res) => {
                 await Promise.all(safetyNetInserts);
             } catch (err) {
                 console.error('[SAFETY-NET] Falha ao gravar fallback de ponto:', err);
+            }
+
+            // O supervisor pode ter gravado E2/E3 enquanto o fallback era
+            // calculado. Releia a projeção depois das gravações para que a
+            // resposta nunca devolva o horário programado no lugar do efetivo.
+            const pontoDiarioAtualizado = await dbClient.query(
+                `SELECT funcionario_id, horario_real_s1, horario_real_e2,
+                        horario_real_s2, horario_real_e3, horario_real_s3,
+                        tipo_excecao,
+                        COALESCE(tipo_excecao = 'SAIDA_ANTECIPADA'
+                         AND horario_real_s3 IS NOT NULL
+                         AND COALESCE(saida_desfeita, FALSE) = FALSE, FALSE) AS saida_antecipada_ativa,
+                        saida_desfeita, saida_desfeita_por, saida_desfeita_em
+                 FROM ponto_diario
+                 WHERE data = $2::date
+                   AND empresa_id = $1`,
+                [req.empresaId, dataHojeSP]
+            );
+            pontoDiarioMap.clear();
+            for (const pontoAtualizado of pontoDiarioAtualizado.rows) {
+                pontoDiarioMap.set(pontoAtualizado.funcionario_id, pontoAtualizado);
             }
         }
 
@@ -609,7 +697,9 @@ router.get('/grupos-unificaveis', async (req, res) => {
             const processo = typeof e === 'object' ? e.processo : e;
             const maquina = typeof e === 'object' ? (e.maquina || null) : null;
 
-            if (feitoPor === tipo_funcionario) {
+            const executores = Array.isArray(feitoPor) ? feitoPor : [feitoPor];
+
+            if (executores.includes(tipo_funcionario)) {
                 if (grupoAtual) {
                     grupoAtual.etapas.push({ etapa_index: i, processo, maquina, feitoPor });
                 } else {
@@ -642,6 +732,43 @@ router.get('/fila-de-tarefas', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+
+        const posOpEstruturaResult = await dbClient.query(`
+            SELECT 1
+              FROM sistema_migrations
+             WHERE id = 'pos-op-sessoes-producao-v1'
+             LIMIT 1
+        `);
+        const posOpEstruturaDisponivel = posOpEstruturaResult.rowCount > 0;
+        const origensPosOpDisponivel = posOpEstruturaDisponivel
+            ? await origensPosOpSessaoDisponivel(dbClient)
+            : false;
+        const estruturaOrigens = await obterEstruturaOrigensProdutoPronto(dbClient);
+        const cteOrigens = construirCteOrigensProdutoPronto(estruturaOrigens.origens);
+        const sessoesProducaoFilaQuery = posOpEstruturaDisponivel
+            ? (origensPosOpDisponivel
+                ? `
+                SELECT produto_id, variante, processo, fase,
+                       quantidade_atribuida, etapas_unificadas, origens_pos_op
+                  FROM sessoes_trabalho_producao
+                 WHERE status = 'EM_ANDAMENTO'
+                   AND empresa_id = $1
+            `
+                : `
+                SELECT produto_id, variante, processo, fase,
+                       quantidade_atribuida, etapas_unificadas
+                  FROM sessoes_trabalho_producao
+                 WHERE status = 'EM_ANDAMENTO'
+                   AND empresa_id = $1
+            `)
+            : `
+                SELECT produto_id, variante, processo,
+                       NULL::text AS fase,
+                       quantidade_atribuida, etapas_unificadas
+                  FROM sessoes_trabalho_producao
+                 WHERE status = 'EM_ANDAMENTO'
+                   AND empresa_id = $1
+            `;
         
         // 1. "Pegar as Prateleiras de Dados" - Buscamos tudo em paralelo
         const [opsResult, producoesResult, sessoesResult, produtosResult] = await Promise.all([
@@ -663,28 +790,94 @@ router.get('/fila-de-tarefas', async (req, res) => {
             `, [req.empresaId]),
             
             // Prateleira 3: Sessões EM ANDAMENTO — inclui etapas_unificadas para abatimento correto
-            dbClient.query(`
-                SELECT produto_id, variante, processo, quantidade_atribuida, etapas_unificadas
-                FROM sessoes_trabalho_producao
-                WHERE status = 'EM_ANDAMENTO'
-                  AND empresa_id = $1
-            `, [req.empresaId]),
+            dbClient.query(sessoesProducaoFilaQuery, [req.empresaId]),
             
             // Prateleira 4: Produtos (com grade para buscar imagem da variante)
             dbClient.query(`
-                SELECT id, nome, imagem, grade
+                SELECT id, nome, imagem, grade, etapas,
+                       "etapastiktik" AS etapas_tiktik
                 FROM produtos
                 WHERE empresa_id = $1
             `, [req.empresaId])
         ]);
 
+        let posOpsFinalizadasResult = { rows: [] };
+        let posOpLancamentosResult = { rows: [] };
+        let posOpSessoesResult = { rows: [] };
+        let posOpSessoesLegadasResult = { rows: [] };
+
+        if (posOpEstruturaDisponivel) {
+            [
+                posOpsFinalizadasResult,
+                posOpLancamentosResult,
+                posOpSessoesResult,
+                posOpSessoesLegadasResult,
+            ] = await Promise.all([
+                dbClient.query(`
+                    SELECT numero, produto_id, variante, quantidade, etapas, data_final
+                      FROM ordens_de_producao
+                     WHERE empresa_id = $1
+                       AND status = 'finalizado'
+                     ORDER BY numero ASC
+                `, [req.empresaId]),
+                dbClient.query(`
+                    ${cteOrigens}, PosOpLancamentos AS (
+                        SELECT op_numero, produto_id, variante, processo_id, etapa_id,
+                               processo, SUM(quantidade_disponibilizada)::int AS total_lancado
+                          FROM OrigensProdutoProntoCompat
+                         WHERE empresa_id = $1
+                           AND fase = 'POS_OP'
+                         GROUP BY op_numero, produto_id, variante, processo_id, etapa_id, processo
+
+                        UNION ALL
+
+                        SELECT op_numero, produto_id, variante, processo_id, etapa_id,
+                               processo, SUM(quantidade_arrematada)::int AS total_lancado
+                          FROM arremates
+                         WHERE empresa_id = $1
+                           AND fase = 'POS_OP'
+                           AND tipo_lancamento = 'PERDA'
+                         GROUP BY op_numero, produto_id, variante, processo_id, etapa_id, processo
+                    )
+                    SELECT op_numero, produto_id, variante, processo_id, etapa_id,
+                           processo, SUM(total_lancado)::int AS total_lancado
+                      FROM PosOpLancamentos
+                     GROUP BY op_numero, produto_id, variante, processo_id, etapa_id, processo
+                `, [req.empresaId]),
+                dbClient.query(origensPosOpDisponivel
+                    ? `
+                    SELECT op_numero, produto_id, variante, processo_id, etapa_id,
+                           processo, quantidade_atribuida, origens_pos_op
+                      FROM sessoes_trabalho_producao
+                     WHERE empresa_id = $1
+                       AND fase = 'POS_OP'
+                       AND status = 'EM_ANDAMENTO'
+                `
+                    : `
+                    SELECT op_numero, produto_id, variante, processo_id, etapa_id,
+                           processo, quantidade_atribuida
+                      FROM sessoes_trabalho_producao
+                     WHERE empresa_id = $1
+                       AND fase = 'POS_OP'
+                       AND status = 'EM_ANDAMENTO'
+                `, [req.empresaId]),
+                dbClient.query(`
+                    SELECT op_numero, produto_id, variante, quantidade_entregue
+                      FROM sessoes_trabalho_arremate
+                     WHERE empresa_id = $1
+                       AND status = 'EM_ANDAMENTO'
+                `, [req.empresaId]),
+            ]);
+        }
+
         // 2. Mapas de Acesso Rápido
         const lancamentosMap = new Map(producoesResult.rows.map(r => [`${r.op_numero}-${r.etapa_index}`, parseInt(r.total_lancado, 10)]));
-        const produtosMap = new Map(produtosResult.rows.map(p => [p.id, p]));
+        const produtosMap = new Map(produtosResult.rows.map(p => [p.id, produtoComEtapasCanonicas(p)]));
         
         // Mapa de Trabalho Global: Chave "ProdID-Variante-Processo" -> Quantidade Total sendo feita na fábrica
         const emTrabalhoGlobalMap = new Map();
         sessoesResult.rows.forEach(r => {
+            if (r.fase === 'POS_OP') return;
             const qtd = parseInt(r.quantidade_atribuida, 10);
             const chave = `${r.produto_id}-${r.variante || '-'}-${r.processo}`;
             emTrabalhoGlobalMap.set(chave, (emTrabalhoGlobalMap.get(chave) || 0) + qtd);
@@ -708,6 +901,8 @@ router.get('/fila-de-tarefas', async (req, res) => {
             for (let i = 0; i < op.etapas.length; i++) {
                 const etapaConfig = op.etapas[i];
                 const processo = etapaConfig.processo || etapaConfig;
+                const produtoInfo = produtosMap.get(op.produto_id);
+                const configProduto = etapaCanonicaDoProduto(produtoInfo, 'OP', etapaConfig);
                 const chaveLancamento = `${op.numero}-${i}`;
 
                 // A. Quanto entrou nesta etapa? (Vindo da etapa anterior ou do corte inicial)
@@ -746,7 +941,6 @@ router.get('/fila-de-tarefas', async (req, res) => {
                 
                 // Se sobrou saldo real, adiciona na lista de tarefas
                 if (saldoRealDisponivel > 0) {
-                    const produtoInfo = produtosMap.get(op.produto_id);
                     // Busca imagem da variante no grade; fallback para imagem do produto
                     let imagemProduto = produtoInfo?.imagem || null;
                     if (op.variante && Array.isArray(produtoInfo?.grade)) {
@@ -759,6 +953,11 @@ router.get('/fila-de-tarefas', async (req, res) => {
                         imagem_produto: imagemProduto,
                         variante: op.variante,
                         processo: processo,
+                        fase: 'OP',
+                        processo_id: configProduto?.processo_id ?? null,
+                        etapa_id: configProduto?.id ?? null,
+                        feito_por: configProduto?.feitoPor || [],
+                        maquina: configProduto?.maquina || etapaConfig.maquina || null,
                         quantidade_disponivel: saldoRealDisponivel,
                         origem_ops: [op.numero]
                     });
@@ -766,9 +965,129 @@ router.get('/fila-de-tarefas', async (req, res) => {
             }
         }
 
+        // POS_OP: cada OP finalizada gera uma tarefa separada por etapa. Isso
+        // evita que uma sessao seja atribuida a uma OP diferente da origem e
+        // deixa o supervisor enxergar claramente que ja saiu da producao.
+        if (posOpEstruturaDisponivel) {
+            const chavePosOp = (opNumero, config) => [
+                opNumero,
+                config.processo_id || '',
+                config.id || '',
+                config.processo || '',
+            ].join('|');
+
+            const lancamentosPosOpMap = new Map();
+            posOpLancamentosResult.rows.forEach((row) => {
+                const config = {
+                    processo: row.processo,
+                    processo_id: row.processo_id,
+                    id: row.etapa_id,
+                };
+                const chave = chavePosOp(row.op_numero, config);
+                lancamentosPosOpMap.set(
+                    chave,
+                    (lancamentosPosOpMap.get(chave) || 0) + (parseInt(row.total_lancado, 10) || 0),
+                );
+            });
+
+            const sessoesPosOpMap = new Map();
+            const registrarSessaoPosOp = (row, opNumero, quantidade) => {
+                const config = {
+                    processo: row.processo,
+                    processo_id: row.processo_id,
+                    id: row.etapa_id,
+                };
+                const chave = chavePosOp(opNumero, config);
+                sessoesPosOpMap.set(
+                    chave,
+                    (sessoesPosOpMap.get(chave) || 0) + (parseInt(quantidade, 10) || 0),
+                );
+            };
+            posOpSessoesResult.rows.forEach((row) => {
+                const origens = Array.isArray(row.origens_pos_op) ? row.origens_pos_op : [];
+                if (origens.length > 0) {
+                    origens.forEach((origem) => registrarSessaoPosOp(
+                        row,
+                        origem?.op_numero ?? origem?.opNumero,
+                        origem?.quantidade ?? origem?.quantidade_atribuida,
+                    ));
+                    return;
+                }
+                registrarSessaoPosOp(row, row.op_numero, row.quantidade_atribuida);
+            });
+
+            const sessoesLegadasPorOp = new Map();
+            posOpSessoesLegadasResult.rows.forEach((row) => {
+                const chave = String(row.op_numero);
+                sessoesLegadasPorOp.set(
+                    chave,
+                    (sessoesLegadasPorOp.get(chave) || 0) + (parseInt(row.quantidade_entregue, 10) || 0),
+                );
+            });
+
+            for (const op of posOpsFinalizadasResult.rows) {
+                const produtoInfo = produtosMap.get(op.produto_id);
+                const etapasCanonicas = produtoInfo?.etapasCanonicas || [];
+                const etapasPosOp = etapasCanonicas.filter(etapa => etapa.fase === 'POS_OP');
+                if (etapasPosOp.length === 0) continue;
+
+                const indiceFinal = Array.isArray(op.etapas) ? op.etapas.length - 1 : -1;
+                const chaveEtapaFinal = `${op.numero}-${indiceFinal}`;
+                const etapaFinalLegada = indiceFinal >= 0 ? op.etapas[indiceFinal] : null;
+                const qtdEtapaFinalLegada = etapaFinalLegada && typeof etapaFinalLegada === 'object'
+                    ? parseInt(etapaFinalLegada.quantidade, 10)
+                    : NaN;
+                const quantidadeFinalProduzida = lancamentosMap.has(chaveEtapaFinal)
+                    ? (lancamentosMap.get(chaveEtapaFinal) || 0)
+                    : (Number.isFinite(qtdEtapaFinalLegada)
+                        ? qtdEtapaFinalLegada
+                        : (parseInt(op.quantidade, 10) || 0));
+
+                for (const etapa of etapasPosOp) {
+                    const chave = chavePosOp(op.numero, etapa);
+                    const jaLancado = lancamentosPosOpMap.get(chave) || 0;
+                    const emSessaoNova = sessoesPosOpMap.get(chave) || 0;
+                    // A sessao antiga nao tinha processo/etapa. Ela só pode
+                    // abater a primeira POS_OP, que é o arremate legado.
+                    const emSessaoLegada = etapa === etapasPosOp[0]
+                        ? (sessoesLegadasPorOp.get(String(op.numero)) || 0)
+                        : 0;
+                    const saldoRealDisponivel = Math.max(
+                        0,
+                        quantidadeFinalProduzida - jaLancado - emSessaoNova - emSessaoLegada,
+                    );
+
+                    if (saldoRealDisponivel <= 0) continue;
+
+                    let imagemProduto = produtoInfo?.imagem || null;
+                    if (op.variante && Array.isArray(produtoInfo?.grade)) {
+                        const gradeItem = produtoInfo.grade.find(g => g.variacao === op.variante);
+                        if (gradeItem?.imagem) imagemProduto = gradeItem.imagem;
+                    }
+
+                    tarefasDisponiveis.push({
+                        produto_id: op.produto_id,
+                        produto_nome: produtoInfo?.nome || 'Produto Desconhecido',
+                        imagem_produto: imagemProduto,
+                        variante: op.variante,
+                        processo: etapa.processo,
+                        fase: 'POS_OP',
+                        processo_id: etapa.processo_id ?? null,
+                        etapa_id: etapa.id ?? null,
+                        feito_por: etapa.feitoPor || [],
+                        maquina: etapa.maquina || 'Não Usa',
+                        quantidade_disponivel: saldoRealDisponivel,
+                        origem_ops: [op.numero],
+                    });
+                }
+            }
+        }
+
         // 4. Agrupamento Final
         const filaAgrupada = tarefasDisponiveis.reduce((acc, tarefa) => {
-            const chaveAgrupamento = `${tarefa.produto_id}-${tarefa.variante}-${tarefa.processo}`;
+            const chaveAgrupamento = tarefa.fase === 'POS_OP'
+                ? `${tarefa.produto_id}-${tarefa.variante}-${tarefa.fase}-${tarefa.etapa_id || tarefa.processo_id || tarefa.processo}-${tarefa.origem_ops?.[0]}`
+                : `${tarefa.produto_id}-${tarefa.variante}-${tarefa.fase || 'OP'}-${tarefa.processo}`;
             if (!acc[chaveAgrupamento]) {
                 acc[chaveAgrupamento] = { ...tarefa };
             } else {
@@ -788,129 +1107,6 @@ router.get('/fila-de-tarefas', async (req, res) => {
     }
 });
 
-// ROTA POST: Sugestão inteligente de tarefa para um funcionário
-// Recebe a lista de candidatas já filtradas pelo frontend e devolve a melhor pontuada.
-router.post('/sugestao-tarefa', async (req, res) => {
-    const { funcionario_id, candidatas } = req.body;
-    if (!funcionario_id || !Array.isArray(candidatas) || candidatas.length === 0) {
-        return res.status(200).json({ sugestao: null, candidatas: [] });
-    }
-
-    let dbClient;
-    try {
-        dbClient = await pool.connect();
-
-        // 1. Histórico de especialidade: sessões deste funcionário por produto+processo (últimos 90 dias)
-        // funcionario_id em sessoes_trabalho_producao é INTEGER — sem cast
-        const funcionarioVinculoResult = await dbClient.query(`
-            SELECT 1
-            FROM usuarios_empresas
-            WHERE usuario_id = $1
-              AND empresa_id = $2
-              AND ativo = TRUE
-        `, [funcionario_id, req.empresaId]);
-        if (funcionarioVinculoResult.rowCount === 0) {
-            return res.status(404).json({ error: 'FuncionÃ¡rio nÃ£o encontrado na empresa ativa.' });
-        }
-
-        const historicoResult = await dbClient.query(`
-            SELECT produto_id, processo, COUNT(*) AS contagem
-            FROM sessoes_trabalho_producao
-            WHERE funcionario_id = $1
-              AND empresa_id = $2
-              AND data_inicio > NOW() - INTERVAL '90 days'
-            GROUP BY produto_id, processo
-        `, [funcionario_id, req.empresaId]);
-
-        const historicoMap = new Map();
-        historicoResult.rows.forEach(row => {
-            historicoMap.set(`${row.produto_id}-${row.processo}`, parseInt(row.contagem));
-        });
-
-        // 2. Datas de abertura das OPs (data_entrega = data de criação, conforme AGENTS.md)
-        // numero em ordens_de_producao é character varying — cast ::text[]
-        const produtoIds = [...new Set(
-            candidatas
-                .map((candidata) => Number(candidata.produto_id))
-                .filter(Number.isSafeInteger)
-        )];
-        const produtosContextoResult = produtoIds.length > 0
-            ? await dbClient.query(
-                `SELECT id FROM produtos WHERE id = ANY($1::int[]) AND empresa_id = $2`,
-                [produtoIds, req.empresaId]
-            )
-            : { rows: [] };
-        const produtosContexto = new Set(produtosContextoResult.rows.map((row) => Number(row.id)));
-
-        const todasOps = [...new Set(candidatas.flatMap(c => c.origem_ops || []).map(String))];
-        const opDatesMap = new Map(); // chave = string do numero da OP
-
-        if (todasOps.length > 0) {
-            const opDatesResult = await dbClient.query(
-                `SELECT numero, data_entrega
-                 FROM ordens_de_producao
-                 WHERE numero = ANY($1::text[])
-                   AND empresa_id = $2`,
-                [todasOps, req.empresaId]
-            );
-            opDatesResult.rows.forEach(row => {
-                opDatesMap.set(String(row.numero), new Date(row.data_entrega));
-            });
-        }
-
-        const agora = new Date();
-
-        // 3. Pontuar cada candidata
-        const candidatasContexto = candidatas
-            .filter((tarefa) => produtosContexto.has(Number(tarefa.produto_id)))
-            .map((tarefa) => ({
-                ...tarefa,
-                origem_ops: Array.isArray(tarefa.origem_ops)
-                    ? tarefa.origem_ops.filter((numero) => opDatesMap.has(String(numero)))
-                    : [],
-            }))
-            .filter((tarefa) => tarefa.origem_ops.length > 0);
-
-        const scoradas = candidatasContexto.map(tarefa => {
-            const chave = `${tarefa.produto_id}-${tarefa.processo}`;
-
-            // Especialidade: normalizado 0–1 (10 sessões = especialista pleno)
-            const sessoes = historicoMap.get(chave) || 0;
-            const scoreEspecialidade = Math.min(sessoes / 10, 1.0);
-
-            // Antiguidade: normalizado 0–1 (30+ dias = urgência máxima)
-            // origem_ops pode conter números ou strings → normalizar para string antes de buscar no Map
-            const datasOps = (tarefa.origem_ops || []).map(n => opDatesMap.get(String(n))).filter(Boolean);
-            let scoreAntiguidade = 0;
-            if (datasOps.length > 0) {
-                const maisAntiga = new Date(Math.min(...datasOps.map(d => d.getTime())));
-                const dias = (agora.getTime() - maisAntiga.getTime()) / (1000 * 60 * 60 * 24);
-                scoreAntiguidade = Math.min(dias / 30, 1.0);
-            }
-
-            const scoreFinal = 0.60 * scoreEspecialidade + 0.40 * scoreAntiguidade;
-
-            const motivos = [];
-            if (scoreEspecialidade >= 0.5) motivos.push('especialista');
-            if (scoreAntiguidade >= 0.5) motivos.push('urgente');
-
-            return { ...tarefa, scoreFinal, scoreEspecialidade, scoreAntiguidade, motivos, sessoesHistorico: sessoes };
-        });
-
-        scoradas.sort((a, b) => b.scoreFinal - a.scoreFinal);
-        const melhor = scoradas[0];
-        const sugestao = (melhor && melhor.scoreFinal >= 0.30) ? melhor : null;
-
-        res.status(200).json({ sugestao, candidatas: scoradas });
-
-    } catch (error) {
-        console.error('[API /producao/sugestao-tarefa] Erro:', error);
-        res.status(500).json({ error: 'Erro ao calcular sugestão.', sugestao: null });
-    } finally {
-        if (dbClient) dbClient.release();
-    }
-});
-
 // ROTA GET: Busca todos os tempos padrão salvos
 router.get('/tempos-padrao', async (req, res) => {
     let dbClient;
@@ -919,22 +1115,10 @@ router.get('/tempos-padrao', async (req, res) => {
         // Não precisa de permissão específica, pois é um dado de configuração geral
         // para quem já tem acesso à página.
 
-        const result = await dbClient.query(`
-            SELECT tpp.produto_id, tpp.processo, tpp.tempo_segundos
-            FROM tempos_padrao_producao tpp
-            JOIN produtos p
-              ON p.id = tpp.produto_id
-             AND p.empresa_id = $1
-        `, [req.empresaId]);
+        const temposObjeto = await listarTemposProducao(dbClient, req.empresaId);
         
         // Transforma o array em um objeto para fácil acesso no frontend
         // Ex: { "1-Fechamento": 30.00, "1-Finalização": 25.50 }
-        const temposObjeto = result.rows.reduce((acc, row) => {
-            const chave = `${row.produto_id}-${row.processo}`;
-            acc[chave] = parseFloat(row.tempo_segundos);
-            return acc;
-        }, {});
-
         res.status(200).json(temposObjeto);
 
     } catch (error) {
@@ -956,8 +1140,9 @@ router.post('/tempos-padrao', async (req, res) => {
             req.usuarioLogado.id,
             req.empresaId
         );
-        // Requer uma permissão específica para evitar que qualquer um altere os tempos
-        if (!permissoes.includes('gerenciar-permissoes')) { // Usando uma permissão de admin/supervisor
+        // A mesma permissão específica exibida pela aba Configurações.
+        // O alias administrativo mantém compatibilidade com acessos antigos.
+        if (!permissoes.includes('configurar-tempos-padrao') && !permissoes.includes('gerenciar-permissoes')) {
             return res.status(403).json({ error: 'Permissão negada para configurar tempos padrão.' });
         }
 
@@ -992,16 +1177,9 @@ router.post('/tempos-padrao', async (req, res) => {
         }
 
         await dbClient.query('BEGIN');
-        for (const entrada of entradas) {
                 // ON CONFLICT (produto_id, processo) DO UPDATE -> Isso é um "UPSERT".
                 // Se a combinação já existe, ele atualiza (UPDATE). Se não, ele insere (INSERT).
-                await dbClient.query(`
-                    INSERT INTO tempos_padrao_producao (produto_id, processo, tempo_segundos)
-                    VALUES ($1, $2, $3)
-                    ON CONFLICT (produto_id, processo)
-                    DO UPDATE SET tempo_segundos = EXCLUDED.tempo_segundos;
-                `, [entrada.produto_id, entrada.processo, entrada.tempo_segundos]);
-        }
+        await salvarTemposProducao(dbClient, entradas);
 
         await dbClient.query('COMMIT');
 
@@ -1029,6 +1207,10 @@ router.put('/sessoes/cancelar', async (req, res) => {
 
     try {
         dbClient = await pool.connect();
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, req.empresaId);
+        if (!permissoes.includes('cancelar-tarefa-producao')) {
+            return res.status(403).json({ error: 'Permissão negada para cancelar tarefas de produção.' });
+        }
         await dbClient.query('BEGIN');
 
         const sessaoResult = await dbClient.query(

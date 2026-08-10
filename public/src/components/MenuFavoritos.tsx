@@ -2,6 +2,7 @@ import type { DragEvent } from 'react';
 import type { MenuItem } from '../utils/menu-types';
 import { itemMenuEstaAtivo } from '../utils/menu-catalogo';
 import UIFeedbackNotFound from './UIFeedbackNotFound';
+import UIBloqueio from './UIBloqueio';
 
 interface Props {
   itens: MenuItem[];
@@ -52,6 +53,7 @@ export default function MenuFavoritos({
           {visiveis.map((item, indice) => (
             <li
               key={item.id}
+              className={itemMenuEstaAtivo(item) ? 'is-current' : undefined}
               draggable={organizando}
               onDragStart={(event: DragEvent<HTMLLIElement>) => {
                 event.dataTransfer.setData('text/menu-favorite-id', item.id);
@@ -66,15 +68,29 @@ export default function MenuFavoritos({
                 if (origem && origem !== item.id) onDrop(origem, item.id);
               }}
             >
-              <a
-                className={`ml-nav-link${itemMenuEstaAtivo(item) ? ' is-active' : ''}`}
-                href={item.href}
-                aria-current={itemMenuEstaAtivo(item) ? 'page' : undefined}
+              <UIBloqueio
+                permissao={item.permissao || 'acesso-admin-geral'}
+                bloqueado={item.bloqueado}
+                modoBloqueio="pagina"
+                destinoBloqueio="home"
+                tipoBloqueio={item.motivoBloqueio || 'permissao'}
+                pagina={item.rotulo}
+                mensagem={item.motivoBloqueio === 'modulo'
+                  ? 'Este módulo ainda não está disponível para a empresa ativa.'
+                  : `Seu vínculo atual não possui acesso à página ${item.rotulo}.`}
+                style={{ display: 'block', width: '100%' }}
               >
-                <i className={item.icone} aria-hidden="true" />
-                <span>{item.rotulo}</span>
-                {organizando && <i className="fa-solid fa-grip-lines" aria-hidden="true" />}
-              </a>
+                <a
+                  className={`ml-nav-link${itemMenuEstaAtivo(item) ? ' is-active' : ''}`}
+                  href={item.href}
+                  aria-current={itemMenuEstaAtivo(item) ? 'page' : undefined}
+                  aria-disabled={item.bloqueado || undefined}
+                >
+                  <i className={item.icone} aria-hidden="true" />
+                  <span>{item.rotulo}</span>
+                  {organizando && <i className="fa-solid fa-grip-lines" aria-hidden="true" />}
+                </a>
+              </UIBloqueio>
               {organizando ? (
                 <span className="ml-reorder-actions">
                   <button

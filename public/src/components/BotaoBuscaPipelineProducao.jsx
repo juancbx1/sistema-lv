@@ -4,6 +4,7 @@ import React from 'react';
 import { mostrarConfirmacao } from '/js/utils/popups.js';
 import { calcularStatusDemanda, STATUS_META } from '/src/utils/demandaStatus.js';
 import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio';
+import UIBloqueio from './UIBloqueio';
 
 export default function PainelDemandaCard({ item, onDelete, permissoes, onRefresh, onIniciarProducao }) {
     const totalPedido  = item.demanda_total              || 0;
@@ -100,7 +101,7 @@ export default function PainelDemandaCard({ item, onDelete, permissoes, onRefres
         e.stopPropagation();
         const params = new URLSearchParams({ produto_id: item.produto_id });
         if (item.variante && item.variante !== '-') params.set('variante', item.variante);
-        window.location.href = `/admin/arremates.html?${params.toString()}`;
+        window.location.href = `/admin/ordens-de-producao.html?${params.toString()}`;
     };
 
     const handleIrEmbalagem = (e) => {
@@ -113,17 +114,22 @@ export default function PainelDemandaCard({ item, onDelete, permissoes, onRefres
     const renderCTA = () => {
         if (statusCalculado === 'AGUARDANDO' && pendenteFila > 0) {
             return (
-                <button className="pd-cta criar-op" onClick={handleCriarOP}>
-                    <i className="fas fa-cut"></i>
-                    Criar OP
-                </button>
+                <UIBloqueio
+                    permissao="gerar-op"
+                    mensagem="Você não tem permissão para gerar Ordens de Produção."
+                >
+                    <button className="pd-cta criar-op" onClick={handleCriarOP}>
+                        <i className="fas fa-cut"></i>
+                        Criar OP
+                    </button>
+                </UIBloqueio>
             );
         }
         if (statusCalculado === 'ARREMATE') {
             return (
                 <button className="pd-cta arremate" onClick={handleIrArremate}>
-                    <i className="fas fa-clipboard-check"></i>
-                    Arremate
+                    <i className="fas fa-industry"></i>
+                    Produções
                 </button>
             );
         }

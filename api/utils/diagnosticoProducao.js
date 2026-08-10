@@ -1,7 +1,11 @@
 // api/utils/diagnosticoProducao.js
 
+import { obterEstruturaOrigensProdutoPronto, construirCteOrigensProdutoPronto } from './origens-produto-pronto.js';
+
 export async function gerarDiagnosticoCompleto(dbClient, empresaId) {
     // 1. BULK DATA
+    const estruturaOrigens = await obterEstruturaOrigensProdutoPronto(dbClient);
+    const cteOrigens = construirCteOrigensProdutoPronto(estruturaOrigens.origens);
     const [
         demandasResult,
         opsResult,
@@ -15,11 +19,17 @@ export async function gerarDiagnosticoCompleto(dbClient, empresaId) {
                         FROM ordens_de_producao op
                         JOIN demandas_producao d ON d.id = op.demanda_id AND d.empresa_id = $1
                         WHERE op.demanda_id IS NOT NULL`, [empresaId]),
-        dbClient.query(`SELECT arremates.op_numero, arremates.quantidade_arrematada, arremates.quantidade_ja_embalada
-                        FROM arremates
-                        JOIN ordens_de_producao op ON arremates.op_numero = op.numero
+        dbClient.query(`${cteOrigens}
+                        SELECT arremates.op_numero,
+                               arremates.quantidade_disponibilizada AS quantidade_arrematada,
+                               arremates.quantidade_consumida AS quantidade_ja_embalada
+                        FROM OrigensProdutoProntoCompat arremates
+                        JOIN ordens_de_producao op
+                          ON arremates.op_numero = op.numero
+                         AND op.empresa_id = $1
                         JOIN demandas_producao d ON d.id = op.demanda_id AND d.empresa_id = $1
-                        WHERE op.demanda_id IS NOT NULL AND arremates.tipo_lancamento = 'PRODUCAO'`, [empresaId]),
+                        WHERE arremates.empresa_id = $1
+                          AND op.demanda_id IS NOT NULL`, [empresaId]),
         dbClient.query("SELECT id, nome, sku, is_kit, grade, imagem FROM produtos WHERE empresa_id = $1", [empresaId]),
         // Agrega cortes DISPONÍVEIS por produto+variante para exibir no painel
         // op IS NULL = corte ainda não consumido por nenhuma OP

@@ -2223,6 +2223,62 @@
     font-size: .82rem;
 }
 
+.go-permissoes-modulos {
+    max-height: 360px;
+    margin-top: 11px;
+    padding-right: 5px;
+    overflow-y: auto;
+}
+
+.go-permissoes-modulo {
+    margin-top: 14px;
+}
+
+.go-permissoes-modulo:first-child {
+    margin-top: 0;
+}
+
+.go-permissoes-modulo-cabecalho {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 0 2px;
+    color: #24456f;
+    font-size: .75rem;
+}
+
+.go-permissoes-modulo-cabecalho small {
+    color: var(--go-muted);
+    font-size: .65rem;
+    font-weight: 600;
+}
+
+.go-permissoes-modulo--sem-uso .go-permissoes-modulo-cabecalho {
+    color: #8d5420;
+}
+
+.go-permissoes-modulo--sem-uso .go-permissoes-modulo-cabecalho small {
+    color: #a66d35;
+}
+
+.go-permissoes-catalogo .go-permissoes-lista--modulo {
+    max-height: none;
+    margin-top: 7px;
+    padding-right: 0;
+    overflow: visible;
+}
+
+.go-permissoes-catalogo .go-permissoes-lista--modulo em {
+    display: block;
+    margin-top: 4px;
+    color: var(--go-muted);
+    font-size: .65rem;
+    font-style: normal;
+    font-weight: 500;
+    line-height: 1.35;
+}
+
 .go-permissoes-catalogo .go-permissoes-lista {
     max-height: 330px;
     margin-top: 11px;

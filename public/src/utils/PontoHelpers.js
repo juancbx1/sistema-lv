@@ -1,7 +1,7 @@
 // public/src/utils/PontoHelpers.js
 //
 // Utilitários compartilhados de ponto/tempo.
-// Extraídos de OPStatusCard.jsx para uso compartilhado com ArremateStatusCard.jsx.
+// Extraídos de OPStatusCard.jsx para uso compartilhado por indicadores de ponto.
 // Regra: funções puras, sem React, sem efeitos colaterais.
 
 /**

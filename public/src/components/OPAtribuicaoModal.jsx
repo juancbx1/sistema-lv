@@ -27,6 +27,11 @@ export default function OPAtribuicaoModal({ funcionario, isOpen, onClose, tpp })
   if (!isOpen) return null;
 
   const role = getRoleInfo(funcionario?.tipos);
+  const itensSelecionados = Array.isArray(etapaSelecionada)
+    ? etapaSelecionada
+    : etapaSelecionada ? [etapaSelecionada] : [];
+  const fasesSelecionadas = [...new Set(itensSelecionados.map(item => item?.fase === 'POS_OP' ? 'POS_OP' : 'OP'))];
+  const faseConfirmacao = fasesSelecionadas.length === 1 ? fasesSelecionadas[0] : fasesSelecionadas.length > 1 ? 'MISTA' : null;
 
   const handleEtapaSelect = async (etapa) => {
     // Sessão unificada com troca de máquina → confirmar antes de avançar
@@ -51,7 +56,10 @@ export default function OPAtribuicaoModal({ funcionario, isOpen, onClose, tpp })
     setEtapaSelecionada(null);
   };
 
-  const tituloModal = telaAtual === 'selecao' ? 'Selecionar Tarefa' : 'Confirmar Quantidade';
+  const tituloModal = telaAtual === 'selecao' ? 'Selecionar tarefa' : 'Confirmar quantidade';
+  const subtituloModal = telaAtual === 'selecao'
+    ? 'Escolha o trabalho que será colocado na jornada'
+    : 'Revise a quantidade antes de atribuir';
 
   return (
     <div className="popup-container op-atribuicao-container" style={{ display: 'flex' }}>
@@ -68,6 +76,12 @@ export default function OPAtribuicaoModal({ funcionario, isOpen, onClose, tpp })
           </div>
 
           <div className="op-modal-header-centro">
+            <div className="op-modal-progresso" aria-label={`Etapa ${telaAtual === 'selecao' ? 1 : 2} de 2`}>
+              <span className="op-modal-progresso-numero">{telaAtual === 'selecao' ? '1' : '2'}</span>
+              <span>de 2</span>
+              <span className="op-modal-progresso-linha"></span>
+              <span className="op-modal-progresso-descricao">{subtituloModal}</span>
+            </div>
             <h3 className="op-modal-titulo">{tituloModal}</h3>
             <div className="op-modal-header-info">
               <span className="op-modal-header-para">Para:</span>
@@ -75,6 +89,12 @@ export default function OPAtribuicaoModal({ funcionario, isOpen, onClose, tpp })
               <span className={`op-modal-role-badge ${role.classe}`}>
                 <i className={`fas ${role.icon}`}></i> {role.label}
               </span>
+              {faseConfirmacao && (
+                <span className={`op-modal-fase-badge op-modal-fase-badge--${faseConfirmacao.toLowerCase()}`}>
+                  <i className={`fas ${faseConfirmacao === 'POS_OP' ? 'fa-box-open' : faseConfirmacao === 'MISTA' ? 'fa-layer-group' : 'fa-gears'}`}></i>
+                  {faseConfirmacao === 'POS_OP' ? 'Arremate pós-OP' : faseConfirmacao === 'MISTA' ? 'OP + pós-OP' : 'Produção da OP'}
+                </span>
+              )}
             </div>
           </div>
 

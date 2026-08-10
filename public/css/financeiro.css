@@ -2473,6 +2473,10 @@
     border-bottom: 1px solid var(--gs-borda);
 }
 
+.fc-config-subnav > .gs-bloqueio-wrapper {
+    flex: 0 0 auto;
+}
+
 .fc-config-subnav-btn {
     display: inline-flex;
     align-items: center;
@@ -2532,6 +2536,12 @@
     flex-wrap: wrap;
     gap: 8px;
     justify-content: flex-end;
+}
+
+.fc-table-header > .gs-bloqueio-wrapper,
+.fc-config-secao-acoes > .gs-bloqueio-wrapper,
+.fc-modal-footer > .gs-bloqueio-wrapper {
+    display: inline-flex;
 }
 
 .fc-config-secao-texto {
@@ -3068,6 +3078,17 @@
 .fc-fab:hover {
     transform: scale(1.1);
     box-shadow: 0 6px 16px rgba(0,0,0,0.3);
+}
+
+.fc-fab.fc-fab--bloqueado {
+    cursor: not-allowed;
+    opacity: 0.72;
+    filter: grayscale(0.35);
+}
+
+.fc-fab.fc-fab--bloqueado:hover {
+    transform: none;
+    box-shadow: none;
 }
 
 /* Botão Principal: Novo Lançamento (+) */

@@ -7,6 +7,107 @@ import UICarregando from './UICarregando';
 import OPPaginacaoWrapper from './OPPaginacaoWrapper.jsx';
 import UIBuscaInteligente, { filtrarListaInteligente } from './UIBuscaInteligente';
 import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio';
+import { etapaPermiteExecutor } from '../utils/etapas-produto.ts';
+
+function obterChaveTarefa(tarefa) {
+    const origemPosOp = tarefa.fase === 'POS_OP' ? (tarefa.origem_ops?.[0] || '') : '';
+    return [
+        tarefa.produto_id,
+        tarefa.variante || '-',
+        tarefa.fase || 'OP',
+        tarefa.etapa_id || tarefa.processo_id || tarefa.processo,
+        origemPosOp,
+    ].join('-');
+}
+
+function obterEtapasProduto(produto) {
+    if (Array.isArray(produto?.etapasCanonicas)) return produto.etapasCanonicas;
+    return [
+        ...(Array.isArray(produto?.etapas) ? produto.etapas : []),
+        ...(Array.isArray(produto?.etapasTiktik)
+            ? produto.etapasTiktik
+            : Array.isArray(produto?.etapastiktik) ? produto.etapastiktik : []),
+    ];
+}
+
+const ROTULOS_EXECUTORES = {
+    costureira: 'Costureira',
+    tiktik: 'TikTik',
+    cortador: 'Cortador',
+};
+
+function obterTextoExecutores(etapa) {
+    const executores = Array.isArray(etapa?.feito_por)
+        ? etapa.feito_por
+        : [etapa?.feito_por];
+
+    const nomes = executores
+        .filter(Boolean)
+        .map(tipo => ROTULOS_EXECUTORES[tipo] || tipo);
+
+    return nomes.length > 0 ? nomes.join(' / ') : 'Executor configurado';
+}
+
+function obterIdentidadeEtapa(tarefa) {
+    if (tarefa?.etapa_id) return `etapa:${tarefa.etapa_id}`;
+    if (tarefa?.processo_id) return `processo:${tarefa.processo_id}`;
+    return `nome:${tarefa?.processo || ''}`;
+}
+
+function agruparTarefasPosOp(tarefas) {
+    const grupos = new Map();
+    const resultado = [];
+
+    tarefas.forEach(tarefa => {
+        if (tarefa.fase !== 'POS_OP') {
+            resultado.push(tarefa);
+            return;
+        }
+
+        const opNumero = tarefa.origem_ops?.[0];
+        if (!opNumero) {
+            resultado.push(tarefa);
+            return;
+        }
+
+        const variante = tarefa.variante === undefined || tarefa.variante === null
+            ? '-'
+            : String(tarefa.variante);
+        const chave = [
+            'POS_OP',
+            tarefa.produto_id,
+            variante,
+            obterIdentidadeEtapa(tarefa),
+        ].join('|');
+        const grupoExistente = grupos.get(chave);
+
+        if (!grupoExistente) {
+            const grupo = {
+                ...tarefa,
+                quantidade_disponivel: Number(tarefa.quantidade_disponivel) || 0,
+                origem_ops: [opNumero],
+                origens_pos_op: [{
+                    op_numero: String(opNumero),
+                    quantidade_disponivel: Number(tarefa.quantidade_disponivel) || 0,
+                }],
+                _posOpAgrupada: true,
+            };
+            grupos.set(chave, grupo);
+            resultado.push(grupo);
+            return;
+        }
+
+        const quantidade = Number(tarefa.quantidade_disponivel) || 0;
+        grupoExistente.quantidade_disponivel += quantidade;
+        grupoExistente.origem_ops.push(opNumero);
+        grupoExistente.origens_pos_op.push({
+            op_numero: String(opNumero),
+            quantidade_disponivel: quantidade,
+        });
+    });
+
+    return resultado;
+}
 
 function OPEtapaCard({ etapa, onToggle, stepLabel, isFinal, imagemUrl, selecionado, grupoInfo, unificacaoAtiva, onToggleUnificacao }) {
     const bordaClasse = etapa.processo.toLowerCase() === 'corte'
@@ -20,9 +121,11 @@ function OPEtapaCard({ etapa, onToggle, stepLabel, isFinal, imagemUrl, seleciona
         ? `OP #${ops.slice(0, 3).join(' • #')}${ops.length > 3 ? ` +${ops.length - 3}` : ''}`
         : null;
 
-    const ehPrimaria = grupoInfo && grupoInfo.idxNoGrupo === 0;
+    const ehPosOp = etapa.fase === 'POS_OP';
+    const ehPrimaria = !ehPosOp && grupoInfo && grupoInfo.idxNoGrupo === 0;
     const ehSecundaria = grupoInfo && grupoInfo.idxNoGrupo > 0 && unificacaoAtiva;
     const outrasEtapas = ehPrimaria ? grupoInfo.grupo.etapas.slice(1).map(e => e.processo).join(' + ') : '';
+    const executoresTexto = obterTextoExecutores(etapa);
 
     // Step secundário quando unificação ativa: fica embutido no card primário
     if (ehSecundaria) return null;
@@ -31,8 +134,10 @@ function OPEtapaCard({ etapa, onToggle, stepLabel, isFinal, imagemUrl, seleciona
 
     return (
         <div
-            className={`op-card-react ${selecionado ? 'selecionado-lote' : ''} ${unificadoAtivo ? 'op-card-unificado' : ''}`}
+            className={`op-card-react op-card-fase-${ehPosOp ? 'pos-op' : 'op'} ${selecionado ? 'selecionado-lote' : ''} ${unificadoAtivo ? 'op-card-unificado' : ''}`}
             onClick={() => onToggle(etapa)}
+            data-fase={ehPosOp ? 'POS_OP' : 'OP'}
+            aria-label={`${ehPosOp ? 'Arremate pós-OP' : 'Produção da OP'}: ${etapa.produto_nome}, ${etapa.processo}`}
             style={{
                 cursor: 'pointer',
                 border: selecionado ? '2px solid var(--op-cor-azul-claro)'
@@ -57,8 +162,8 @@ function OPEtapaCard({ etapa, onToggle, stepLabel, isFinal, imagemUrl, seleciona
                         <i className="fas fa-link"></i> Etapas Unificadas
                     </span>
                 ) : (
-                    <span className={`op-etapa-step-badge ${isFinal ? 'final' : 'normal'}`}>
-                        {stepLabel}
+                    <span className={`op-etapa-step-badge ${ehPosOp ? 'pos-op' : isFinal ? 'final' : 'normal'}`}>
+                        {ehPosOp ? 'Arremate pós-OP' : stepLabel}
                     </span>
                 )}
                 <h3>{etapa.produto_nome}</h3>
@@ -75,13 +180,23 @@ function OPEtapaCard({ etapa, onToggle, stepLabel, isFinal, imagemUrl, seleciona
                         ))}
                     </div>
                 ) : (
-                    <span className="op-processo-chip">{etapa.processo}</span>
+                    <span className={`op-processo-chip ${ehPosOp ? 'op-processo-chip--pos-op' : ''}`}>{etapa.processo}</span>
                 )}
             </div>
 
             <div className="card-bloco-pendente">
                 <span className="label">DISPONÍVEL</span>
                 <span className="valor">{etapa.quantidade_disponivel}</span>
+            </div>
+
+            <div className={`op-card-fluxo-meta ${ehPosOp ? 'op-card-fluxo-meta--pos-op' : ''}`}>
+                <span className="op-card-fluxo-efeito">
+                    <i className={`fas ${ehPosOp ? 'fa-box-open' : 'fa-arrow-right'}`}></i>
+                    {ehPosOp ? 'Libera para embalagem' : 'Continua na OP'}
+                </span>
+                <span className="op-card-executores">
+                    <i className="fas fa-user-check"></i> Pode ser feito por: {executoresTexto}
+                </span>
             </div>
 
             {ehPrimaria && !unificacaoAtiva && (
@@ -110,6 +225,12 @@ function OPEtapaCard({ etapa, onToggle, stepLabel, isFinal, imagemUrl, seleciona
                 </div>
             )}
 
+            {ehPosOp && (
+                <div className="op-card-pos-op-alerta">
+                    <i className="fas fa-lock-open"></i> Liberado somente após a OP finalizada
+                </div>
+            )}
+
             {opsTexto && (
                 <div className="op-card-ops-footer">
                     <i className="fas fa-link"></i> {opsTexto}
@@ -125,10 +246,10 @@ export default function OPTelaSelecaoEtapa({ onEtapaSelect, funcionario }) {
     const [carregando, setCarregando] = useState(true);
     const [erro, setErro] = useState(null);
     const [pagina, setPagina] = useState(1);
+    const [faseFiltro, setFaseFiltro] = useState('TODAS');
 
     const [termoFiltro, setTermoFiltro] = useState('');
     const [selecionados, setSelecionados] = useState([]);
-    const [sugestao, setSugestao] = useState(null);
     const [gruposUnificaveis, setGruposUnificaveis] = useState({}); // "pid__var" → [{grupo_id, etapas, muda_maquina}]
     const [unificacoesAtivas, setUnificacoesAtivas] = useState(new Set());
     const candidatosKeyRef = useRef(''); // evita chamadas duplicadas à API quando o render não muda os dados
@@ -164,10 +285,16 @@ export default function OPTelaSelecaoEtapa({ onEtapaSelect, funcionario }) {
         if (!funcionario?.tipos || todosProdutos.length === 0) return [];
         return filaDeTarefas.filter(tarefa => {
             const produto = todosProdutos.find(p => p.id === tarefa.produto_id);
-            if (!produto?.etapas) return false;
-            const etapaConfig = produto.etapas.find(e => (e.processo || e) === tarefa.processo);
+            const etapaConfig = obterEtapasProduto(produto).find((etapa) => {
+                const processo = etapa.processo || etapa;
+                const faseCompativel = tarefa.fase === 'POS_OP'
+                    ? etapa.fase === 'POS_OP'
+                    : (!etapa.fase || etapa.fase === 'OP');
+                const idCompativel = !tarefa.etapa_id || String(etapa.id || '') === String(tarefa.etapa_id);
+                return faseCompativel && idCompativel && processo === tarefa.processo;
+            });
             if (!etapaConfig) return false;
-            return funcionario.tipos.includes(etapaConfig.feitoPor);
+            return etapaPermiteExecutor(etapaConfig, funcionario.tipos);
         });
     }, [filaDeTarefas, todosProdutos, funcionario]);
 
@@ -217,6 +344,7 @@ export default function OPTelaSelecaoEtapa({ onEtapaSelect, funcionario }) {
     }, [tarefasFiltradasParaFuncionario, tipoFuncionario, funcionario?.id]);
 
     const getGrupoInfo = useCallback((tarefa) => {
+        if (tarefa.fase === 'POS_OP') return null;
         const pvKey = `${tarefa.produto_id}__${tarefa.variante || ''}`;
         const grupos = gruposUnificaveis[pvKey] || [];
         for (const grupo of grupos) {
@@ -235,48 +363,57 @@ export default function OPTelaSelecaoEtapa({ onEtapaSelect, funcionario }) {
     }, []);
 
     // Busca sugestão assim que a lista filtrada para este funcionário estiver pronta
-    useEffect(() => {
-        if (!funcionario?.id || tarefasFiltradasParaFuncionario.length === 0) {
-            setSugestao(null);
-            return;
-        }
-        const token = localStorage.getItem('token');
-        fetch('/api/producao/sugestao-tarefa', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify({ funcionario_id: funcionario.id, candidatas: tarefasFiltradasParaFuncionario })
-        })
-            .then(r => r.json())
-            .then(data => setSugestao(data.sugestao || null))
-            .catch(() => setSugestao(null));
-    }, [tarefasFiltradasParaFuncionario, funcionario?.id]);
 
     const listaFinalFiltrada = useMemo(() => {
         return filtrarListaInteligente(tarefasFiltradasParaFuncionario, termoFiltro, ['produto_nome', 'variante', 'processo']);
     }, [tarefasFiltradasParaFuncionario, termoFiltro]);
 
+    const tarefasAgrupadas = useMemo(
+        () => agruparTarefasPosOp(tarefasFiltradasParaFuncionario),
+        [tarefasFiltradasParaFuncionario],
+    );
+
+    const listaFinalAgrupada = useMemo(
+        () => agruparTarefasPosOp(listaFinalFiltrada),
+        [listaFinalFiltrada],
+    );
+
     // BUG-24: quando o card de sugestão está visível, remove a tarefa sugerida da lista
     // para evitar duplicação (ela já aparece destacada acima com botão de atribuição próprio)
+    const contagemFases = useMemo(() => ({
+        OP: tarefasAgrupadas.filter(tarefa => tarefa.fase !== 'POS_OP').length,
+        POS_OP: tarefasAgrupadas.filter(tarefa => tarefa.fase === 'POS_OP').length,
+    }), [tarefasAgrupadas]);
+
+    const listaFiltradaPorFase = useMemo(() => {
+        if (faseFiltro === 'TODAS') return listaFinalAgrupada;
+        return listaFinalAgrupada.filter(tarefa => (
+            faseFiltro === 'POS_OP' ? tarefa.fase === 'POS_OP' : tarefa.fase !== 'POS_OP'
+        ));
+    }, [faseFiltro, listaFinalAgrupada]);
+
     const listaParaExibir = useMemo(() => {
-        if (!sugestao || termoFiltro) return listaFinalFiltrada;
-        const chaveSugestao = `${sugestao.produto_id}-${sugestao.variante}-${sugestao.processo}`;
-        return listaFinalFiltrada.filter(t =>
-            `${t.produto_id}-${t.variante}-${t.processo}` !== chaveSugestao
-        );
-    }, [listaFinalFiltrada, sugestao, termoFiltro]);
+        return [...listaFiltradaPorFase].sort((a, b) => (
+            (a.fase === 'POS_OP' ? 1 : 0) - (b.fase === 'POS_OP' ? 1 : 0)
+        ));
+    }, [listaFiltradaPorFase]);
 
     const getEtapaInfo = (tarefa) => {
         const produto = todosProdutos.find(p => p.id === tarefa.produto_id);
-        if (!produto || !produto.etapas) return { label: 'Etapa ?', isFinal: false, imagemUrl: null };
-        const index = produto.etapas.findIndex(e => (e.processo || e) === tarefa.processo);
-        const total = produto.etapas.length;
-        const isFinal = index === total - 1;
-        const label = isFinal ? 'Etapa Final' : `Etapa ${index + 1}`;
+        if (!produto) return { label: 'Etapa ?', isFinal: false, imagemUrl: null };
         let imagemUrl = produto.imagem;
         if (tarefa.variante && produto.grade) {
             const variacaoItem = produto.grade.find(g => g.variacao === tarefa.variante);
             if (variacaoItem && variacaoItem.imagem) imagemUrl = variacaoItem.imagem;
         }
+        if (tarefa.fase === 'POS_OP') {
+            return { label: 'Arremate pós-OP', isFinal: false, imagemUrl };
+        }
+        const etapasOp = obterEtapasProduto(produto).filter(e => !e.fase || e.fase === 'OP');
+        const index = etapasOp.findIndex(e => (e.processo || e) === tarefa.processo);
+        const total = etapasOp.length;
+        const isFinal = index === total - 1;
+        const label = isFinal ? 'Etapa Final' : `Etapa ${index + 1}`;
         return { label, isFinal, imagemUrl };
     };
 
@@ -289,11 +426,11 @@ export default function OPTelaSelecaoEtapa({ onEtapaSelect, funcionario }) {
             ? { ...etapa, _unificada: true, _grupo_unificacao: grupoInfo.grupo }
             : etapa;
 
-        const etapaId = `${etapa.produto_id}-${etapa.variante}-${etapa.processo}`;
+        const etapaId = obterChaveTarefa(etapa);
         setSelecionados(prev => {
-            const jaSelecionado = prev.find(i => `${i.produto_id}-${i.variante}-${i.processo}` === etapaId);
+            const jaSelecionado = prev.find(i => obterChaveTarefa(i) === etapaId);
             if (jaSelecionado) {
-                return prev.filter(i => `${i.produto_id}-${i.variante}-${i.processo}` !== etapaId);
+                return prev.filter(i => obterChaveTarefa(i) !== etapaId);
             } else {
                 if (prev.length >= 6) return prev;
                 return [...prev, etapaParaSelecionar];
@@ -313,13 +450,14 @@ export default function OPTelaSelecaoEtapa({ onEtapaSelect, funcionario }) {
         pagina * ITENS_POR_PAGINA
     );
 
-    useEffect(() => { setPagina(1); }, [termoFiltro]);
+    useEffect(() => { setPagina(1); }, [termoFiltro, faseFiltro]);
 
     if (carregando) return <UICarregando variante="bloco" />;
     if (erro) return <p style={{ color: 'red', textAlign: 'center' }}>{erro}</p>;
 
-    const totalDisponivel = tarefasFiltradasParaFuncionario.length;
-    const totalFiltrado = listaFinalFiltrada.length;
+    const totalDisponivel = tarefasAgrupadas.length;
+    const totalFiltrado = listaFiltradaPorFase.length;
+    const nomeFase = faseFiltro === 'POS_OP' ? 'arremates pós-OP' : 'processos da OP';
     const textoMeta = termoFiltro
         ? `${totalFiltrado} resultado${totalFiltrado !== 1 ? 's' : ''} de ${totalDisponivel}`
         : `${totalDisponivel} tarefa${totalDisponivel !== 1 ? 's' : ''} disponível${totalDisponivel !== 1 ? 'is' : ''}`;
@@ -330,98 +468,93 @@ export default function OPTelaSelecaoEtapa({ onEtapaSelect, funcionario }) {
     const podeAtribuir = temPermissao('atribuir-tarefa');
 
     return (
-        <div className="coluna-lista-produtos">
-
-            {sugestao && !termoFiltro && (() => {
-                const { label: sLabel, imagemUrl: sImg } = getEtapaInfo(sugestao);
-                return (
-                    <div className="op-sugestao-destaque">
-                        <div className="op-sugestao-header">
-                            <i className="fas fa-magic"></i> Sugestão para {funcionario?.nome?.split(' ')[0]}
-                        </div>
-                        <div className="op-sugestao-corpo">
-                            <img src={sImg || '/img/placeholder-image.png'} alt={sugestao.produto_nome} className="op-sugestao-img" />
-                            <div className="op-sugestao-info">
-                                <span className="op-sugestao-produto">{sugestao.produto_nome}</span>
-                                {sugestao.variante && <span className="op-sugestao-variante">{sugestao.variante}</span>}
-                                <span className="op-sugestao-processo">{sugestao.processo}</span>
-                                <div className="op-sugestao-tags">
-                                    <span className="op-sugestao-tag etapa">{sLabel}</span>
-                                    {sugestao.motivos?.includes('especialista') && (
-                                        <span className="op-sugestao-tag especialista">
-                                            <i className="fas fa-star"></i> Especialista ({sugestao.sessoesHistorico} sess.)
-                                        </span>
-                                    )}
-                                    {sugestao.motivos?.includes('urgente') && (
-                                        <span className="op-sugestao-tag urgente">
-                                            <i className="fas fa-fire"></i> OP aguardando
-                                        </span>
-                                    )}
-                                </div>
-                            </div>
-                            {(() => {
-                                const chaveSug = `${sugestao.produto_id}-${sugestao.variante}-${sugestao.processo}`;
-                                const estaSelecionada = selecionados.some(s => `${s.produto_id}-${s.variante}-${s.processo}` === chaveSug);
-                                return (
-                                    <button
-                                        className={`op-sugestao-btn${estaSelecionada ? ' selecionado' : ''}`}
-                                        onClick={() => handleToggleSelect(sugestao)}
-                                    >
-                                        {estaSelecionada
-                                            ? <><i className="fas fa-check-circle"></i> Selecionada</>
-                                            : <><i className="fas fa-check"></i> Selecionar</>
-                                        }
-                                    </button>
-                                );
-                            })()}
-                        </div>
-                    </div>
-                );
-            })()}
+        <div className="coluna-lista-produtos op-selecao-tela">
 
             <div style={{ marginBottom: '6px' }}>
                 <UIBuscaInteligente onSearch={setTermoFiltro} placeholder="Buscar por produto, variante ou processo..." />
             </div>
 
-            <p className="op-busca-meta">{textoMeta}</p>
+            <div className="op-selecao-orientacao">
+                <div className="op-selecao-orientacao-texto">
+                    <span className="op-selecao-eyebrow">O que vai entrar na jornada?</span>
+                    <strong>Escolha uma tarefa liberada para {funcionario?.nome?.split(' ')[0] || 'este funcionário'}.</strong>
+                    <span>Use a fase para diferenciar o trabalho interno da OP do arremate que encaminha a peça para embalagem.</span>
+                </div>
+                <div className="op-selecao-fases" role="tablist" aria-label="Fase da tarefa">
+                    {[
+                        { id: 'TODAS', label: 'Todas', detalhe: 'tarefas', count: totalDisponivel, icon: 'fa-layer-group' },
+                        { id: 'OP', label: 'Produção da OP', detalhe: 'continua na OP', count: contagemFases.OP, icon: 'fa-gears' },
+                        { id: 'POS_OP', label: 'Arremate pós-OP', detalhe: 'libera embalagem', count: contagemFases.POS_OP, icon: 'fa-box-open' },
+                    ].map(fase => (
+                        <button
+                            key={fase.id}
+                            type="button"
+                            role="tab"
+                            aria-selected={faseFiltro === fase.id}
+                            className={`op-selecao-fase-btn op-selecao-fase-btn--${fase.id.toLowerCase()}${faseFiltro === fase.id ? ' ativo' : ''}`}
+                            onClick={() => setFaseFiltro(fase.id)}
+                            disabled={fase.id !== 'TODAS' && fase.count === 0}
+                        >
+                            <span className="op-selecao-fase-icone"><i className={`fas ${fase.icon}`}></i></span>
+                            <span className="op-selecao-fase-copy">
+                                <strong>{fase.label}</strong>
+                                <small>{fase.detalhe}</small>
+                            </span>
+                            <span className="op-selecao-fase-contagem">{fase.count}</span>
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            <p className="op-busca-meta">
+                {textoMeta}
+                {faseFiltro !== 'TODAS' && <span className="op-busca-meta-fase"> · filtrando {nomeFase}</span>}
+            </p>
 
             <div className="op-cards-container-modal">
                 {tarefasPaginadas.length > 0 ? (
-                    tarefasPaginadas.map((etapa) => {
+                    tarefasPaginadas.map((etapa, indice) => {
                         const { label, isFinal, imagemUrl } = getEtapaInfo(etapa);
-                        const etapaId = `${etapa.produto_id}-${etapa.variante}-${etapa.processo}`;
-                        const isSelected = selecionados.some(i => `${i.produto_id}-${i.variante}-${i.processo}` === etapaId);
+                        const etapaId = obterChaveTarefa(etapa);
+                        const isSelected = selecionados.some(i => obterChaveTarefa(i) === etapaId);
 
                         const grupoInfo = getGrupoInfo(etapa);
                         const unificacaoAtiva = !!(grupoInfo && unificacoesAtivas.has(grupoInfo.grupo.grupo_id));
+                        const grupoAtual = etapa.fase === 'POS_OP' ? 'POS_OP' : 'OP';
+                        const grupoAnterior = indice > 0
+                            ? (tarefasPaginadas[indice - 1].fase === 'POS_OP' ? 'POS_OP' : 'OP')
+                            : null;
                         return (
-                            <OPEtapaCard
-                                key={etapaId}
-                                etapa={etapa}
-                                stepLabel={label}
-                                isFinal={isFinal}
-                                imagemUrl={imagemUrl}
-                                selecionado={isSelected}
-                                onToggle={handleToggleSelect}
-                                grupoInfo={grupoInfo}
-                                unificacaoAtiva={unificacaoAtiva}
-                                onToggleUnificacao={handleToggleUnificacao}
-                            />
+                            <React.Fragment key={etapaId}>
+                                {grupoAtual !== grupoAnterior && (
+                                    <div className={`op-fila-secao op-fila-secao--${grupoAtual.toLowerCase()}`}>
+                                        <strong>{grupoAtual === 'POS_OP' ? 'Arremates pós-OP' : 'Produção da OP'}</strong>
+                                        <span>{grupoAtual === 'POS_OP'
+                                            ? 'A OP já foi encerrada; estas tarefas liberam a embalagem.'
+                                            : 'Etapas internas da ordem de produção.'}</span>
+                                    </div>
+                                )}
+                                <OPEtapaCard
+                                    etapa={etapa}
+                                    stepLabel={label}
+                                    isFinal={isFinal}
+                                    imagemUrl={imagemUrl}
+                                    selecionado={isSelected}
+                                    onToggle={handleToggleSelect}
+                                    grupoInfo={grupoInfo}
+                                    unificacaoAtiva={unificacaoAtiva}
+                                    onToggleUnificacao={handleToggleUnificacao}
+                                />
+                            </React.Fragment>
                         );
                     })
                 ) : (
                     <UIFeedbackNotFound
                         icon="fa-clipboard-list"
-                        titulo={buscaTarefa
-                            ? 'Nenhuma tarefa encontrada'
-                            : sugestao
-                                ? 'Nenhuma outra tarefa'
-                                : 'Nenhuma tarefa disponível'}
+                        titulo={buscaTarefa ? 'Nenhuma tarefa encontrada' : 'Nenhuma tarefa disponível'}
                         mensagem={buscaTarefa
                             ? `Não encontramos tarefas para “${buscaTarefa}”. Tente outro produto, variante ou processo.`
-                            : sugestao
-                                ? 'A sugestão acima é a única tarefa disponível no momento.'
-                                : 'Não há tarefas compatíveis com este funcionário no momento.'}
+                            : 'Não há tarefas compatíveis com este funcionário no momento.'}
                     />
                 )}
             </div>

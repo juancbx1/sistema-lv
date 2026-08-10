@@ -1,5 +1,5 @@
 // public/src/components/OPExternoTela.tsx
-// Versao inline (aba) do OPLancamentoExterno - sem modal/overlay
+// Aba inline de lancamento externo, sem modal/overlay.
 
 import { Fragment, type ComponentType, useCallback, useState } from 'react';
 // @ts-expect-error popups JS legado sem declaracao TypeScript
@@ -27,10 +27,14 @@ interface OpEtapaExterna {
   produto_id: number;
   variante?: string | null;
   processo: string;
+  processo_id?: string | number | null;
+  etapa_id?: string | null;
+  fase?: string | null;
   quantidade_disponivel: number | string;
   produto_nome: string;
   imagem_produto?: string | null;
   origem_ops?: Array<number | string>;
+  origens_pos_op?: Array<{ op_numero?: number | string; quantidade?: number | string }>;
   _unificada?: boolean;
   _grupo_unificacao?: OpGrupoUnificacao;
 }
@@ -80,6 +84,17 @@ function fmtDataHora(iso?: string | null) {
 
 function mensagemDoErro(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
+}
+
+function chaveTarefa(tarefa: Pick<OpEtapaExterna, 'produto_id' | 'variante' | 'processo' | 'processo_id' | 'etapa_id' | 'fase' | 'origem_ops'>) {
+  const origem = tarefa.fase === 'POS_OP' ? (tarefa.origem_ops || []).join(',') : '';
+  return [
+    tarefa.produto_id,
+    tarefa.variante || '',
+    tarefa.fase || 'OP',
+    tarefa.etapa_id || tarefa.processo_id || tarefa.processo,
+    origem,
+  ].join('::');
 }
 
 export default function OPExternoTela() {
@@ -166,7 +181,7 @@ export default function OPExternoTela() {
     const itens = Array.isArray(etapa) ? etapa : [etapa];
     const quantidadesIniciais: Record<string, number | string> = {};
     itens.forEach((item) => {
-      quantidadesIniciais[`${item.produto_id}-${item.variante}-${item.processo}`] = item.quantidade_disponivel;
+      quantidadesIniciais[chaveTarefa(item)] = item.quantidade_disponivel;
     });
     setItensSelecionados(itens);
     setQuantidades(quantidadesIniciais);
@@ -188,7 +203,7 @@ export default function OPExternoTela() {
       const token = localStorage.getItem('token');
       const itensPayload = itensSelecionados
         .map((item) => {
-          const key = `${item.produto_id}-${item.variante}-${item.processo}`;
+          const key = chaveTarefa(item);
           const qtd = parseInt(String(quantidades[key]), 10) || 0;
           if (qtd <= 0) return null;
           return {
@@ -196,7 +211,17 @@ export default function OPExternoTela() {
             produto_id: item.produto_id,
             variante: item.variante || null,
             processo: item.processo,
+            processo_id: item.processo_id ?? null,
+            etapa_id: item.etapa_id ?? null,
+            fase: item.fase || 'OP',
             quantidade: qtd,
+            ...(item.fase === 'POS_OP'
+              ? {
+                origens_pos_op: item.origens_pos_op?.length
+                  ? item.origens_pos_op
+                  : [{ op_numero: item.origem_ops?.[0], quantidade: qtd }],
+              }
+              : {}),
             ...(item._unificada && item._grupo_unificacao?.etapas
               ? { etapas_unificadas: item._grupo_unificacao.etapas }
               : {}),
@@ -306,7 +331,7 @@ export default function OPExternoTela() {
           <div className="op-confirmacao-container">
             <div className="op-confirmacao-lista">
               {itensSelecionados.map((item) => {
-                const key = `${item.produto_id}-${item.variante}-${item.processo}`;
+                const key = chaveTarefa(item);
                 const qtd = quantidades[key] !== undefined ? quantidades[key] : item.quantidade_disponivel;
                 return (
                   <div key={key} className="op-item-confirmacao-card borda-etapa-normal">

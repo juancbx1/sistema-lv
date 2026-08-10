@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { fetchFinanceiro } from '../utils/financeiro-api';
 import type { FinanceiroConfigModalKind, FinanceiroConfigModalRequest } from '../utils/financeiro-types';
 import { useFinanceiro } from './FinanceiroContext';
+import UIBloqueio from './UIBloqueio';
 
 const EMPTY: Record<FinanceiroConfigModalKind, Record<string, string>> = {
   conta: { nome_conta: '', banco: '', agencia: '', numero_conta: '' },
@@ -41,6 +42,11 @@ export default function FinanceiroConfiguracaoModal() {
   if (!configModal) return null;
 
   const { kind, item } = configModal;
+  const permissaoSalvar = kind === 'conta'
+    ? 'gerenciar-contas'
+    : kind === 'contato'
+      ? item?.id ? 'gerenciar-categorias' : 'criar-favorecido'
+      : 'gerenciar-categorias';
   const change = (key: string, value: string) => setValues((current) => ({ ...current, [key]: value }));
 
   const save = async (event: React.FormEvent) => {
@@ -126,9 +132,14 @@ export default function FinanceiroConfiguracaoModal() {
         </form>
         <div className="fc-modal-footer">
           <button type="button" className="fc-btn fc-btn-secundario" onClick={closeConfigModal}>Cancelar</button>
-          <button type="submit" form="financeiro-config-form" className="fc-btn fc-btn-primario" disabled={saving}>
-            {saving ? 'Salvando...' : 'Salvar'}
-          </button>
+          <UIBloqueio
+            permissao={permissaoSalvar}
+            mensagem="Você não tem permissão para salvar esta configuração financeira."
+          >
+            <button type="submit" form="financeiro-config-form" className="fc-btn fc-btn-primario" disabled={saving}>
+              {saving ? 'Salvando...' : 'Salvar'}
+            </button>
+          </UIBloqueio>
         </div>
       </div>
     </div>

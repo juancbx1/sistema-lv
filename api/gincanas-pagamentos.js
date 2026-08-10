@@ -32,7 +32,7 @@ router.get('/fila', async (req, res) => {
     try {
         dbClient = await pool.connect();
         const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id, empresaId);
-        if (!permissoes.includes('gerenciar-gincanas')) {
+        if (!permissoes.includes('pagar-premiacoes-gincanas')) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
 
@@ -102,7 +102,7 @@ router.get('/historico', async (req, res) => {
     try {
         dbClient = await pool.connect();
         const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id, empresaId);
-        if (!permissoes.includes('gerenciar-gincanas')) {
+        if (!permissoes.includes('pagar-premiacoes-gincanas')) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
 
@@ -151,7 +151,7 @@ router.post('/pagar-lote', async (req, res) => {
     try {
         dbClient = await pool.connect();
         const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id, empresaId);
-        if (!permissoes.includes('gerenciar-gincanas')) {
+        if (!permissoes.includes('pagar-premiacoes-gincanas')) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
 
@@ -213,7 +213,7 @@ router.post('/:id/pagar', async (req, res) => {
     try {
         dbClient = await pool.connect();
         const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id, empresaId);
-        if (!permissoes.includes('gerenciar-gincanas')) {
+        if (!permissoes.includes('pagar-premiacoes-gincanas')) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
 

@@ -12,6 +12,7 @@ import cortesRouter from './api/cortes.js';
 import producoesRouter from './api/producoes.js';
 import configuracaoPontosRouter from './api/configuracao-pontos.js';
 import produtosRouter from './api/produtos.js';
+import processosProducaoRouter from './api/processos-producao.js';
 import ordensDeProducaoRouter from './api/ordens-de-producao.js';
 import arrematesRouter from './api/arremates.js';
 import opsParaEmbalagemRouter from './api/ops-para-embalagem.js';
@@ -69,6 +70,7 @@ const routers = {
     producoesRouter,
     configuracaoPontosRouter,
     produtosRouter,
+    processosProducaoRouter,
     ordensDeProducaoRouter,
     arrematesRouter,
     opsParaEmbalagemRouter,
@@ -108,6 +110,7 @@ app.use('/api/cortes', cortesRouter);
 app.use('/api/producoes', producoesRouter);
 app.use('/api/configuracao-pontos', configuracaoPontosRouter);
 app.use('/api/produtos', produtosRouter);
+app.use('/api/processos-producao', processosProducaoRouter);
 app.use('/api/ordens-de-producao', ordensDeProducaoRouter);
 app.use('/api/arremates', arrematesRouter);
 app.use('/api/ops-para-embalagem', opsParaEmbalagemRouter);

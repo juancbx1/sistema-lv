@@ -1,7 +1,7 @@
 // public/src/components/UILinhaDoTempoDia.tsx
 //
 // Componente compartilhado: Linha do Tempo do Dia.
-// Extraído de OPStatusCard.jsx para uso em OPStatusCard e ArremateStatusCard.
+// Extraído de OPStatusCard.jsx para uso no histórico diário de ponto.
 //
 // Props:
 //   funcionario — objeto com horário_entrada_1/saida_1/entrada_2/saida_2/entrada_3/saida_3

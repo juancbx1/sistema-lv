@@ -1,5 +1,39 @@
 /* public/css/cadastrar-produto.css */
 
+/* Ações sem permissão continuam visíveis e clicáveis para abrir o popup padrão. */
+[data-permissao-bloqueada="true"] {
+    cursor: not-allowed !important;
+}
+
+button.cp-permissao-bloqueada {
+    opacity: 0.72;
+}
+
+button.cp-permissao-bloqueada::after {
+    content: "\\f023";
+    font-family: "Font Awesome 6 Free";
+    font-weight: 900;
+    margin-left: 0.45rem;
+    font-size: 0.8em;
+}
+
+.cp-grade-img-placeholder.cp-permissao-bloqueada {
+    position: relative;
+    opacity: 0.72;
+}
+
+.cp-grade-img-placeholder.cp-permissao-bloqueada::after {
+    content: "\\f023";
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: rgba(15, 23, 42, 0.42);
+    color: #fff;
+    font-family: "Font Awesome 6 Free";
+    font-weight: 900;
+}
+
 /* Reset básico */
 * {
     margin: 0;
@@ -164,6 +198,9 @@ body.autenticado {
 .cp-btn-add { background-color: #3498db; }
 .cp-btn-add:hover { background-color: #2980b9; }
 
+.cp-btn-add-pos { background-color: #7c3aed; }
+.cp-btn-add-pos:hover { background-color: #6d28d9; }
+
 .cp-btn-back {
     background-color: #7f8c8d;
     margin-bottom: 1.5rem;
@@ -250,6 +287,246 @@ body.autenticado {
 }
 
 /* Variações */
+.cp-etapas-editor__cabecalho {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+}
+
+.cp-etapas-editor__cabecalho h3 {
+    margin-bottom: 0.35rem;
+}
+
+.cp-etapas-editor__descricao {
+    margin: 0;
+    color: #64748b;
+    font-size: 0.92rem;
+}
+
+.cp-etapas-editor__contador {
+    flex: 0 0 auto;
+    padding: 0.45rem 0.75rem;
+    border-radius: 999px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-weight: 700;
+    font-size: 0.85rem;
+}
+
+.cp-etapas-editor__legenda {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    padding: 0.85rem 1rem;
+    border: 1px solid #dbeafe;
+    border-radius: 10px;
+    background: #f8fbff;
+    color: #334155;
+    font-size: 0.88rem;
+}
+
+.cp-etapas-editor__legenda strong {
+    color: #1e3a8a;
+}
+
+.cp-etapas-editor__alerta {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    margin-bottom: 1rem;
+    padding: 0.8rem 1rem;
+    border: 1px solid #f59e0b;
+    border-radius: 8px;
+    background: #fffbeb;
+    color: #92400e;
+}
+
+.cp-etapas-editor__tabela-wrapper {
+    overflow-x: auto;
+}
+
+.cp-etapas-editor__tabela {
+    min-width: 920px;
+}
+
+.cp-etapas-editor__tabela td {
+    vertical-align: top;
+}
+
+.cp-etapa-linha--pendente {
+    background: #fffaf0;
+}
+
+.cp-etapa-ordem {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 66px;
+}
+
+.cp-etapa-ordem > span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: #e0f2fe;
+    color: #075985;
+    font-weight: 700;
+}
+
+.cp-etapa-ordem__acoes {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.cp-etapa-ordem__acoes button {
+    width: 24px;
+    min-height: 22px;
+    padding: 0;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    background: #fff;
+    color: #475569;
+    cursor: pointer;
+}
+
+.cp-etapa-ordem__acoes button:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.cp-etapa-fase--OP {
+    border-color: #93c5fd;
+    background: #eff6ff;
+}
+
+.cp-etapa-fase--POS_OP {
+    border-color: #c4b5fd;
+    background: #f5f3ff;
+}
+
+.cp-etapa-fase--pendente {
+    border-color: #f59e0b;
+    background: #fffbeb;
+}
+
+.cp-etapa-executores {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    min-width: 130px;
+}
+
+.cp-etapa-executor {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-height: 28px;
+    color: #334155;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.cp-etapa-executor input {
+    width: 17px;
+    height: 17px;
+    accent-color: #2563eb;
+}
+
+.cp-etapas-editor__vazio {
+    padding: 2rem !important;
+    text-align: center !important;
+    color: #64748b;
+}
+
+.cp-etapas-editor__acoes-adicionar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 1rem;
+}
+
+.cp-processos-configuracao {
+    margin: 1rem 0;
+    border: 1px solid #dbeafe;
+    border-radius: 10px;
+    background: #f8fbff;
+}
+
+.cp-processos-configuracao > summary {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0.75rem 1rem;
+    color: #1e3a8a;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.cp-processos-configuracao__conteudo {
+    padding: 0 1rem 1rem;
+}
+
+.cp-processos-configuracao__descricao {
+    margin: 0 0 0.85rem;
+    color: #475569;
+    font-size: 0.88rem;
+}
+
+.cp-processos-configuracao__form {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.75rem;
+    margin-bottom: 0.9rem;
+}
+
+.cp-processos-configuracao__form .cp-form-group {
+    flex: 1;
+    margin-bottom: 0;
+}
+
+.cp-processos-configuracao__lista {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.cp-processos-configuracao__item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    min-height: 44px;
+    padding: 0.55rem 0.7rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.cp-processos-configuracao__item small {
+    display: block;
+    margin-top: 0.15rem;
+    color: #64748b;
+}
+
+.cp-processos-configuracao__item--inativo {
+    opacity: 0.65;
+}
+
+.cp-processos-configuracao__aviso {
+    margin: 0 0 0.75rem;
+    color: #92400e;
+    font-size: 0.85rem;
+}
+
 .cp-variation-row {
     display: flex;
     align-items: flex-end;
@@ -786,5 +1063,35 @@ input[type="file"].hidden#imagemProduto {
         content: attr(data-label);
         font-weight: 600;
         color: #34495e;
+    }
+
+    .cp-etapas-editor__cabecalho {
+        flex-direction: column;
+    }
+
+    .cp-etapas-editor__legenda {
+        grid-template-columns: 1fr;
+    }
+
+    .cp-etapas-editor__tabela {
+        min-width: 0;
+    }
+
+    .cp-etapa-executores {
+        align-items: flex-end;
+    }
+
+    .cp-processos-configuracao__form {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .cp-processos-configuracao__form .cp-form-group {
+        width: 100%;
+    }
+
+    .cp-processos-configuracao__item {
+        align-items: flex-start;
+        flex-direction: column;
     }
 }

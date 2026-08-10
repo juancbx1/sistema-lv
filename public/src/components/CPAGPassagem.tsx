@@ -5,6 +5,7 @@ import { mostrarConfirmacao, mostrarToast } from '../utils/cpag-feedback';
 import { fetchCpag } from '../utils/cpag-api';
 import UIFeedbackNotFound from './UIFeedbackNotFound';
 import UICarregando from './UICarregando';
+import UIBloqueio from './UIBloqueio';
 import CPAGMultiDatePicker from './CPAGMultiDatePicker.tsx';
 import CPAGModalHistoricoVT from './CPAGModalHistoricoVT.tsx';
 import CPAGGerenciadorRecibosVT from './CPAGGerenciadorRecibosVT.tsx';
@@ -415,13 +416,18 @@ export default function CPAGPassagem({ usuarios, contas }: Props) {
         <h2 className="cpg-section-title" style={{ border: 'none', margin: 0, padding: 0 }}>
           Lote de Vale Transporte
         </h2>
-        <button
-          type="button"
-          className="cpg-btn cpg-btn-secundario"
-          onClick={() => setModalRecibosAberto(true)}
+        <UIBloqueio
+          permissao="permitir-pagar-passagens"
+          mensagem="Você não tem permissão para consultar ou gerar recibos de vale-transporte."
         >
-          <i className="fas fa-print"></i> Gerenciar Recibos
-        </button>
+          <button
+            type="button"
+            className="cpg-btn cpg-btn-secundario"
+            onClick={() => setModalRecibosAberto(true)}
+          >
+            <i className="fas fa-print"></i> Gerenciar Recibos
+          </button>
+        </UIBloqueio>
       </div>
 
       {/* Configuração — largura total, tablet-first */}
@@ -599,14 +605,19 @@ export default function CPAGPassagem({ usuarios, contas }: Props) {
             </div>
           </div>
 
-          <button
-            type="button"
-            className="cpg-btn cpg-btn-primario cpg-vt-confirmar"
-            onClick={() => void handleProcessarLote()}
-            disabled={loading}
+          <UIBloqueio
+            permissao="permitir-pagar-passagens"
+            mensagem="Você não tem permissão para pagar vales-transporte."
           >
-            {loading ? 'Processando…' : 'Confirmar lote'}
-          </button>
+            <button
+              type="button"
+              className="cpg-btn cpg-btn-primario cpg-vt-confirmar"
+              onClick={() => void handleProcessarLote()}
+              disabled={loading}
+            >
+              {loading ? 'Processando…' : 'Confirmar lote'}
+            </button>
+          </UIBloqueio>
         </section>
       )}
 

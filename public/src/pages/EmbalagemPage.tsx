@@ -414,7 +414,7 @@ export default function EmbalagemPage({}: EmbalagemPageProps) {
       </div>
 
       {selecionado ? (
-        <EmbalagemModalOpcoes
+      <EmbalagemModalOpcoes
           item={selecionado}
           produtos={catalogoProdutos}
           saldoEstoque={saldoEstoque}

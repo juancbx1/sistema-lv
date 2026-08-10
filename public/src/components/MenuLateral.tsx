@@ -7,7 +7,9 @@ import {
   MENU_FAVORITOS_PADRAO,
   MENU_ITENS,
   itemMenuEstaAtivo,
+  menuItemTemPermissao,
 } from '../utils/menu-catalogo';
+import type { MenuItem } from '../utils/menu-types';
 import MenuConfirmacao from './MenuConfirmacao';
 import MenuEmpresaAtiva from './MenuEmpresaAtiva';
 import MenuEmpresaSeletor from './MenuEmpresaSeletor';
@@ -118,10 +120,19 @@ export default function MenuLateral() {
     if (!usuario || !contexto) return [];
     const permissoes = new Set(usuario.permissoes || []);
     const modulos = new Set(contexto.modulosHabilitados || []);
-    return MENU_ITENS.filter((item) => {
-      const permitido = !item.permissao || permissoes.has(item.permissao);
+    return MENU_ITENS.map((item) => {
+      const permitido = menuItemTemPermissao(item, permissoes);
       const moduloDisponivel = !item.modulo || modulos.has(item.modulo);
-      return permitido && moduloDisponivel;
+      const motivoBloqueio: MenuItem['motivoBloqueio'] = !moduloDisponivel
+        ? 'modulo'
+        : !permitido
+          ? 'permissao'
+          : undefined;
+      return {
+        ...item,
+        bloqueado: Boolean(motivoBloqueio),
+        motivoBloqueio,
+      };
     });
   }, [contexto, usuario]);
 

@@ -15,7 +15,6 @@ document.addEventListener('DOMContentLoaded', () => {
         '/admin/producao-diaria.html': '/js/pages/admin-producao-diaria.js',
         '/costureira/dashboard.html': '/js/pages/costureira-dashboard.js',
         '/admin/embalagem-de-produtos.html': '/js/pages/admin-embalagem-de-produtos.js', // Ajustado para o caminho correto
-        '/admin/ponto-por-processo.html': '/js/pages/admin-ponto-por-processo.js', // Mantido como está
     };
 
     // Normalizar o caminho removendo possíveis prefixos ou ajustando para o ambiente

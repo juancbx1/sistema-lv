@@ -7,6 +7,7 @@ import jwt from 'jsonwebtoken';
 import express from 'express';
 import { obterEmpresaIdDoContexto } from './contexto-empresa.js';
 import { gerarDiagnosticoCompleto, limparAtribuicoesOrfas } from './utils/diagnosticoProducao.js';
+import { obterEstruturaOrigensProdutoPronto, construirCteOrigensProdutoPronto } from './utils/origens-produto-pronto.js';
 
 
 // 1. Inicialização do Express Router e do Pool de Conexão com o Banco
@@ -587,11 +588,13 @@ router.get('/buscar-produto', async (req, res) => {
         const empresaParamIndex = params.length + 1;
         params.push(empresaId);
 
+        const estruturaOrigens = await obterEstruturaOrigensProdutoPronto(dbClient);
+        const cteOrigens = construirCteOrigensProdutoPronto(estruturaOrigens.origens);
         const baseQuery = `
             FROM produtos p
             INNER JOIN (
                 SELECT DISTINCT produto_id, variante
-                  FROM arremates
+                  FROM OrigensProdutoProntoCompat
                  WHERE empresa_id = $${empresaParamIndex}
                 UNION
                 SELECT DISTINCT produto_embalado_id as produto_id, variante_embalada_nome as variante
@@ -628,7 +631,7 @@ router.get('/buscar-produto', async (req, res) => {
                 )
         `;
 
-        const countQuery = `SELECT COUNT(*) ${baseQuery}`;
+        const countQuery = `${cteOrigens} SELECT COUNT(*) ${baseQuery}`;
         const countResult = await dbClient.query(countQuery, params);
         const totalItems = parseInt(countResult.rows[0].count, 10);
         const totalPages = Math.ceil(totalItems / limitNum) || 1;
@@ -638,6 +641,7 @@ router.get('/buscar-produto', async (req, res) => {
         const offsetPlaceholder = `$${params.length + 2}`;
 
         const dataQuery = `
+            ${cteOrigens}
             SELECT p.id as produto_id, p.nome, g.variacao as variante, g.sku, COALESCE(g.imagem, p.imagem) as imagem
             ${baseQuery}
             ORDER BY p.nome, g.variacao

@@ -15,6 +15,7 @@ import {
     registrarEstornoRecarga,
     schemaVtDisponivel,
 } from './vt-cartao-motor.js';
+import { obterEstruturaOrigensProdutoPronto, construirCteOrigensProdutoPronto } from './utils/origens-produto-pronto.js';
 
 const router = express.Router();
 const pool = new Pool({
@@ -272,12 +273,15 @@ router.get('/calcular', async (req, res) => {
                 }
 
                 // Busca Produção
-                let queryAtiv = `
+                const estruturaOrigens = await obterEstruturaOrigensProdutoPronto(dbClient);
+                const cteOrigens = construirCteOrigensProdutoPronto(estruturaOrigens.origens);
+                let queryAtiv = `${cteOrigens}
                     SELECT data, pontos_gerados FROM producoes WHERE funcionario_id = $1 AND empresa_id = $4 AND data BETWEEN $2 AND $3
                 `;
-                if (tipoUsuario === 'tiktik') {
-                    queryAtiv += ` UNION ALL SELECT data_lancamento as data, pontos_gerados FROM arremates WHERE usuario_tiktik_id = $1 AND empresa_id = $4 AND data_lancamento BETWEEN $2 AND $3 AND tipo_lancamento = 'PRODUCAO'`;
-                }
+                queryAtiv += ` UNION ALL SELECT data_disponibilizacao as data, pontos_gerados
+                    FROM OrigensProdutoProntoCompat
+                    WHERE executor_id = $1 AND empresa_id = $4
+                      AND data_disponibilizacao BETWEEN $2 AND $3`;
                 queryAtiv += ` UNION ALL
                     SELECT data_referencia::timestamptz as data, pontos as pontos_gerados
                     FROM pontos_extras
@@ -1168,6 +1172,9 @@ router.post('/remover-registro-dia', async (req, res) => {
 // GET /api/pagamentos/recibos/dados
 // Busca os dados detalhados para o recibo (Intervalo Livre)
 router.get('/recibos/dados', async (req, res) => {
+    if (!req.permissoesUsuario.includes('permitir-pagar-comissao')) {
+        return res.status(403).json({ error: 'Permissão negada para consultar recibos de comissão.' });
+    }
     const { usuario_id, data_inicio, data_fim } = req.query;
 
     if (!usuario_id || !data_inicio || !data_fim) {
@@ -1215,12 +1222,15 @@ router.get('/recibos/dados', async (req, res) => {
         }
 
         // 2. Busca Produção + Arremates + Pontos Extras
-        let queryText = `
+        const estruturaOrigens = await obterEstruturaOrigensProdutoPronto(dbClient);
+        const cteOrigens = construirCteOrigensProdutoPronto(estruturaOrigens.origens);
+        let queryText = `${cteOrigens}
             SELECT data, pontos_gerados FROM producoes WHERE funcionario_id = $1 AND empresa_id = $4 AND data BETWEEN $2 AND $3
         `;
-        if (tipoUsuario === 'tiktik') {
-            queryText += ` UNION ALL SELECT data_lancamento as data, pontos_gerados FROM arremates WHERE usuario_tiktik_id = $1 AND empresa_id = $4 AND data_lancamento BETWEEN $2 AND $3 AND tipo_lancamento = 'PRODUCAO'`;
-        }
+        queryText += ` UNION ALL SELECT data_disponibilizacao as data, pontos_gerados
+            FROM OrigensProdutoProntoCompat
+            WHERE executor_id = $1 AND empresa_id = $4
+              AND data_disponibilizacao BETWEEN $2 AND $3`;
         queryText += ` UNION ALL
             SELECT data_referencia::timestamptz as data, pontos as pontos_gerados
             FROM pontos_extras
@@ -1309,6 +1319,9 @@ router.get('/recibos/dados', async (req, res) => {
 // POST /api/pagamentos/recibos/registrar
 // Marca que um recibo foi gerado
 router.post('/recibos/registrar', async (req, res) => {
+    if (!req.permissoesUsuario.includes('permitir-pagar-comissao')) {
+        return res.status(403).json({ error: 'Permissão negada para registrar recibos de comissão.' });
+    }
     const { usuario_id, data_inicio, data_fim } = req.body;
     const adminId = req.usuarioLogado.id;
 
@@ -1343,6 +1356,9 @@ router.post('/recibos/registrar', async (req, res) => {
 // GET /api/pagamentos/recibos/verificar
 // Verifica se já existe recibo para o período (ou sobreposição)
 router.get('/recibos/verificar', async (req, res) => {
+    if (!req.permissoesUsuario.includes('permitir-pagar-comissao')) {
+        return res.status(403).json({ error: 'Permissão negada para consultar recibos de comissão.' });
+    }
     const { usuario_id, data_inicio, data_fim } = req.query;
     let dbClient;
     try {
@@ -1381,6 +1397,9 @@ router.get('/recibos/verificar', async (req, res) => {
 // GET /api/pagamentos/recibos/cobertos
 // Lista usuários que já possuem recibo cobrindo o período (para badge / resumo da semana)
 router.get('/recibos/cobertos', async (req, res) => {
+    if (!req.permissoesUsuario.includes('permitir-pagar-comissao')) {
+        return res.status(403).json({ error: 'Permissão negada para consultar recibos de comissão.' });
+    }
     const { data_inicio, data_fim } = req.query;
     if (!data_inicio || !data_fim) {
         return res.status(400).json({ error: 'data_inicio e data_fim são obrigatórios.' });
@@ -1415,6 +1434,9 @@ router.get('/recibos/cobertos', async (req, res) => {
 // GET /api/pagamentos/recibos/intervalos-empresa
 // Todos os períodos de recibo da empresa ativa (para somar pendências por semana × usuário)
 router.get('/recibos/intervalos-empresa', async (req, res) => {
+    if (!req.permissoesUsuario.includes('permitir-pagar-comissao')) {
+        return res.status(403).json({ error: 'Permissão negada para consultar recibos de comissão.' });
+    }
     let dbClient;
     try {
         dbClient = await pool.connect();
@@ -1788,6 +1810,9 @@ router.post('/lote-vt', async (req, res) => {
 // GET /api/pagamentos/lotes-vt-agrupados
 // Busca histórico agrupado por data e descrição para simular "Lotes"
 router.get('/lotes-vt-agrupados', async (req, res) => {
+    if (!req.permissoesUsuario.includes('permitir-pagar-passagens')) {
+        return res.status(403).json({ error: 'Permissão negada para consultar recibos de vale-transporte.' });
+    }
     let dbClient;
     try {
         dbClient = await pool.connect();
@@ -1827,6 +1852,9 @@ router.get('/lotes-vt-agrupados', async (req, res) => {
 
 // POST /api/pagamentos/marcar-lote-impresso
 router.post('/marcar-lote-impresso', async (req, res) => {
+    if (!req.permissoesUsuario.includes('permitir-pagar-passagens')) {
+        return res.status(403).json({ error: 'Permissão negada para registrar recibos de vale-transporte.' });
+    }
     const { ids } = req.body; // Agora esperamos um array de IDs: [10, 11, 12]
     
     if (!ids || !Array.isArray(ids) || ids.length === 0) {
@@ -1882,6 +1910,9 @@ router.post('/marcar-lote-impresso', async (req, res) => {
 // GET /api/pagamentos/recibos/historico-periodos
 // Retorna lista de dias já cobertos por recibos para um usuário
 router.get('/recibos/historico-periodos', async (req, res) => {
+    if (!req.permissoesUsuario.includes('permitir-pagar-comissao')) {
+        return res.status(403).json({ error: 'Permissão negada para consultar recibos de comissão.' });
+    }
     const { usuario_id, ano } = req.query; // Filtro por ano para não pesar
     if (!usuario_id) return res.status(400).json({ error: 'Usuario ID obrigatório' });
 

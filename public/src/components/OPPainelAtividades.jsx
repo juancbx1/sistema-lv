@@ -11,6 +11,36 @@ import UIBloqueio from './UIBloqueio';
 import OPPontoPopup from './OPPontoPopup.jsx';
 import OPPainelResumo from './OPPainelResumo.jsx';
 
+async function lerRespostaApi(res, mensagemPadrao) {
+    const texto = await res.text();
+    let body = {};
+
+    if (texto) {
+        try {
+            body = JSON.parse(texto);
+        } catch (_) {
+            body = {};
+        }
+    }
+
+    if (!res.ok) {
+        const error = new Error(
+            body.error || body.message || `${mensagemPadrao} (HTTP ${res.status}).`
+        );
+        error.codigo = body.codigo;
+        error.status = res.status;
+        error.details = body.details;
+        throw error;
+    }
+
+    return body;
+}
+
+function mensagemErro(err, fallback) {
+    const texto = String(err?.message || fallback).replace(/<[^>]*>/g, '').trim();
+    return texto || fallback;
+}
+
 export default function OPPainelAtividades() {
     const [funcionarios, setFuncionarios] = useState([]);
     const [temposPadraoProducao, setTemposPadraoProducao] = useState({});
@@ -45,44 +75,73 @@ export default function OPPainelAtividades() {
     const alertadosRef = useRef(new Set());
 
     const pollingTimeoutRef = useRef(null);
+    const erroPainelNotificadoRef = useRef(false);
+    const tarefasEmProcessamentoRef = useRef(new Set());
+    const painelAtivoRef = useRef(true);
+
+    useEffect(() => {
+        painelAtivoRef.current = true;
+        return () => {
+            painelAtivoRef.current = false;
+            // Os popups legados são montados diretamente no body. Ao trocar de
+            // aba, eles não podem permanecer como uma camada invisível sobre a
+            // tela seguinte e bloquear todos os cliques.
+            document.querySelectorAll('.popup-container').forEach((popup) => popup.remove());
+        };
+    }, []);
 
     // --- 1. BUSCA DE DADOS ---
     const buscarDadosPainel = useCallback(async () => {
+        if (!painelAtivoRef.current) return false;
         setCadeiaBloqueada(false);
         try {
             const token = localStorage.getItem('token');
             const [dataFuncionarios, dataTempos] = await Promise.all([
-                fetch('/api/producao/status-funcionarios', { headers: { 'Authorization': `Bearer ${token}` } }).then(async res => {
-                    const body = await res.json();
-                    if (!res.ok) {
-                        const error = new Error(body.error || 'Falha ao carregar status.');
-                        error.codigo = body.codigo;
-                        throw error;
-                    }
-                    return body;
-                }),
-                fetch('/api/producao/tempos-padrao', { headers: { 'Authorization': `Bearer ${token}` } }).then(res => {
-                    if (!res.ok) return {};
-                    return res.json();
-                })
+                fetch('/api/producao/status-funcionarios', { headers: { 'Authorization': `Bearer ${token}` } })
+                    .then(res => lerRespostaApi(res, 'Falha ao carregar o status dos funcionários.')),
+                fetch('/api/producao/tempos-padrao', { headers: { 'Authorization': `Bearer ${token}` } })
+                    .then(res => lerRespostaApi(res, 'Falha ao carregar os tempos padrão.'))
             ]);
+
+            if (!painelAtivoRef.current) return false;
 
             const funcionariosArray = Array.isArray(dataFuncionarios)
                 ? dataFuncionarios
-                : dataFuncionarios.funcionarios;
-            const feriadoInfo = !Array.isArray(dataFuncionarios) && dataFuncionarios.is_feriado_hoje
+                : dataFuncionarios?.funcionarios;
+            const feriadoInfo = dataFuncionarios && !Array.isArray(dataFuncionarios) && dataFuncionarios.is_feriado_hoje
                 ? { nome_feriado: dataFuncionarios.nome_feriado }
                 : null;
+            if (!Array.isArray(funcionariosArray)) {
+                throw new Error('A resposta do status dos funcionários está inválida.');
+            }
+            const temposArray = dataTempos && typeof dataTempos === 'object' && !Array.isArray(dataTempos)
+                ? dataTempos
+                : {};
             setFuncionarios(funcionariosArray);
             setInfoFeriado(feriadoInfo);
-            setTemposPadraoProducao(dataTempos);
+            setTemposPadraoProducao(temposArray);
             setErro(null);
+            erroPainelNotificadoRef.current = false;
+            return true;
         } catch (err) {
+            if (!painelAtivoRef.current) return false;
             if (err?.codigo === 'MODULO_NAO_DISPONIVEL_EMPRESA' || err?.codigo === 'CADEIA_PRODUTIVA_NAO_MIGRADA') {
                 setCadeiaBloqueada(true);
                 setFuncionarios([]);
+                setErro(null);
+            } else {
+                const mensagem = mensagemErro(err, 'Não foi possível atualizar o painel de Produções.');
+                setErro(mensagem);
+                setFuncionarios([]);
+                setInfoFeriado(null);
+                setTemposPadraoProducao({});
+                if (!erroPainelNotificadoRef.current) {
+                    mostrarMensagem(mensagem, 'erro');
+                    erroPainelNotificadoRef.current = true;
+                }
             }
             console.error("Erro no polling:", err);
+            return false;
         } finally {
             setCarregando(false);
         }
@@ -310,13 +369,18 @@ export default function OPPainelAtividades() {
                         // Sem atualização otimista de status — o buscarDadosPainel atualizará o ponto_hoje
                         // e calcularTempoEfetivo descongelará o contador automaticamente
                     } else {
-                        // Caso ALMOCO/PAUSA idle: muda status para LIVRE_MANUAL
-                        const res = await fetch(`/api/usuarios/${funcionario.id}/status`, {
-                            method: 'PUT',
+                        // Caso ALMOCO/PAUSA ocioso: registra E2/E3 e libera o vÃ­nculo
+                        // no mesmo fluxo auditado do retorno de PRODUZINDO.
+                        const res = await fetch('/api/ponto/retomar-trabalho', {
+                            method: 'POST',
                             headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ status: 'LIVRE_MANUAL' }),
+                            body: JSON.stringify({
+                                funcionario_id: funcionario.id,
+                                tipo: tipoIntervalo,
+                                motivo: 'Retorno manual autorizado pelo supervisor por necessidade operacional',
+                            }),
                         });
-                        if (!res.ok) throw new Error((await res.json()).error || 'Erro ao liberar');
+                        if (!res.ok) throw new Error((await res.json()).error || 'Erro ao registrar retorno');
                         // Atualização otimista — card muda imediatamente para LIVRE
                         setFuncionarios(prev => prev.map(f =>
                             f.id === funcionario.id ? { ...f, status_atual: 'LIVRE' } : f
@@ -325,7 +389,7 @@ export default function OPPainelAtividades() {
 
                     // Exibe popup de desfazer com countdown de 10s
                     // 'origem' diferencia o caminho do desfazer: PRODUZINDO reseta e2/e3; INTERVALO reseta status
-                    setDesfazerPopup({ funcionarioId: funcionario.id, nome: primeiroNome, tipo: tipoIntervalo, countdown: 10, origem: isProduzindo ? 'PRODUZINDO' : 'INTERVALO' });
+                    setDesfazerPopup({ funcionarioId: funcionario.id, nome: primeiroNome, tipo: tipoIntervalo, countdown: 10, origem: 'RETORNO_MANUAL' });
                     buscarDadosPainel();
                 } catch (err) {
                     mostrarMensagem(`Erro: ${err.message}`, 'erro');
@@ -345,7 +409,7 @@ export default function OPPainelAtividades() {
         try {
             const token = localStorage.getItem('token');
 
-            if (origem === 'PRODUZINDO') {
+            if (origem === 'PRODUZINDO' || origem === 'RETORNO_MANUAL') {
                 // Desfaz retomada: reseta e2/e3 para NULL → calcularTempoEfetivo recongelará o contador
                 const res = await fetch('/api/ponto/desfazer-retomada', {
                     method: 'POST',
@@ -417,15 +481,21 @@ export default function OPPainelAtividades() {
             mostrarMensagem("Erro: Sessão inválida.", "erro");
             return;
         }
+        const chaveTarefa = String(tarefa_atual.id_sessao);
+        if (tarefasEmProcessamentoRef.current.has(chaveTarefa)) return;
+        tarefasEmProcessamentoRef.current.add(chaveTarefa);
         const quantidadeFinal = await mostrarPromptNumerico(
             `Finalizar tarefa de ${funcionario.nome}? Confirme a quantidade:`,
             { valorInicial: tarefa_atual.quantidade, tipo: 'info' }
         );
-        if (quantidadeFinal === null || quantidadeFinal === '') return;
+        if (quantidadeFinal === null || quantidadeFinal === '') {
+            tarefasEmProcessamentoRef.current.delete(chaveTarefa);
+            return;
+        }
 
         try {
             const token = localStorage.getItem('token');
-            await fetch('/api/producoes/finalizar', {
+            const res = await fetch('/api/producoes/finalizar', {
                 method: 'PUT',
                 headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -434,26 +504,48 @@ export default function OPPainelAtividades() {
                     pausa_manual_ms: Math.round(pausaManualMs) || 0
                 })
             });
+            await lerRespostaApi(res, 'Não foi possível finalizar a tarefa.');
+            const atualizou = await buscarDadosPainel();
+            if (!atualizou) return;
             mostrarMensagem('Finalizado!', 'sucesso');
-            buscarDadosPainel();
-        } catch (err) { mostrarMensagem(err.message, 'erro'); }
+        } catch (err) {
+            if (painelAtivoRef.current) {
+                mostrarMensagem(mensagemErro(err, 'Não foi possível finalizar a tarefa.'), 'erro');
+            }
+        } finally {
+            tarefasEmProcessamentoRef.current.delete(chaveTarefa);
+        }
     };
 
     const handleCancelarTarefa = async (funcionario) => {
         const { tarefa_atual } = funcionario;
         if (!tarefa_atual || !tarefa_atual.id_sessao) return;
-        if(!await mostrarConfirmacao(`Cancelar tarefa de ${funcionario.nome}?`, 'aviso')) return;
+        const chaveTarefa = String(tarefa_atual.id_sessao);
+        if (tarefasEmProcessamentoRef.current.has(chaveTarefa)) return;
+        tarefasEmProcessamentoRef.current.add(chaveTarefa);
+        if(!await mostrarConfirmacao(`Cancelar tarefa de ${funcionario.nome}?`, 'aviso')) {
+            tarefasEmProcessamentoRef.current.delete(chaveTarefa);
+            return;
+        }
 
         try {
             const token = localStorage.getItem('token');
-            await fetch('/api/producao/sessoes/cancelar', {
+            const res = await fetch('/api/producao/sessoes/cancelar', {
                 method: 'PUT',
                 headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({ id_sessao: tarefa_atual.id_sessao })
             });
+            await lerRespostaApi(res, 'Não foi possível cancelar a tarefa.');
+            const atualizou = await buscarDadosPainel();
+            if (!atualizou) return;
             mostrarMensagem('Cancelado!', 'sucesso');
-            buscarDadosPainel();
-        } catch (err) { mostrarMensagem(err.message, 'erro'); }
+        } catch (err) {
+            if (painelAtivoRef.current) {
+                mostrarMensagem(mensagemErro(err, 'Não foi possível cancelar a tarefa.'), 'erro');
+            }
+        } finally {
+            tarefasEmProcessamentoRef.current.delete(chaveTarefa);
+        }
     };
 
     // --- EXCEÇÕES DE PONTO (saída antecipada / chegada atrasada) ---
@@ -586,7 +678,41 @@ export default function OPPainelAtividades() {
         </div>
     );
     if (carregando) return <UICarregando variante="bloco" />;
-    if (erro) return <p style={{ color: 'red', textAlign: 'center' }}>Erro: {erro}</p>;
+    if (erro) return (
+        <div
+            className="op-painel-erro"
+            role="alert"
+            style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '10px',
+                maxWidth: '560px',
+                margin: '48px auto',
+                padding: '28px 24px',
+                color: '#7f1d1d',
+                background: '#fef2f2',
+                border: '1px solid #fecaca',
+                borderRadius: '14px',
+                textAlign: 'center'
+            }}
+        >
+            <i className="fas fa-triangle-exclamation" aria-hidden="true" style={{ fontSize: '28px' }}></i>
+            <strong>Não foi possível atualizar o painel de Produções.</strong>
+            <span>{erro}</span>
+            <button
+                type="button"
+                className="gs-btn gs-btn-primario"
+                onClick={() => {
+                    setErro(null);
+                    void handleRefreshManual();
+                }}
+                disabled={isRefreshing}
+            >
+                {isRefreshing ? 'Tentando novamente...' : 'Tentar novamente'}
+            </button>
+        </div>
+    );
 
     // v1.8: ALMOCO e PAUSA ficam no grid principal (cards bloqueados) — não vão para inativos.
     // Inativos = somente verdadeiramente inativos: FORA_DO_HORARIO, FALTOU, ALOCADO_EXTERNO.

@@ -6,7 +6,11 @@ import UICarregando from './UICarregando';
 
 import { mostrarMensagem } from '/js/utils/popups.js';
 
-export default function FormularioPerda({ item, onConfirmar }) {
+export default function FormularioPerda({
+    item,
+    onConfirmar,
+    endpoint = '/api/producoes/registrar-perda',
+}) {
     const [motivo, setMotivo] = useState('');
     const [quantidade, setQuantidade] = useState(1);
     const [observacao, setObservacao] = useState('');
@@ -22,6 +26,10 @@ export default function FormularioPerda({ item, onConfirmar }) {
         // Validações iniciais com feedback para o usuário
         if (!motivo) {
             mostrarMensagem('Por favor, selecione um motivo para a perda.', 'aviso');
+            return;
+        }
+        if (!observacao.trim()) {
+            mostrarMensagem('Explique o motivo da perda na observação.', 'aviso');
             return;
         }
         const qtdNum = Number(quantidade);
@@ -45,7 +53,7 @@ export default function FormularioPerda({ item, onConfirmar }) {
 
             console.log("Enviando payload para registrar perda:", payload); // Log para depuração
 
-            const response = await fetch('/api/arremates/registrar-perda', {
+            const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -86,9 +94,8 @@ export default function FormularioPerda({ item, onConfirmar }) {
                     <label htmlFor="selectMotivoPerda">Motivo da Perda</label>
                     <select id="selectMotivoPerda" className="oa-select" value={motivo} onChange={e => setMotivo(e.target.value)} required>
                         <option value="" disabled>Selecione um motivo...</option>
-                        <option value="PRODUTO_AVARIADO">Produto Avariado</option>
-                        <option value="DIVERGENCIA_SALDO">Divergência de Saldo</option>
-                        <option value="LANCAMENTO_ERRADO">Lançamento Errado</option>
+                        <option value="QUANTIDADE_ERRADA">Quantidade errada</option>
+                        <option value="PRODUTO_AVARIADO">Produto avariado</option>
                     </select>
                 </div>
 
@@ -111,14 +118,15 @@ export default function FormularioPerda({ item, onConfirmar }) {
                 </div>
 
                 <div className="oa-form-grupo">
-                    <label htmlFor="textareaObservacaoPerda">Observação (Opcional)</label>
+                    <label htmlFor="textareaObservacaoPerda">Observação (obrigatória)</label>
                     <textarea 
                         id="textareaObservacaoPerda" 
                         className="oa-textarea" 
                         rows="3" 
-                        placeholder="Ex: Peça rasgada, contagem errada..."
+                        placeholder="Ex: conferência encontrou 59 peças em vez de 60..."
                         value={observacao}
                         onChange={e => setObservacao(e.target.value)}
+                        required
                     ></textarea>
                 </div>
 

@@ -324,48 +324,53 @@ export default function CPAGVtSaldoPainel({ usuarios }: Props) {
               <button type="button" className="cpg-btn cpg-btn-secundario" onClick={() => setModalSaldo(false)} disabled={salvandoSaldo}>
                 Cancelar
               </button>
-              <button
-                type="button"
-                className="cpg-btn cpg-btn-primario"
-                disabled={salvandoSaldo}
-                onClick={async () => {
-                  const normalizado = saldoAlvoInput.replace(/\s/g, '').replace(',', '.');
-                  const valor = Number.parseFloat(normalizado);
-                  if (!Number.isFinite(valor) || valor < 0) {
-                    mostrarToast('Informe um valor de saldo válido (>= 0).', 'aviso');
-                    return;
-                  }
-                  if (justSaldo.trim().length < 5) {
-                    mostrarToast('Informe a justificativa do saldo.', 'aviso');
-                    return;
-                  }
-                  setSalvandoSaldo(true);
-                  try {
-                    const res = await fetchCpag<{ saldo?: CpagVtSaldo }>(
-                      '/api/pagamentos/vt-saldo/definir-saldo',
-                      {
-                        method: 'POST',
-                        body: JSON.stringify({
-                          usuario_id: sel?.value,
-                          saldo_alvo: valor,
-                          justificativa_fato: justSaldo.trim(),
-                          zerar_livro: true,
-                        }),
-                      },
-                    );
-                    mostrarToast('Saldo do cartão definido com sucesso.', 'sucesso');
-                    if (res?.saldo) setSaldo(res.saldo);
-                    else if (sel) void carregar(sel.value);
-                    setModalSaldo(false);
-                  } catch (err) {
-                    mostrarToast(err instanceof Error ? err.message : 'Erro ao definir saldo.', 'erro');
-                  } finally {
-                    setSalvandoSaldo(false);
-                  }
-                }}
+              <UIBloqueio
+                permissao="ajustar-consumo-vt"
+                mensagem="Você precisa da permissão para definir o saldo do cartão VT."
               >
-                {salvandoSaldo ? <UICarregando variante="inline" /> : <><i className="fas fa-check" /> Confirmar saldo</>}
-              </button>
+                <button
+                  type="button"
+                  className="cpg-btn cpg-btn-primario"
+                  disabled={salvandoSaldo}
+                  onClick={async () => {
+                    const normalizado = saldoAlvoInput.replace(/\s/g, '').replace(',', '.');
+                    const valor = Number.parseFloat(normalizado);
+                    if (!Number.isFinite(valor) || valor < 0) {
+                      mostrarToast('Informe um valor de saldo válido (>= 0).', 'aviso');
+                      return;
+                    }
+                    if (justSaldo.trim().length < 5) {
+                      mostrarToast('Informe a justificativa do saldo.', 'aviso');
+                      return;
+                    }
+                    setSalvandoSaldo(true);
+                    try {
+                      const res = await fetchCpag<{ saldo?: CpagVtSaldo }>(
+                        '/api/pagamentos/vt-saldo/definir-saldo',
+                        {
+                          method: 'POST',
+                          body: JSON.stringify({
+                            usuario_id: sel?.value,
+                            saldo_alvo: valor,
+                            justificativa_fato: justSaldo.trim(),
+                            zerar_livro: true,
+                          }),
+                        },
+                      );
+                      mostrarToast('Saldo do cartão definido com sucesso.', 'sucesso');
+                      if (res?.saldo) setSaldo(res.saldo);
+                      else if (sel) void carregar(sel.value);
+                      setModalSaldo(false);
+                    } catch (err) {
+                      mostrarToast(err instanceof Error ? err.message : 'Erro ao definir saldo.', 'erro');
+                    } finally {
+                      setSalvandoSaldo(false);
+                    }
+                  }}
+                >
+                  {salvandoSaldo ? <UICarregando variante="inline" /> : <><i className="fas fa-check" /> Confirmar saldo</>}
+                </button>
+              </UIBloqueio>
             </footer>
           </div>
         </div>

@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, type FormEvent } from 'react';
 import { mostrarConfirmacao, mostrarMensagem } from '/js/utils/popups.js';
 import UICarregando from './UICarregando';
 import UIFeedbackNotFound from './UIFeedbackNotFound';
+import UIBloqueio from './UIBloqueio';
 import type {
     IncenProduto,
     MetaCondicao,
@@ -178,21 +179,25 @@ function RegraCard({
 
             {editavel && (
                 <div className="incen-regra-btns">
-                    <button
-                        className={`incen-regra-btn incen-regra-btn--salvar${mudou ? ' ativo' : ''}`}
-                        onClick={() => void handleSalvar()}
-                        disabled={salvando || !mudou}
-                        title="Salvar"
-                    >
-                        {salvando ? <UICarregando variante="inline" /> : <i className="fas fa-save" />}
-                    </button>
-                    <button
-                        className="incen-regra-btn incen-regra-btn--excluir"
-                        onClick={() => onExcluir(regra)}
-                        title="Excluir"
-                    >
-                        <i className="fas fa-trash" />
-                    </button>
+                    <UIBloqueio permissao="gerenciar-metas-incentivos" mensagem="Você não tem permissão para salvar metas e comissões.">
+                        <button
+                            className={`incen-regra-btn incen-regra-btn--salvar${mudou ? ' ativo' : ''}`}
+                            onClick={() => void handleSalvar()}
+                            disabled={salvando || !mudou}
+                            title="Salvar"
+                        >
+                            {salvando ? <UICarregando variante="inline" /> : <i className="fas fa-save" />}
+                        </button>
+                    </UIBloqueio>
+                    <UIBloqueio permissao="gerenciar-metas-incentivos" mensagem="Você não tem permissão para excluir metas e comissões.">
+                        <button
+                            className="incen-regra-btn incen-regra-btn--excluir"
+                            onClick={() => onExcluir(regra)}
+                            title="Excluir"
+                        >
+                            <i className="fas fa-trash" />
+                        </button>
+                    </UIBloqueio>
                 </div>
             )}
         </div>
@@ -276,13 +281,15 @@ function NovaRegraCard({
             <span className="incen-regra-nova-hint">Condições após salvar</span>
 
             <div className="incen-regra-btns">
-                <button
-                    className="incen-regra-btn incen-regra-btn--salvar ativo"
-                    onClick={() => void handleSalvar()}
-                    disabled={salvando}
-                >
-                    <i className="fas fa-check" />
-                </button>
+                <UIBloqueio permissao="gerenciar-metas-incentivos" mensagem="Você não tem permissão para criar regras de metas.">
+                    <button
+                        className="incen-regra-btn incen-regra-btn--salvar ativo"
+                        onClick={() => void handleSalvar()}
+                        disabled={salvando}
+                    >
+                        <i className="fas fa-check" />
+                    </button>
+                </UIBloqueio>
                 <button className="incen-regra-btn incen-regra-btn--cancelar" onClick={onCancelar}>
                     <i className="fas fa-times" />
                 </button>
@@ -324,9 +331,11 @@ function GrupoRegras({
                     {grupo.regras.length} regra{grupo.regras.length !== 1 ? 's' : ''}
                 </span>
                 {editavel && !adicionando && (
-                    <button className="incen-grupo-add-btn" onClick={() => setAdicionando(true)}>
-                        <i className="fas fa-plus" /> Adicionar
-                    </button>
+                    <UIBloqueio permissao="gerenciar-metas-incentivos" mensagem="Você não tem permissão para adicionar regras de metas.">
+                        <button className="incen-grupo-add-btn" onClick={() => setAdicionando(true)}>
+                            <i className="fas fa-plus" /> Adicionar
+                        </button>
+                    </UIBloqueio>
                 )}
             </div>
 
@@ -424,9 +433,11 @@ function ModalNovaVersao({
                 </div>
                 <div className="gs-modal-rodape">
                     <button className="gs-btn gs-btn-secundario" onClick={onFechar}>Cancelar</button>
-                    <button className="gs-btn gs-btn-primario" onClick={() => void handleConfirmar()} disabled={salvando}>
-                        {salvando ? 'Criando...' : 'Criar e Clonar'}
-                    </button>
+                    <UIBloqueio permissao="gerenciar-metas-incentivos" mensagem="Você não tem permissão para criar versões de metas.">
+                        <button className="gs-btn gs-btn-primario" onClick={() => void handleConfirmar()} disabled={salvando}>
+                            {salvando ? 'Criando...' : 'Criar e Clonar'}
+                        </button>
+                    </UIBloqueio>
                 </div>
             </div>
         </div>
@@ -523,9 +534,11 @@ function ModalCondicoes({
                 </div>
                 <div className="gs-modal-rodape">
                     <button className="gs-btn gs-btn-secundario" onClick={onFechar}>Cancelar</button>
-                    <button className="gs-btn gs-btn-primario" onClick={() => onSalvar(condicoes)}>
-                        Salvar Condições
-                    </button>
+                    <UIBloqueio permissao="gerenciar-metas-incentivos" mensagem="Você não tem permissão para salvar condições de metas.">
+                        <button className="gs-btn gs-btn-primario" onClick={() => onSalvar(condicoes)}>
+                            Salvar Condições
+                        </button>
+                    </UIBloqueio>
                 </div>
             </div>
         </div>
@@ -710,15 +723,17 @@ export default function IncenMetasTab() {
                         )}
                     </div>
 
-                    <button
-                        className="incen-v-btn-nova gs-btn gs-btn-secundario"
-                        onClick={() => {
-                            if (!versaoAtiva) { mostrarMensagem('Nenhuma versão ativa para clonar.', 'erro'); return; }
-                            setModalNovaVersao(true);
-                        }}
-                    >
-                        <i className="fas fa-plus" /> Nova Versão
-                    </button>
+                    <UIBloqueio permissao="gerenciar-metas-incentivos" mensagem="Você não tem permissão para criar versões de metas.">
+                        <button
+                            className="incen-v-btn-nova gs-btn gs-btn-secundario"
+                            onClick={() => {
+                                if (!versaoAtiva) { mostrarMensagem('Nenhuma versão ativa para clonar.', 'erro'); return; }
+                                setModalNovaVersao(true);
+                            }}
+                        >
+                            <i className="fas fa-plus" /> Nova Versão
+                        </button>
+                    </UIBloqueio>
                 </div>
 
                 {versaoSelecionada && (

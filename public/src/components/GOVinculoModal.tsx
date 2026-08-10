@@ -18,6 +18,22 @@ import type {
 
 const catalogoPermissoes = permissoesCatalogoVisivel as GOPermissaoCatalogo[];
 
+const ROTULOS_TIPO_PERMISSAO: Record<string, string> = {
+    pagina: 'Página',
+    aba: 'Aba',
+    bloco: 'Bloco',
+    acao: 'Ação',
+    escopo: 'Escopo',
+};
+
+function localizacaoPermissao(permissao?: GOPermissaoCatalogo | null): string {
+    if (!permissao) return 'Catálogo';
+    const pagina = permissao.pagina || 'Principal';
+    const aba = permissao.aba || 'Principal';
+    const tipo = ROTULOS_TIPO_PERMISSAO[permissao.tipo || 'acao'] || permissao.tipo || 'Ação';
+    return `${pagina} · Aba: ${aba} · ${tipo}`;
+}
+
 export const TIPOS_VINCULO: Array<[string, string]> = [
     ['administrador', 'Administrador'],
     ['supervisor', 'Supervisor'],
@@ -248,7 +264,11 @@ function GOCopiaPermissoes({ vinculos, permissoesSelecionadas, onChange }: GOCop
                                     checked={(permissoesSelecionadas || []).includes(item.id)}
                                     onChange={() => alternarPermissao(item.id)}
                                 />
-                                <span><strong>{item.label}</strong><small>{item.categoria}</small></span>
+                                <span>
+                                    <strong>{item.label}</strong>
+                                    <small>{localizacaoPermissao(item)}</small>
+                                    {item.descricao && <em>{item.descricao}</em>}
+                                </span>
                             </label>
                         ))}
                     </div>
@@ -298,9 +318,29 @@ export function GOVinculoCampos({
         const busca = buscaPermissao.trim().toLowerCase();
         return busca
             ? catalogoPermissoes.filter((item) =>
-                item.label.toLowerCase().includes(busca) || item.id.includes(busca))
+                [
+                    item.id,
+                    item.label,
+                    item.descricao,
+                    item.modulo,
+                    item.categoria,
+                    item.pagina,
+                    item.aba,
+                ]
+                    .filter(Boolean)
+                    .some((campo) => String(campo).toLowerCase().includes(busca)))
             : catalogoPermissoes;
     }, [buscaPermissao]);
+    const permissoesAgrupadas = useMemo(() => {
+        const grupos = new Map<string, GOPermissaoCatalogo[]>();
+        permissoesFiltradas.forEach((item) => {
+            const grupo = item.categoria || item.modulo || 'Outros';
+            const itens = grupos.get(grupo) || [];
+            itens.push(item);
+            grupos.set(grupo, itens);
+        });
+        return Array.from(grupos.entries());
+    }, [permissoesFiltradas]);
     const permissoesAtribuidas = valor.permissoes || [];
     const permissoesVisiveis = mostrarTodasAtribuidas
         ? permissoesAtribuidas
@@ -522,7 +562,10 @@ export function GOVinculoCampos({
                             <div className="go-permissoes-selecionadas-lista">
                                 {permissoesVisiveis.map((id) => {
                                     const item = catalogoPermissoes.find((permissao) => permissao.id === id);
-                                    return <span key={id} className="go-permissao-chip go-permissao-chip--editor"><strong>{item?.label || id}</strong><small>{item?.categoria || 'Catálogo'}</small></span>;
+                                    return <span key={id} className="go-permissao-chip go-permissao-chip--editor">
+                                        <strong>{item?.label || id}</strong>
+                                        <small>{localizacaoPermissao(item)}</small>
+                                    </span>;
                                 })}
                                 {permissoesAtribuidasExcedentes > 0 && (
                                     <button
@@ -539,14 +582,34 @@ export function GOVinculoCampos({
                     {mostrarPermissoes && (
                         <div id="go-permissoes-catalogo" className="go-permissoes go-permissoes-catalogo">
                             <label className="go-permissoes-busca"><i className="fas fa-search"></i><input placeholder="Buscar no catálogo de permissões..." value={buscaPermissao} onChange={(e) => setBuscaPermissao(e.target.value)} /></label>
-                            <div className="go-permissoes-lista">
-                                {permissoesFiltradas.map((item) => (
-                                    <label key={item.id} className={(valor.permissoes || []).includes(item.id) ? 'selecionada' : ''}>
-                                        <input type="checkbox" checked={(valor.permissoes || []).includes(item.id)} onChange={() => alternarLista('permissoes', item.id)} />
-                                        <span><strong>{item.label}</strong><small>{item.categoria}</small></span>
-                                        {(valor.permissoes || []).includes(item.id) && <i className="fas fa-check"></i>}
-                                    </label>
-                                ))}
+                            <div className="go-permissoes-modulos">
+                                {permissoesAgrupadas.map(([categoria, itens]) => {
+                                    const semUsoNoCodigo = categoria === 'NAO EXISTEM NO CODIGO';
+                                    return (
+                                        <section key={categoria} className={`go-permissoes-modulo${semUsoNoCodigo ? ' go-permissoes-modulo--sem-uso' : ''}`}>
+                                            <div className="go-permissoes-modulo-cabecalho">
+                                                <strong>{categoria}</strong>
+                                                {semUsoNoCodigo && <small>IDs preservados para decisão posterior</small>}
+                                            </div>
+                                            <div className="go-permissoes-lista go-permissoes-lista--modulo">
+                                                {itens.map((item) => (
+                                                    <label key={item.id} className={(valor.permissoes || []).includes(item.id) ? 'selecionada' : ''}>
+                                                        <input type="checkbox" checked={(valor.permissoes || []).includes(item.id)} onChange={() => alternarLista('permissoes', item.id)} />
+                                                        <span>
+                                                            <strong>{item.label}</strong>
+                                                            <small>{localizacaoPermissao(item)}</small>
+                                                            {item.descricao && <em>{item.descricao}</em>}
+                                                        </span>
+                                                        {(valor.permissoes || []).includes(item.id) && <i className="fas fa-check"></i>}
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        </section>
+                                    );
+                                })}
+                                {!permissoesAgrupadas.length && (
+                                    <p className="go-permissoes-editor-vazio"><i className="fas fa-circle-info"></i> Nenhuma permissão encontrada.</p>
+                                )}
                             </div>
                         </div>
                     )}

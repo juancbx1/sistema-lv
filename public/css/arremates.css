@@ -956,6 +956,18 @@
     box-shadow: none;
 }
 
+.btn-acao.permissao-negada {
+    background-color: #bdc3c7;
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+.btn-acao.permissao-negada:hover {
+    background-color: #bdc3c7;
+    transform: none;
+    box-shadow: none;
+}
+
 /* Estilo específico para o botão de cancelar */
 .btn-acao.cancelar {
     background-color: var(--gs-texto-secundario); /* Cor neutra, menos destaque que finalizar */
@@ -1657,6 +1669,20 @@
 .btn-desfazer-tarefa:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+}
+
+.btn-desfazer-tarefa.permissao-negada {
+    color: #adb5bd;
+    border-color: #d5d9dd;
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+.btn-desfazer-tarefa.permissao-negada:hover {
+    background-color: var(--gs-fundo-input);
+    color: #adb5bd;
+    border-color: #d5d9dd;
+    transform: none;
 }
 
 /* --- Estilos para o Menu de Ações Rápidas --- */
@@ -4350,6 +4376,59 @@
     background: #fafbfd;
 }
 
+.arremate-hist-filtros-avancados-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 10px;
+    border: 1px solid #dbe3ec;
+    border-radius: 8px;
+    background: #fff;
+    color: #475569;
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+.arremate-hist-filtros-avancados-btn:hover {
+    border-color: #94a3b8;
+    color: #1e293b;
+}
+.arremate-hist-filtros-avancados {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(140px, 1fr)) auto;
+    align-items: end;
+    gap: 8px;
+    padding-top: 4px;
+}
+.arremate-hist-filtros-avancados label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+.arremate-hist-filtros-avancados label span {
+    color: #64748b;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+.arremate-hist-filtros-avancados .gs-input {
+    padding: 7px 9px;
+    font-size: 0.82rem;
+}
+.arremate-hist-filtros-avancados-limpar {
+    padding: 7px 10px;
+    border: 1px solid #dbe3ec;
+    border-radius: 8px;
+    background: #fff;
+    color: #64748b;
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+.arremate-hist-filtros-avancados-limpar:hover {
+    border-color: #f59e0b;
+    color: #b45309;
+}
+
 .arremate-hist-busca {
     flex: 1 1 180px;
     min-width: 0;
@@ -4483,6 +4562,21 @@
 }
 .arremate-hist-card-meta span i { font-size: 0.7rem; }
 
+.arremate-hist-card-perda {
+    margin-top: 6px;
+    padding: 6px 8px;
+    border-left: 3px solid #f59e0b;
+    border-radius: 4px;
+    background: #fffbeb;
+    color: #92400e;
+    font-size: 0.75rem;
+    line-height: 1.35;
+}
+
+.arremate-hist-card-perda strong {
+    font-weight: 800;
+}
+
 /* Botão desfazer */
 .arremate-hist-btn-desfazer {
     display: flex;
@@ -4502,6 +4596,17 @@
     background: #fff7ed;
     border-color: #f59e0b;
     color: #d97706;
+}
+.arremate-hist-btn-desfazer.bloqueado {
+    background: #f1f5f9;
+    color: #64748b;
+    border-color: #cbd5e1;
+    cursor: not-allowed;
+}
+.arremate-hist-btn-desfazer.bloqueado:hover {
+    background: #e2e8f0;
+    border-color: #94a3b8;
+    color: #475569;
 }
 .arremate-hist-btn-desfazer:disabled { opacity: 0.5; cursor: not-allowed; }
 
@@ -4534,6 +4639,8 @@
     .arremate-hist-card { padding: 10px 12px 10px 18px; gap: 10px; }
     .arremate-hist-card-img { width: 42px; height: 42px; }
     .arremate-hist-card-nome { max-width: 160px; font-size: 0.85rem; }
+    .arremate-hist-filtros-avancados { grid-template-columns: 1fr; }
+    .arremate-hist-filtros-avancados-limpar { width: 100%; }
     .arremate-hist-tipo-pills { display: none; } /* pills ocultadas em mobile — período basta */
 }
 
@@ -5901,4 +6008,48 @@
 }
 .bs-registro-linha.desfeito .bs-registro-desfeito {
     text-decoration: none;
+}
+
+/* Aviso de transicao: a rota antiga permanece operacional enquanto o fluxo
+   unificado de Producoes e adotado pelos usuarios. */
+.arremates-transicao-aviso {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin: 0 1.25rem 1rem;
+    padding: 0.75rem 1rem;
+    border: 1px solid #bfdbfe;
+    border-radius: 0.75rem;
+    background: #eff6ff;
+    color: #1e3a8a;
+}
+
+.arremates-transicao-aviso-conteudo {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    min-width: 0;
+    font-size: 0.9rem;
+}
+
+.arremates-transicao-aviso-conteudo i {
+    flex: 0 0 auto;
+}
+
+.arremates-transicao-aviso a {
+    flex: 0 0 auto;
+    text-decoration: none;
+}
+
+@media (max-width: 640px) {
+    .arremates-transicao-aviso {
+        align-items: stretch;
+        flex-direction: column;
+        margin-inline: 0.75rem;
+    }
+
+    .arremates-transicao-aviso a {
+        justify-content: center;
+    }
 }

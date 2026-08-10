@@ -1,5 +1,6 @@
 // public/src/components/IncenGincanaCard.tsx
 import type { Gincana, GincanaPremiacao } from '../utils/incentivos-types';
+import UIBloqueio from './UIBloqueio';
 
 function formatarDataHora(iso: string | null | undefined, opcoes: Intl.DateTimeFormatOptions = {}): string {
     if (!iso) return '';
@@ -243,19 +244,25 @@ export default function IncenGincanaCard({
                 {/* Rascunho: editar, publicar, deletar — independente do datetime */}
                 {status === 'rascunho' && (
                     <>
-                        <button className="gs-btn gs-btn-secundario" onClick={() => onEditar(gincana)}>
-                            <i className="fas fa-pen"></i> Editar
-                        </button>
-                        <button className="gs-btn gs-btn-primario" onClick={() => onPublicar(gincana)}>
-                            <i className="fas fa-play"></i> Publicar
-                        </button>
-                        <button
-                            className="gs-btn gs-btn-secundario"
-                            style={{ color: '#ef4444' }}
-                            onClick={() => onDeletar(gincana)}
-                        >
-                            <i className="fas fa-trash"></i>
-                        </button>
+                        <UIBloqueio permissao="gerenciar-gincanas" mensagem="Você não tem permissão para gerenciar gincanas.">
+                            <button className="gs-btn gs-btn-secundario" onClick={() => onEditar(gincana)}>
+                                <i className="fas fa-pen"></i> Editar
+                            </button>
+                        </UIBloqueio>
+                        <UIBloqueio permissao="gerenciar-gincanas" mensagem="Você não tem permissão para publicar gincanas.">
+                            <button className="gs-btn gs-btn-primario" onClick={() => onPublicar(gincana)}>
+                                <i className="fas fa-play"></i> Publicar
+                            </button>
+                        </UIBloqueio>
+                        <UIBloqueio permissao="gerenciar-gincanas" mensagem="Você não tem permissão para excluir gincanas.">
+                            <button
+                                className="gs-btn gs-btn-secundario"
+                                style={{ color: '#ef4444' }}
+                                onClick={() => onDeletar(gincana)}
+                            >
+                                <i className="fas fa-trash"></i>
+                            </button>
+                        </UIBloqueio>
                     </>
                 )}
 
@@ -266,13 +273,15 @@ export default function IncenGincanaCard({
                             <i className="fas fa-chart-bar"></i> Ranking
                         </button>
                         {(fase === 'ao_vivo' || fase === 'proxima' || fase === 'encerrada_semana') && (
-                            <button
-                                className="gs-btn gs-btn-secundario"
-                                style={{ color: '#ef4444' }}
-                                onClick={() => onCancelar(gincana)}
-                            >
-                                <i className="fas fa-ban"></i> Cancelar
-                            </button>
+                            <UIBloqueio permissao="gerenciar-gincanas" mensagem="Você não tem permissão para cancelar gincanas.">
+                                <button
+                                    className="gs-btn gs-btn-secundario"
+                                    style={{ color: '#ef4444' }}
+                                    onClick={() => onCancelar(gincana)}
+                                >
+                                    <i className="fas fa-ban"></i> Cancelar
+                                </button>
+                            </UIBloqueio>
                         )}
                     </>
                 )}

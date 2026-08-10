@@ -209,15 +209,19 @@ export default function FinanceiroAgendaCard({
         <aside className="fc-smart-card-rail" aria-label="Ações do agendamento">
           {isLote ? (
             <>
-              <button
-                type="button"
-                onClick={() => onEditLote(primeiro.id_lote ?? primeiro.id, primeiro.descricao)}
-                className="fc-launch-action"
-                title="Editar descrição do lote"
-                disabled={!podeEditar}
+              <UIBloqueio
+                permissao="lancar-transacao"
+                mensagem="Você não tem permissão para editar agendamentos."
               >
-                <i className="fas fa-pencil-alt" /> Editar
-              </button>
+                <button
+                  type="button"
+                  onClick={() => onEditLote(primeiro.id_lote ?? primeiro.id, primeiro.descricao)}
+                  className="fc-launch-action"
+                  title="Editar descrição do lote"
+                >
+                  <i className="fas fa-pencil-alt" /> Editar
+                </button>
+              </UIBloqueio>
               <UIBloqueio
                 permissao="permite-excluir-agendamentos"
                 mensagem="Você não tem permissão para excluir lotes de agendamentos."
@@ -234,15 +238,19 @@ export default function FinanceiroAgendaCard({
             </>
           ) : (
             <>
-              <button
-                type="button"
-                onClick={() => onEdit(primeiro)}
-                className="fc-launch-action"
-                title="Editar"
-                disabled={!podeEditar}
+              <UIBloqueio
+                permissao="lancar-transacao"
+                mensagem="Você não tem permissão para editar agendamentos."
               >
-                <i className="fas fa-pencil-alt" /> Editar
-              </button>
+                <button
+                  type="button"
+                  onClick={() => onEdit(primeiro)}
+                  className="fc-launch-action"
+                  title="Editar"
+                >
+                  <i className="fas fa-pencil-alt" /> Editar
+                </button>
+              </UIBloqueio>
               <UIBloqueio
                 permissao="permite-excluir-agendamentos"
                 mensagem="Você não tem permissão para excluir agendamentos."
@@ -256,15 +264,19 @@ export default function FinanceiroAgendaCard({
                   <i className="fas fa-trash" /> Excluir
                 </button>
               </UIBloqueio>
-              <button
-                type="button"
-                onClick={() => onBaixa(primeiro)}
-                className="fc-launch-action baixa"
-                title="Baixar / confirmar pagamento"
-                disabled={!podeBaixar}
+              <UIBloqueio
+                permissao="aprovar-pagamento"
+                mensagem="Você não tem permissão para baixar ou confirmar este pagamento."
               >
-                <i className="fas fa-check" /> Baixar
-              </button>
+                <button
+                  type="button"
+                  onClick={() => onBaixa(primeiro)}
+                  className="fc-launch-action baixa"
+                  title="Baixar / confirmar pagamento"
+                >
+                  <i className="fas fa-check" /> Baixar
+                </button>
+              </UIBloqueio>
             </>
           )}
           {podeExpandir && (
@@ -331,15 +343,19 @@ export default function FinanceiroAgendaCard({
                           <i className="fas fa-trash" /> Excluir
                         </button>
                       </UIBloqueio>
-                      <button
-                        type="button"
-                        className="fc-launch-action baixa"
-                        disabled={!podeBaixar}
-                        onClick={() => onBaixa(item)}
-                        title="Baixar parcela"
+                      <UIBloqueio
+                        permissao="aprovar-pagamento"
+                        mensagem="Você não tem permissão para baixar ou confirmar esta parcela."
                       >
-                        <i className="fas fa-check" /> Baixar
-                      </button>
+                        <button
+                          type="button"
+                          className="fc-launch-action baixa"
+                          onClick={() => onBaixa(item)}
+                          title="Baixar parcela"
+                        >
+                          <i className="fas fa-check" /> Baixar
+                        </button>
+                      </UIBloqueio>
                     </div>
                   </div>
                 </div>

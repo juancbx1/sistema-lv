@@ -12,6 +12,7 @@ import type {
     IncenProduto,
 } from '../utils/incentivos-types';
 import { isGincanaNovoDraft } from '../utils/incentivos-types';
+import UIBloqueio from './UIBloqueio';
 
 const EMOJIS = ['🏆', '⚡', '🎯', '🚀', '🌟', '💪', '💰', '🎁', '🔥', '🎉', '🏅', '🎖️'];
 
@@ -914,14 +915,16 @@ export default function IncenGincanaModal({ gincana, onFechar, onSalvo }: IncenG
                             Próximo <i className="fas fa-arrow-right"></i>
                         </button>
                     ) : (
-                        <button className="gs-btn gs-btn-primario" onClick={() => void handleSalvar()} disabled={salvando}>
-                            {salvando
-                                ? 'Salvando...'
-                                : ehNovo
-                                    ? <><i className="fas fa-save"></i> Salvar Rascunho</>
-                                    : <><i className="fas fa-save"></i> Salvar Alterações</>
-                            }
-                        </button>
+                        <UIBloqueio permissao="gerenciar-gincanas" mensagem="Você não tem permissão para salvar alterações de gincanas.">
+                            <button className="gs-btn gs-btn-primario" onClick={() => void handleSalvar()} disabled={salvando}>
+                                {salvando
+                                    ? 'Salvando...'
+                                    : ehNovo
+                                        ? <><i className="fas fa-save"></i> Salvar Rascunho</>
+                                        : <><i className="fas fa-save"></i> Salvar Alterações</>
+                                }
+                            </button>
+                        </UIBloqueio>
                     )}
                 </div>
             </div>

@@ -4,6 +4,7 @@ import express from 'express';
 import pg from 'pg';
 import jwt from 'jsonwebtoken';
 import { getPermissoesCompletasUsuarioDB } from './usuarios.js';
+import { obterEstruturaOrigensProdutoPronto, construirCteOrigensProdutoPronto } from './utils/origens-produto-pronto.js';
 
 const { Pool } = pg;
 const router = express.Router();
@@ -211,13 +212,15 @@ async function calcularProgressoIndividual(
     }
 
     if (escopo === 'tudo' || escopo === 'apenas_arremates') {
+        const estruturaOrigens = await obterEstruturaOrigensProdutoPronto(dbClient);
+        const cteOrigens = construirCteOrigensProdutoPronto(estruturaOrigens.origens);
         const res = await dbClient.query(
-            `SELECT COALESCE(SUM(pontos_gerados), 0) AS valor
-             FROM arremates
-             WHERE empresa_id = $1
-               AND usuario_tiktik_id = $2
-               AND data_lancamento BETWEEN $3 AND $4
-               AND tipo_lancamento = 'PRODUCAO'`,
+            `${cteOrigens}
+             SELECT COALESCE(SUM(pontos_gerados), 0) AS valor
+               FROM OrigensProdutoProntoCompat
+              WHERE empresa_id = $1
+                AND executor_id = $2
+                AND data_disponibilizacao BETWEEN $3 AND $4`,
             [empresaId, userId, janelaInicio, janelaFim]
         );
         pontos += parseFloat(res.rows[0].valor);
@@ -242,9 +245,11 @@ async function calcularRankingBulk(
     else tipoFiltro = `('costureira' = ANY(ue.tipos) OR 'tiktik' = ANY(ue.tipos))`;
 
     let query, params;
+    const estruturaOrigens = await obterEstruturaOrigensProdutoPronto(dbClient);
+    const cteOrigens = construirCteOrigensProdutoPronto(estruturaOrigens.origens);
 
     if (escopo === 'produto_especifico') {
-        query = `
+        query = `${cteOrigens}
             SELECT
                 u.id   AS usuario_id,
                 u.nome,
@@ -281,15 +286,14 @@ async function calcularRankingBulk(
         const arrematesSub = (escopo === 'tudo' || escopo === 'apenas_arremates')
             ? `COALESCE((
                    SELECT SUM(a.pontos_gerados)
-                   FROM arremates a
+                   FROM OrigensProdutoProntoCompat a
                    WHERE a.empresa_id = $1
-                     AND a.usuario_tiktik_id = u.id
-                      AND a.data_lancamento BETWEEN $2 AND $3
-                     AND a.tipo_lancamento = 'PRODUCAO'
+                     AND a.executor_id = u.id
+                     AND a.data_disponibilizacao BETWEEN $2 AND $3
                ), 0)`
             : `0`;
 
-        query = `
+        query = `${cteOrigens}
             SELECT
                 u.id   AS usuario_id,
                 u.nome,

@@ -12,6 +12,17 @@ const getRoleInfo = (tipos = []) => {
     return                                 { label: 'Costureira', icon: 'fa-tshirt',      classe: 'cracha-costureira' };
 };
 
+function resumoOrigensPosOp(origens) {
+    if (!Array.isArray(origens) || origens.length === 0) return null;
+    const itens = origens.slice(0, 4).map((origem) => {
+        const op = origem?.op_numero ?? origem?.opNumero;
+        const quantidade = origem?.quantidade ?? origem?.quantidade_atribuida;
+        return `OP #${op} (${quantidade} pcs)`;
+    });
+    if (origens.length > 4) itens.push(`+${origens.length - 4}`);
+    return itens.join(' • ');
+}
+
 const getStatusIdle = (status) => {
     const map = {
         LIVRE:            { icone: 'fa-check-circle',  texto: 'Disponível',      cor: '#22c55e' },
@@ -322,12 +333,21 @@ export default function OPStatusCard({ funcionario, tpp, onAtribuirTarefa, onAca
 
             const imagemVariacao = tarefaPrincipal.imagem || null;
             const nomeExibido = tarefaPrincipal.variante || tarefaPrincipal.produto_nome;
+            const ehArrematePosOp = tarefaPrincipal.fase === 'POS_OP';
+            const resumoOrigens = ehArrematePosOp
+                ? resumoOrigensPosOp(tarefaPrincipal.origens_pos_op)
+                : null;
+            const rotuloFase = ehArrematePosOp ? 'Arremate pós-OP' : 'Produção da OP';
 
             return (
                 <>
                     <div className="cracha-tarefa op-redesign-execucao-area">
                         <div className="op-redesign-tarefa-cabecalho">
                             <div className="op-redesign-processo-area">
+                                <div className={`op-redesign-fase-badge${ehArrematePosOp ? ' pos-op' : ''}`}>
+                                    <i className={`fas ${ehArrematePosOp ? 'fa-check-double' : 'fa-industry'}`}></i>
+                                    <span>{rotuloFase}</span>
+                                </div>
                                 {Array.isArray(tarefaPrincipal.etapas_unificadas) && tarefaPrincipal.etapas_unificadas.length >= 2 ? (
                                     <div className="cracha-tarefa-processo-wrapper">
                                         <span className="cracha-unif-badge">
@@ -344,6 +364,12 @@ export default function OPStatusCard({ funcionario, tpp, onAtribuirTarefa, onAca
                                     </div>
                                 ) : (
                                     <div className="cracha-tarefa-processo">{tarefaPrincipal.processo}</div>
+                                )}
+                                {resumoOrigens && (
+                                    <div className="op-redesign-origens-pos-op">
+                                        <i className="fas fa-layer-group"></i>
+                                        <span>{resumoOrigens}</span>
+                                    </div>
                                 )}
                             </div>
                         </div>
@@ -458,6 +484,9 @@ export default function OPStatusCard({ funcionario, tpp, onAtribuirTarefa, onAca
                                         <ul className="op-redesign-fila-lista">
                                             {filaEspera.map((t, i) => {
                                                 const isUnif = Array.isArray(t.etapas_unificadas) && t.etapas_unificadas.length >= 2;
+                                                const resumoOrigensFila = t.fase === 'POS_OP'
+                                                    ? resumoOrigensPosOp(t.origens_pos_op)
+                                                    : null;
                                                 return (
                                                     <li key={t.id_sessao || i} className="op-redesign-fila-item">
                                                         <span className="op-redesign-fila-ordem">{String(i + 1).padStart(2, '0')}</span>
@@ -470,12 +499,20 @@ export default function OPStatusCard({ funcionario, tpp, onAtribuirTarefa, onAca
                                                                 {t.variante && (
                                                                     <span className="fila-variante">{t.variante}</span>
                                                                 )}
+                                                                <span className={`fila-fase${t.fase === 'POS_OP' ? ' pos-op' : ''}`}>
+                                                                    {t.fase === 'POS_OP' ? 'Arremate pós-OP' : 'Produção da OP'}
+                                                                </span>
                                                                 <span className={`fila-proc${isUnif ? ' unif' : ''}`}>
                                                                     {isUnif
                                                                         ? <><i className="fas fa-link"></i>{t.etapas_unificadas.map(e => e.processo).join(' + ')}</>
                                                                         : t.processo
                                                                     }
                                                                 </span>
+                                                                {resumoOrigensFila && (
+                                                                    <span className="fila-origens-pos-op">
+                                                                        <i className="fas fa-layer-group"></i> {resumoOrigensFila}
+                                                                    </span>
+                                                                )}
                                                             </div>
                                                         </div>
                                                     </li>
@@ -613,6 +650,9 @@ export default function OPStatusCard({ funcionario, tpp, onAtribuirTarefa, onAca
                                                 </div>
                                                 <div className="cracha-livre-meta">
                                                     <span className="cracha-livre-qtd">{s.quantidade}</span>
+                                                    <span className={`cracha-livre-fase${s.fase === 'POS_OP' ? ' pos-op' : ''}`}>
+                                                        {s.fase === 'POS_OP' ? 'Arremate pós-OP' : 'Produção da OP'}
+                                                    </span>
                                                     <span className="cracha-livre-proc">{s.processo}</span>
                                                 </div>
                                             </div>

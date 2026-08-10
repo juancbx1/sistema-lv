@@ -40,17 +40,40 @@
 // total, coloque o style/classe nele (ex: style={{ width: '100%' }}).
 
 import { useMemo, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
-import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio';
+import {
+    temPermissao,
+    mostrarPopupSemPermissao,
+    mostrarPopupPaginaBloqueada,
+    navegarParaAcessoNegado,
+} from '../utils/bloqueio';
 
 interface UIBloqueioProps {
     permissao: string | readonly string[];
     mensagem?: string;
+    pagina?: string;
+    tipoBloqueio?: 'permissao' | 'modulo';
+    modoBloqueio?: 'popup' | 'pagina';
+    destinoBloqueio?: 'acesso-negado' | 'home';
+    bloqueado?: boolean;
     style?: CSSProperties;
     children: ReactNode;
 }
 
-export default function UIBloqueio({ permissao, mensagem, style, children }: UIBloqueioProps) {
-    const bloqueado = useMemo(() => !temPermissao(permissao), [permissao]);
+export default function UIBloqueio({
+    permissao,
+    mensagem,
+    pagina,
+    tipoBloqueio = 'permissao',
+    modoBloqueio = 'popup',
+    destinoBloqueio = 'acesso-negado',
+    bloqueado: bloqueadoProp,
+    style,
+    children,
+}: UIBloqueioProps) {
+    const bloqueado = useMemo(
+        () => bloqueadoProp ?? !temPermissao(permissao),
+        [bloqueadoProp, permissao],
+    );
 
     // Com permissão: renderiza os filhos sem nenhuma alteração
     if (!bloqueado) return children;
@@ -58,7 +81,30 @@ export default function UIBloqueio({ permissao, mensagem, style, children }: UIB
     const handleClick = (e: MouseEvent<HTMLDivElement>) => {
         e.stopPropagation();
         e.preventDefault();
-        mostrarPopupSemPermissao(mensagem);
+        const mensagemFinal = mensagem || (
+            tipoBloqueio === 'modulo'
+                ? 'Este módulo ainda não está disponível para a empresa ativa.'
+                : 'Você não tem permissão para acessar esta página.'
+        );
+
+        if (modoBloqueio === 'pagina') {
+            if (destinoBloqueio === 'home') {
+                mostrarPopupPaginaBloqueada(
+                    pagina || document.title || 'Área protegida',
+                    mensagemFinal,
+                );
+                return;
+            }
+            navegarParaAcessoNegado({
+                pagina: pagina || document.title || 'Área protegida',
+                permissoes: Array.isArray(permissao) ? permissao : [permissao],
+                motivo: tipoBloqueio,
+                mensagem: mensagemFinal,
+            });
+            return;
+        }
+
+        mostrarPopupSemPermissao(mensagemFinal);
     };
 
     return (
@@ -66,7 +112,7 @@ export default function UIBloqueio({ permissao, mensagem, style, children }: UIB
             className="gs-bloqueio-wrapper"
             style={style}
             onClick={handleClick}
-            title="Você não tem permissão para esta ação"
+            title={modoBloqueio === 'pagina' ? 'Acesso à página bloqueado' : 'Você não tem permissão para esta ação'}
         >
             {children}
             <div className="gs-bloqueio-overlay" aria-hidden="true">

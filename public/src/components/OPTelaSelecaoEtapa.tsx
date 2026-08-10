@@ -8,6 +8,7 @@ import UICarregando from './UICarregando';
 import OPPaginacaoWrapper from './OPPaginacaoWrapper.tsx';
 import UIBuscaInteligente, { filtrarListaInteligente } from './UIBuscaInteligente';
 import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio';
+import { etapaPermiteExecutor } from '../utils/etapas-produto';
 
 type OpTipoFuncionario = 'costureira' | 'tiktik';
 
@@ -16,7 +17,6 @@ interface OpEtapaUnificada {
   etapa_index?: number;
   maquina?: string | null;
 }
-
 interface OpGrupoUnificacao {
   grupo_id: string;
   etapas: OpEtapaUnificada[];
@@ -26,6 +26,9 @@ interface OpTarefa extends Record<string, unknown> {
   produto_id: number;
   variante?: string | null;
   processo: string;
+  processo_id?: string | number | null;
+  etapa_id?: string | null;
+  fase?: string | null;
   quantidade_disponivel: number | string;
   produto_nome: string;
   imagem_produto?: string | null;
@@ -34,14 +37,13 @@ interface OpTarefa extends Record<string, unknown> {
   _grupo_unificacao?: OpGrupoUnificacao;
 }
 
-interface OpSugestao extends OpTarefa {
-  motivos?: string[];
-  sessoesHistorico?: number;
-}
 
 interface OpEtapaConfiguracao {
+  id?: string | null;
+  processo_id?: string | number | null;
+  fase?: string | null;
   processo?: string;
-  feitoPor?: string;
+  feitoPor?: string | string[];
 }
 
 interface OpProdutoSelecao extends Record<string, unknown> {
@@ -50,6 +52,9 @@ interface OpProdutoSelecao extends Record<string, unknown> {
   imagem?: string | null;
   grade?: Array<{ variacao?: string | null; imagem?: string | null }> | null;
   etapas?: Array<string | OpEtapaConfiguracao> | null;
+  etapasTiktik?: Array<string | OpEtapaConfiguracao> | null;
+  etapastiktik?: Array<string | OpEtapaConfiguracao> | null;
+  etapasCanonicas?: Array<string | OpEtapaConfiguracao> | null;
 }
 
 interface OpFuncionarioSelecao {
@@ -99,7 +104,7 @@ function OPEtapaCard({
 
   const ops = etapa.origem_ops || [];
   const opsTexto = ops.length > 0
-    ? `OP #${ops.slice(0, 3).join(' • #')}${ops.length > 3 ? ` +${ops.length - 3}` : ''}`
+    ? `OP #${ops.slice(0, 3).join(' â€¢ #')}${ops.length > 3 ? ` +${ops.length - 3}` : ''}`
     : null;
 
   const ehPrimaria = grupoInfo?.idxNoGrupo === 0;
@@ -160,14 +165,14 @@ function OPEtapaCard({
       </div>
 
       <div className="card-bloco-pendente">
-        <span className="label">DISPONÍVEL</span>
+        <span className="label">DISPONÃVEL</span>
         <span className="valor">{etapa.quantidade_disponivel}</span>
       </div>
 
       {ehPrimaria && !unificacaoAtiva && grupoInfo && (
         <div className="op-etapa-unificavel-badge">
           <i className="fas fa-link"></i>
-          <span>Unificável com: {outrasEtapas}</span>
+          <span>UnificÃ¡vel com: {outrasEtapas}</span>
           <button
             className="op-unificacao-toggle"
             onClick={(event) => {
@@ -183,7 +188,7 @@ function OPEtapaCard({
       {unificadoAtivo && grupoInfo && (
         <div className="op-etapa-unificavel-badge op-etapa-unificavel-badge--ativo">
           <i className="fas fa-check-circle"></i>
-          <span>Ambas as etapas serão registradas juntas</span>
+          <span>Ambas as etapas serÃ£o registradas juntas</span>
           <button
             className="op-unificacao-toggle op-unificacao-toggle--separar"
             onClick={(event) => {
@@ -209,6 +214,29 @@ function mensagemDoErro(error: unknown) {
   return error instanceof Error ? error.message : 'Erro ao carregar tarefas.';
 }
 
+function obterEtapasProduto(produto: OpProdutoSelecao): Array<string | OpEtapaConfiguracao> {
+  if (Array.isArray(produto.etapasCanonicas) && produto.etapasCanonicas.length > 0) {
+    return produto.etapasCanonicas;
+  }
+  return [
+    ...(Array.isArray(produto.etapas) ? produto.etapas : []),
+    ...(Array.isArray(produto.etapasTiktik)
+      ? produto.etapasTiktik
+      : Array.isArray(produto.etapastiktik) ? produto.etapastiktik : []),
+  ];
+}
+
+function chaveTarefa(tarefa: Pick<OpTarefa, 'produto_id' | 'variante' | 'processo' | 'processo_id' | 'etapa_id' | 'fase' | 'origem_ops'>) {
+  const origem = tarefa.fase === 'POS_OP' ? (tarefa.origem_ops || []).join(',') : '';
+  return [
+    tarefa.produto_id,
+    tarefa.variante || '',
+    tarefa.fase || 'OP',
+    tarefa.etapa_id || tarefa.processo_id || tarefa.processo,
+    origem,
+  ].join('::');
+}
+
 export default function OPTelaSelecaoEtapa({
   onEtapaSelect,
   funcionario,
@@ -220,7 +248,6 @@ export default function OPTelaSelecaoEtapa({
   const [pagina, setPagina] = useState(1);
   const [termoFiltro, setTermoFiltro] = useState('');
   const [selecionados, setSelecionados] = useState<OpTarefa[]>([]);
-  const [sugestao, setSugestao] = useState<OpSugestao | null>(null);
   const [gruposUnificaveis, setGruposUnificaveis] = useState<Record<string, OpGrupoUnificacao[]>>({});
   const [unificacoesAtivas, setUnificacoesAtivas] = useState<Set<string>>(new Set());
   const candidatosKeyRef = useRef('');
@@ -261,15 +288,26 @@ export default function OPTelaSelecaoEtapa({
     if (!funcionario?.tipos || todosProdutos.length === 0) return [];
 
     return filaDeTarefas.filter((tarefa) => {
-      const produto = todosProdutos.find((item) => item.id === tarefa.produto_id);
-      if (!produto?.etapas) return false;
+      const produto = todosProdutos.find((item) => String(item.id) === String(tarefa.produto_id));
+      const etapasProduto = produto ? obterEtapasProduto(produto) : [];
+      if (etapasProduto.length === 0) return false;
 
-      const etapaConfig = produto.etapas.find((item) => {
+      const etapaConfig = etapasProduto.find((item) => {
+        if (typeof item === 'string') return item === tarefa.processo;
+        if (tarefa.fase && item.fase && String(item.fase).toUpperCase() !== String(tarefa.fase).toUpperCase()) {
+          return false;
+        }
+        if (tarefa.etapa_id && item.id) {
+          return String(item.id) === String(tarefa.etapa_id);
+        }
+        if (tarefa.processo_id && item.processo_id) {
+          return String(item.processo_id) === String(tarefa.processo_id);
+        }
         const processo = typeof item === 'string' ? item : item.processo;
         return processo === tarefa.processo;
       });
       if (!etapaConfig || typeof etapaConfig === 'string') return false;
-      return Boolean(etapaConfig.feitoPor && funcionario.tipos.includes(etapaConfig.feitoPor));
+      return etapaPermiteExecutor(etapaConfig, funcionario.tipos);
     });
   }, [filaDeTarefas, todosProdutos, funcionario]);
 
@@ -344,22 +382,6 @@ export default function OPTelaSelecaoEtapa({
     });
   }, []);
 
-  useEffect(() => {
-    if (!funcionario?.id || tarefasFiltradasParaFuncionario.length === 0) {
-      setSugestao(null);
-      return;
-    }
-
-    const token = localStorage.getItem('token');
-    void fetch('/api/producao/sugestao-tarefa', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ funcionario_id: funcionario.id, candidatas: tarefasFiltradasParaFuncionario }),
-    })
-      .then((response) => response.json())
-      .then((data: { sugestao?: OpSugestao | null }) => setSugestao(data.sugestao || null))
-      .catch(() => setSugestao(null));
-  }, [tarefasFiltradasParaFuncionario, funcionario?.id]);
 
   const listaFinalFiltrada = useMemo(() => {
     return filtrarListaInteligente<OpTarefa>(
@@ -370,23 +392,29 @@ export default function OPTelaSelecaoEtapa({
   }, [tarefasFiltradasParaFuncionario, termoFiltro]);
 
   const listaParaExibir = useMemo(() => {
-    if (!sugestao || termoFiltro) return listaFinalFiltrada;
-    const chaveSugestao = `${sugestao.produto_id}-${sugestao.variante}-${sugestao.processo}`;
-    return listaFinalFiltrada.filter((tarefa) =>
-      `${tarefa.produto_id}-${tarefa.variante}-${tarefa.processo}` !== chaveSugestao,
-    );
-  }, [listaFinalFiltrada, sugestao, termoFiltro]);
+    return [...listaFinalFiltrada].sort((a, b) => (
+      (a.fase === 'POS_OP' ? 1 : 0) - (b.fase === 'POS_OP' ? 1 : 0)
+    ));
+  }, [listaFinalFiltrada]);
 
   const getEtapaInfo = (tarefa: OpTarefa) => {
-    const produto = todosProdutos.find((item) => item.id === tarefa.produto_id);
-    if (!produto?.etapas) return { label: 'Etapa ?', isFinal: false, imagemUrl: null as string | null };
+    const produto = todosProdutos.find((item) => String(item.id) === String(tarefa.produto_id));
+    const etapasProduto = produto ? obterEtapasProduto(produto) : [];
+    if (!produto || etapasProduto.length === 0) return { label: 'Etapa ?', isFinal: false, imagemUrl: null as string | null };
 
-    const index = produto.etapas.findIndex((item) => {
+    const index = etapasProduto.findIndex((item) => {
       const processo = typeof item === 'string' ? item : item.processo;
+      if (tarefa.etapa_id && typeof item !== 'string' && item.id) {
+        return String(item.id) === String(tarefa.etapa_id);
+      }
+      if (tarefa.processo_id && typeof item !== 'string' && item.processo_id) {
+        return String(item.processo_id) === String(tarefa.processo_id);
+      }
       return processo === tarefa.processo;
     });
-    const isFinal = index === produto.etapas.length - 1;
-    const label = isFinal ? 'Etapa Final' : `Etapa ${index + 1}`;
+    const isPosOp = tarefa.fase === 'POS_OP';
+    const isFinal = isPosOp || index === etapasProduto.length - 1;
+    const label = isPosOp ? 'Arremate pós-OP' : (isFinal ? 'Etapa Final' : `Etapa ${index + 1}`);
     let imagemUrl = produto.imagem || null;
     if (tarefa.variante && produto.grade) {
       const variacaoItem = produto.grade.find((item) => item.variacao === tarefa.variante);
@@ -402,14 +430,14 @@ export default function OPTelaSelecaoEtapa({
       ? { ...etapa, _unificada: true, _grupo_unificacao: grupoInfo.grupo }
       : etapa;
 
-    const etapaId = `${etapa.produto_id}-${etapa.variante}-${etapa.processo}`;
+    const etapaId = chaveTarefa(etapa);
     setSelecionados((prev) => {
       const jaSelecionado = prev.find(
-        (item) => `${item.produto_id}-${item.variante}-${item.processo}` === etapaId,
+        (item) => chaveTarefa(item) === etapaId,
       );
       if (jaSelecionado) {
         return prev.filter(
-          (item) => `${item.produto_id}-${item.variante}-${item.processo}` !== etapaId,
+          (item) => chaveTarefa(item) !== etapaId,
         );
       }
       if (prev.length >= 6) return prev;
@@ -438,7 +466,7 @@ export default function OPTelaSelecaoEtapa({
   const totalFiltrado = listaFinalFiltrada.length;
   const textoMeta = termoFiltro
     ? `${totalFiltrado} resultado${totalFiltrado !== 1 ? 's' : ''} de ${totalDisponivel}`
-    : `${totalDisponivel} tarefa${totalDisponivel !== 1 ? 's' : ''} disponível${totalDisponivel !== 1 ? 'is' : ''}`;
+    : `${totalDisponivel} tarefa${totalDisponivel !== 1 ? 's' : ''} disponÃ­vel${totalDisponivel !== 1 ? 'is' : ''}`;
   const buscaTarefa = termoFiltro.trim();
   const qtdSelecionados = selecionados.length;
   const textoBotao = qtdSelecionados === 1 ? 'Atribuir 1 Tarefa' : `Atribuir ${qtdSelecionados} Tarefas`;
@@ -446,60 +474,6 @@ export default function OPTelaSelecaoEtapa({
 
   return (
     <div className="coluna-lista-produtos">
-      {sugestao && !termoFiltro && (() => {
-        const { label: sLabel, imagemUrl: sImg } = getEtapaInfo(sugestao);
-        return (
-          <div className="op-sugestao-destaque">
-            <div className="op-sugestao-header">
-              <i className="fas fa-magic"></i> Sugestão para {funcionario?.nome?.split(' ')[0]}
-            </div>
-            <div className="op-sugestao-corpo">
-              <img
-                src={sImg || '/img/placeholder-image.png'}
-                alt={sugestao.produto_nome}
-                className="op-sugestao-img"
-              />
-              <div className="op-sugestao-info">
-                <span className="op-sugestao-produto">{sugestao.produto_nome}</span>
-                {sugestao.variante && <span className="op-sugestao-variante">{sugestao.variante}</span>}
-                <span className="op-sugestao-processo">{sugestao.processo}</span>
-                <div className="op-sugestao-tags">
-                  <span className="op-sugestao-tag etapa">{sLabel}</span>
-                  {sugestao.motivos?.includes('especialista') && (
-                    <span className="op-sugestao-tag especialista">
-                      <i className="fas fa-star"></i> Especialista ({sugestao.sessoesHistorico} sess.)
-                    </span>
-                  )}
-                  {sugestao.motivos?.includes('urgente') && (
-                    <span className="op-sugestao-tag urgente">
-                      <i className="fas fa-fire"></i> OP aguardando
-                    </span>
-                  )}
-                </div>
-              </div>
-              {(() => {
-                const chaveSug = `${sugestao.produto_id}-${sugestao.variante}-${sugestao.processo}`;
-                const estaSelecionada = selecionados.some(
-                  (item) => `${item.produto_id}-${item.variante}-${item.processo}` === chaveSug,
-                );
-                return (
-                  <button
-                    className={`op-sugestao-btn${estaSelecionada ? ' selecionado' : ''}`}
-                    onClick={() => handleToggleSelect(sugestao)}
-                  >
-                    {estaSelecionada ? (
-                      <><i className="fas fa-check-circle"></i> Selecionada</>
-                    ) : (
-                      <><i className="fas fa-check"></i> Selecionar</>
-                    )}
-                  </button>
-                );
-              })()}
-            </div>
-          </div>
-        );
-      })()}
-
       <div style={{ marginBottom: '6px' }}>
         <UIBuscaInteligente
           onSearch={setTermoFiltro}
@@ -513,9 +487,9 @@ export default function OPTelaSelecaoEtapa({
         {tarefasPaginadas.length > 0 ? (
           tarefasPaginadas.map((etapa) => {
             const { label, isFinal, imagemUrl } = getEtapaInfo(etapa);
-            const etapaId = `${etapa.produto_id}-${etapa.variante}-${etapa.processo}`;
+            const etapaId = chaveTarefa(etapa);
             const isSelected = selecionados.some(
-              (item) => `${item.produto_id}-${item.variante}-${item.processo}` === etapaId,
+              (item) => chaveTarefa(item) === etapaId,
             );
             const grupoInfo = getGrupoInfo(etapa);
             const unificacaoAtiva = Boolean(
@@ -542,14 +516,10 @@ export default function OPTelaSelecaoEtapa({
             icon="fa-clipboard-list"
             titulo={buscaTarefa
               ? 'Nenhuma tarefa encontrada'
-              : sugestao
-                ? 'Nenhuma outra tarefa'
-                : 'Nenhuma tarefa disponível'}
+                : 'Nenhuma tarefa disponÃ­vel'}
             mensagem={buscaTarefa
-              ? `Não encontramos tarefas para “${buscaTarefa}”. Tente outro produto, variante ou processo.`
-              : sugestao
-                ? 'A sugestão acima é a única tarefa disponível no momento.'
-                : 'Não há tarefas compatíveis com este funcionário no momento.'}
+              ? `NÃ£o encontramos tarefas para â€œ${buscaTarefa}â€. Tente outro produto, variante ou processo.`
+                : 'NÃ£o hÃ¡ tarefas compatÃ­veis com este funcionÃ¡rio no momento.'}
           />
         )}
       </div>
@@ -563,7 +533,7 @@ export default function OPTelaSelecaoEtapa({
           className={`op-selecao-fab${!podeAtribuir ? ' op-selecao-fab--bloqueado' : ''}`}
           onClick={() => {
             if (!podeAtribuir) {
-              mostrarPopupSemPermissao('Você não tem permissão para atribuir tarefas de produção.');
+              mostrarPopupSemPermissao('VocÃª nÃ£o tem permissÃ£o para atribuir tarefas de produÃ§Ã£o.');
               return;
             }
             handleAvancarLote();

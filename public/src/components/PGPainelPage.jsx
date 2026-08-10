@@ -11,6 +11,8 @@ import PGFuncionarioModal from './PGFuncionarioModal.jsx';
 import PGTimeline from './PGTimeline.jsx';
 import PGPontosExtrasModal from './PGPontosExtrasModal.jsx';
 import PGHistoricoPontosExtras from './PGHistoricoPontosExtras.jsx';
+import ProducaoHistoricoModal from './ProducaoHistoricoModal.jsx';
+import UIBloqueio from './UIBloqueio';
 
 function hojeEmSP() {
     return new Date().toLocaleDateString('sv', { timeZone: 'America/Sao_Paulo' });
@@ -23,7 +25,7 @@ const FAIXAS = {
     apos_16h: ['16:00', '23:59'],
 };
 
-function PGPainelPage() {
+function PGPainelPage({ permissoes = [] }) {
     const [dados, setDados]     = useState(null);
     const [loading, setLoading] = useState(true);
     const [erro, setErro]       = useState(null);
@@ -32,7 +34,12 @@ function PGPainelPage() {
     const [funcionarioSelId, setFuncionarioSelId]   = useState(null);
     const [ultimaAtt, setUltimaAtt]                 = useState(null);
     const [modalPontosExtras, setModalPontosExtras] = useState(false);
+    const [modalHistoricoAberto, setModalHistoricoAberto] = useState(false);
     const [cadeiaBloqueada, setCadeiaBloqueada]     = useState(false);
+
+    const podeVerHistorico = permissoes.includes('acesso-producao-geral')
+        || permissoes.includes('acesso-ordens-de-producao')
+        || permissoes.includes('acesso-ordens-de-arremates');
 
     const buscarDados = useCallback(async () => {
         setCadeiaBloqueada(false);
@@ -215,6 +222,19 @@ function PGPainelPage() {
     return (
         <>
             <UIHeaderPagina titulo="Produção Geral">
+                <UIBloqueio
+                    permissao={['acesso-producao-geral', 'acesso-ordens-de-producao', 'acesso-ordens-de-arremates']}
+                    mensagem="Você não tem permissão para consultar o histórico geral de produções."
+                >
+                    <button
+                        className="gs-btn gs-btn-secundario gs-btn-com-icone"
+                        onClick={() => setModalHistoricoAberto(true)}
+                        title="Consultar histórico geral de Produções"
+                    >
+                        <i className="fas fa-clipboard-list"></i>
+                        <span>Histórico de Produções</span>
+                    </button>
+                </UIBloqueio>
                 <button
                     className="gs-btn pg-btn-pontos-extras"
                     onClick={() => setModalPontosExtras(true)}
@@ -359,6 +379,14 @@ function PGPainelPage() {
                     atividades={atividadesSelecionado}
                     metasDiarias={dados?.metasDiarias}
                     onFechar={() => setFuncionarioSelId(null)}
+                />
+            )}
+
+            {podeVerHistorico && (
+                <ProducaoHistoricoModal
+                    isOpen={modalHistoricoAberto}
+                    onClose={() => setModalHistoricoAberto(false)}
+                    podeEstornar={permissoes.includes('estornar-arremate')}
                 />
             )}
         </>

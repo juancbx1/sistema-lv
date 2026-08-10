@@ -6,6 +6,53 @@ Este arquivo é lido automaticamente pelo Codex ao iniciar. Contém o contexto p
 
 ## Visão Geral do Projeto
 
+### Provisionamento do catalogo de processos — decisao aprovada em 2026-08-08
+
+- O catalogo empresarial de processos e provisionado pela funcao SQL
+  `public.provisionar_processos_producao_empresa(integer)`.
+- A criacao de qualquer nova empresa chama o provisionador na mesma transacao
+  do cadastro. Isso atende a terceira, quarta e demais empresas sem copiar
+  produtos ou dados de outra empresa.
+- O provisionamento e idempotente e usa `ON CONFLICT DO NOTHING`: nao
+  sobrescreve nomes personalizados nem duplica processos.
+- A migration `_planejamento/migration-processos-producao-provisionamento-v2.sql`
+  deve ser executada apos a migration v1. Durante a janela entre deploy e
+  migration, o backend detecta a ausencia da funcao e preserva compatibilidade.
+- As migrations `processos-producao-catalogo-v1` e
+  `processos-producao-provisionamento-v2` foram executadas e validadas na Neon
+  em 2026-08-08. Os marcadores registrados foram `2026-08-08
+  21:12:21.308653-03` e `2026-08-08 21:13:39.514808-03`, respectivamente.
+- Inclusoes futuras no conjunto padrao devem entrar em nova migration, que
+  atualiza a funcao e a executa para as empresas existentes; novas empresas
+  passam a recebe-las automaticamente.
+- A auditoria read-only da receita executada na Neon em 2026-08-08 encontrou,
+  na empresa 1, 8 produtos e 30 etapas com `processo_id` valido; apenas 4
+  etapas ja possuem `id`, fase validada e `feitoPor` como array. A empresa 2
+  ainda nao possui produtos, conforme esperado no inicio da migracao. As 26
+  etapas restantes exigem saneamento funcional antes do gate da receita
+  canonica; nenhuma classificacao de fase deve ser inferida silenciosamente.
+- O servidor Express local tambem deve montar `/api/processos-producao`, assim
+  como o entrypoint serverless em `api/index.js`. Sem essa montagem, o editor
+  de produtos cai na lista legada de contingencia; a reconciliacao da etapa
+  deve continuar aceitando tanto `processo_id` quanto nome para evitar que o
+  select volte a exibir o placeholder em dados legados.
+- Em 2026-08-08, o usuario revisou e salvou as etapas dos produtos pelo editor
+  de Cadastros de Produtos. A configuracao salva e a autoridade para fase e
+  `feitoPor`; nenhuma migration de saneamento pode substituir esses valores.
+  A matriz `_planejamento/matriz-classificacao-etapas-fase1.md` e apenas uma
+  proposta anterior e nao deve ser aplicada.
+- A semantica correta da fase e: `OP` sao os processos internos da ordem de
+  producao; `POS_OP` e o arremate/acabamento feito depois do encerramento da OP
+  e antes da embalagem. `POS_OP` nao e um setor ou uma etapa adicional ao
+  arremate. Como o usuario nao configurou `POS_OP` nos produtos, as receitas
+  atuais contem somente processos `OP`; os arremates legados ainda precisam
+  ser auditados e configurados explicitamente quando a migracao for iniciada.
+- Regra operacional aprovada: o antigo setor de arremates sera representado
+  por etapas `POS_OP`. Essas tarefas somente entram na fila depois que a OP for
+  finalizada. `costureira` e `tiktik` podem executar uma etapa `POS_OP` quando
+  ambos estiverem listados no `feitoPor` do produto; nao existe bloqueio por
+  tipo de empregado baseado no nome historico arremate.
+
 Sistema web interno de gestão industrial para uma confecção. Controla o ciclo completo de produção: Ordens de Produção (OPs), cortes, produção por etapas, arremates, embalagem, estoque, financeiro, pagamentos de funcionários e dashboard de desempenho.
 
 ---
@@ -115,6 +162,13 @@ Neon, commit ou deploy.
   `/api/producao` e `/api/arremates` devem falhar fechados para empresas
   secundárias com `CADEIA_PRODUTIVA_NAO_MIGRADA`, mesmo que um flag de módulo
   seja habilitado temporariamente para teste.
+- O fluxo integrado usa `sessoes_trabalho_producao.fase = 'OP'` para etapas
+  internas e `fase = 'POS_OP'` para o antigo arremate. POS_OP só pode ser
+  atribuído quando a OP estiver `finalizado`; a autorização do executor vem da
+  etapa salva no produto (`feitoPor`) e o lançamento concluído permanece em
+  `arremates` para alimentar embalagem durante a transição. A migration
+  `_planejamento/migration-pos-op-sessoes-producao-v1.sql` é aditiva e preserva
+  o histórico legado.
 - Toda entidade empresarial deverá possuir vínculo explícito com `empresa_id`, direto ou garantido por uma entidade pai.
 - Toda consulta por ID, alteração ou exclusão empresarial deverá validar também `empresa_id`; filtrar apenas listagens não é suficiente.
 - O frontend nunca será a autoridade de isolamento. `empresa_id` não deve ser aceito cegamente do body.
@@ -295,6 +349,11 @@ Neon, commit ou deploy.
   permanecem em JSX de forma intencional até o redesign desse domínio. A
   conversão não pode alterar a lógica de jornada/ponto já validada. A migração
   de `api/*.js` fica fora do escopo inicial.
+- Em 2026-08-09, a migração específica da página de Embalagem foi concluída:
+  `embalagem-de-produtos.html` monta `main-embalagem.tsx`, a fila, filtros,
+  cards, modais, controles e helpers estão em React/TypeScript, e o legado
+  específico da página foi removido. Auth, popups, paginação, menu, agentes
+  globais e APIs permanecem como dependências compartilhadas por decisão.
 
 ### Estado executivo em 2026-07-29
 
@@ -361,6 +420,78 @@ Situação operacional:
   `_planejamento/migration-multiempresas-fase5-gestao-organizacional.sql`;
 - nenhuma empresa secundária real poderá ser liberada antes da migração de pelo
   menos um módulo de negócio.
+
+---
+
+## Decisão aprovada — unificação de Produções e Arremates (2026-08-08)
+
+O plano executável da transição está em
+`_planejamento/plano-unificacao-producoes-arremates.md`.
+
+O usuário aprovou a substituição da página de Arremates por uma página única de
+Produções. A cadeia passa a ser modelada como OP aberta, processos internos da
+OP, encerramento da OP, arremates pós-OP, embalagem e estoque. TikTiks e
+costureiras podem executar etapas internas quando estiverem na lista de
+`feitoPor`; arremates pós-OP também passam a ser etapas de produção, com fase
+explícita `POS_OP`.
+
+Decisões obrigatórias desta frente:
+
+- Produtos terão uma única receita canônica `etapas`; a antiga
+  `etapastiktik` será normalizada de forma aditiva e permanecerá compatível
+  até a migração de todos os consumidores.
+- Cada etapa terá identificador estável, ordem, processo, máquina, fase
+  (`OP` ou `POS_OP`) e lista de executores permitidos.
+- A seleção de tarefas separará explicitamente “Processos da OP” de
+  “Arremates pós-OP”; o backend será a autoridade para fase, executor,
+  saldo, empresa e concorrência.
+- Novos trabalhos usarão uma sessão operacional canônica. Produção e arremate
+  não poderão manter escritores concorrentes para o status do mesmo empregado.
+- O ponto será configurado por produto e etapa, com snapshot do valor aplicado;
+  costureira e TikTik terão o mesmo ponto-base quando fizerem a mesma etapa
+  autorizada.
+- Perdas deixarão de ser exclusivas de arremates e terão somente as categorias
+  `QUANTIDADE_ERRADA` e `PRODUTO_AVARIADO`; perdas não geram pontos.
+- Embalagem e estoque receberão uma origem genérica de produto pronto, com
+  compatibilidade temporária para `arremates` e sem duplicidade de saldo.
+- O histórico antigo de arremates será somente leitura durante a transição.
+  O histórico geral de Produções será uma fase posterior.
+
+A execução deve seguir migrations aditivas, ensaio em restauração local
+validada, gates por fase, isolamento por `empresa_id`, commits seletivos e
+autorização explícita antes de qualquer alteração na Neon ou remoção de legado.
+
+Primeiro incremento implementado localmente em 2026-08-08: a API de Produtos
+passou a expor `etapasCanonicas` como visão derivada, sem alterar ainda os
+campos legados no banco; a API aceita `etapasTiktik` e `etapastiktik`; a fila
+de atribuição aceita `feitoPor` como string ou lista; e a área de etapas do
+cadastro foi migrada para um componente React com tabela única, fase explícita
+e executores múltiplos. O restante da página de cadastro permanece em
+migração progressiva.
+
+Segundo incremento implementado localmente em 2026-08-08: processos passaram a
+ter catálogo empresarial em `processos_producao`, com `codigo` imutável, `nome`
+editável, inativação lógica e isolamento por `empresa_id`. As etapas passam a
+transportar `processo_id` junto do nome exibido; o nome é atualizado pelo
+catálogo sem reescrever referências históricas. A configuração de processos
+foi incorporada ao editor React de etapas, com criação e renomeação, mantendo
+fallback temporário para a lista JS durante indisponibilidade do catálogo. As
+migrations `_planejamento/migration-processos-producao-catalogo.sql` e
+`_planejamento/migration-processos-producao-provisionamento-v2.sql` foram
+executadas e validadas na Neon. A API correspondente é `/api/processos-producao`;
+não existe
+exclusão física de processos.
+
+O ensaio local do catálogo foi ampliado em 2026-08-08: a migration também
+adota automaticamente nomes legados encontrados nas etapas, converte entradas
+legadas em string para objetos canônicos e preenche `processo_id` em `etapas` e
+`etapastiktik`. Processos desconhecidos recebem código determinístico com
+prefixo `legado-`, sem perder a etapa. Uma guard clause impede execução antes
+de Produtos possuir `empresa_id`; o validador exige que cada etapa com processo
+tenha um ID pertencente à mesma empresa. O trigger de banco impede alteração
+direta do código. O ensaio passou em PostgreSQL temporário com duas empresas,
+processos legados adicionais, entradas string, validação read-only e testes de
+imutabilidade/duplicidade. A Neon não foi acessada nem alterada.
 
 ---
 
@@ -697,7 +828,7 @@ A coluna **Troca contínua** indica se a página já elimina o intervalo vazio e
 
 | Arremates | `arremates.css` | ✅ | ❌ | ❌ | ✅ | ❓ | v1.0 (2026-05-04) + v2.0 (2026-05-05) + v3.0 Items 1-4 (2026-05-13/14) concluídos. v3.0: `PontoHelpers.js` e `UILinhaDoTempoDia.tsx` (compartilhado tipado) extraídos; `ArremateStatusCard` reescrito com layout `cracha-tiktik` idêntico ao OPStatusCard (cronômetro interval-aware, bottom sheets, tolerância S3, liberar intervalo); `ArreMatePainelAtividades` refatorado com estrutura `oa-*` idêntica ao OPPainelAtividades (ALMOCO/PAUSA no grid principal, inativos completos, todos os handlers de ponto). CSS: 4657 → 5850 linhas. v3.0 implementação 100% concluída (Items 1–5). Aguarda verificação manual em browser. Deletar manualmente: `ArremateToast.jsx` e `ArremateAcoesLote.jsx`. Ver `_planejamento/arremates-redesign.md`. |
 
-| Embalagem de Produtos | `embalagem-de-produtos.css` | ❓ | ❓ | ❌ | ❌ | ❓ | Verificar migração React |
+| Embalagem de Produtos | `embalagem-page.css` | ✅ | ✅ | ✅ | ✅ | ❓ | Migração específica concluída em 2026-08-09: `main-embalagem.tsx` + `EmbalagemPage` + componentes `Embalagem*` + `embalagem-types.ts`/`embalagem-api.ts`. Legado específico removido; APIs e dependências compartilhadas em JS permanecem fora do escopo. Typecheck/build ok. Troca contínua ainda não validada manualmente em browser. |
 
 | Estoque | `estoque.css` | ❓ | ❓ | ❌ | ❌ | ❓ | Verificar migração React |
 
@@ -1344,10 +1475,10 @@ Para gincanas do tipo `meta` que já estão `encerrada` ou `encerrada_semana`, o
 
 | Rota | Permissão | Descrição |
 |---|---|---|
-| `GET /api/gincanas-pagamentos/fila` | `gerenciar-gincanas` | Prêmios pendentes (semana atual + atrasados) |
-| `GET /api/gincanas-pagamentos/historico` | `gerenciar-gincanas` | Prêmios pagos (últimos 200) |
-| `POST /api/gincanas-pagamentos/pagar-lote` | `gerenciar-gincanas` | Paga todos os pendentes (ou IDs específicos) |
-| `POST /api/gincanas-pagamentos/:id/pagar` | `gerenciar-gincanas` | Paga prêmio individual |
+| `GET /api/gincanas-pagamentos/fila` | `pagar-premiacoes-gincanas` | Prêmios pendentes (semana atual + atrasados) |
+| `GET /api/gincanas-pagamentos/historico` | `pagar-premiacoes-gincanas` | Prêmios pagos (últimos 200) |
+| `POST /api/gincanas-pagamentos/pagar-lote` | `pagar-premiacoes-gincanas` | Paga todos os pendentes (ou IDs específicos) |
+| `POST /api/gincanas-pagamentos/:id/pagar` | `pagar-premiacoes-gincanas` | Paga prêmio individual |
 | `GET /api/gincanas-pagamentos/meus-premios` | JWT válido | Prêmios da funcionária logada (para a wallet) |
 
 ### Componentes admin (prefixo `Incen*`)
@@ -1359,8 +1490,8 @@ Para gincanas do tipo `meta` que já estão `encerrada` ou `encerrada_semana`, o
 | `IncenGincanaModal` | **Wizard 3 passos:** O Básico → As Regras → O Prêmio |
 | `IncenGincanaRankingModal` | Ranking completo com suporte a corrida/equipe/produto_especifico + coluna 💰 de pagamento |
 | `IncenPagamentosTab` | Fila de pagamento semanal + botão "Pagar todos" + histórico |
-| `IncenMetasTab` | **Stub** — migração pendente do JS legado |
-| `IncenPontosTab` | **Stub** — migração pendente do JS legado |
+| `IncenMetasTab` | Aba React/TypeScript para versões, regras, grupos e condições de metas |
+| `IncenPontosTab` | Aba React/TypeScript para pontos padrão por atividade e produto |
 
 **Atenção no card:** `gincana.status` controla botões de ação. `gincana.fase` é só visual. Rascunho com datetime passado ainda mostra "Publicar" — correto por design.
 
@@ -1372,14 +1503,19 @@ Para gincanas do tipo `meta` que já estão `encerrada` ou `encerrada_semana`, o
 ### Página admin
 
 - **HTML:** `public/admin/incentivos.html`
-- **Entry point:** `public/src/main-incentivos.jsx` — 4 abas: Gincanas / Metas / Pontos / Pagamentos
+- **Entry point:** `public/src/main-incentivos.tsx` — 4 abas: Gincanas / Metas / Pontos / Pagamentos
 - **CSS:** `public/css/incentivos.css`
 
-### Arquivos legados (aguardam migração das abas Metas e Pontos)
+### Arquivos legados auditados
 
-- `public/admin/ponto-por-processo.html`
-- `public/js/admin-ponto-por-processo.js`
-- `public/css/ponto-por-processo.css`
+- A auditoria de 2026-08-09 confirmou que
+  `public/admin/ponto-por-processo.html`,
+  `public/js/admin-ponto-por-processo.js`,
+  `public/css/ponto-por-processo.css` e
+  `public/js/pages/admin-ponto-por-processo.js` não existem mais no workspace.
+- As abas Metas e Pontos são atendidas pelos componentes TSX atuais. O utilitário
+  compartilhado `public/js/utils/metas.js` permanece ativo para consumidores de
+  cálculo, e o ID `acesso-ponto-por-processo` continua preservado.
 
 ### Fluxo de publicação
 
@@ -2512,3 +2648,1145 @@ autorizacao. O proximo ponto de partida esta em
   a pós-validação retornou `aprovado: true`, com 2 linhas contendo ambos os
   identificadores, zero linhas parciais e um único marcador em
   `sistema_migrations`.
+
+## Atualizacao operacional — primeira fatia da Embalagem — 2026-08-08
+
+- `public/admin/embalagem-de-produtos.html` agora usa o shell padrao
+  `main#root.gs-card` e monta uma unica arvore React por
+  `public/src/main-embalagem.tsx`.
+- A fila inicial foi migrada para componentes TSX tipados, com busca, filtros
+  compactos, ordenacao, cards responsivos e imagem especifica da variacao.
+  A API permaneceu em JavaScript e nao foi alterada.
+- Cards nao exibem `Descartar`, `Abrir fila` ou `Arrematado em`; o card inteiro
+  abre o modal de opcoes, com quantidade disponivel em destaque.
+- `Registrar perda` fica no header, fora dos cards, e abre uma entrada
+  conceitual que sera conectada ao fluxo generico de perdas da Producao/OP. O
+  endpoint legado de perdas de Arremates nao e reutilizado e nenhum descarte
+  foi criado aqui.
+- A conferência operacional foi tipada para embalagem unitária; kits e
+  histórico continuam como próximas fatias. O HTML novo nao carrega mais o
+  entry legado da pagina.
+
+## Atualizacao operacional — modal e refresh da Embalagem — 2026-08-08
+
+- O modal de um produto abre diretamente na aba `Embalar unidades`; a tela
+  intermediaria de opcoes foi removida.
+- O modal agora possui as abas internas `Embalar unidades`, `Montar e embalar
+  kit` e `Historico`. A montagem consulta os componentes do catalogo, calcula
+  saldo por variacao em lotes FIFO e usa `/api/kits/montar`; o historico usa
+  `/api/embalagens/historico`. Nenhum fluxo de retorno ao arremate foi levado
+  para a nova arvore React.
+- `EmbalagemControleQuantidade` e compartilhado pela embalagem unitaria e pela
+  montagem de kits, com `+1`, `+5`, `Tudo`, `LIMPAR` e entrada manual.
+- O estilo do antigo `.op-redesign-refresh` foi promovido para o global
+  `.gs-btn-refresh`. Ordens de Producao e Embalagem agora usam a mesma classe;
+  a classe especifica de OP foi removida.
+- A quantidade da fila preserva a precedencia do contrato da API:
+  `total_disponivel_para_embalar ?? quantidade_disponivel ?? quantidade`.
+  Typecheck e build foram validados localmente apos esta fatia.
+
+## Atualizacao operacional — refinamento visual do modal de Embalagem — 2026-08-08
+
+- O modal passou a usar largura maior e um cabecalho unico de identidade do
+  produto, com imagem destacada, nome, variacao, SKU e saldo disponivel.
+- A selecao de kits deixou de usar `select`: cada kit e um cartao expansivel
+  que mostra suas variacoes no proprio contexto, com imagem, nome e SKU.
+- A exibicao de kits deve usar o nome vindo de `ProdutoCadastro.nome`; nao
+  passar um fallback como segundo argumento de `getNomeProduto`, pois esse
+  argumento tem precedencia e pode sobrescrever o nome real.
+
+## Atualizacao operacional — grade de kits e estabilidade de selecao — 2026-08-08
+
+- A quantidade de variacoes agora usa singular/plural corretamente: `1
+  variacao compativel` e `2 variacoes compativeis`.
+- A selecao de kit/variacao preserva o `scrollTop` do modal durante o
+  carregamento assincrono dos componentes, evitando o salto visual para o
+  cabecalho.
+- Os componentes exibem imagem no lado esquerdo da celula de componente.
+- A grade de kits usa duas colunas em tablets, tres em desktop e uma em
+  celulares; o kit ativo ocupa a largura da linha para revelar as variacoes.
+
+## Atualizacao operacional — perdas na cadeia produtiva — 2026-08-08
+
+- O formulario legado de perda agora usa somente `QUANTIDADE_ERRADA` e
+  `PRODUTO_AVARIADO`; `DIVERGENCIA_SALDO` e `LANCAMENTO_ERRADO` continuam sendo
+  aceitos como aliases de compatibilidade e normalizados para
+  `QUANTIDADE_ERRADA`.
+- A observacao passou a ser obrigatoria. O backend recalcula o saldo real das
+  OPs dentro de transacao com lock por produto, considera sessoes ativas,
+  impede saldo negativo e nao gera pontos para perdas.
+- A migration aditiva `_planejamento/migration-ajustes-producao-perdas-v1.sql`
+  cria `ajustes_producao` e `ajustes_producao_itens`; durante a transicao, o
+  endpoint preserva o lancamento `PERDA` em `arremates` e grava o vinculo
+  `id_ajuste_producao`. Ela foi executada e validada na Neon em 2026-08-08,
+  com o marcador `ajustes-producao-perdas-v1` registrado as 23:37:11-03.
+
+## Atualizacao operacional — inteligencia de estoque na Embalagem — 2026-08-08
+
+- A aba `Montar e embalar kit` cruza o saldo real de `/api/estoque/saldo` com
+  a meta ideal de `/api/niveis-estoque`, sempre por `produto_ref_id`/SKU da
+  variacao do kit.
+- O modal exibe estoque atual, meta ideal, deficit, progresso e limite
+  montavel pelos componentes. A sugestao de reposicao e manual: `Usar
+  sugestao` apenas preenche o componente compartilhado de quantidade e nao
+  confirma a montagem automaticamente.
+- A fila continua operacional quando o usuario nao possui permissao de
+  consulta a uma das fontes de estoque: a falha e degradada para saldo/meta
+  nao disponivel, sem bloquear a embalagem. Nenhum endpoint da API foi
+  migrado para TypeScript ou alterado nesta fatia.
+
+## Atualizacao operacional — grade dos cards da Embalagem — 2026-08-08
+
+- A fila inicial usa duas colunas em desktop e tablet, mantendo uma coluna em
+  celulares para preservar leitura e toque.
+- O card inteiro continua sendo o alvo de abertura do modal; o indicador
+  visual legado `ep-card-abrir` foi removido.
+
+## Atualizacao operacional — hierarquia dos cards da Embalagem — 2026-08-08
+
+- Os cards nao exibem mais o nome do produto visualmente: a variacao ocupa a
+  primeira linha, o SKU fica em linha propria e `Disponivel desde` usa uma
+  data/hora compacta na linha seguinte.
+- A quantidade usa a unidade contextual `und` para uma unidade e `unds` para
+  mais de uma, sempre encostada ao numero principal.
+- A borda charme dos cards segue o contrato oficial: elemento
+  `card-borda-charme` com `inset: 0`, `border-radius: inherit` e
+  `box-shadow: inset 3px 0 0`; o rodape de quantidade usa bloco de largura total
+  para preservar o recuo do conteudo sob o overlay.
+## Atualizacao operacional - nomes longos nos cards da Embalagem - 2026-08-08
+
+- A variacao do card pode ocupar uma ou duas linhas, com altura reservada
+  para duas linhas em todos os cards; isso preserva o alinhamento da grade.
+- O excedente e ocultado sem reticencias visuais, e o nome completo fica
+  disponivel no tooltip nativo do navegador.
+
+## Atualizacao operacional - feedback das operacoes de embalagem - 2026-08-09
+
+- Embalagem unitária e montagem de kit exibem `mostrarMensagem` com tipo
+  `sucesso` e botão `OK` após a API concluir.
+- Falhas da operação exibem o mesmo popup com tipo `erro` e mantêm a mensagem
+  detalhada dentro do modal.
+
+## Atualizacao operacional - limpeza do legado especifico da Embalagem - 2026-08-09
+
+- O entrypoint ativo da Embalagem permanece exclusivamente em
+  `public/src/main-embalagem.tsx`; o entrypoint JSX antigo, o script de pagina
+  legado, o CSS antigo e as duplicatas JSX/JS de cards, filtros e helpers foram
+  removidos.
+- Dependencias compartilhadas e seus mapeamentos foram preservados: auth,
+  popups, paginação, menu, agentes globais e APIs não fazem parte desta limpeza.
+
+## Atualizacao operacional - edicao vazia da quantidade - 2026-08-09
+
+- O input compartilhado de quantidade aceita ficar vazio durante a edicao;
+  apagar o conteudo nao injeta `0` automaticamente.
+- O valor vazio e representado por `null` no componente e continua invalido
+  para envio; `0` permanece o valor explicito do comando `LIMPAR`.
+
+## Atualizacao operacional - escritores legados POS_OP - 2026-08-08
+
+- A validacao pos-migration encontrou 17 lancamentos `PRODUCAO` novos sem
+  `executor_id`; todos tinham `usuario_tiktik_id`, portanto o problema era um
+  escritor legado sem dual-write, nao perda de dados.
+- As rotas manual, finalizacao de sessao, prestador externo e estorno agora
+  gravam executor, tipo, fase POS_OP e a identidade da etapa configurada no
+  produto quando `pos-op-sessoes-producao-v1` esta ativo.
+- A correcao dos registros ja criados fica em
+  `_planejamento/migration-pos-op-executores-legados-v1.sql`, com validador
+  correspondente. A migration e idempotente e nao altera quantidade, pontos,
+  data ou perdas.
+
+## Atualizacao operacional — carregamentos do modal de Embalagem — 2026-08-08
+
+- Os estados de busca de lotes, componentes e historico do modal usam
+  `UICarregando` em variante `bloco`, sem textos de carregamento ad-hoc.
+
+## Atualizacao operacional — paginação da fila de Embalagem — 2026-08-08
+
+- A fila voltou a exibir seis cards por página usando o helper legado
+  `public/js/utils/Paginacao.js` e as classes globais `gs-paginacao-*`.
+- A lógica de paginação permanece em JavaScript; o React apenas fatia os
+  dados, fornece o container e reage à página escolhida.
+
+## Atualizacao operacional — confirmação das embalagens — 2026-08-09
+
+- Embalagem unitária e montagem de kit exibem o popup sistêmico
+  `mostrarConfirmacao` antes de consumir lotes ou chamar a API.
+- A confirmação mantém `popups.css` no HTML da página e usa textos de ação
+  específicos (`Embalar` e `Montar e embalar`), sem alterar os endpoints.
+
+## Atualização operacional — remoção da sugestão automática — 2026-08-09
+
+- A seleção de tarefa voltou a ser manual. Não chamar
+  `/api/producao/sugestao-tarefa`, manter estado de sugestão ou enviar listas
+  de candidatas ao backend.
+
+## Atualizacao operacional - redesign dos modais OP/POS_OP - 2026-08-09
+
+- A selecao de tarefa agora oferece filtros explicitos para Producao da OP e
+  Arremate pos-OP, com contagem, executor autorizado e efeito no fluxo.
+- A confirmacao de quantidade mostra a fase e comunica se a tarefa continua na
+  OP ou libera a peca para embalagem; os payloads e limites foram preservados.
+- O redesign foi aplicado somente aos modais de atribuicao; configuracoes de
+  produtos, saldos e regras de lancamento nao foram alterados.
+
+## Atualizacao operacional - validacao da etapa POS_OP - 2026-08-09
+
+- Na atribuicao, `etapa_id` e a identidade principal da etapa da receita.
+  `processo_id` e o nome sao fallbacks para compatibilidade com dados antigos
+  e renomeacoes do catalogo.
+- Depois da resolucao, a sessao grava o nome canonico do processo, evitando que
+  o legado `Arrematar` cause rejeicao quando a etapa POS_OP ja foi identificada.
+- A finalizacao da sessao reutiliza o mesmo resolvedor canonico para determinar
+  maquina, pontos e identidade do lancamento POS_OP.
+
+## Atualizacao operacional - consolidacao segura de POS_OP - 2026-08-09
+
+- A fila pode consolidar tarefas POS_OP somente com o mesmo `produto_id`,
+  variante exata e identidade da etapa. SKU isolado nao e criterio suficiente.
+- A consolidacao cria uma unica sessao POS_OP com `origens_pos_op` no formato
+  `[{op_numero, quantidade}]`; a quantidade e redistribuida em ordem FIFO,
+  usando o saldo real travado de cada OP dentro da transacao.
+- A finalizacao continua sendo uma unica acao do supervisor, mas grava um
+  lancamento POS_OP por OP de origem na mesma transacao, preservando pontos,
+  executor, auditoria e rastreabilidade para a embalagem.
+- A migration correspondente e
+  `_planejamento/migration-pos-op-origens-sessao-v1.sql`, com validador em
+  `_planejamento/validacao-pos-op-origens-sessao-v1.sql`.
+
+## Handoff operacional — Produções/POS_OP — 2026-08-09
+
+- A migration `pos-op-origens-sessao-v1` foi executada na Neon às
+  01:40:45-03 e validada. O usuário testou 171 peças do Scrunchie marrom
+  distribuídas em quatro OPs (49 + 60 + 60 + 2); o sistema criou uma única
+  tarefa consolidada.
+- O handoff completo para a próxima retomada está em
+  `_planejamento/HANDOFF-PRODUCOES-POS-OP-2026-08-09.md`.
+- Antes de continuar, o próximo Codex deve ler esse handoff, não repetir as
+  migrations, não alterar receitas de produtos já revisadas e confirmar o
+  smoke de finalização multi-origem, pontos, fila, embalagem e saldo.
+- A página de Arremates, a origem genérica de Embalagem/Estoque e o histórico
+  geral de Produções ainda não foram encerrados; manter compatibilidade legada
+  até esses consumidores serem migrados e validados.
+
+## Atualizacao operacional - gate multi-origem e retomada da origem generica - 2026-08-09
+
+- O gate read-only de finalizacao multi-origem foi confirmado na Neon sem
+  executar migration nem alterar dados. As sessoes POS_OP `11093`, `11092` e
+  `11088` finalizaram respectivamente 33, 138 e 151 pecas, totalizando 322.
+- Cada sessao gerou um lancamento legado em `arremates` por OP de origem, com
+  a mesma sessao, executor preenchido, fase POS_OP e tipo PRODUCAO. Os pontos
+  fecharam em 33, 207 e 151; a soma de cada sessao corresponde ao snapshot de
+  pontos multiplicado pela quantidade finalizada.
+- A fila ficou zerada para as origens integralmente consumidas. Na ultima
+  origem parcial da sessao `11088`, a OP `11848` preservou corretamente saldo
+  residual de 7 pecas. As 322 pecas ficaram liberadas para embalagem, sem
+  movimento fisico de estoque ainda; portanto o gate confirma saldo pronto,
+  nao uma entrada em estoque ja realizada.
+- A retomada foi implementada de forma aditiva pela migration ainda local
+  `_planejamento/migration-origens-produto-pronto-v1.sql`. Ela cria a origem
+  generica `origens_produto_pronto`, as alocacoes normalizadas de embalagem e
+  o vinculo opcional do movimento de estoque com a embalagem. Nao existe
+  backfill automatico e a migration nao foi executada na Neon.
+- Antes da nova migration, Embalagem e Kits continuam operando pelo contrato
+  legado de `arremates`. Depois dela, origens canonicas e legadas podem ser
+  consumidas juntas em FIFO, sem duplicar um arremate ja vinculado a uma
+  origem canonica; o saldo legado continua atualizado como projecao de
+  compatibilidade.
+- A embalagem unitaria passa a confirmar consumo, embalagem e entrada de
+  estoque na mesma transacao e com chave de idempotencia. Kits usam o mesmo
+  alocador generico por produto e variante. O estorno desfaz as alocacoes
+  normalizadas e preserva o fallback legado para registros anteriores.
+- O endpoint `GET /api/producoes/historico` fornece o historico geral de
+  Producoes, unificando OP, POS_OP, cancelamentos, perdas, embalagem, estoque e
+  estornos. Finalizacoes POS_OP multi-origem sao agrupadas pela sessao, e o
+  modal historico antigo permanece apenas como alias visual compativel.
+- O smoke em PostgreSQL descartavel aprovou migration aditiva, ausencia de
+  backfill, fallback pre-migration, fila sem duplicidade, consumo misto,
+  atomicidade embalagem/estoque, idempotencia, estorno, kit e historico. Antes
+  de qualquer execucao na Neon, a nova migration ainda deve ser ensaiada na
+  restauracao local validada e receber autorizacao explicita do usuario.
+
+## Atualizacao operacional - pre-gate de migration de origem generica - 2026-08-09
+
+- A consulta read-only do schema atual confirmou na Neon a presenca de
+  `empresa_id` em Produtos, OPs, sessoes, arremates, embalagem e estoque;
+  confirmou tambem `processos_producao`, `origens_pos_op` e todas as chaves
+  compostas empresariais exigidas pelos FKs da nova migration.
+- O marcador `pos-op-origens-sessao-v1` existe e
+  `origens-produto-pronto-v1` ainda nao existe. A nova migration esta pronta
+  para execucao manual pelo usuario; o agente nao deve executa-la na Neon.
+- O dump local disponivel de 29/07 e anterior ao isolamento produtivo e nao
+  representa o schema atual. Ele nao deve ser usado para repetir migrations ou
+  validar receitas. O smoke descartavel continua sendo a validacao local dos
+  fluxos aditivos ate existir uma restauracao atualizada autorizada.
+
+## Atualizacao operacional - migration de origem generica executada - 2026-08-09
+
+- O usuario executou `_planejamento/migration-origens-produto-pronto-v1.sql`
+  na Neon em `2026-08-09 13:54:35.820227-03` e retornou o validador com
+  `aprovado` estrutural: marcador presente, duas tabelas criadas, coluna
+  `estoque_movimentos.embalagem_origem_id` presente e todos os FKs esperados.
+- Os contadores `origens_canonicas = 0` e `consumos = 0` estao corretos:
+  `backfill_automatico = false` preserva os arremates antigos sem copiar
+  registros. As origens canonicas passam a nascer nas novas finalizacoes POS_OP.
+- `saldos_invalidos`, `arremates_cruzados` e `embalagens_cruzadas` retornaram
+  zero. Os FKs foram criados como `NOT VALID`, conforme a migration aditiva;
+  novas escritas sao protegidas e a validacao historica completa exige um gate
+  separado de saneamento, nao deve ser improvisada durante este smoke.
+- O proximo gate e funcional: embalagem unitaria, kit, idempotencia, estorno,
+  fila, saldo, origem canonica/legada e historico geral, usando fixtures
+  controladas e sem alterar receitas.
+
+## Atualizacao operacional - smoke local pos-migration de origem generica - 2026-08-09
+
+- O smoke local em PostgreSQL temporario, executado contra o schema novo,
+  retornou `aprovado: true` em todas as verificacoes: migration aditiva,
+  ausencia de backfill, compatibilidade pre-migration, fila sem duplicidade,
+  consumo misto canonico/legado, atomicidade embalagem/estoque, idempotencia,
+  estorno por alocacao, kit com origem generica e historico geral.
+- O proximo gate nao e mais estrutural. Falta somente o smoke autenticado
+  controlado com fixtures reais de embalagem, kit, estorno, fila, saldo e
+  historico; ele exige escrita temporaria e nao deve ser executado na Neon sem
+  autorizacao explicita do usuario.
+
+## Atualizacao operacional - smoke autenticado Neon da origem generica - 2026-08-09
+
+- O smoke `tools/testar-origens-produto-pronto-neon.mjs` foi executado com
+  autorizacao explicita e retornou `aprovado: true`.
+- Foram aprovados: consumo de origem canonica, atualizacao da projecao legada,
+  embalagem unitaria atomica, idempotencia da unidade, historico geral,
+  estorno da unidade, montagem de kit, idempotencia do kit, estorno do kit e
+  restauracao do saldo final.
+- A auditoria independente `READ ONLY` posterior retornou zero residuos para
+  origem temporaria, embalagens, movimentos de estoque e alocacoes. Nenhuma
+  receita foi alterada e nenhuma migration foi repetida.
+- O smoke Neon exige `SMOKE_NEON_CONFIRM=SIM` e recusa URLs locais, mantendo a
+  trava para evitar execucao acidental contra outro ambiente.
+
+## Catalogo de permissoes — reorganizacao por modulos aprovada em 2026-08-09
+
+- O catalogo em `public/js/utils/permissoes.js` continua sendo a fonte da
+  verdade dos IDs. Nenhum ID pode ser renomeado, fundido ou excluido sem
+  auditoria e autorizacao explicita.
+- A organizacao visual das permissoes e por modulo, com localizacao em
+  `pagina` e `aba`. Quando a pagina nao possui abas, `aba = 'Principal'`.
+  O termo `sessao` nao deve ser usado para essa finalidade.
+- Cada item tambem informa `tipo` (`pagina`, `aba`, `bloco`, `acao` ou
+  `escopo`) e uma descricao curta. Acesso a paginas usa sempre o padrao
+  `Acessar pagina: [nome da pagina]`.
+- O editor da Gestao Organizacional agrupa o catalogo por modulo/categoria e
+  exibe pagina, aba, tipo e descricao. O padrao `UIBloqueio` continua sendo a
+  referencia para abas, blocos e acoes bloqueadas.
+- Os IDs sem referencia encontrada fora do catalogo durante a auditoria de
+  2026-08-09 ficam preservados em uma secao marcada `NAO EXISTEM NO CODIGO`.
+  Essa classificacao e informativa e nao autoriza exclusao ou invalidacao.
+- Foi criado o ID `acesso-calendario`; ele protege a entrada da pagina
+  Calendario da Empresa e esta incluido no acesso padrao de supervisores.
+
+## Atualizacao operacional - historico geral na Producao Geral - 2026-08-09
+
+- A pagina `admin/producao-geral.html` agora abre o historico geral de
+  Producoes pelo botao `Historico de Producoes`, reutilizando o modal filtravel
+  que permanece como alias compativel na pagina antiga de Arremates.
+- `GET /api/producoes/historico` aceita `acesso-producao-geral` alem das
+  permissoes legadas de OP e Arremates; o backend continua sendo a autoridade
+  de empresa e permissao.
+- O modal usa o token de impersonacao quando esse contexto estiver ativo. A
+  fila, as receitas e as migrations nao foram alteradas nesta etapa.
+- `npm run typecheck`, `npm run build` e `git diff --check` passaram. O build
+  manteve apenas os avisos conhecidos de scripts sem `type=module` e chunks
+  grandes.
+- A auditoria read-only dos consumidores confirmou que Embalagem e Kits usam
+  o alocador canonico com fallback legado. As rotas manuais de `api/estoque.js`,
+  incluindo `entrada-producao`, continuam registrando estoque manual sem
+  origem de produto pronto quando chamadas diretamente; isso e compatibilidade
+  legada, nao um caminho novo da fila de embalagem.
+
+## Atualizacao operacional - filtros detalhados do historico - 2026-08-09
+
+- O modal de historico geral agora oferece filtros detalhados opcionais por
+  produto, empregado, OP e processo, mantendo evento, fase, periodo e busca
+  ampla.
+- O endpoint `GET /api/producoes/historico` aplica esses filtros com parametros
+  SQL e sempre preserva o predicado de `empresa_id` do contexto autenticado.
+- A pagina legada de Arremates continua usando o mesmo componente e contrato;
+  nenhuma receita, migration ou dado externo foi alterado.
+- `npm run typecheck`, `npm run build`, `node --check api/producoes.js` e
+  `git diff --check` passaram.
+
+## Bloqueio de paginas sem permissao no menu aprovado em 2026-08-09
+
+- O menu lateral deve manter todos os modulos e paginas do catalogo visiveis,
+  mesmo quando o vinculo atual nao possui a permissao correspondente. Itens
+  bloqueados nao podem desaparecer nem revelar o conteudo da pagina protegida.
+- A variante de pagina do `UIBloqueio` e usada nesses itens e nos favoritos do
+  menu lateral.
+  Ao clicar em um item bloqueado do menu, abre um popup modal explicando o
+  bloqueio e a pagina solicitada. O popup nao fecha por clique externo e oferece
+  somente o botao para voltar a area inicial adequada (Home administrativa ou
+  Dashboard), sem logout e sem abrir a pagina protegida. A tela
+  `admin/acesso-negado.html` fica reservada para bloqueios de acesso direto
+  feitos pelos guards das paginas.
+- O contexto temporario fica em `sessionStorage` e informa a area solicitada,
+  a permissao necessaria e uma explicacao curta. A verificacao de autenticacao
+  de acesso direto tambem deve registrar esse contexto antes de redirecionar;
+  a pagina protegida nunca deve ser renderizada para um usuario bloqueado.
+- `admin/acesso-negado.html` usa `main-acesso-negado.tsx` e a paleta global do
+  sistema. A tela e responsiva, acessivel, nao oferece logout e nao depende de
+  JavaScript inline. Ela tambem sobrescreve a visibilidade global do `body`,
+  que por padrao fica oculto ate a autenticacao das paginas do sistema.
+- A Home administrativa reutiliza o mesmo catalogo do menu e tambem deve manter
+  areas sem permissao visiveis nos acessos recentes, recomendacoes e central de
+  comandos. A abertura de qualquer item bloqueado usa o popup modal de pagina e
+  retorna para a area inicial pelo botao unico. A Home nao possui mais bloco de
+  atalhos ou favoritos.
+- No Estoque, os botoes `Ver Arquivados` e `Inventario` permanecem visiveis
+  quando bloqueados. Eles usam `aria-disabled` e o popup modal padrao; nao usar
+  `disabled = true`, pois isso impediria a explicacao do bloqueio ao usuario.
+- No historico compartilhado de Producoes, o botao contextual de estorno
+  permanece visivel durante a janela de desfazer mesmo sem
+  `estornar-arremate`. Nesse caso ele mostra cadeado, usa `aria-disabled` e
+  abre o popup padrao; o `disabled` real fica reservado somente ao estado de
+  processamento da requisicao.
+- O agente global de encerramento de OP falha fechado quando a API confirma
+  que o vinculo nao possui `acesso-ordens-de-producao` ou quando ainda nao ha
+  empresa ativa carregada; ele nao e uma pagina do menu. Com acesso a
+  Producoes, mas sem `usar-agente-encerrador`, o FAB permanece visivel em
+  estado bloqueado e explica a restricao ao clique.
+- As acoes internas legadas do Estoque que continuam visiveis — abrir fila,
+  configurar niveis, anular promessa e abrir movimentacao — usam o popup
+  universal de acao bloqueada quando falta a permissao correspondente. O
+  bloqueio de pagina continua reservado a `Ver Arquivados` e `Inventario`.
+- O catalogo do menu aceita uma lista de IDs equivalentes para compatibilidade.
+  Gestao Organizacional considera os IDs canonico, legado e de auditoria,
+  porque o guard da pagina tambem aceita qualquer um deles. A pagina de
+  Embalagem exige explicitamente `acesso-embalagem-de-produtos`, alinhada ao
+  item correspondente do menu; autenticar sem esse ID nao e permitido.
+
+## Atualizacao operacional - pagina Producoes e historico compartilhado - 2026-08-09
+
+- `admin/ordens-de-producao.html` agora se apresenta como `Producoes` e abre o
+  historico geral de OP, POS_OP, perdas, cancelamentos, embalagem, estoque e
+  estornos pelo endpoint canonico.
+- URL, item de menu, permissao de acesso e rota legada de Arremates permanecem
+  estaveis durante a transicao; o componente de historico continua sendo um
+  alias compativel.
+- O estorno fica visivel somente quando o vinculo possui
+  `estornar-arremate`. O escritor operacional continua sendo o fluxo canonico
+  de OP/POS_OP, sem reintroduzir o painel antigo de Arremates na pagina de OP.
+- Nenhuma receita foi alterada, nenhuma migration foi repetida e nenhuma
+  escrita externa foi feita nesta etapa.
+- `npm run typecheck`, `npm run build`, `node --check api/producoes.js` e
+  `git diff --check` passaram; o build manteve apenas os avisos conhecidos.
+
+## Atualizacao operacional - imagem da variante no historico - 2026-08-09
+
+- O endpoint `GET /api/producoes/historico` resolve `produto_imagem` pela
+  variante do evento, procurando `grade[].imagem` pelo valor de `h.variante`.
+- `produtos.imagem` continua sendo somente o fallback quando a variante nao
+  possui imagem; nenhuma receita ou dado persistido foi alterado.
+- A regra vale para producao OP, POS_OP, embalagem, estoque e registros
+  legados projetados no historico unificado.
+- `node --check api/producoes.js`, `npm run build` e `npm run typecheck` passaram.
+
+## Atualizacao operacional - transicao assistida de Arremates - 2026-08-09
+
+- `admin/arremates.html` continua operacional e preserva os escritores legados,
+  mas agora informa que o fluxo unificado esta em Producoes e oferece link
+  direto para `admin/ordens-de-producao.html`.
+- Nenhum escritor legado foi desligado, nenhuma permissao foi alterada e nao
+  houve mudanca em receitas, migrations ou dados externos.
+
+## Atualizacao operacional - entrada do pipeline para Producoes - 2026-08-09
+
+- Os CTAs do pipeline de demandas que encontravam estado de arremate agora
+  abrem `admin/ordens-de-producao.html` e exibem `Producoes`.
+- A rota antiga, suas permissoes e escritores permanecem ativos para
+  compatibilidade; apenas o novo ponto de entrada foi redirecionado.
+- `npm run build` e `git diff --check` passaram. O `typecheck` ficou bloqueado
+  por erro preexistente e nao relacionado em `public/src/main-home.tsx`, na
+  tipagem do predicado de `MenuItem`.
+
+## Atualizacao operacional - aba externa no componente canonico - 2026-08-09
+
+- A aba externa de `admin/arremates.html` agora monta `OPExternoTela.tsx`,
+  compartilhando o fluxo de `/api/producoes/externo` com Producoes.
+- O endpoint legado `/api/arremates/externo` e os demais escritores da pagina
+  antiga permanecem ativos para compatibilidade e serao tratados em gates
+  posteriores.
+- Nenhuma receita foi alterada, nenhuma migration foi repetida e nenhum dado
+externo foi escrito nesta etapa.
+
+- `npm run typecheck`, `npm run build`, `node --check` dos routers/utilitário e
+  `git diff --check` passaram após a remoção dos componentes órfãos.
+
+## Atualizacao operacional - fila de perdas sem atribuicao legada - 2026-08-09
+
+- `ArremateTelaSelecaoProduto` agora renderiza somente a fila paginada de
+  perdas; foram removidos seleção múltipla, modal de lote e a referência a
+  `/api/arremates/sessoes/iniciar-lote`.
+- Os endpoints legados de sessões continuam preservados no backend, mas não há
+  referências no frontend ativo. Nenhuma receita foi alterada, nenhuma
+  migration foi repetida e nenhum dado externo foi escrito.
+
+## Atualizacao operacional - componentes visuais orfaos removidos - 2026-08-09
+
+- A auditoria de imports confirmou que os componentes antigos de painel,
+  atribuição, externo, tempos, status, confirmação e modal de perda não eram
+  usados por páginas ativas; eles foram removidos.
+- O seletor e o formulário compartilhados de perdas permanecem porque são
+  usados pelo fluxo canônico. Os aliases de backend de sessões, tempos e
+  externo continuam preservados para compatibilidade.
+- Nenhuma receita foi alterada, nenhuma migration foi repetida e nenhum dado
+  externo foi escrito nesta etapa.
+
+## Atualizacao operacional - isolamento dos leitores de status - 2026-08-09
+
+- O leitor de status de producao agora restringe imagens, nomes e TPP ao
+  produto da empresa ativa, incluindo as sessoes exibidas no historico do dia.
+- A soma de pontos do dia em `GET /api/producao/meu-status` tambem aplica
+  `empresa_id`, evitando que um mesmo usuario receba pontos de outro contexto.
+- O ramo de alertas das costureiras passou a carregar TPP somente pelos
+  produtos da empresa ativa, em alinhamento com o ramo canonico dos TikTiks.
+- As rotas manuais de `api/estoque.js` permanecem sem origem de produto pronto
+  quando chamadas diretamente: sao compatibilidade para ajustes manuais e nao
+  devem ser reinterpretadas como consumo automatico da fila. O consumo
+  canonico continua em `/api/embalagens/unidade` e `/api/kits/montar`, com
+  alocacao FIFO, embalagem e movimento na mesma transacao.
+- Nenhuma receita foi alterada, nenhuma migration foi repetida e nenhuma
+  escrita externa ocorreu nesta etapa.
+
+## Atualizacao operacional - escritores legados bloqueados - 2026-08-09
+
+- A auditoria estaticamente confirmou que o frontend ativo nao chama mais os
+  escritores de Arremates para atribuicao, finalizacao, cancelamento,
+  estorno de sessao, lote, assinatura, TPP, embalagem direta ou lancamento
+  externo. Esses fluxos usam Producoes/Embalagem canonicos.
+- O router `api/arremates.js` agora bloqueia esses caminhos com HTTP 410 e o
+  codigo `ARREMATES_LEGADO_SOMENTE_LEITURA`. A habilitacao temporaria de uma
+  integracao externa antiga exige `PERMITIR_ESCRITORES_ARREMATES_LEGADOS=true`;
+  isso nao reabre a pagina antiga. Os aliases `registrar-perda` e `estornar`,
+  que ja delegam para transacoes canonicas, permanecem ativos.
+- Os aliases de leitura e as tabelas historicas continuam preservados. A
+  limpeza estrutural sera autorizada somente depois da auditoria read-only em
+  `_planejamento/validacao-legado-producoes-pos-op-readonly.sql`, pois
+  `etapastiktik`, sessoes antigas e arremates ainda sustentam fallbacks e
+  historico.
+- Nenhuma receita foi alterada, nenhuma migration foi repetida e nenhum dado
+  externo foi escrito nesta etapa.
+
+## Atualizacao operacional - bloqueio do Cadastro de Produtos - 2026-08-09
+
+- O Cadastro de Produtos mantém a entrada protegida por
+  `acesso-cadastrar-produto`. A consulta da lista e a abertura de um produto
+  usam `ver-lista-produtos`.
+- Criação e edição do produto, imagens, variações, grade, kits, etapas,
+  processos e salvamentos usam `gerenciar-produtos`. Os controles continuam
+  visíveis e o legado HTML/JS mostra o mesmo popup padrão quando a ação é
+  bloqueada.
+- `ProdutoEtapasEditor.tsx` aplica `UIBloqueio` ao catálogo de processos e a
+  toda a área editável de etapas. `api/processos-producao.js` repete a
+  separação entre consulta e mutação no backend.
+- `api/produtos.js` passou a proteger também `GET /por-nome`; `api/upload.js`
+  passou a exigir `gerenciar-produtos` para imagens do catálogo e teve a
+  validação do cabeçalho Bearer corrigida.
+- O ID legado `cadastrar-produto` foi preservado na categoria
+  `NAO EXISTEM NO CODIGO`; nenhum ID foi renomeado ou excluído. Nenhuma
+  migration foi executada e nenhum dado externo foi alterado nesta etapa.
+
+## Atualizacao operacional - tempos padrao com contratos separados - 2026-08-09
+
+- `api/utils/tempos-padrao.js` concentra as consultas e os upserts dos tempos
+  sem misturar os contratos: o legado usa `tempos_padrao_arremate` e o
+  canonico usa `tempos_padrao_producao`.
+- `api/arremates.js` e `api/producao.js` continuam expondo seus payloads e
+  permissoes originais, mas agora compartilham o acesso SQL correspondente.
+- Nenhuma receita foi alterada, nenhuma migration foi repetida e nenhum dado
+  externo foi escrito nesta etapa.
+
+## Atualizacao operacional - limpeza visual adicional de Producoes - 2026-08-09
+
+- A pagina ativa usa exclusivamente `public/src/main-op.tsx`; o entrypoint
+  `main-op.jsx` e os componentes JSX antigos de externo/tempos foram removidos
+  por nao terem HTML ou imports consumidores.
+- `OPExternoTela.tsx` e `OPModalTempos.tsx` continuam como implementacoes
+  ativas, e a URL `admin/arremates.html` e os aliases de API permanecem
+  preservados. O historico ativo importa `ProducaoHistoricoModal`, enquanto
+  `ArremateHistoricoModal.jsx` continua como alias de compatibilidade.
+- Nenhuma receita foi alterada, nenhuma migration foi repetida e nenhum dado
+  externo foi escrito nesta etapa.
+
+## Atualizacao operacional - Demandas usa origem generica com fallback - 2026-08-09
+
+- `GET /api/demandas/buscar-produto` agora consulta a CTE
+  `OrigensProdutoProntoCompat`, incluindo origens canonicas de produto pronto e
+  evitando duplicidade quando o registro legado ja foi materializado.
+- Embalagens e movimentos de estoque continuam participando da busca; em
+  bases sem a estrutura nova, a CTE volta automaticamente para `arremates`.
+- Nenhuma receita foi alterada, nenhuma migration foi repetida e nenhum dado
+  externo foi escrito nesta etapa.
+
+## Atualizacao operacional - historico geral usa origem POS_OP canonica - 2026-08-09
+
+- `GET /api/producoes/historico` passou a montar a conclusao `POS_OP` a partir
+  de `OrigensProdutoProntoCompat`, consolidando sessoes e mantendo o
+  `arremate_id` legado somente quando existe uma unica origem.
+- Perdas, estornos e cancelamentos antigos continuam sendo lidos no ramo
+  legado, porque seus detalhes de ajuste nao existem na origem generica.
+- Em bases sem a tabela nova, a CTE usa `arremates` automaticamente; nenhuma
+  receita foi alterada, nenhuma migration foi repetida e nenhum dado externo
+  foi escrito nesta etapa.
+
+## Atualizacao operacional - pontos da dashboard usam origem compatível - 2026-08-09
+
+- `GET /api/dashboard/desempenho` passou a somar atividades `POS_OP` por
+  `OrigensProdutoProntoCompat` para qualquer executor autorizado, mantendo
+  pontos históricos e incluindo a empresa ativa explicitamente também nas
+  linhas de `producoes`.
+- A lista de atividades recentes usa o mesmo contrato, com fallback legado e
+  filtro empresarial no produto e na produção.
+- Nenhuma receita foi alterada, nenhuma migration foi repetida e nenhum dado
+  externo foi escrito nesta etapa.
+
+## Atualizacao operacional - fallback preserva executor legado - 2026-08-09
+
+- A CTE `OrigensProdutoProntoCompat` usa `COALESCE` entre `executor_id` /
+  `usuario_tiktik_id` e entre `executor_nome` / `usuario_tiktik` no ramo
+  legado.
+- Assim, pontos e histórico continuam visíveis para lançamentos antigos que
+  ainda não possuíam os campos de executor canônicos.
+- Nenhuma receita foi alterada, nenhuma migration foi repetida e nenhum dado
+  externo foi escrito nesta etapa.
+
+## Atualizacao operacional - comissoes usam pontos POS_OP canonicos - 2026-08-09
+
+- Os cálculos de comissão e os dados de recibos em `api/pagamentos.js` agora
+  somam `OrigensProdutoProntoCompat` por executor e empresa, além de
+  `producoes` e pontos extras.
+- O filtro não fica restrito ao tipo histórico TikTik; costureiras autorizadas
+  a executar `POS_OP` também entram no cálculo, sem duplicar arremates já
+  materializados na origem canônica.
+- Nenhuma receita foi alterada, nenhuma migration foi repetida e nenhum dado
+  externo foi escrito nesta etapa.
+
+## Atualizacao operacional - fila POS_OP usa saldo canonico - 2026-08-09
+
+- `GET /api/producao/fila-de-tarefas` agora calcula lançamentos concluídos
+  `POS_OP` a partir de `OrigensProdutoProntoCompat`.
+- Perdas continuam sendo somadas da tabela `arremates`, pois ainda não há
+  origem genérica de ajuste; a união é agrupada novamente por OP/etapa para
+  evitar duplicidade.
+- Nenhuma receita foi alterada, nenhuma migration foi repetida e nenhum dado
+  externo foi escrito nesta etapa.
+
+## Atualizacao operacional - atribuicao POS_OP usa saldo canonico - 2026-08-09
+
+- A validação de atribuição em `api/producoes.js` agora calcula o total já
+  concluído pela mesma combinação de origem canônica e perdas legadas usada na
+  fila.
+- O bloqueio transacional, a validação de etapa e o contrato legado da rota
+  permanecem iguais.
+- Nenhuma receita foi alterada, nenhuma migration foi repetida e nenhum dado
+  externo foi escrito nesta etapa.
+
+## Atualizacao operacional - gincanas usam pontos POS_OP canonicos - 2026-08-09
+
+- O cálculo individual e o ranking de gincanas agora leem `POS_OP` pela CTE
+  `OrigensProdutoProntoCompat`, mantendo os escopos de processos e arremates.
+- A filtragem continua por empresa e executor; a compatibilidade legada é
+  resolvida pela própria CTE sem somar duas vezes o mesmo arremate.
+- Nenhuma receita foi alterada, nenhuma migration foi repetida e nenhum dado
+  externo foi escrito nesta etapa.
+
+## Atualizacao operacional - alinhamento dos guards de permissoes no backend - 2026-08-09
+
+- O catalogo passou a incluir `criar-op`, `editar-op` e
+  `marcar-como-cortado`, que ainda sao consumidos pelas rotas legadas de OP e
+  cortes. Nenhum identificador existente foi renomeado ou removido.
+- A API de alertas aceita `configurar-alertas` e preserva
+  `gerenciar-permissoes` como alias administrativo. As APIs de tempos padrao
+  seguem a mesma regra com `configurar-tempos-padrao`.
+- Atribuicao, finalizacao e cancelamento de tarefas, lancamento externo e
+  desfazimento externo agora conferem no backend as mesmas permissoes exibidas
+  pelo `UIBloqueio`.
+- O CTA `Criar OP` do painel de demandas passou a permanecer visivel e abrir
+  o bloqueio padrao quando falta `gerar-op`.
+
+## Atualizacao operacional - aliases de backend preservados por contrato - 2026-08-09
+
+- A auditoria confirmou que `sessoes/iniciar`, `sessoes/finalizar` e
+  `sessoes/cancelar` legados usam `sessoes_trabalho_arremate`, enquanto o
+  canonico usa `sessoes_trabalho_producao`.
+- Os tempos legados usam `tempos_padrao_arremate`; o contrato canonico usa
+  `tempos_padrao_producao`. O lancamento externo legado grava `arremates`; o
+  canonico grava `producoes`. Sem equivalencia transacional direta, esses
+  aliases permanecem intactos para compatibilidade.
+- Nenhuma receita foi alterada, nenhuma migration foi repetida e nenhum dado
+  externo foi escrito nesta etapa.
+
+## Atualizacao operacional - entrypoint visual legado removido - 2026-08-09
+
+- Depois que `admin/arremates.html` virou redirecionamento e
+  `public/js/admin-arremates.js` foi removido, a auditoria confirmou que
+  `public/src/main-arremates.jsx` nao era carregado por nenhum HTML ou entrada
+  do build; o entrypoint morto foi removido.
+- A URL legada, aliases de API, permissoes e componentes compartilhados ficam
+  preservados para compatibilidade. O CSS legado continua sendo usado pelo
+  historico compartilhado de Producoes.
+- Nenhuma receita foi alterada, nenhuma migration foi repetida e nenhum dado
+  externo foi escrito nesta etapa.
+
+## Atualizacao operacional - painel legado usando componentes canonicos - 2026-08-09
+
+- O painel principal de `admin/arremates.html` agora monta
+  `OPPainelAtividades` e `OPModalTempos`, compartilhando atribuicao, fila,
+  finalizacao e configuracao de tempos com Producoes.
+- A leitura de status do backend aceita temporariamente
+  `acesso-ordens-de-arremates` ou `acesso-ordens-de-producao`; isso preserva
+  usuarios legados sem ampliar escopo de empresa.
+- A aba de perdas e os endpoints legados permanecem para o proximo gate.
+- Nenhuma receita foi alterada, nenhuma migration foi repetida e nenhum dado
+  externo foi escrito nesta etapa.
+- `npm run typecheck`, `npm run build`, `node --check api/producao.js` e
+  `git diff --check` passaram; o build manteve apenas os avisos conhecidos.
+
+## Atualizacao operacional - fluxo de perdas na superficie canonica - 2026-08-09
+
+- A aba de perdas de `admin/arremates.html` agora monta
+  `OPRegistrarPerdaTela` e usa `/api/producoes/fila-perdas` e
+  `/api/producoes/registrar-perda`.
+- Os endpoints canonicos passam pelo gate empresarial antes de encaminhar
+  temporariamente para a mesma transacao legada, preservando saldo,
+  categorias de perda e compatibilidade.
+- A implementacao transacional ainda sera extraida de `api/arremates.js` em
+  gate posterior; a rota antiga continua ativa.
+- Nenhuma receita foi alterada, nenhuma migration foi repetida e nenhum dado
+  externo foi escrito nesta etapa.
+
+- `npm run typecheck`, `npm run build`, `node --check api/producoes.js` e
+  `git diff --check` passaram; o build manteve apenas os avisos conhecidos.
+
+## Atualizacao operacional - escritor de perdas compartilhado - 2026-08-09
+
+- `api/utils/registrar-perda-producao.js` agora concentra a transacao de
+  perdas; Producoes e o endpoint legado chamam o mesmo utilitario.
+- O bloco antigo foi renomeado para `registrar-perda-legado-interno` como
+  referencia de rollback, sem ser usado pela interface.
+- A fila mantem alias de leitura legado ate a limpeza dos consumidores
+  restantes. Nenhuma receita foi alterada, nenhuma migration foi repetida e
+  nenhum dado externo foi escrito.
+- `npm run typecheck`, `npm run build`, `node --check api/arremates.js`,
+  `node --check api/producoes.js`, `node --check api/utils/registrar-perda-producao.js`
+  e `git diff --check` passaram.
+
+## Atualizacao operacional - fila de perdas compartilhada - 2026-08-09
+
+- `api/utils/fila-perdas-producao.js` agora concentra a leitura da fila.
+- `GET /api/producoes/fila-perdas` e `GET /api/arremates/fila` usam o mesmo
+  utilitario, sem encaminhamento entre routers.
+- O bloco antigo foi renomeado para `fila-legado-interno` como referencia de
+  rollback. Nenhuma receita foi alterada, nenhuma migration foi repetida e
+  nenhum dado externo foi escrito.
+- `npm run typecheck`, `npm run build`, `node --check api/arremates.js`,
+  `node --check api/producoes.js`, `node --check api/utils/fila-perdas-producao.js`
+  e `git diff --check` passaram.
+
+## Atualizacao operacional - script legado de Arremates removido - 2026-08-09
+
+- `admin/arremates.html` deixou de carregar `public/js/admin-arremates.js`.
+- O painel, a atribuicao, a fila, as perdas, o externo e o historico ja sao
+  controlados pelos componentes e rotas canonicos; a URL antiga e os aliases
+  de API continuam preservados.
+- Nenhuma receita foi alterada, nenhuma migration foi repetida e nenhum dado
+  externo foi escrito nesta etapa.
+
+## Atualizacao operacional - liberacao antecipada de intervalo - 2026-08-09
+
+- O endpoint `/api/ponto/liberar-intervalo` agora pode abrir e resolver a
+  transicao canonica diretamente nos 20 minutos anteriores a S1/S2, que e a
+  mesma janela exibida pelo `OPStatusCard`. Isso elimina o conflito causado
+  pela espera indevida da reconciliacao no horario programado.
+- A liberacao antecipada preserva a saida efetiva do momento da confirmacao,
+  calcula o retorno pela duracao configurada do intervalo e registra a origem,
+  o supervisor e a idempotencia na transicao/eventos existentes. A jornada
+  ordinaria, o fallback automatico de 30 segundos e o isolamento empresarial
+  permanecem inalterados.
+- Nenhuma migration ou dado externo foi alterado nesta correcao; o ensaio
+  deterministico foi acrescentado a `tools/testar-ponto-motor-local.mjs`.
+
+## Atualizacao operacional - retorno manual e janela ordinaria - 2026-08-09
+
+- O endpoint `/api/ponto/retomar-trabalho` e o escritor canonico do retorno
+  manual para empregados PRODUZINDO e para empregados ociosos em ALMOCO/PAUSA.
+  Nos dois casos E2/E3 e registrado; quando nao existe sessao, o vinculo passa
+  a `LIVRE_MANUAL` para ficar disponivel imediatamente.
+- O retorno manual e identificado no livro de eventos para impedir que o motor
+  crie um retorno automatico duplicado. O desfazimento grava a correcao e
+  permite que a transicao automatica volte a valer quando necessario.
+- `janela_ordinaria_aberta` representa a faixa continua entre E1 e S3. Almoco e
+  pausas sao intervalos internos e nao tornam o empregado fora da jornada;
+  dias nao ordinarios continuam sujeitos ao fluxo de hora extra.
+
+## Atualizacao operacional - preservacao do retorno manual na leitura - 2026-08-09
+
+- O safety-net de `api/producao.js` usa `COALESCE` no banco e preserva tambem o
+  valor ja carregado em memoria. Ele nao pode devolver E3 programado quando o
+  supervisor registrou E3 antecipadamente.
+- O escritor legado de finalizacao em `api/producoes.js` tambem preserva E3/E2
+  ja existentes. O motor continua sendo a autoridade quando o livro de eventos
+  esta disponivel; nenhuma escrita legada pode sobrescrever retorno manual.
+- O caso de regressao e: S2=16:00, E3 programado=16:15, retorno manual=16:05;
+  apos polling/cron, a leitura e o banco devem continuar exibindo E3=16:05.
+- O teste HTTP de ponto tambem cobre o endpoint real `/api/ponto/retomar-trabalho`
+  para PAUSA ociosa, valida o horario efetivo retornado e confirma que o cron
+  nao duplica `RETORNO_PAUSA_AUTOMATICO`.
+- Quando o safety-net escreve um fallback, `/api/producao/status-funcionarios`
+  relê `ponto_diario` antes de montar a resposta. Isso fecha a janela de corrida
+  entre o polling e uma ação manual do supervisor.
+
+## Validacao local da bateria de ponto - 2026-08-09
+
+- O PostgreSQL local foi disponibilizado em `127.0.0.1:55437` com clones
+  descartaveis derivados de `sistema_lv_fase7`; a base original nao foi alterada.
+- `tools/testar-ponto-eventos-local.mjs` foi aprovado, cobrindo idempotencia,
+  append-only, rollback e concorrencia de abertura/resolucao.
+- `tools/testar-ponto-motor-local.mjs` foi aprovado com 25 eventos, incluindo o
+  caso S2=16:00, E3=16:15 e retorno manual efetivo=16:05, sem retorno automatico
+  duplicado e preservando E3=16:05.
+- O teste HTTP aprovou todos os cenarios de jornada/ponto, inclusive o endpoint
+  real de retorno manual da PAUSA e o cron sem duplicidade. Ele parou depois na
+  atribuicao de producao porque a restauracao antiga nao possui `empresa_id` em
+  `produtos`; a cadeia produtiva exige uma restauracao multiempresa mais recente.
+
+## Atualizacao operacional - pagina legada convertida em redirecionamento - 2026-08-09
+
+- `POST /api/producoes/estornar` agora concentra o escritor de estorno em
+  `api/utils/estornar-producao.js`; `/api/arremates/estornar` permanece como
+  alias compatível sem escritor independente ativo.
+- O menu exibe somente `Produções` e aceita temporariamente as permissões
+  `acesso-ordens-de-producao` e `acesso-ordens-de-arremates`.
+- `public/admin/arremates.html` não renderiza mais a página antiga: preserva a
+  URL apenas como redirecionamento para Produções, mantendo query e hash.
+- Routers, permissões e componentes legados permanecem preservados até a
+  auditoria final dos consumidores. Nenhuma receita foi alterada, nenhuma
+  migration foi repetida e nenhum dado externo foi escrito.
+
+## Atualizacao operacional - mapa de permissoes e bloqueio de interface - 2026-08-09
+
+- O inventario completo de guards de pagina, menu, Home, abas, blocos e
+  botoes foi registrado em `_planejamento/mapa-permissoes-ui.md`.
+- A regra aprovada e manter controles visiveis e aplicar `UIBloqueio`; o
+  bloqueio inline continua reservado a botoes `position: absolute` e aos
+  arquivos HTML/JS legados que nao podem receber wrapper React.
+- Financeiro, Gestao da Producao, Gestao Organizacional, Producoes,
+  Historico Geral, Estoque e Arremates tiveram os pontos que escondiam ou
+  desabilitavam acoes por falta de permissao alinhados ao popup padrao.
+- Os guards das URLs canonica e legada da Gestao Organizacional aceitam os
+  aliases existentes; a pagina de Embalagem exige `acesso-embalagem-de-produtos`.
+- Os IDs da secao `NAO EXISTEM NO CODIGO` continuam preservados. O ID
+  `acesso-permissoes-usuarios` permanece apenas como alias tecnico de auditoria.
+- Nenhuma permissao foi renomeada ou excluida, nenhuma migration foi repetida
+  e nenhum dado externo foi escrito nesta etapa.
+- `npm run typecheck`, `npm run build` e `git diff --check` foram executados
+  novamente apos a validacao final desta rodada.
+- `node --check` dos arquivos tocados passou. O `typecheck` tambem passou apos a
+  restauracao da referencia `permissoes` em `FinanceiroPage.tsx`.
+
+## Atualizacao operacional - bundle antigo sem consumidores removido - 2026-08-09
+
+- A auditoria confirmou que `public/js/admin-arremates.js` não era mais
+  referenciado por nenhum HTML ou componente ativo depois do redirecionamento
+  de `admin/arremates.html`; o arquivo foi removido.
+- A compatibilidade legada continua nos aliases de API, permissões,
+  componentes compartilhados e na URL antiga. Nenhuma receita foi alterada,
+nenhuma migration foi repetida e nenhum dado externo foi escrito.
+
+## Atualizacao operacional - defaults de perdas canonicos - 2026-08-09
+
+- `ArremateRegistrarPerdaTela`, `ArremateFormularioPerda` e
+  `ArremateTelaSelecaoProduto` usam por padrão `/api/producoes/fila-perdas` e
+  `/api/producoes/registrar-perda`.
+- Os aliases de Arremates continuam disponíveis para compatibilidade; sessões,
+  tempos e externo antigos permanecem somente nos componentes órfãos ainda
+  preservados para auditoria.
+- Nenhuma receita foi alterada, nenhuma migration foi repetida e nenhum dado
+  externo foi escrito nesta etapa.
+
+## Atualizacao operacional - bloqueio das acoes de configuracao financeira - 2026-08-09
+
+- Os FABs de novo lancamento, transferencia e agendamento permanecem visiveis
+  no Financeiro e usam o guard inline de `lancar-transacao`, porque sao
+  controles fixos e nao devem receber wrapper que altere o posicionamento.
+- As abas de Configuracoes Financeiras permanecem visiveis para consulta; os
+  controles de mutacao usam `UIBloqueio` com `gerenciar-contas`,
+  `criar-favorecido`, `gerenciar-categorias` e `gerenciar-taxas-vt` conforme
+  o tipo da acao.
+- Os modais de configuracao repetem o guard no botao Salvar para manter a
+  protecao visual mesmo em estado aberto por fluxo antigo ou stale.
+- Nenhum ID de permissao foi renomeado ou removido e nenhuma migration foi
+  executada nesta etapa.
+
+## Atualizacao operacional - bloqueio da Central de Pagamentos - 2026-08-09
+
+- A Central de Pagamentos mantém as cinco abas visíveis. Cada aba usa o ID de
+  pagamento correspondente em `CPAGTabs.tsx` e abre o popup padrão quando o
+  vínculo não possui a permissão.
+- Os botões de pagamento de comissão, bônus, salário, benefícios e lote de VT
+  permanecem renderizados e usam `UIBloqueio` com os mesmos IDs que o backend
+  valida em `/api/pagamentos/efetuar` e `/api/pagamentos/lote-vt`.
+- Recibos de comissão e recibos de VT também permanecem visíveis, mas seus
+  botões de geração, registro e impressão são bloqueados com a permissão do
+  respectivo tipo de pagamento. Os endpoints correspondentes receberam a
+  mesma validação no backend.
+- Ajuste de consumo e definição do saldo do cartão VT repetem
+  `ajustar-consumo-vt` na abertura e na confirmação dos modais.
+- O estorno de recarga continua usando `efetuar-pagamento-empregado`, porque
+  esse é o ID legado já validado pelo endpoint `/estornar-vt`; não foi criado
+  nem substituído nenhum identificador.
+- Nenhuma permissão foi renomeada ou excluída, nenhuma migration foi
+  executada e nenhum dado externo foi escrito nesta etapa.
+
+## Atualizacao operacional - bloqueio do Centro de Incentivos - 2026-08-09
+
+- O Centro de Incentivos mantem a pagina e todas as abas visiveis. Gincanas,
+  Metas e Comissoes e Pontos por Atividade continuam consultaveis com
+  `acesso-ponto-por-processo`; Pagamentos usa
+  `pagar-premiacoes-gincanas` como aba bloqueada, sem disparar consulta quando
+  o vinculo nao possui essa permissao.
+- `gerenciar-gincanas` continua sendo o ID existente para criar, editar,
+  publicar, cancelar e excluir gincanas. Nenhum ID antigo foi renomeado ou
+  removido.
+- Foram criados tres IDs especificos, todos no catalogo de permissoes:
+  `gerenciar-metas-incentivos`, `gerenciar-pontos-atividade` e
+  `pagar-premiacoes-gincanas`. Eles protegem respectivamente as mutacoes de
+  metas/comissoes, pontos por atividade e pagamentos de premiacoes.
+- `UIBloqueio` permanece nos botoes de mutacao em
+  `IncenGincanaCard.tsx`, `IncenGincanaModal.tsx`, `IncenMetasTab.tsx`,
+  `IncenPontosTab.tsx` e `IncenPagamentosTab.tsx`. O backend repete a mesma
+  separacao em `api/metas.js`, `api/configuracao-pontos.js` e
+  `api/gincanas-pagamentos.js`.
+- Nenhuma migration foi executada e nenhum dado externo foi alterado nesta
+  etapa. O mapa detalhado permanece em
+  `_planejamento/mapa-permissoes-ui.md`.
+
+## Atualizacao operacional - auditoria do legado de Ponto/Incentivos - 2026-08-09
+
+- A auditoria confirmou que a antiga pagina `ponto-por-processo` e seus
+  scripts/CSS administrativos nao existem mais no workspace. As abas Metas e
+  Pontos atuais sao atendidas por `main-incentivos.tsx` e componentes TSX.
+- O utilitario compartilhado `public/js/utils/metas.js` permanece ativo para
+  calculos e leituras; o ID `acesso-ponto-por-processo` foi preservado.
+- A referencia morta para `admin-ponto-por-processo.js` foi removida de
+  `public/js/main.js`, que tambem nao possui consumidores HTML ativos. Nenhum
+  ID de permissao foi removido ou renomeado.
+
+## Atualizacao operacional - leitores de origem canonica ampliados - 2026-08-09
+
+- `api/real-producao.js` passou a usar `OrigensProdutoProntoCompat` na diaria e
+  no historico de desempenho, mantendo o fallback legado e o executor
+  normalizado para registros antigos.
+- `api/dashboard.js` passou a usar a mesma visao em atividades, desempenho,
+  resgate minimo, tabela de pontos, ranking, streak e conquistas; os filtros
+  empresariais foram mantidos explicitos nas consultas de producao.
+- Os indicadores de pontos combinam producoes internas e `POS_OP` canonico
+  para qualquer executor autorizado, inclusive costureiras que executem uma
+  etapa `POS_OP`.
+- `api/produtos.js` usa a origem canonica para calcular saldo pendente de
+  produto pronto. Perdas continuam somadas a partir de `arremates` somente
+  como ajuste legado, sem duplicar producao canonica.
+- O diagnostico agregado de Demandas (`api/utils/diagnosticoProducao.js`) usa
+  a mesma origem para progresso e consumo de embalagem, preservando o
+  fallback automatico quando a estrutura canonica nao existe.
+- Nenhuma receita foi alterada, nenhuma migration foi repetida e nenhum dado
+  externo foi escrito nesta etapa. A proxima liberacao exige smoke HTTP local
+  com dados canonicos e auditoria final dos leitores legados antes da remocao
+  de aliases.
+
+## Atualizacao operacional - erros recuperaveis no painel de Producoes - 2026-08-09
+
+- `OPPainelAtividades` agora trata respostas de erro e respostas 500 sem JSON,
+  exibindo a mensagem em popup e em um estado de erro recuperavel com botao
+  `Tentar novamente`; o polling nao deixa a tela em estado aparentemente
+  travado nem exige F5.
+- Finalizacao e cancelamento de tarefas validam `res.ok`, aguardam a
+  atualizacao do painel e bloqueiam cliques duplicados enquanto a mesma sessao
+  esta em processamento, inclusive durante o popup de confirmacao. A mensagem
+  de sucesso so aparece apos a API e a recarga concluirem.
+- Ao sair da aba Painel, popups legados montados diretamente no `body` sao
+  removidos e respostas tardias nao reabrem um overlay sobre outra aba.
+- O aviso de `AudioContext` bloqueado pelo navegador continua sendo tratado
+  como aviso nao fatal. Nenhuma receita foi alterada, nenhuma migration foi
+  repetida e nenhum dado externo foi escrito nesta etapa.
+
+## Validacao manual do bloqueio de permissoes - 2026-08-09
+
+- O usuario aprovou o smoke autenticado com acesso completo no Centro de
+  Incentivos: Home, menu, navegacao, quatro abas, carregamento de dados e
+  abertura/fechamento do modal de nova gincana funcionaram sem erros no
+  console.
+- O usuario tambem validou com acesso restrito: a pagina permaneceu acessivel
+  quando permitido, as areas sem permissao continuaram visiveis e os popups de
+  bloqueio funcionaram para Gincanas, Metas, Pontos por Atividade e Pagamentos.
+- Nenhuma migration ou dado externo foi alterado nesta validacao. O bloco de
+  permissao do Centro de Incentivos fica concluido; a proxima frente pode ser
+  escolhida pelo usuario.
+
+## Atualizacao operacional - alertas alinhados a sessoes canonicas - 2026-08-09
+
+- O motor de alertas de ociosidade/lentidao dos TikTiks prioriza
+  `sessoes_trabalho_producao` e `tempos_padrao_producao`, incluindo
+  `FINALIZADA_FORCADA` no historico do dia.
+- `sessoes_trabalho_arremate` e `tempos_padrao_arremate` continuam como
+  fallback explicito para dados legados; a escolha da sessao valida empregado,
+  empresa e status para evitar colisao de IDs entre tabelas.
+- A ausencia de uma tabela de tempos opcional em restauracoes antigas nao
+  derruba o endpoint de alertas; outros erros continuam sendo reportados.
+- Nenhuma receita foi alterada, nenhuma migration foi repetida e nenhum dado
+  externo foi escrito nesta etapa.
+
+## Validacao read-only do legado pos-OP - 2026-08-09
+
+- O relatorio executado pelo usuario na Neon encontrou zero
+  `sessoes_arremate_ativas`; os escritores antigos continuam bloqueados por
+  HTTP 410 e nao ha sessao legada ativa para drenar.
+- Foram encontrados 9.730 arremates de producao sem origem canonica e 558 com
+  origem canonica. A diferenca representa historico legado preservado; nao
+  deve ser backfillada automaticamente nem usada como motivo para apagar a
+  tabela `arremates`.
+- As oito receitas ainda possuem `etapastiktik` e tambem possuem etapas
+  canonicas. O campo legado continua somente como compatibilidade de leitura e
+  escrita ate a migracao final dos consumidores; nenhuma receita foi alterada.
+- Permanecem sete tempos em `tempos_padrao_arremate`, 766 alocacoes ativas de
+  embalagem e 75 movimentos de estoque com origem de embalagem. Esses dados
+  bloqueiam a remocao estrutural das tabelas/colunas correspondentes.
+- O resultado fecha o gate de desligamento dos escritores, mas nao o gate de
+  DROP. O proximo bloco e migrar os leitores/fallbacks restantes e preparar um
+  plano de remocao com rollback; qualquer migration destrutiva dependera de
+  autorizacao explicita do usuario para execucao na Neon.
+
+## Atualizacao operacional - bloqueios de Embalagem, Alertas e Calendario - 2026-08-09
+
+- Embalagem preserva `acesso-embalagem-de-produtos` para a pagina e usa
+  `lancar-embalagem` nos botoes de registrar unidade e montar kit. Os botoes
+  permanecem visiveis com `UIBloqueio`, e os handlers validam a permissao antes
+  da submissao.
+- A Central de Alertas aceita `configurar-alertas` e o alias administrativo
+  ativo `gerenciar-permissoes`. As configuracoes de alertas e os avisos popup
+  receberam bloqueios visiveis nos controles de gravacao, e as rotas de
+  administracao de avisos popup passaram a validar o mesmo conjunto no backend.
+- O Calendario aceita `acesso-calendario` e o alias administrativo ativo
+  `gerenciar-permissoes`. Criacao, edicao e exclusao mantem os controles
+  visiveis com bloqueio para vinculos que nao sejam administrador ou supervisor;
+  o backend valida permissao e tipo de vinculo.
+- Nenhum ID foi renomeado, removido ou reativado na secao `NAO EXISTEM NO
+  CODIGO`; nenhum dado externo foi escrito e nenhuma migration foi executada.
+
+## Atualizacao operacional - fila de perdas usa origem generica - 2026-08-09
+
+- `api/utils/fila-perdas-producao.js` passou a calcular o total produzido por
+  OP com `OrigensProdutoProntoCompat`, incluindo a origem canônica e o
+  fallback legado sem duplicar o arremate já vinculado.
+- Perdas continuam sendo lidas de `arremates` porque possuem metadados de
+  ajuste próprios. Sessões POS_OP ativas de `sessoes_trabalho_producao` agora
+  também são abatidas quando o schema está disponível; as sessões de
+  `sessoes_trabalho_arremate` permanecem como fallback histórico.
+- A alteração não modifica receitas, saldos ou migrations. `node --check`,
+  `npm run typecheck` e `npm run build` passaram; o build manteve somente os
+  avisos conhecidos de scripts sem `type="module"` e chunks grandes.
+
+## Atualizacao operacional - blocos 1, 2 e 3 da limpeza pos-OP - 2026-08-09
+
+- O escritor de perdas canônico passou a calcular o saldo produzido por OP
+  com `OrigensProdutoProntoCompat`; perdas continuam em `arremates` apenas
+  como ajustes, e sessões de produção ativas continuam sendo abatidas.
+- A origem genérica recebeu a auditoria somente leitura
+  `auditarOrigensProdutoPronto`. A rota autenticada
+  `GET /api/embalagens/origens/auditoria` informa referências inexistentes,
+  divergências de quantidade em embalagens de unidade, movimentos sem
+  embalagem e saldos inválidos, sem alterar dados.
+- O estorno canônico de embalagem agora rejeita uma embalagem de unidade cuja
+  soma das alocações ativas não corresponda à quantidade registrada. Kits
+  continuam sem essa comparação porque suas alocações representam componentes.
+- O histórico geral de Produções passa a expor também `embalagem_id` nos
+  eventos de embalagem e estoque, preservando o vínculo rastreável sem remover
+  `arremate_id` legado.
+- A tipagem da permissão de salvamento da Central de Alertas foi corrigida para
+  manter o typecheck global. Nenhuma receita foi alterada, nenhuma migration
+  foi repetida e nenhum dado externo foi escrito.
+
+## Atualizacao operacional - permissoes granulares de Calendario e Alertas - 2026-08-09
+
+- Foram adicionados ao catalogo, sem alterar IDs existentes, os IDs
+  `criar-novo-evento`, `editar-evento`, `deletar-evento`,
+  `salvar-alteracoes-de-alertas`, `criar-novo-aviso`,
+  `editar-aviso`, `reaproveitar-aviso`, `excluir-aviso` e `arquivar-aviso`.
+- `criar-novo-evento` protege os pontos de entrada de criacao do Calendario;
+  o backend exige tambem acesso ao Calendario e vinculo administrador ou
+  supervisor. `editar-evento` protege a edicao e `deletar-evento` protege a
+  remocao. A leitura do evento e do detalhe do dia nao recebe bloqueio; a
+  confirmacao de remocao usa o popup padrao do sistema.
+- Na Central de Alertas, o salvamento de Alertas Gerais exige
+  `salvar-alteracoes-de-alertas`. Na aba Avisos Popups, criar, editar,
+  reaproveitar, arquivar e excluir usam seus IDs granulares; reenviar e
+  reativar permanecem com o acesso geral existente.
+- UI e APIs validam os novos IDs. A secao `NAO EXISTEM NO CODIGO` permanece
+  intacta, sem exclusao ou reativacao de permissoes legadas.
+
+## Correcao de Freelance Costureira no POS_OP - 2026-08-09
+
+- A selecao de P. Externo passou a resolver a receita pela visao canônica
+  (`etapasCanonicas`) e pelos fallbacks `etapasTiktik`/`etapastiktik`, usando a
+  identidade da etapa (`etapa_id`/`processo_id`) e respeitando `feitoPor`.
+  Isso mantém o arremate pós-OP visível para o perfil Freelance Costureira,
+  sem alterar nenhuma receita.
+- O lançamento externo de uma tarefa `POS_OP` agora usa a mesma validação de
+  fase, saldo e executor do fluxo interno. O perfil placeholder
+  `prestador_externo` recebe apenas um override transitório do tipo escolhido
+  (`costureira` ou `tiktik`), grava sessão POS_OP, pontos, arremate legado e
+  origem canônica de produto pronto.
+- O payload preserva `fase`, `processo_id`, `etapa_id` e as origens da OP; o
+  fluxo OP legado permanece inalterado. Nenhuma migration foi executada ou
+  repetida; `node --check`, `npm run typecheck` e `npm run build` passaram.
+
+## Decisao permanente - preservacao fisica do legado - 2026-08-09
+
+O usuario decidiu que, por enquanto, **nenhuma tabela, coluna, endpoint ou
+estrutura legada sera removida fisicamente**. Essa decisao vale mesmo com a
+migracao funcional da cadeia produtiva concluida.
+
+### O que foi migrado
+
+- OP e arremate foram unificados na experiencia de Producoes, com etapas
+  `OP` e `POS_OP`, sessoes operacionais canonicas, fila, saldo, pontos e
+  executor autorizado pela receita.
+- A origem generica de produto pronto passou a alimentar Embalagem e Estoque,
+  mantendo compatibilidade temporaria com `arremates`.
+- O historico geral de Producoes passou a reunir OP, POS_OP, perdas,
+  cancelamentos, embalagem, estoque e estornos, incluindo a imagem correta da
+  variante.
+- Leitores transversais de dashboard, comissoes, gincanas, alertas, demandas
+  e perdas passaram a priorizar a origem canonica com fallback legado.
+- A pagina operacional de Arremates foi substituida por Producoes; a URL
+  antiga e aliases de API continuam preservados para compatibilidade.
+- O smoke final de POS_OP foi aprovado pelo usuario tanto para empregado
+  normal quanto para Freelance Costureira.
+
+### Por que nada sera deletado agora
+
+- Existe historico legado real que nao deve ser apagado nem reescrito; nao foi
+  feito backfill automatico das receitas ou dos arremates antigos.
+- Ainda existem consumidores, aliases, integracoes e fallbacks de leitura que
+  dependem de tabelas e colunas antigas, especialmente para perdas, estornos,
+  tempos, sessoes antigas, embalagem e estoque manual.
+- Ha alocacoes de embalagem e movimentos de estoque ja existentes que exigem
+  rastreabilidade e rollback, alem de registros de arremate sem origem
+  canonica que devem permanecer como historico.
+- A preservacao permite auditoria, recuperacao e compatibilidade durante a
+  transicao, sem risco de quebra por uma remocao destrutiva prematura.
+
+As estruturas legadas permanecem, portanto, como camada de compatibilidade e
+historico. Nenhuma nova migration destrutiva, `DROP`, limpeza de dados ou
+backfill deve ser criada ou executada sem uma nova decisao explicita do
+usuario. A meta atual e estabilidade funcional, testes, revisao seletiva e
+publicacao do codigo, nao a remocao fisica do legado.

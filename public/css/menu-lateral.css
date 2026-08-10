@@ -606,20 +606,23 @@ body {
 
 .ml-favorite-remove {
     position: absolute;
-    z-index: 1;
+    z-index: 3;
     right: 5px;
     color: #f59e0b;
 }
 
-.ml-nav-link.is-active + .ml-favorite-remove {
-    color: #fde68a;
-}
+.ml-nav-link.is-active + .ml-favorite-remove,
+.ml-favorites-list > li.is-current .ml-favorite-remove {
+      color: #fde68a;
+  }
 
 .ml-nav-link.is-active + .ml-favorite-remove:hover,
-.ml-nav-link.is-active + .ml-favorite-remove:focus-visible {
-    color: #ffffff;
-    background: rgba(255, 255, 255, 0.16);
-}
+.ml-nav-link.is-active + .ml-favorite-remove:focus-visible,
+.ml-favorites-list > li.is-current .ml-favorite-remove:hover,
+.ml-favorites-list > li.is-current .ml-favorite-remove:focus-visible {
+      color: #ffffff;
+      background: rgba(255, 255, 255, 0.16);
+  }
 
 .ml-favorites-list > li[draggable="true"] {
     cursor: grab;

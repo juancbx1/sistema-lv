@@ -1,4 +1,5 @@
 import type { CpagAuthResult } from './cpag-types';
+import { navegarParaAcessoNegado } from '../../js/utils/acesso-negado.js';
 
 export async function verificarAutenticacaoCpag(permissoesRequeridas: string[] = []): Promise<CpagAuthResult | null> {
   const token = sessionStorage.getItem('impersonation_token') || localStorage.getItem('token');
@@ -9,7 +10,15 @@ export async function verificarAutenticacaoCpag(permissoesRequeridas: string[] =
     const usuario = await response.json() as CpagAuthResult['usuario'];
     const permissoes = usuario?.permissoes ?? [];
     localStorage.setItem('permissoes', JSON.stringify(permissoes));
-    if (!permissoesRequeridas.every((permissao) => permissoes.includes(permissao))) { window.location.href = '/admin/acesso-negado.html'; return null; }
+    if (!permissoesRequeridas.every((permissao) => permissoes.includes(permissao))) {
+      navegarParaAcessoNegado({
+        pagina: 'Central de Pagamentos',
+        permissoes: permissoesRequeridas,
+        motivo: 'permissao',
+        mensagem: 'Seu vínculo atual não possui o acesso necessário para abrir esta página.',
+      });
+      return null;
+    }
     const tipos = Array.isArray(usuario?.tipos) ? usuario.tipos : [];
     if ((tipos.includes('costureira') || tipos.includes('tiktik')) && !permissoes.includes('acesso-admin-geral')) { window.location.href = '/dashboard/dashboard.html'; return null; }
     document.body.classList.add('autenticado');

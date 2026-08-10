@@ -4,12 +4,22 @@ import pkg from 'pg';
 const { Pool } = pkg;
 import jwt from 'jsonwebtoken';
 import express from 'express';
+import { getPermissoesCompletasUsuarioDB } from './usuarios.js';
 
 const router = express.Router();
 const pool = new Pool({
     connectionString: process.env.POSTGRES_URL,
 });
 const SECRET_KEY = process.env.JWT_SECRET;
+
+async function usuarioTemPermissao(dbClient, req, permissao) {
+    const permissoes = await getPermissoesCompletasUsuarioDB(
+        dbClient,
+        req.usuarioLogado.id,
+        req.empresaId,
+    );
+    return permissoes.includes(permissao);
+}
 
 // Middleware de autenticação (igual ao que você já usa)
 router.use(async (req, res, next) => {
@@ -19,7 +29,7 @@ router.use(async (req, res, next) => {
             return res.status(401).json({ error: 'Token de autenticação ausente.' });
         }
         const token = authHeader.split(' ')[1];
-        jwt.verify(token, SECRET_KEY); // Apenas verifica, não precisa dos dados do usuário aqui
+        req.usuarioLogado = jwt.verify(token, SECRET_KEY);
         next();
     } catch (error) {
         return res.status(401).json({ error: 'Token inválido ou expirado.' });
@@ -43,6 +53,10 @@ router.get('/', async (req, res) => {
         dbClient = await pool.connect();
         
         // Com a coluna no banco sendo do tipo DATE, esta query simples é a mais correta e performática
+        if (!await usuarioTemPermissao(dbClient, req, 'acesso-ponto-por-processo')) {
+            return res.status(403).json({ error: 'Permissão negada para consultar metas.' });
+        }
+
         const versaoQuery = `
             SELECT id FROM metas_versoes
             WHERE empresa_id = $1
@@ -110,6 +124,9 @@ router.get('/versoes', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        if (!await usuarioTemPermissao(dbClient, req, 'acesso-ponto-por-processo')) {
+            return res.status(403).json({ error: 'Permissão negada para consultar metas.' });
+        }
         const result = await dbClient.query(
             'SELECT * FROM metas_versoes WHERE empresa_id = $1 ORDER BY data_inicio_vigencia DESC',
             [empresaId]
@@ -138,6 +155,10 @@ router.post('/versoes', async (req, res) => {
         dbClient = await pool.connect();
         await dbClient.query('BEGIN'); // Inicia a transação
 
+        if (!await usuarioTemPermissao(dbClient, req, 'gerenciar-metas-incentivos')) {
+            await dbClient.query('ROLLBACK');
+            return res.status(403).json({ error: 'Permissão negada para criar versões de metas.' });
+        }
         const origemResult = await dbClient.query(
             'SELECT id FROM metas_versoes WHERE id = $1 AND empresa_id = $2',
             [id_versao_origem_clone, empresaId]
@@ -181,6 +202,9 @@ router.get('/regras/:id_versao', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        if (!await usuarioTemPermissao(dbClient, req, 'acesso-ponto-por-processo')) {
+            return res.status(403).json({ error: 'Permissão negada para consultar metas.' });
+        }
         const query = `
             SELECT * FROM metas_regras 
             WHERE empresa_id = $1
@@ -211,6 +235,9 @@ router.put('/regras/:id_regra', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        if (!await usuarioTemPermissao(dbClient, req, 'gerenciar-metas-incentivos')) {
+            return res.status(403).json({ error: 'Permissão negada para editar metas.' });
+        }
         const query = `
             UPDATE metas_regras 
             SET 
@@ -254,6 +281,9 @@ router.post('/regras', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        if (!await usuarioTemPermissao(dbClient, req, 'gerenciar-metas-incentivos')) {
+            return res.status(403).json({ error: 'Permissão negada para criar regras de metas.' });
+        }
         const versaoResult = await dbClient.query(
             'SELECT id FROM metas_versoes WHERE id = $1 AND empresa_id = $2',
             [id_versao, empresaId]
@@ -284,6 +314,9 @@ router.delete('/regras/:id_regra', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        if (!await usuarioTemPermissao(dbClient, req, 'gerenciar-metas-incentivos')) {
+            return res.status(403).json({ error: 'Permissão negada para excluir metas.' });
+        }
         const result = await dbClient.query(
             'DELETE FROM metas_regras WHERE id = $1 AND empresa_id = $2 RETURNING id',
             [id_regra, empresaId]

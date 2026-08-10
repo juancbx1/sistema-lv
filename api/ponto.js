@@ -476,6 +476,10 @@ router.post('/liberar-intervalo', async (req, res) => {
                 agora,
                 autorId: req.usuarioLogado?.id || null,
                 autorNome: supervisor,
+                // O botão do painel existe nos 20 minutos anteriores a S1/S2.
+                // Nesse fluxo o próprio supervisor abre e resolve a transição,
+                // sem esperar a reconciliação chegar ao horário programado.
+                permitirAberturaAntecipada: true,
             });
             await dbClient.query('COMMIT');
             return res.status(200).json({
@@ -803,6 +807,8 @@ router.post('/retomar-trabalho', async (req, res) => {
             dataHojeSP
         );
         exigirTransicaoOrdinaria(contexto, `o retorno antecipado de ${tipo}`);
+        const manterSessao = contexto.status_atual === 'PRODUZINDO'
+            || Boolean(contexto.id_sessao_trabalho_atual);
         const campoRetorno = tipo === 'ALMOCO' ? 'horario_real_e2' : 'horario_real_e3';
         const campoRetornoPrevisto = tipo === 'ALMOCO' ? 'horario_real_e2' : 'horario_real_e3';
 
@@ -843,6 +849,22 @@ router.post('/retomar-trabalho', async (req, res) => {
             throw new Error('Nenhum registro de ponto do dia foi encontrado para registrar o retorno.');
         }
 
+        if (!manterSessao) {
+            const statusAtualizado = await dbClient.query(
+                `UPDATE usuarios_empresas
+                    SET status_atual = 'LIVRE_MANUAL',
+                        status_data_modificacao = NOW(),
+                        id_sessao_trabalho_atual = NULL
+                  WHERE usuario_id = $1
+                    AND empresa_id = $2
+                    AND ativo = TRUE`,
+                [funcionario_id, req.empresaId]
+            );
+            if (statusAtualizado.rowCount === 0) {
+                throw new Error('FuncionÃ¡rio nÃ£o encontrado na empresa ativa.');
+            }
+        }
+
         // Auditoria: calcula desvio em relação ao retorno previsto (e2/e3 programado no cadastro)
         const horarioPrevisto = dados.retorno_previsto_db
             || (tipo === 'ALMOCO' ? (dados.horario_entrada_2 ? String(dados.horario_entrada_2).substring(0, 5) : null)
@@ -854,13 +876,36 @@ router.post('/retomar-trabalho', async (req, res) => {
             desvioMin = (ah * 60 + am) - (ph * 60 + pm); // positivo = atrasado
         }
 
-        if (await pontoEventosDisponivel(dbClient)) {
+        const eventosDisponiveis = await pontoEventosDisponivel(dbClient);
+        let correcoesRetorno = 0;
+        if (eventosDisponiveis) {
+            const correcoesResult = await dbClient.query(
+                `SELECT COUNT(*)::int AS total
+                   FROM ponto_eventos
+                  WHERE empresa_id = $1
+                    AND funcionario_id = $2
+                    AND data_jornada = $3::date
+                    AND tipo_evento = $4
+                    AND transicao_tipo = $5
+                    AND payload->>'acao' = 'DESFAZER_RETORNO_MANUAL'`,
+                [
+                    req.empresaId,
+                    funcionario_id,
+                    dataHojeSP,
+                    TIPOS_EVENTO_PONTO.CORRECAO_MANUAL,
+                    tipo,
+                ]
+            );
+            correcoesRetorno = correcoesResult.rows[0]?.total || 0;
+        }
+
+        if (eventosDisponiveis) {
             await registrarEventoPonto(dbClient, {
                 empresaId: req.empresaId,
                 funcionarioId: funcionario_id,
                 dataJornada: dataHojeSP,
                 tipoEvento: TIPOS_EVENTO_PONTO.RETORNO_MANUAL,
-                idempotencyKey: `retorno-manual:${dataHojeSP}:${funcionario_id}:${tipo}`,
+                idempotencyKey: `retorno-manual:${dataHojeSP}:${funcionario_id}:${tipo}:${correcoesRetorno}`,
                 origem: ORIGENS_PONTO.SUPERVISOR,
                 transicaoTipo: tipo,
                 horarioPlanejado: horarioPrevisto,
@@ -887,7 +932,11 @@ router.post('/retomar-trabalho', async (req, res) => {
         });
 
         await dbClient.query('COMMIT');
-        res.status(200).json({ message: `Retomada registrada para ${tipo}.`, horario_retorno: horaAtualSP });
+        res.status(200).json({
+            message: `Retomada registrada para ${tipo}.`,
+            horario_retorno: horaAtualSP,
+            sessao_preservada: manterSessao,
+        });
 
     } catch (error) {
         if (dbClient) await dbClient.query('ROLLBACK');
@@ -920,6 +969,14 @@ router.post('/desfazer-retomada', async (req, res) => {
         await exigirVinculoAtivo(dbClient, funcionario_id, req.empresaId);
 
         const dataHojeSP = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+        const contexto = await carregarContextoJornada(
+            dbClient,
+            funcionario_id,
+            req.empresaId,
+            dataHojeSP
+        );
+        const manterSessao = contexto.status_atual === 'PRODUZINDO'
+            || Boolean(contexto.id_sessao_trabalho_atual);
         const campoRetorno = tipo === 'ALMOCO' ? 'horario_real_e2' : 'horario_real_e3';
 
         const retornoAnteriorResult = await dbClient.query(
@@ -962,6 +1019,19 @@ router.post('/desfazer-retomada', async (req, res) => {
                     horario_anterior: retornoAnteriorResult.rows[0]?.horario_retorno || null,
                 },
             });
+        }
+
+        if (!manterSessao) {
+            await dbClient.query(
+                `UPDATE usuarios_empresas
+                    SET status_atual = 'LIVRE',
+                        status_data_modificacao = NOW(),
+                        id_sessao_trabalho_atual = NULL
+                  WHERE usuario_id = $1
+                    AND empresa_id = $2
+                    AND ativo = TRUE`,
+                [funcionario_id, req.empresaId]
+            );
         }
 
         await dbClient.query('COMMIT');

@@ -2,6 +2,7 @@
 import { verificarAutenticacao } from '/js/utils/auth.js';
 import { obterProdutos, invalidateCache } from '/js/utils/storage.js';
 import { mostrarMensagem, mostrarConfirmacao } from '/js/utils/popups.js';
+import { mostrarPopupPaginaBloqueada, mostrarPopupSemPermissao } from '/src/utils/bloqueio';
 import { adicionarBotaoFechar } from '/js/utils/botoes-fechar.js';
 import { htmlUIFeedbackNotFound } from './utils/ui-feedback.js';
 import { htmlUICarregando } from './utils/ui-carregando.js';
@@ -13,6 +14,13 @@ let usuarioLogadoEstoque = null;
 let itemEstoqueSelecionado = null; // << NOVO: Variável unificada para o item em edição/detalhe
 let niveisEstoqueAlertaCache = [];
 let produtoSelecionadoParaConfigNiveis = null;
+
+function mostrarBloqueioAcaoEstoque(mensagem) {
+    mostrarPopupSemPermissao(mensagem, {
+        titulo: 'Ação bloqueada',
+        rotuloBotao: 'Entendi',
+    });
+}
 let editandoNivelId = null;
 let currentPageEstoqueTabela = 1;
 const itemsPerPageEstoqueTabela = 6;
@@ -174,7 +182,7 @@ async function abrirModalConfigurarNiveis() {
     console.log(`%c[ABRINDO MODAL] - 'Configurar Níveis' foi chamada.`, 'color: #27ae60; font-weight: bold;');
     
     if (!permissoesGlobaisEstoque.includes('gerenciar-niveis-alerta-estoque')) {
-        mostrarMensagem('Você não tem permissão para configurar níveis de estoque.', 'aviso');
+        mostrarBloqueioAcaoEstoque('Seu vínculo atual não possui permissão para configurar níveis de estoque.');
         return;
     }
 
@@ -828,7 +836,7 @@ async function filtrarEstoquePorAlerta(tipoAlerta) {
 
 async function mostrarViewFilaProducao() {
     if (!permissoesGlobaisEstoque.includes('acesso-estoque')) {
-        mostrarMensagem('Você não tem permissão para acessar esta área.', 'aviso');
+        mostrarBloqueioAcaoEstoque('Seu vínculo atual não possui permissão para abrir a fila de produção do Estoque.');
         return;
     }
 
@@ -846,7 +854,11 @@ async function mostrarViewFilaProducao() {
 
     try {
         const btnSalvar = document.getElementById('btnSalvarPrioridades');
-        btnSalvar.classList.toggle('hidden', !permissoesGlobaisEstoque.includes('gerenciar-fila-de-producao'));
+        if (btnSalvar) {
+            const podeSalvarFila = permissoesGlobaisEstoque.includes('gerenciar-fila-de-producao');
+            btnSalvar.classList.toggle('permissao-negada', !podeSalvarFila);
+            btnSalvar.setAttribute('aria-disabled', String(!podeSalvarFila));
+        }
 
         // Busca as promessas ativas do backend
         promessasDeProducaoCache = await fetchEstoqueAPI('/producao-promessas');
@@ -881,6 +893,11 @@ async function mostrarViewFilaProducao() {
 }
 
 function moverItemFila(produtoRefId, direcao) {
+    if (!permissoesGlobaisEstoque.includes('gerenciar-fila-de-producao')) {
+        mostrarBloqueioAcaoEstoque('Seu vínculo atual não possui permissão para reordenar a fila de produção.');
+        return;
+    }
+
     const container = document.getElementById('filaProducaoContainer');
     const cards = Array.from(container.querySelectorAll('.es-fila-card'));
     const indexAtual = cards.findIndex(card => card.dataset.produtoRefId === produtoRefId);
@@ -1038,22 +1055,19 @@ function renderizarFilaDeProducao() {
 
         const podeGerenciarFila = permissoesGlobaisEstoque.includes('gerenciar-fila-de-producao');
 
-        const reordenarHTML = podeGerenciarFila
-            ? `<div class="fila-card-reordenar">
-                   <button class="reordenar-btn up" onclick="moverItemFila('${config.produto_ref_id}', -1)" title="Mover para cima"><i class="fas fa-arrow-up"></i></button>
-                   <button class="reordenar-btn down" onclick="moverItemFila('${config.produto_ref_id}', 1)" title="Mover para baixo"><i class="fas fa-arrow-down"></i></button>
-               </div>`
-            : '';
+        const estadoFila = podeGerenciarFila ? '' : ' permissao-negada';
+        const reordenarHTML = `<div class="fila-card-reordenar${estadoFila}">
+               <button class="reordenar-btn up${estadoFila}" onclick="moverItemFila('${config.produto_ref_id}', -1)" aria-disabled="${!podeGerenciarFila}" title="Mover para cima"><i class="fas ${podeGerenciarFila ? 'fa-arrow-up' : 'fa-lock'}"></i></button>
+               <button class="reordenar-btn down${estadoFila}" onclick="moverItemFila('${config.produto_ref_id}', 1)" aria-disabled="${!podeGerenciarFila}" title="Mover para baixo"><i class="fas ${podeGerenciarFila ? 'fa-arrow-down' : 'fa-lock'}"></i></button>
+           </div>`;
         
-        const acaoProducaoHTML = podeGerenciarFila
-            ? `<div class="fila-card-acao-producao">
-                   <button class="es-btn-icon-estorno" onclick="iniciarProducao('${config.produto_ref_id}')" title="Iniciar Produção"><i class="fas fa-play-circle"></i></button>
-               </div>`
-            : '';
+        const acaoProducaoHTML = `<div class="fila-card-acao-producao${estadoFila}">
+               <button class="es-btn-icon-estorno${estadoFila}" onclick="iniciarProducao('${config.produto_ref_id}')" aria-disabled="${!podeGerenciarFila}" title="Iniciar Produção"><i class="fas ${podeGerenciarFila ? 'fa-play-circle' : 'fa-lock'}"></i></button>
+           </div>`;
 
         card.innerHTML = `
-            <div class="fila-card-ordenacao-wrapper ${podeGerenciarFila ? 'pode-arrastar' : ''}" 
-                 ${podeGerenciarFila ? `draggable="true" title="Arraste para reordenar"` : ''}>
+            <div class="fila-card-ordenacao-wrapper ${podeGerenciarFila ? 'pode-arrastar' : 'permissao-negada'}"
+                 ${podeGerenciarFila ? `draggable="true" title="Arraste para reordenar"` : 'aria-disabled="true" title="Sem permissão para reordenar a fila"'}>
                 ${reordenarHTML}
                 <div class="fila-card-posicao">#${index + 1}</div>
             </div>
@@ -1161,7 +1175,7 @@ function renderizarPromessasEmProducao() {
 async function anularPromessa(promessaId, nomeProduto) {
     // --- VERIFICAÇÃO DE PERMISSÃO NO INÍCIO ---
     if (!permissoesGlobaisEstoque.includes('anular-promessa-producao')) {
-        mostrarMensagem('Você não tem permissão para anular promessas de produção.', 'aviso');
+        mostrarBloqueioAcaoEstoque('Seu vínculo atual não possui permissão para anular promessas de produção.');
         return;
     }
 
@@ -1189,6 +1203,11 @@ async function anularPromessa(promessaId, nomeProduto) {
 }
 
 async function iniciarProducao(produtoRefId) {
+    if (!permissoesGlobaisEstoque.includes('gerenciar-fila-de-producao')) {
+        mostrarBloqueioAcaoEstoque('Seu vínculo atual não possui permissão para iniciar a produção pela fila.');
+        return;
+    }
+
     const item = saldosEstoqueGlobaisCompletos.find(s => s.produto_ref_id === produtoRefId);
     const confirmado = await mostrarConfirmacao(`Confirma o início da produção para <br><b>${item.produto_nome} - ${item.variante_nome || 'Padrão'}</b>?`, 'aviso');
 
@@ -1236,6 +1255,11 @@ function iniciarTimerContagemRegressiva(promessa) {
 
 
 async function salvarPrioridades() {
+    if (!permissoesGlobaisEstoque.includes('gerenciar-fila-de-producao')) {
+        mostrarBloqueioAcaoEstoque('Seu vínculo atual não possui permissão para salvar a ordem da fila de produção.');
+        return;
+    }
+
     const btn = document.getElementById('btnSalvarPrioridades');
     btn.disabled = true;
     btn.innerHTML = `${htmlUICarregando({ variante: 'inline', tamanho: 'sm' })} Salvando...`;
@@ -1274,7 +1298,7 @@ async function salvarPrioridades() {
 function abrirViewMovimento(item) {
     console.log('[abrirViewMovimento] Abrindo para o item:', item);
     if (!permissoesGlobaisEstoque.includes('gerenciar-estoque')) {
-        mostrarMensagem('Você não tem permissão para gerenciar o estoque.', 'aviso');
+        mostrarBloqueioAcaoEstoque('Seu vínculo atual não possui permissão para gerenciar o estoque.');
         return;
     }
     itemEstoqueSelecionado = { ...item }; // Armazena o item na variável de estado unificada
@@ -1355,7 +1379,22 @@ function prepararViewMovimento() {
         containerBotoesTipoOp.querySelectorAll('.movimento-op-btn').forEach(btn => {
             const newBtn = btn.cloneNode(true);
             btn.parentNode.replaceChild(newBtn, btn);
-            newBtn.addEventListener('click', () => atualizarCamposPorTipoOperacao(newBtn.dataset.tipo));
+            const permissaoPorTipo = {
+                ENTRADA_MANUAL: 'registrar-entrada-manual',
+                SAIDA_MANUAL: 'registrar-saida-manual',
+                DEVOLUCAO: 'registrar-devolucao',
+            };
+            const permissaoOperacao = permissaoPorTipo[newBtn.dataset.tipo];
+            const podeOperar = Boolean(permissaoOperacao && permissoesGlobaisEstoque.includes(permissaoOperacao));
+            newBtn.classList.toggle('permissao-negada', !podeOperar);
+            newBtn.setAttribute('aria-disabled', String(!podeOperar));
+            newBtn.addEventListener('click', () => {
+                if (!podeOperar) {
+                    mostrarBloqueioAcaoEstoque('Seu vínculo atual não possui permissão para realizar esta operação de estoque.');
+                    return;
+                }
+                atualizarCamposPorTipoOperacao(newBtn.dataset.tipo);
+            });
         });
     }
 
@@ -1368,7 +1407,10 @@ function prepararViewMovimento() {
     // Controla a visibilidade do botão de arquivar
     const btnArquivar = document.getElementById('arquivarItemBtn');
     if(btnArquivar) {
-        btnArquivar.style.display = permissoesGlobaisEstoque.includes('arquivar-produto-do-estoque') ? 'inline-flex' : 'none';
+        const podeArquivar = permissoesGlobaisEstoque.includes('arquivar-produto-do-estoque');
+        btnArquivar.style.display = 'inline-flex';
+        btnArquivar.classList.toggle('permissao-negada', !podeArquivar);
+        btnArquivar.setAttribute('aria-disabled', String(!podeArquivar));
     }
 
     // --- LÓGICA DO HISTÓRICO ---
@@ -1410,10 +1452,10 @@ function prepararViewMovimento() {
     const podeSaida = permissoesGlobaisEstoque.includes('registrar-saida-manual');
     const podeDevolucao = permissoesGlobaisEstoque.includes('registrar-devolucao');
 
-    // Habilita ou desabilita cada botão
-    if (btnEntrada) btnEntrada.disabled = !podeEntrada;
-    if (btnSaida) btnSaida.disabled = !podeSaida;
-    if (btnDevolucao) btnDevolucao.disabled = !podeDevolucao;
+    // Os botões permanecem visíveis; o listener exibe o popup quando a permissão falta.
+    if (btnEntrada) btnEntrada.disabled = false;
+    if (btnSaida) btnSaida.disabled = false;
+    if (btnDevolucao) btnDevolucao.disabled = false;
 
     // Lógica para definir a operação padrão e o estado do botão Salvar
     if (podeEntrada) {
@@ -1430,14 +1472,22 @@ function prepararViewMovimento() {
         mostrarMensagem('Você não tem permissão para realizar nenhuma operação de estoque.', 'aviso');
     }
 
-    // O botão de salvar só fica ativo se o usuário tiver permissão para PELO MENOS UMA operação.
+    // O botão de salvar permanece visível para explicar o bloqueio no clique.
     if (btnSalvar) {
-        btnSalvar.disabled = !(podeEntrada || podeSaida || podeDevolucao);
+        const podeSalvar = podeEntrada || podeSaida || podeDevolucao;
+        btnSalvar.disabled = false;
+        btnSalvar.classList.toggle('permissao-negada', !podeSalvar);
+        btnSalvar.setAttribute('aria-disabled', String(!podeSalvar));
     }
 }
 
 
 async function iniciarProcessoDeEstorno(movimentoId, saldoParaEstorno, botao) {
+    if (!permissoesGlobaisEstoque.includes('gerenciar-estoque')) {
+        mostrarBloqueioAcaoEstoque('Seu vínculo atual não possui permissão para estornar movimentos de estoque.');
+        return;
+    }
+
     if (isNaN(movimentoId) || isNaN(saldoParaEstorno)) {
         mostrarMensagem('Erro: Informações do movimento para estorno estão inválidas.', 'erro');
         return;
@@ -1578,6 +1628,11 @@ function mostrarPopupEstornoParcial(mensagem, quantidadeMaxima) {
 
 // Função para arquivar um item de estoque (ATUALIZADA)
 async function arquivarItemEstoque() {
+    if (!permissoesGlobaisEstoque.includes('arquivar-produto-do-estoque')) {
+        mostrarBloqueioAcaoEstoque('Seu vínculo atual não possui permissão para arquivar itens do estoque.');
+        return;
+    }
+
     // 1. Validação inicial
     if (!itemEstoqueSelecionado || !itemEstoqueSelecionado.produto_ref_id) {
         console.error("[arquivarItemEstoque] Tentativa de arquivar sem um item selecionado ou sem produto_ref_id.", itemEstoqueSelecionado);
@@ -1640,6 +1695,17 @@ async function salvarMovimentoManualEstoque() {
     }
 
     const tipoOperacao = document.getElementById('tipoMovimentoSelecionado').value;
+    const permissaoPorTipo = {
+        ENTRADA_MANUAL: 'registrar-entrada-manual',
+        SAIDA_MANUAL: 'registrar-saida-manual',
+        DEVOLUCAO: 'registrar-devolucao',
+    };
+    const permissaoOperacao = permissaoPorTipo[tipoOperacao];
+    if (!permissaoOperacao || !permissoesGlobaisEstoque.includes(permissaoOperacao)) {
+        mostrarBloqueioAcaoEstoque('Seu vínculo atual não possui permissão para realizar esta movimentação de estoque.');
+        return;
+    }
+
     const quantidadeStr = document.getElementById('quantidadeMovimentar').value;
     const observacao = document.getElementById('observacaoMovimento').value;
 
@@ -1980,19 +2046,22 @@ function renderizarHistoricoMovimentacoes(movimentos) {
         }
         
         // 3. Define as condições para mostrar o botão de estorno.
-        const podeEstornar = 
+        const movimentoPodeSerEstornado =
             mov.quantidade < 0 &&                               // É uma saída
             saldoDisponivelParaEstorno > 0 &&                   // Ainda tem saldo para estornar
-            !mov.tipo_movimento.startsWith('ESTORNO_') &&       // NÃO é um estorno
-            permissoesGlobaisEstoque.includes('gerenciar-estoque'); // Tem permissão
+            !mov.tipo_movimento.startsWith('ESTORNO_');          // NÃO é um estorno
+        const podeEstornar = permissoesGlobaisEstoque.includes('gerenciar-estoque');
 
-        // 4. Se todas as condições forem verdadeiras, cria e adiciona o botão.
-        if (podeEstornar) {
+        // 4. O botão permanece visível quando a permissão falta; o clique exibe o popup padrão.
+        if (movimentoPodeSerEstornado) {
             const cellAcoes = tr.cells[5];
             const btnEstornar = document.createElement('button');
-            btnEstornar.className = 'es-btn-icon-estorno btn-iniciar-estorno';
-            btnEstornar.title = `Estornar até ${saldoDisponivelParaEstorno} unidades`;
-            btnEstornar.innerHTML = '<i class="fas fa-undo"></i>';
+            btnEstornar.className = `es-btn-icon-estorno btn-iniciar-estorno${podeEstornar ? '' : ' permissao-negada'}`;
+            btnEstornar.title = podeEstornar
+                ? `Estornar até ${saldoDisponivelParaEstorno} unidades`
+                : 'Sem permissão para estornar este movimento';
+            btnEstornar.setAttribute('aria-disabled', String(!podeEstornar));
+            btnEstornar.innerHTML = `<i class="fas ${podeEstornar ? 'fa-undo' : 'fa-lock'}"></i>`;
             btnEstornar.dataset.movimentoId = mov.id;
             // Armazena o SALDO REAL disponível para estorno no botão
             btnEstornar.dataset.saldoParaEstorno = saldoDisponivelParaEstorno;
@@ -3238,8 +3307,12 @@ function setupEventListenersEstoque() {
         } else {
             // Se NÃO tem permissão, adiciona a classe de estilo e o listener para o popup
             btnVerArquivados.classList.add('permissao-negada');
+            btnVerArquivados.setAttribute('aria-disabled', 'true');
             btnVerArquivados.addEventListener('click', () => {
-                mostrarMensagem('Você não tem permissão para visualizar e editar itens arquivados.', 'aviso');
+                mostrarPopupPaginaBloqueada(
+                    'Itens arquivados',
+                    'Seu vínculo atual não possui permissão para visualizar e editar itens arquivados.',
+                );
             });
         }
     }
@@ -3277,10 +3350,13 @@ function setupEventListenersEstoque() {
             });
         } else {
             btnRealizarInventario.classList.add('permissao-negada');
-            btnRealizarInventario.disabled = true; // Desabilita semanticamente
+            btnRealizarInventario.setAttribute('aria-disabled', 'true');
             btnRealizarInventario.addEventListener('click', (e) => {
                 e.preventDefault(); // Garante que nenhuma ação padrão ocorra
-                mostrarMensagem('Você não tem permissão para realizar inventários.', 'aviso');
+                mostrarPopupPaginaBloqueada(
+                    'Inventário de Estoque',
+                    'Seu vínculo atual não possui permissão para realizar inventários.',
+                );
             });
         }
     }

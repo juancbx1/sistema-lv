@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { mostrarMensagem, mostrarConfirmacao } from '/js/utils/popups.js';
 import UICarregando from './UICarregando';
 import UIFeedbackNotFound from './UIFeedbackNotFound';
+import UIBloqueio from './UIBloqueio';
 import type {
     IncenPagamentosSubAba,
     PremioGanhoItem,
@@ -61,13 +62,18 @@ function LinhaPremiacao({ item, onPagar, pagando }: LinhaPremiacaoProps) {
                     )}
                 </div>
             </div>
-            <button
-                className="gs-btn gs-btn-primario incen-pag-btn-pagar"
-                onClick={() => onPagar(item.id)}
-                disabled={pagando === item.id}
+            <UIBloqueio
+                permissao="pagar-premiacoes-gincanas"
+                mensagem="Você não tem permissão para pagar premiações de gincanas."
             >
-                {pagando === item.id ? '...' : <><i className="fas fa-check"></i> Pagar</>}
-            </button>
+                <button
+                    className="gs-btn gs-btn-primario incen-pag-btn-pagar"
+                    onClick={() => onPagar(item.id)}
+                    disabled={pagando === item.id}
+                >
+                    {pagando === item.id ? '...' : <><i className="fas fa-check"></i> Pagar</>}
+                </button>
+            </UIBloqueio>
         </div>
     );
 }
@@ -216,16 +222,21 @@ export default function IncenPagamentosTab() {
                                     <i className="fas fa-trophy"></i>
                                     <strong>{totalPendente}</strong> prêmio(s) aguardando pagamento
                                 </p>
-                                <button
-                                    className="gs-btn gs-btn-primario"
-                                    onClick={() => void handlePagarLote()}
-                                    disabled={pagandoLote}
+                                <UIBloqueio
+                                    permissao="pagar-premiacoes-gincanas"
+                                    mensagem="Você não tem permissão para pagar premiações de gincanas."
                                 >
-                                    {pagandoLote
-                                        ? 'Pagando...'
-                                        : <><i className="fas fa-check-double"></i> Pagar todos ({totalPendente})</>
-                                    }
-                                </button>
+                                    <button
+                                        className="gs-btn gs-btn-primario"
+                                        onClick={() => void handlePagarLote()}
+                                        disabled={pagandoLote}
+                                    >
+                                        {pagandoLote
+                                            ? 'Pagando...'
+                                            : <><i className="fas fa-check-double"></i> Pagar todos ({totalPendente})</>
+                                        }
+                                    </button>
+                                </UIBloqueio>
                             </div>
                         )}
 

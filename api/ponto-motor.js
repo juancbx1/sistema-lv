@@ -51,6 +51,8 @@ const INTERVALOS = Object.freeze([
     },
 ]);
 
+const JANELA_LIBERACAO_ANTECIPADA_MS = 20 * 60 * 1000;
+
 function normalizarHora(horario) {
     if (!horario) return null;
     const valor = String(horario).substring(0, 5);
@@ -65,6 +67,24 @@ function horaParaMinutos(horario) {
     if (!valor) return null;
     const [hora, minuto] = valor.split(':').map(Number);
     return hora * 60 + minuto;
+}
+
+function minutosParaHora(totalMinutos) {
+    const total = ((totalMinutos % (24 * 60)) + (24 * 60)) % (24 * 60);
+    return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
+function calcularRetornoDinamico(contexto, intervalo, horarioSaidaEfetivo) {
+    const saidaPlanejadaMin = horaParaMinutos(contexto[intervalo.horarioSaida]);
+    const retornoPlanejadoMin = horaParaMinutos(contexto[intervalo.horarioRetorno]);
+    const saidaEfetivaMin = horaParaMinutos(horarioSaidaEfetivo);
+    if (saidaEfetivaMin === null || saidaPlanejadaMin === null || retornoPlanejadoMin === null) return null;
+
+    const duracaoPadrao = intervalo.tipo === 'ALMOCO' ? 60 : 15;
+    const duracao = retornoPlanejadoMin - saidaPlanejadaMin > 0
+        ? retornoPlanejadoMin - saidaPlanejadaMin
+        : duracaoPadrao;
+    return minutosParaHora(saidaEfetivaMin + duracao);
 }
 
 // O fuso de negócio é America/Sao_Paulo. A aplicação opera atualmente em
@@ -221,30 +241,50 @@ async function reconciliarEntrada(dbClient, contexto, estado, agora, eventos) {
 
 async function reconciliarIntervalo(dbClient, contexto, estado, intervalo, agora, eventos) {
     const horarioSaida = normalizarHora(contexto[intervalo.horarioSaida]);
-    const horarioRetorno = normalizarHora(contexto[intervalo.horarioRetorno]);
+    const horarioRetornoPlanejado = normalizarHora(contexto[intervalo.horarioRetorno]);
     const agoraMin = horaParaMinutos(horaLocalSaoPaulo(agora));
     const saidaMin = horaParaMinutos(horarioSaida);
-    const retornoMin = horaParaMinutos(horarioRetorno);
-    if (!horarioSaida || !horarioRetorno || saidaMin === null || retornoMin === null || agoraMin < saidaMin) {
+    if (!horarioSaida || !horarioRetornoPlanejado || saidaMin === null || agoraMin === null) {
         return;
     }
 
-    const abreEm = instantePlanejadoSaoPaulo(contexto.data_jornada, horarioSaida);
-    const venceEm = new Date(abreEm.getTime() + 30_000);
-    const abertura = await abrirTransicaoPendente(dbClient, {
-        empresaId: contexto.empresa_id,
-        funcionarioId: contexto.funcionario_id,
-        dataJornada: contexto.data_jornada,
-        tipoIntervalo: intervalo.tipo,
-        horarioSaidaPlanejado: horarioSaida,
-        horarioRetornoPlanejado: horarioRetorno,
-        abreEm,
-        venceEm,
-        payload: { motor: 'reconciliacao-jornada' },
-    });
-    if (abertura.evento) eventos.push(abertura.evento);
+    // Uma liberação manual antecipada pode resolver a transição antes de S1/S2.
+    // Nesse caso, a reconciliação só deve retornar cedo quando ainda não existe
+    // uma transição resolvida; depois de S ela segue o mesmo caminho ordinário.
+    let transicao = null;
+    if (agoraMin < saidaMin) {
+        const existente = await dbClient.query(
+            `SELECT *
+               FROM ponto_transicoes_pendentes
+              WHERE empresa_id = $1
+                AND funcionario_id = $2
+                AND data_jornada = $3::date
+                AND tipo_intervalo = $4
+              FOR UPDATE`,
+            [contexto.empresa_id, contexto.funcionario_id, contexto.data_jornada, intervalo.tipo]
+        );
+        transicao = existente.rows[0] || null;
+        if (!transicao || transicao.status === STATUS_TRANSICAO.PENDENTE) return;
+    }
 
-    let transicao = abertura.transicao;
+    if (!transicao) {
+        const abreEm = instantePlanejadoSaoPaulo(contexto.data_jornada, horarioSaida);
+        const venceEm = new Date(abreEm.getTime() + 30_000);
+        const abertura = await abrirTransicaoPendente(dbClient, {
+            empresaId: contexto.empresa_id,
+            funcionarioId: contexto.funcionario_id,
+            dataJornada: contexto.data_jornada,
+            tipoIntervalo: intervalo.tipo,
+            horarioSaidaPlanejado: horarioSaida,
+            horarioRetornoPlanejado,
+            abreEm,
+            venceEm,
+            payload: { motor: 'reconciliacao-jornada' },
+        });
+        if (abertura.evento) eventos.push(abertura.evento);
+        transicao = abertura.transicao;
+    }
+
     if (transicao.status === STATUS_TRANSICAO.PENDENTE && new Date(agora) >= new Date(transicao.vence_em)) {
         const resolucao = await resolverTransicaoPendente(dbClient, {
             transicaoId: transicao.id,
@@ -258,6 +298,10 @@ async function reconciliarIntervalo(dbClient, contexto, estado, intervalo, agora
         if (resolucao.aplicada && resolucao.evento) eventos.push(resolucao.evento);
     }
 
+    const horarioRetorno = normalizarHora(transicao.horario_retorno_planejado) || horarioRetornoPlanejado;
+    const retornoMin = horaParaMinutos(horarioRetorno);
+    if (retornoMin === null) return;
+
     if (transicao.status !== STATUS_TRANSICAO.PENDENTE && transicao.horario_saida_efetivo) {
         await aplicarCampoPonto(dbClient, estado, {
             funcionarioId: contexto.funcionario_id,
@@ -268,7 +312,41 @@ async function reconciliarIntervalo(dbClient, contexto, estado, intervalo, agora
         });
     }
 
-    if (agoraMin < retornoMin || estado.row?.[intervalo.campoRetorno] || transicao.status === STATUS_TRANSICAO.PENDENTE) return;
+    if (agoraMin < retornoMin || transicao.status === STATUS_TRANSICAO.PENDENTE) return;
+
+    // Um supervisor pode registrar o retorno antes do horÃ¡rio programado.
+    // O campo legado jÃ¡ estarÃ¡ preenchido, mas o motor nÃ£o deve criar um
+    // segundo retorno automÃ¡tico quando chegar ao horÃ¡rio original.
+    const retornoManual = await dbClient.query(
+        `SELECT 1
+           FROM ponto_eventos manual
+          WHERE manual.empresa_id = $1
+            AND manual.funcionario_id = $2
+            AND manual.data_jornada = $3::date
+            AND manual.tipo_evento = $4
+            AND manual.transicao_tipo = $5
+            AND NOT EXISTS (
+                SELECT 1
+                  FROM ponto_eventos correcao
+                 WHERE correcao.empresa_id = manual.empresa_id
+                   AND correcao.funcionario_id = manual.funcionario_id
+                   AND correcao.data_jornada = manual.data_jornada
+                   AND correcao.tipo_evento = $6
+                   AND correcao.transicao_tipo = manual.transicao_tipo
+                   AND correcao.payload->>'acao' = 'DESFAZER_RETORNO_MANUAL'
+                   AND correcao.id > manual.id
+            )
+          LIMIT 1`,
+        [
+            contexto.empresa_id,
+            contexto.funcionario_id,
+            contexto.data_jornada,
+            TIPOS_EVENTO_PONTO.RETORNO_MANUAL,
+            intervalo.tipo,
+            TIPOS_EVENTO_PONTO.CORRECAO_MANUAL,
+        ]
+    );
+    if (retornoManual.rowCount > 0) return;
 
     const evento = await registrarEventoHorario(dbClient, {
         empresaId: contexto.empresa_id,
@@ -365,6 +443,7 @@ export async function confirmarSaidaIntervaloPendente(dbClient, {
     autorId = null,
     autorNome = null,
     motivo = null,
+    permitirAberturaAntecipada = false,
 }) {
     const contexto = await carregarContextoJornada(dbClient, funcionarioId, empresaId, dataJornada);
     if (!ehDiaOrdinario(contexto)) {
@@ -380,7 +459,36 @@ export async function confirmarSaidaIntervaloPendente(dbClient, {
         throw error;
     }
 
-    const pendenteResult = await dbClient.query(
+    const intervalo = INTERVALOS.find((item) => item.tipo === tipoIntervalo);
+    if (!intervalo) {
+        const error = new Error(`Tipo de intervalo inválido: ${tipoIntervalo}.`);
+        error.statusCode = 400;
+        error.codigo = 'TIPO_INTERVALO_INVALIDO';
+        throw error;
+    }
+
+    const horarioSaidaPlanejado = normalizarHora(contexto[intervalo.horarioSaida]);
+    const horarioRetornoPlanejado = normalizarHora(contexto[intervalo.horarioRetorno]);
+    const abreEmPlanejado = instantePlanejadoSaoPaulo(dataJornada, horarioSaidaPlanejado);
+    if (!horarioSaidaPlanejado || !horarioRetornoPlanejado || !abreEmPlanejado) {
+        const error = new Error(`Não há horário de ${tipoIntervalo.toLowerCase()} configurado para esta jornada.`);
+        error.statusCode = 409;
+        error.codigo = 'INTERVALO_SEM_HORARIO';
+        throw error;
+    }
+
+    const ehLiberacaoAntecipada = new Date(agora) < abreEmPlanejado;
+    if (permitirAberturaAntecipada && ehLiberacaoAntecipada) {
+        const inicioJanela = new Date(abreEmPlanejado.getTime() - JANELA_LIBERACAO_ANTECIPADA_MS);
+        if (new Date(agora) < inicioJanela) {
+            const error = new Error('A liberação antecipada só pode ser feita nos 20 minutos anteriores ao horário programado.');
+            error.statusCode = 409;
+            error.codigo = 'LIBERACAO_ANTECIPADA_FORA_DA_JANELA';
+            throw error;
+        }
+    }
+
+    let pendenteResult = await dbClient.query(
         `SELECT *
            FROM ponto_transicoes_pendentes
           WHERE empresa_id = $1
@@ -391,15 +499,63 @@ export async function confirmarSaidaIntervaloPendente(dbClient, {
         [empresaId, funcionarioId, dataJornada, tipoIntervalo]
     );
     if (pendenteResult.rowCount === 0) {
-        const error = new Error('A transição ainda não foi aberta pelo motor de jornada.');
-        error.statusCode = 409;
-        error.codigo = 'TRANSICAO_NAO_ABERTA';
-        throw error;
+        if (!permitirAberturaAntecipada) {
+            const error = new Error('A transição ainda não foi aberta pelo motor de jornada.');
+            error.statusCode = 409;
+            error.codigo = 'TRANSICAO_NAO_ABERTA';
+            throw error;
+        }
+
+        const aberturaManual = ehLiberacaoAntecipada;
+        const abreEm = aberturaManual ? new Date(agora) : abreEmPlanejado;
+        const venceEm = aberturaManual
+            ? new Date(new Date(agora).getTime() + 30_000)
+            : new Date(abreEmPlanejado.getTime() + 30_000);
+        const horarioSaidaEfetivo = aberturaManual
+            ? horaLocalSaoPaulo(agora)
+            : horarioSaidaPlanejado;
+        const horarioRetornoEfetivo = aberturaManual
+            ? calcularRetornoDinamico(contexto, intervalo, horarioSaidaEfetivo)
+            : horarioRetornoPlanejado;
+        await abrirTransicaoPendente(dbClient, {
+            empresaId,
+            funcionarioId,
+            dataJornada,
+            tipoIntervalo,
+            horarioSaidaPlanejado,
+            horarioRetornoPlanejado: horarioRetornoEfetivo || horarioRetornoPlanejado,
+            abreEm,
+            venceEm,
+            autorId,
+            autorNome,
+            payload: {
+                origem: aberturaManual ? 'liberacao-manual-antecipada' : 'confirmacao-supervisor',
+                horario_abertura_planejado: abreEmPlanejado.toISOString(),
+            },
+        });
+
+        // Releia com lock: o INSERT acima é idempotente e outra chamada pode
+        // ter criado a mesma transição entre as duas operações.
+        pendenteResult = await dbClient.query(
+            `SELECT *
+               FROM ponto_transicoes_pendentes
+              WHERE empresa_id = $1
+                AND funcionario_id = $2
+                AND data_jornada = $3::date
+                AND tipo_intervalo = $4
+              FOR UPDATE`,
+            [empresaId, funcionarioId, dataJornada, tipoIntervalo]
+        );
     }
 
     const pendente = pendenteResult.rows[0];
     if (pendente.status !== STATUS_TRANSICAO.PENDENTE) {
-        return { aplicada: false, ja_resolvida: true, transicao: pendente };
+        return {
+            aplicada: false,
+            ja_resolvida: true,
+            transicao: pendente,
+            horario_retorno_planejado: pendente.horario_retorno_planejado,
+        };
     }
     if (new Date(agora) > new Date(pendente.vence_em)) {
         const error = new Error('A janela de confirmação terminou; registre uma exceção com motivo.');
@@ -414,18 +570,22 @@ export async function confirmarSaidaIntervaloPendente(dbClient, {
     const resolucao = await resolverTransicaoPendente(dbClient, {
         transicaoId: pendente.id,
         modo: 'manual',
-        horarioSaidaEfetivo: pendente.horario_saida_planejado,
+        horarioSaidaEfetivo: ehLiberacaoAntecipada
+            ? horaLocalSaoPaulo(agora)
+            : pendente.horario_saida_planejado,
         autorId,
         autorNome,
         motivo,
         agora,
         tipoEvento: eventoSaida,
         idempotencyKey: `saida-confirmada:${pendente.id}`,
-        payload: { confirmacao_supervisor: true },
+        payload: {
+            confirmacao_supervisor: true,
+            liberacao_antecipada: ehLiberacaoAntecipada,
+        },
     });
 
     const estado = await carregarProjecaoPonto(dbClient, funcionarioId, empresaId, dataJornada);
-    const intervalo = INTERVALOS.find((item) => item.tipo === tipoIntervalo);
     await aplicarCampoPonto(dbClient, estado, {
         funcionarioId,
         empresaId,
@@ -433,7 +593,14 @@ export async function confirmarSaidaIntervaloPendente(dbClient, {
         campo: intervalo.campoSaida,
         valor: String(resolucao.transicao.horario_saida_efetivo).substring(0, 5),
     });
-    return { ...resolucao, horario_retorno_planejado: pendente.horario_retorno_planejado };
+    await aplicarCampoPonto(dbClient, estado, {
+        funcionarioId,
+        empresaId,
+        dataJornada,
+        campo: intervalo.campoRetorno,
+        valor: String(resolucao.transicao.horario_retorno_planejado).substring(0, 5),
+    });
+    return { ...resolucao, horario_retorno_planejado: resolucao.transicao.horario_retorno_planejado };
 }
 
 export async function reconciliarJornadaFuncionarios(dbClient, {

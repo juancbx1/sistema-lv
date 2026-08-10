@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { mostrarConfirmacao, mostrarMensagem } from '/js/utils/popups.js';
 import UICarregando from './UICarregando';
 import UIFeedbackNotFound from './UIFeedbackNotFound';
+import UIBloqueio from './UIBloqueio';
 import type {
     IncenProduto,
     PontoConfig,
@@ -111,21 +112,25 @@ function ConfigRow({
             </div>
             <ToggleAtivo ativo={ativo} onChange={setAtivo} />
             <div className="incen-config-acoes">
-                <button
-                    className={`incen-regra-btn incen-regra-btn--salvar${mudou ? ' ativo' : ''}`}
-                    onClick={() => void handleSalvar()}
-                    disabled={salvando || !mudou}
-                    title="Salvar"
-                >
-                    {salvando ? <UICarregando variante="inline" /> : <i className="fas fa-save" />}
-                </button>
-                <button
-                    className="incen-regra-btn incen-regra-btn--excluir"
-                    onClick={() => onExcluir(config)}
-                    title="Excluir"
-                >
-                    <i className="fas fa-trash" />
-                </button>
+                <UIBloqueio permissao="gerenciar-pontos-atividade" mensagem="Você não tem permissão para salvar pontos por atividade.">
+                    <button
+                        className={`incen-regra-btn incen-regra-btn--salvar${mudou ? ' ativo' : ''}`}
+                        onClick={() => void handleSalvar()}
+                        disabled={salvando || !mudou}
+                        title="Salvar"
+                    >
+                        {salvando ? <UICarregando variante="inline" /> : <i className="fas fa-save" />}
+                    </button>
+                </UIBloqueio>
+                <UIBloqueio permissao="gerenciar-pontos-atividade" mensagem="Você não tem permissão para excluir pontos por atividade.">
+                    <button
+                        className="incen-regra-btn incen-regra-btn--excluir"
+                        onClick={() => onExcluir(config)}
+                        title="Excluir"
+                    >
+                        <i className="fas fa-trash" />
+                    </button>
+                </UIBloqueio>
             </div>
         </div>
     );
@@ -254,13 +259,15 @@ function NovaConfigForm({
                 </div>
                 <ToggleAtivo ativo={ativo} onChange={setAtivo} />
                 <div className="incen-nova-config-btns">
-                    <button
-                        className="incen-regra-btn incen-regra-btn--salvar ativo"
-                        onClick={() => void handleSalvar()}
-                        disabled={salvando}
-                    >
-                        <i className="fas fa-check" /> Salvar
-                    </button>
+                    <UIBloqueio permissao="gerenciar-pontos-atividade" mensagem="Você não tem permissão para criar pontos por atividade.">
+                        <button
+                            className="incen-regra-btn incen-regra-btn--salvar ativo"
+                            onClick={() => void handleSalvar()}
+                            disabled={salvando}
+                        >
+                            <i className="fas fa-check" /> Salvar
+                        </button>
+                    </UIBloqueio>
                     <button className="incen-regra-btn incen-regra-btn--cancelar" onClick={onCancelar}>
                         <i className="fas fa-times" />
                     </button>
@@ -309,9 +316,11 @@ function GrupoProduto({
                     {configsFiltradas.length} config{configsFiltradas.length !== 1 ? 's' : ''}
                 </span>
                 {!adicionando && (
-                    <button className="incen-grupo-add-btn" onClick={() => setAdicionando(true)}>
-                        <i className="fas fa-plus" /> Adicionar
-                    </button>
+                    <UIBloqueio permissao="gerenciar-pontos-atividade" mensagem="Você não tem permissão para adicionar pontos por atividade.">
+                        <button className="incen-grupo-add-btn" onClick={() => setAdicionando(true)}>
+                            <i className="fas fa-plus" /> Adicionar
+                        </button>
+                    </UIBloqueio>
                 )}
             </div>
 
@@ -518,12 +527,14 @@ export default function IncenPontosTab() {
                     ))}
                 </div>
                 {!addGlobalState && (
-                    <button
-                        className="gs-btn gs-btn-primario"
-                        onClick={() => setAddGlobalState('buscando')}
-                    >
-                        <i className="fas fa-plus" /> Nova Configuração
-                    </button>
+                    <UIBloqueio permissao="gerenciar-pontos-atividade" mensagem="Você não tem permissão para criar configurações de pontos.">
+                        <button
+                            className="gs-btn gs-btn-primario"
+                            onClick={() => setAddGlobalState('buscando')}
+                        >
+                            <i className="fas fa-plus" /> Nova Configuração
+                        </button>
+                    </UIBloqueio>
                 )}
             </div>
 

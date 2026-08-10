@@ -1855,6 +1855,7 @@ body.autenticado {
     background-color: var(--op-cor-branco);
     border-radius: var(--op-raio-borda-card);
     box-shadow: var(--op-sombra-card);
+    border-left: 4px solid #e2e8f0;
 }
 
 .op-filtro-busca-wrapper {
@@ -5307,116 +5308,6 @@ body.autenticado {
 }
 
 /* =====================================================
-   MELHORIA-07 — Sugestão Inteligente de Tarefa
-   ===================================================== */
-.op-sugestao-destaque {
-    border: 2px solid #f39c12;
-    border-radius: 10px;
-    background: linear-gradient(135deg, #fffbf0 0%, #fff8e7 100%);
-    margin-bottom: 14px;
-    overflow: hidden;
-    box-shadow: 0 2px 8px rgba(243,156,18,0.15);
-}
-.op-sugestao-header {
-    background: #f39c12;
-    color: #fff;
-    font-size: 0.72rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    padding: 5px 12px;
-}
-.op-sugestao-header i {
-    margin-right: 5px;
-}
-.op-sugestao-corpo {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
-}
-.op-sugestao-img {
-    width: 52px;
-    height: 52px;
-    object-fit: cover;
-    border-radius: 6px;
-    flex-shrink: 0;
-    border: 1px solid #f0d090;
-}
-.op-sugestao-info {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
-.op-sugestao-produto {
-    font-size: 0.88rem;
-    font-weight: 700;
-    color: #2c3e50;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.op-sugestao-variante {
-    font-size: 0.75rem;
-    color: #7f8c8d;
-}
-.op-sugestao-processo {
-    font-size: 0.78rem;
-    color: #34495e;
-    font-weight: 600;
-}
-.op-sugestao-tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    margin-top: 4px;
-}
-.op-sugestao-tag {
-    font-size: 0.65rem;
-    font-weight: 700;
-    padding: 2px 7px;
-    border-radius: 20px;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-}
-.op-sugestao-tag.etapa {
-    background: #eaf4ff;
-    color: #2980b9;
-    border: 1px solid #aed6f1;
-}
-.op-sugestao-tag.especialista {
-    background: #eafaf1;
-    color: #27ae60;
-    border: 1px solid #a9dfbf;
-}
-.op-sugestao-tag.urgente {
-    background: #fdf2e9;
-    color: #e67e22;
-    border: 1px solid #f5cba7;
-}
-.op-sugestao-btn {
-    flex-shrink: 0;
-    background: #f39c12;
-    color: #fff;
-    border: none;
-    border-radius: 8px;
-    padding: 10px 16px;
-    font-size: 0.82rem;
-    font-weight: 700;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    min-height: 44px;
-    transition: background 0.15s;
-}
-.op-sugestao-btn:hover { background: #d68910; }
-.op-sugestao-btn.selecionado { background: #27ae60; }
-.op-sugestao-btn.selecionado:hover { background: #1e8449; }
-
-/* =====================================================
    Linha do Tempo — Header + Modal Info (ⓘ)
    ===================================================== */
 .bs-timeline-header {
@@ -8759,20 +8650,38 @@ body.autenticado {
    Contorno suave + raio único de 14px + faixa interna de 3px.
    ========================================================================== */
 
+.op-aba-gerenciamento .op-filtros-container-redesenhado,
 .op-aba-gerenciamento .op-card-react,
+.op-aba-gerenciamento .op-agente-idle-card,
 .op-aba-gerenciamento .op-agente-item,
-.op-aba-gerenciamento .op-lote-item {
+.op-aba-gerenciamento .op-lote-item,
+.op-aba-gerenciamento .op-modal-v2,
+.op-aba-gerenciamento .op-lote-modal {
     --op-charme-cor: #3b82f6;
     position: relative;
-    border: 1px solid var(--gs-borda, #dcdfe4);
+    border: 1px solid #e5ebf2;
+    border-color: color-mix(in srgb, var(--op-charme-cor) 28%, #e5ebf2);
     border-radius: 14px;
     box-shadow: 0 2px 7px rgba(15, 23, 42, 0.05);
     overflow: hidden;
 }
 
+.op-aba-gerenciamento .op-filtros-container-redesenhado,
+.op-aba-gerenciamento .op-card-react,
+.op-aba-gerenciamento .op-agente-idle-card,
+.op-aba-gerenciamento .op-lote-item,
+.op-aba-gerenciamento .op-modal-v2,
+.op-aba-gerenciamento .op-lote-modal {
+    background: color-mix(in srgb, var(--op-charme-cor) 3%, #ffffff);
+}
+
+.op-aba-gerenciamento .op-filtros-container-redesenhado .card-borda-charme,
 .op-aba-gerenciamento .op-card-react .card-borda-charme,
+.op-aba-gerenciamento .op-agente-idle-card .card-borda-charme,
 .op-aba-gerenciamento .op-agente-item .card-borda-charme,
-.op-aba-gerenciamento .op-lote-item .card-borda-charme {
+.op-aba-gerenciamento .op-lote-item .card-borda-charme,
+.op-aba-gerenciamento .op-modal-v2 .card-borda-charme,
+.op-aba-gerenciamento .op-lote-modal > .card-borda-charme {
     position: absolute;
     inset: 0;
     z-index: 2;
@@ -8798,17 +8707,54 @@ body.autenticado {
 .op-aba-gerenciamento .op-card-react.status-radar-atencao { --op-charme-cor: #f59e0b; }
 .op-aba-gerenciamento .op-card-react.status-radar-critico { --op-charme-cor: #ef4444; }
 
+/* Filtros: faixa neutra/azul para estabelecer o início da hierarquia. */
+.op-aba-gerenciamento .op-filtros-container-redesenhado {
+    --op-charme-cor: #3b82f6;
+    border-left: 1px solid color-mix(in srgb, var(--op-charme-cor) 28%, #e5ebf2);
+}
+
+/* Central do agente: o contexto da página colore o contorno e a faixa. */
+.op-aba-gerenciamento .op-agente-idle-card {
+    --op-charme-cor: #3b82f6;
+    border-width: 1px;
+}
+.op-aba-gerenciamento .op-agente-idle-card.alerta {
+    --op-charme-cor: #ef4444;
+    border-color: color-mix(in srgb, var(--op-charme-cor) 28%, #e5ebf2);
+}
+.op-aba-gerenciamento .op-agente-idle-card.parcial {
+    --op-charme-cor: #f59e0b;
+    border-color: color-mix(in srgb, var(--op-charme-cor) 28%, #e5ebf2);
+}
+
+/* Itens pequenos mantêm a mesma geometria, inclusive no estado parcial. */
 .op-aba-gerenciamento .op-agente-item {
     --op-charme-cor: #3b82f6;
     padding-left: 13px;
 }
 .op-aba-gerenciamento .op-agente-item.parcial { --op-charme-cor: #f97316; }
 .op-aba-gerenciamento .op-agente-item.selecionado {
-    background: #f8fbff;
+    border-color: color-mix(in srgb, var(--op-charme-cor) 58%, #e5ebf2);
 }
 
 .op-aba-gerenciamento .op-lote-item { --op-charme-cor: #3b82f6; }
 .op-aba-gerenciamento .op-lote-item.parcial { --op-charme-cor: #f97316; }
+
+/* Modal de detalhes: substitui a pseudo-borda legada pelo componente padrão. */
+.op-aba-gerenciamento .op-modal-v2 {
+    --op-charme-cor: #94a3b8;
+    border-radius: 14px;
+}
+.op-aba-gerenciamento .op-modal-v2.status-em-aberto,
+.op-aba-gerenciamento .op-modal-v2.status-produzindo { --op-charme-cor: #94a3b8; }
+.op-aba-gerenciamento .op-modal-v2.status-finalizado { --op-charme-cor: #007bff; }
+.op-aba-gerenciamento .op-modal-v2.status-cancelada { --op-charme-cor: #dc3545; }
+.op-aba-gerenciamento .op-modal-v2.status-pronta-finalizar { --op-charme-cor: #22c55e; }
+.op-aba-gerenciamento .op-modal-v2::before { display: none; }
+
+/* Modal de finalização em lote: azul é a cor da ação, laranja é o parcial. */
+.op-aba-gerenciamento .op-lote-modal { --op-charme-cor: #3b82f6; }
+.op-aba-gerenciamento .op-lote-modal > .card-borda-charme { border-radius: inherit; }
 
 /* ==========================================================================
    REDESIGN DOS CARDS DE JORNADA — segunda fatia visual
@@ -10012,6 +9958,23 @@ body.autenticado {
     flex: 1 1 auto;
 }
 
+.op-redesign-origens-pos-op {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 5px;
+    color: #9a3412;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1.3;
+}
+
+.fila-origens-pos-op {
+    color: #9a3412;
+    font-size: 0.68rem;
+    font-weight: 700;
+}
+
 .op-redesign-produto {
     margin: 0;
     padding: 10px;
@@ -10952,21 +10915,6 @@ body.autenticado {
     min-width: 0;
 }
 
-.op-atribuicao-container .op-sugestao-destaque {
-    margin-bottom: 12px;
-    border-color: #f2c36b;
-    border-radius: 14px;
-    box-shadow: 0 4px 14px rgba(245, 158, 11, 0.12);
-}
-
-.op-atribuicao-container .op-sugestao-corpo {
-    padding: 10px 12px;
-}
-
-.op-atribuicao-container .op-sugestao-btn {
-    min-height: 44px;
-}
-
 .op-atribuicao-container .op-confirmacao-lista {
     padding: 4px;
 }
@@ -11121,29 +11069,42 @@ body.autenticado {
    acompanhando o contorno do card por meio de box-shadow inset.
    ============================================================================ */
 
+.op-aba-cortes .op-cortes-radar,
+.op-aba-cortes .op-agente-idle-card,
+.op-aba-cortes .op-cortes-agente-resultado,
+.op-aba-cortes .op-quicklog-panel,
 .op-aba-cortes .op-corte-produto-card,
 .op-aba-cortes .op-corte-variante-card,
 .op-aba-cortes .op-corte-resumo-card,
 .op-aba-cortes .op-corte-item,
 .op-aba-cortes .op-cortes-agente-card,
 .op-aba-cortes .op-quicklog-fila-item,
+.op-aba-externo .op-externo-tela-wrapper,
+.op-aba-externo .op-externo-tipo-card,
 .op-aba-externo .op-card-react,
 .op-aba-externo .op-item-confirmacao-card,
 .op-aba-externo .op-externo-historico-item {
     --op-charme-cor: #3b82f6;
     position: relative;
-    border: 1px solid var(--gs-borda, #dcdfe4);
+    border: 1px solid #e5ebf2;
+    border-color: color-mix(in srgb, var(--op-charme-cor) 28%, #e5ebf2);
     border-radius: 14px;
     box-shadow: 0 2px 7px rgba(15, 23, 42, 0.05);
     overflow: hidden;
 }
 
+.op-aba-cortes .op-cortes-radar .card-borda-charme,
+.op-aba-cortes .op-agente-idle-card .card-borda-charme,
+.op-aba-cortes .op-cortes-agente-resultado .card-borda-charme,
+.op-aba-cortes .op-quicklog-panel .card-borda-charme,
 .op-aba-cortes .op-corte-produto-card .card-borda-charme,
 .op-aba-cortes .op-corte-variante-card .card-borda-charme,
 .op-aba-cortes .op-corte-resumo-card .card-borda-charme,
 .op-aba-cortes .op-corte-item .card-borda-charme,
 .op-aba-cortes .op-cortes-agente-card .card-borda-charme,
 .op-aba-cortes .op-quicklog-fila-item .card-borda-charme,
+.op-aba-externo .op-externo-tela-wrapper .card-borda-charme,
+.op-aba-externo .op-externo-tipo-card .card-borda-charme,
 .op-aba-externo .op-card-react .card-borda-charme,
 .op-aba-externo .op-item-confirmacao-card .card-borda-charme,
 .op-aba-externo .op-externo-historico-item .card-borda-charme {
@@ -11159,7 +11120,15 @@ body.autenticado {
     transition: box-shadow 0.2s ease;
 }
 
-/* Cortes: a cor acompanha o produto e o estado do estoque. */
+/* Cortes: as cores comunicam disponibilidade, atenção e urgência. */
+.op-aba-cortes .op-cortes-radar { --op-charme-cor: #3b82f6; }
+.op-aba-cortes .op-cortes-radar.inativo { --op-charme-cor: #ef4444; }
+.op-aba-cortes .op-agente-idle-card { --op-charme-cor: #3b82f6; }
+.op-aba-cortes .op-agente-idle-card.alerta { --op-charme-cor: #ef4444; }
+.op-aba-cortes .op-agente-idle-card.parcial { --op-charme-cor: #f59e0b; }
+.op-aba-cortes .op-cortes-agente-resultado { --op-charme-cor: #3b82f6; }
+.op-aba-cortes .op-cortes-agente-resultado.vazio { --op-charme-cor: #22c55e; }
+.op-aba-cortes .op-quicklog-panel { --op-charme-cor: #3b82f6; }
 .op-aba-cortes .op-quicklog-fila-item { --op-charme-cor: #3b82f6; }
 .op-aba-cortes .op-corte-produto-card,
 .op-aba-cortes .op-corte-variante-card,
@@ -11170,14 +11139,40 @@ body.autenticado {
 .op-aba-cortes .op-cortes-agente-card { --op-charme-cor: #dc2626; }
 .op-aba-cortes .op-cortes-agente-card.parcial { --op-charme-cor: #f59e0b; }
 
-/* P. Externo: a cor acompanha a etapa representada pelo produto. */
+/* O estado visual fica no pai; a charm não recebe classes de cor. */
+.op-aba-cortes .op-cortes-radar,
+.op-aba-cortes .op-corte-produto-card,
+.op-aba-cortes .op-corte-variante-card,
+.op-aba-cortes .op-corte-resumo-card,
+.op-aba-cortes .op-corte-item,
+.op-aba-cortes .op-cortes-agente-card,
+.op-aba-cortes .op-quicklog-fila-item {
+    background: color-mix(in srgb, var(--op-charme-cor) 3%, #ffffff);
+}
+
+.op-aba-cortes .op-agente-idle-card,
+.op-aba-cortes .op-cortes-agente-resultado,
+.op-aba-cortes .op-quicklog-panel {
+    border-color: color-mix(in srgb, var(--op-charme-cor) 28%, #e5ebf2);
+}
+
+/* P. Externo: azul para o fluxo, índigo para a escolha do prestador e
+   a paleta existente para diferenciar corte, etapa final e etapa normal. */
+.op-aba-externo .op-externo-tela-wrapper {
+    --op-charme-cor: #3b82f6;
+    border-radius: 14px;
+    overflow: hidden;
+}
+.op-aba-externo .op-externo-tipo-card { --op-charme-cor: #6366f1; }
 .op-aba-externo .op-card-react { --op-charme-cor: #3498db; overflow: hidden !important; }
 .op-aba-externo .op-card-react.borda-corte { --op-charme-cor: #8e44ad; }
 .op-aba-externo .op-card-react.borda-etapa-final { --op-charme-cor: #e74c3c; }
 .op-aba-externo .op-card-react.selecionado-lote {
+    border-color: color-mix(in srgb, #3498db 58%, #e5ebf2) !important;
     background: #f0f8ff;
 }
 .op-aba-externo .op-card-react.op-card-unificado {
+    border-color: color-mix(in srgb, #6366f1 58%, #e5ebf2) !important;
     background: #f5f3ff;
 }
 .op-aba-externo .op-item-confirmacao-card { --op-charme-cor: #3498db; }
@@ -11185,9 +11180,478 @@ body.autenticado {
 .op-aba-externo .op-item-confirmacao-card.borda-etapa-final { --op-charme-cor: #e74c3c; }
 .op-aba-externo .op-externo-historico-item { --op-charme-cor: #3b82f6; }
 
+.op-aba-externo .op-externo-tela-wrapper,
+.op-aba-externo .op-externo-tipo-card,
+.op-aba-externo .op-card-react,
+.op-aba-externo .op-item-confirmacao-card,
+.op-aba-externo .op-externo-historico-item {
+    background: color-mix(in srgb, var(--op-charme-cor) 3%, #ffffff);
+}
+
+.op-aba-externo .op-externo-tipo-card:hover {
+    border-color: color-mix(in srgb, var(--op-charme-cor) 58%, #e5ebf2);
+}
+
 @media (max-width: 600px) {
     .op-aba-cortes .op-corte-produto-card,
-    .op-aba-cortes .op-corte-variante-card {
+    .op-aba-cortes .op-corte-variante-card,
+    .op-aba-externo .op-externo-tipo-card {
         border-radius: 14px;
+    }
+}
+
+/* ============================================================================
+   ATRIBUICAO V3 — fase explicita e confirmacao orientada ao fluxo
+   OP continua dentro da ordem; POS_OP libera a peca para embalagem.
+   ============================================================================ */
+.op-atribuicao-container .op-modal-progresso {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    color: #64748b;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    line-height: 1;
+}
+
+.op-atribuicao-container .op-modal-progresso-numero {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #2563eb;
+    color: #fff;
+    font-size: 0.7rem;
+}
+
+.op-atribuicao-container .op-modal-progresso-linha {
+    width: 24px;
+    height: 1px;
+    background: #cbd5e1;
+}
+
+.op-atribuicao-container .op-modal-progresso-descricao {
+    color: #334155;
+    font-weight: 600;
+}
+
+.op-atribuicao-container .op-modal-titulo {
+    margin: 0;
+    line-height: 1.15;
+}
+
+.op-atribuicao-container .op-modal-header-info {
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.op-atribuicao-container .op-modal-fase-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 26px;
+    padding: 4px 9px;
+    border: 1px solid #bfdbfe;
+    border-radius: 999px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 0.68rem;
+    font-weight: 800;
+}
+
+.op-atribuicao-container .op-modal-fase-badge--pos_op {
+    border-color: #fed7aa;
+    background: #fff7ed;
+    color: #c2410c;
+}
+
+.op-atribuicao-container .op-modal-fase-badge--mista {
+    border-color: #ddd6fe;
+    background: #f5f3ff;
+    color: #6d28d9;
+}
+
+.op-atribuicao-container .op-selecao-orientacao {
+    display: grid;
+    grid-template-columns: minmax(190px, 0.62fr) minmax(0, 1.38fr);
+    gap: 12px;
+    align-items: stretch;
+    margin: 0 0 10px;
+    padding: 13px;
+    border: 1px solid #dbe7f3;
+    border-radius: 15px;
+    background: linear-gradient(135deg, #f8fbff 0%, #ffffff 100%);
+}
+
+.op-atribuicao-container .op-selecao-orientacao-texto {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    min-width: 0;
+    padding: 2px 5px;
+}
+
+.op-atribuicao-container .op-selecao-eyebrow {
+    color: #64748b;
+    font-size: 0.64rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.op-atribuicao-container .op-selecao-orientacao-texto strong {
+    color: #1e3a5f;
+    font-size: 0.88rem;
+    line-height: 1.25;
+}
+
+.op-atribuicao-container .op-selecao-orientacao-texto > span:last-child {
+    color: #64748b;
+    font-size: 0.73rem;
+    line-height: 1.35;
+}
+
+.op-atribuicao-container .op-selecao-fases {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.op-atribuicao-container .op-selecao-fase-btn {
+    display: grid;
+    grid-template-columns: 31px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    min-height: 62px;
+    padding: 8px 9px;
+    border: 1px solid #dbe5ef;
+    border-radius: 12px;
+    background: #fff;
+    color: #475569;
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.op-atribuicao-container .op-selecao-fase-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    border-color: #93c5fd;
+}
+
+.op-atribuicao-container .op-selecao-fase-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.48;
+}
+
+.op-atribuicao-container .op-selecao-fase-btn.ativo {
+    border-color: #2563eb;
+    background: #eff6ff;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+    color: #1d4ed8;
+}
+
+.op-atribuicao-container .op-selecao-fase-btn--pos_op.ativo {
+    border-color: #f97316;
+    background: #fff7ed;
+    box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.1);
+    color: #c2410c;
+}
+
+.op-atribuicao-container .op-selecao-fase-icone {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 31px;
+    height: 31px;
+    border-radius: 9px;
+    background: #f1f5f9;
+    color: #64748b;
+    font-size: 0.84rem;
+}
+
+.op-atribuicao-container .op-selecao-fase-btn--op .op-selecao-fase-icone,
+.op-atribuicao-container .op-selecao-fase-btn--op.ativo .op-selecao-fase-icone {
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+.op-atribuicao-container .op-selecao-fase-btn--pos_op .op-selecao-fase-icone,
+.op-atribuicao-container .op-selecao-fase-btn--pos_op.ativo .op-selecao-fase-icone {
+    background: #ffedd5;
+    color: #c2410c;
+}
+
+.op-atribuicao-container .op-selecao-fase-copy {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    gap: 2px;
+}
+
+.op-atribuicao-container .op-selecao-fase-copy strong {
+    overflow: hidden;
+    color: #334155;
+    font-size: 0.76rem;
+    line-height: 1.15;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.op-atribuicao-container .op-selecao-fase-copy small {
+    overflow: hidden;
+    color: #94a3b8;
+    font-size: 0.64rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.op-atribuicao-container .op-selecao-fase-contagem {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 25px;
+    height: 25px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #475569;
+    font-size: 0.7rem;
+    font-weight: 800;
+}
+
+.op-atribuicao-container .op-busca-meta-fase {
+    color: #475569;
+    font-weight: 700;
+}
+
+.op-atribuicao-container .op-fila-secao {
+    display: flex;
+    grid-column: 1 / -1;
+    align-items: center;
+    gap: 9px;
+    margin: 7px 2px 0;
+    padding: 8px 10px;
+    border: 1px solid #dbe7f3;
+    border-radius: 10px;
+    background: #f8fbff;
+}
+
+.op-atribuicao-container .op-fila-secao strong {
+    color: #1e3a5f;
+    font-size: 0.76rem;
+}
+
+.op-atribuicao-container .op-fila-secao span {
+    color: #64748b;
+    font-size: 0.68rem;
+}
+
+.op-atribuicao-container .op-fila-secao--pos_op {
+    border-color: #fed7aa;
+    background: #fffaf5;
+}
+
+.op-atribuicao-container .op-fila-secao--pos_op strong {
+    color: #9a3412;
+}
+
+.op-atribuicao-container .op-card-fluxo-meta {
+    display: flex;
+    grid-column: 1 / -1;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    min-width: 0;
+    margin-top: 2px;
+    padding: 7px 9px;
+    border: 1px solid #dbeafe;
+    border-radius: 9px;
+    background: #f8fbff;
+}
+
+.op-atribuicao-container .op-card-fluxo-meta--pos-op {
+    border-color: #fed7aa;
+    background: #fffaf5;
+}
+
+.op-atribuicao-container .op-card-fluxo-efeito,
+.op-atribuicao-container .op-card-executores {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    color: #2563eb;
+    font-size: 0.66rem;
+    font-weight: 800;
+}
+
+.op-atribuicao-container .op-card-fluxo-meta--pos-op .op-card-fluxo-efeito {
+    color: #c2410c;
+}
+
+.op-atribuicao-container .op-card-executores {
+    overflow: hidden;
+    color: #64748b;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.op-atribuicao-container .op-confirmacao-resumo {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0 4px 10px;
+    padding: 12px 14px;
+    border: 1px solid #bfdbfe;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #eff6ff, #ffffff);
+}
+
+.op-atribuicao-container .op-confirmacao-resumo--pos-op {
+    border-color: #fed7aa;
+    background: linear-gradient(135deg, #fff7ed, #ffffff);
+}
+
+.op-atribuicao-container .op-confirmacao-resumo-titulo {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.op-atribuicao-container .op-confirmacao-resumo-titulo strong {
+    color: #1e3a5f;
+    font-size: 0.89rem;
+}
+
+.op-atribuicao-container .op-confirmacao-resumo-dados {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.op-atribuicao-container .op-confirmacao-resumo-chip,
+.op-atribuicao-container .op-confirmacao-resumo-efeito,
+.op-atribuicao-container .op-confirmacao-resumo-qtd {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 30px;
+    padding: 5px 8px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.8);
+    color: #475569;
+    font-size: 0.68rem;
+    font-weight: 700;
+}
+
+.op-atribuicao-container .op-confirmacao-resumo-chip {
+    color: #1d4ed8;
+}
+
+.op-atribuicao-container .op-confirmacao-resumo--pos-op .op-confirmacao-resumo-chip {
+    color: #c2410c;
+}
+
+.op-atribuicao-container .op-confirmacao-resumo-efeito {
+    color: #2563eb;
+}
+
+.op-atribuicao-container .op-confirmacao-resumo--pos-op .op-confirmacao-resumo-efeito {
+    color: #c2410c;
+}
+
+.op-atribuicao-container .op-confirmacao-resumo-qtd strong {
+    color: #1e3a5f;
+    font-size: 0.86rem;
+}
+
+.op-atribuicao-container .op-confirmacao-fluxo {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 4px;
+    color: #2563eb;
+    font-size: 0.67rem;
+    font-weight: 800;
+}
+
+.op-atribuicao-container .op-confirmacao-fluxo--pos-op {
+    color: #c2410c;
+}
+
+.op-atribuicao-container .op-confirmacao-origens-consolidadas {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin: 4px 0 0;
+    color: #64748b;
+    font-size: 0.66rem;
+    font-weight: 700;
+}
+
+@media (max-width: 760px) {
+    .op-atribuicao-container .op-selecao-orientacao {
+        grid-template-columns: 1fr;
+    }
+
+    .op-atribuicao-container .op-selecao-fases {
+        grid-template-columns: 1fr;
+    }
+
+    .op-atribuicao-container .op-confirmacao-resumo {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .op-atribuicao-container .op-confirmacao-resumo-dados {
+        justify-content: flex-start;
+    }
+}
+
+@media (max-width: 600px) {
+    .op-atribuicao-container .op-modal-progresso-descricao,
+    .op-atribuicao-container .op-modal-progresso-linha {
+        display: none;
+    }
+
+    .op-atribuicao-container .op-modal-progresso {
+        justify-content: center;
+    }
+
+    .op-atribuicao-container .op-selecao-orientacao {
+        margin-bottom: 8px;
+        padding: 11px;
+    }
+
+    .op-atribuicao-container .op-selecao-orientacao-texto > span:last-child {
+        font-size: 0.7rem;
+    }
+
+    .op-atribuicao-container .op-card-fluxo-meta {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .op-atribuicao-container .op-confirmacao-resumo-dados {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .op-atribuicao-container .op-confirmacao-resumo-chip,
+    .op-atribuicao-container .op-confirmacao-resumo-efeito,
+    .op-atribuicao-container .op-confirmacao-resumo-qtd {
+        justify-content: flex-start;
     }
 }

@@ -17,6 +17,9 @@ import type { DatesSetArg, DayCellMountArg, EventClickArg } from '@fullcalendar/
 import type { DateClickArg } from '@fullcalendar/interaction';
 import UIHeaderPagina from './UIHeaderPagina';
 import UIFeedbackNotFound from './UIFeedbackNotFound';
+import UIBloqueio from './UIBloqueio';
+import { mostrarPopupSemPermissao, temPermissao } from '../utils/bloqueio';
+import { mostrarConfirmacao } from '../../js/utils/popups.js';
 import type {
     CalendarioCtxMenu,
     CalendarioDayModal,
@@ -31,6 +34,10 @@ import type {
 import { calendarioEhFalta } from '../utils/calendario-types';
 
 const TOKEN = (): string | null => localStorage.getItem('token');
+const PERMISSAO_CALENDARIO = ['acesso-calendario', 'gerenciar-permissoes'] as const;
+const PERMISSAO_CRIAR_EVENTO = 'criar-novo-evento';
+const PERMISSAO_EDITAR_EVENTO = 'editar-evento';
+const PERMISSAO_DELETAR_EVENTO = 'deletar-evento';
 
 const TIPOS: CalendarioTipoOpcao[] = [
     { value: 'feriado_nacional', label: 'Feriado Nacional', cor: '#e74c3c' },
@@ -92,6 +99,13 @@ export default function CalendarioCompleto() {
     const isAdmin = Boolean(
         payload?.tipos?.some((t) => ['administrador', 'supervisor'].includes(t)),
     );
+    const podeGerenciarCalendario = isAdmin;
+    const podeCriarEvento = podeGerenciarCalendario && temPermissao(PERMISSAO_CRIAR_EVENTO);
+    const podeEditarEvento = podeGerenciarCalendario && temPermissao(PERMISSAO_EDITAR_EVENTO);
+    const podeDeletarEvento = podeGerenciarCalendario && temPermissao(PERMISSAO_DELETAR_EVENTO);
+    const podeSalvarForm = form
+        ? (form.id ? podeEditarEvento : podeCriarEvento)
+        : false;
 
     // ── Fecha context menu ao clicar fora ─────────────────────────────────
     useEffect(() => {
@@ -164,21 +178,18 @@ export default function CalendarioCompleto() {
 
     // ── Clique direito num dia (context menu — só PC) ─────────────────────
     const handleDayContextMenu = useCallback((e: MouseEvent, dateStr: string) => {
-        if (!isAdmin) return;
         e.preventDefault();
         setCtxMenu({ x: e.clientX, y: e.clientY, data: dateStr });
-    }, [isAdmin]);
+    }, []);
 
     // ── Injeta contextmenu nas células ────────────────────────────────────
     const handleDayCellDidMount = useCallback((info: DayCellMountArg) => {
-        if (!isAdmin) return;
         const dateStr = info.date.toLocaleDateString('en-CA');
         info.el.addEventListener('contextmenu', (e) => handleDayContextMenu(e, dateStr));
-    }, [isAdmin, handleDayContextMenu]);
+    }, [handleDayContextMenu]);
 
     // ── Clique num evento → abre modal de edição ──────────────────────────
     const handleEventClick = useCallback((info: EventClickArg) => {
-        if (!isAdmin) return;
         info.jsEvent.stopPropagation();
         const r = info.event.extendedProps as CalendarioEventoApi;
         setErro('');
@@ -191,7 +202,7 @@ export default function CalendarioCompleto() {
             conta_como_dia_util_pagamento: Boolean(r.conta_como_dia_util_pagamento),
             visivel_dashboard: r.visivel_dashboard !== false,
         });
-    }, [isAdmin]);
+    }, []);
 
     // ── Abre form de criação ──────────────────────────────────────────────
     const abrirFormNovo = (data: string) => {
@@ -224,6 +235,11 @@ export default function CalendarioCompleto() {
     const handleSalvar = async (e: FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         if (!form) return;
+        const permissaoAcao = form.id ? PERMISSAO_EDITAR_EVENTO : PERMISSAO_CRIAR_EVENTO;
+        if (!temPermissao(permissaoAcao) || !podeGerenciarCalendario) {
+            mostrarPopupSemPermissao('Apenas administradores e supervisores podem alterar eventos do calendário.');
+            return;
+        }
         setErro('');
         setSalvando(true);
         const body = {
@@ -261,7 +277,15 @@ export default function CalendarioCompleto() {
 
     // ── Deletar (direto, sem abrir form) ──────────────────────────────────
     const handleDeletar = async (id: number | string) => {
-        if (!confirm('Remover este evento do calendário?')) return;
+        if (!temPermissao(PERMISSAO_DELETAR_EVENTO) || !podeGerenciarCalendario) {
+            mostrarPopupSemPermissao('Apenas administradores e supervisores podem excluir eventos do calendário.');
+            return;
+        }
+        const confirmado = await mostrarConfirmacao(
+            'Tem certeza que deseja remover este evento do calendário?',
+            { tipo: 'perigo', textoConfirmar: 'Remover evento', textoCancelar: 'Cancelar' },
+        );
+        if (!confirmado) return;
         setSalvando(true);
         try {
             await fetch(`/api/calendario/${id}`, {
@@ -300,7 +324,11 @@ export default function CalendarioCompleto() {
     return (
         <>
             <UIHeaderPagina titulo="Calendário da Empresa">
-                {isAdmin && (
+                <UIBloqueio
+                    permissao={PERMISSAO_CRIAR_EVENTO}
+                    bloqueado={!podeCriarEvento}
+                    mensagem="Apenas administradores e supervisores podem criar eventos no calendário."
+                >
                     <button
                         type="button"
                         className="gs-btn gs-btn-primario"
@@ -309,7 +337,7 @@ export default function CalendarioCompleto() {
                     >
                         <i className="fas fa-plus"></i> Novo Evento
                     </button>
-                )}
+                </UIBloqueio>
                 <button type="button" className="gs-btn gs-btn-secundario" title="Importar feriados (em breve)" disabled>
                     <i className="fas fa-file-import"></i>
                 </button>
@@ -343,8 +371,8 @@ export default function CalendarioCompleto() {
                         events={eventos}
                         datesSet={handleDatesSet}
                         dateClick={handleDateClick}
-                        eventClick={isAdmin ? handleEventClick : undefined}
-                        dayCellDidMount={isAdmin ? handleDayCellDidMount : undefined}
+                        eventClick={handleEventClick}
+                        dayCellDidMount={handleDayCellDidMount}
                         eventDisplay="block"
                         dayMaxEvents={3}
                         height="auto"
@@ -355,10 +383,16 @@ export default function CalendarioCompleto() {
 
             {ctxMenu && (
                 <div ref={ctxMenuRef} className="cal-ctx-menu" style={{ top: ctxMenu.y, left: ctxMenu.x }}>
-                    <button type="button" className="cal-ctx-menu-item" onClick={() => abrirFormNovo(ctxMenu.data)}>
-                        <i className="fas fa-plus"></i>
-                        Novo evento em {new Date(ctxMenu.data + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
-                    </button>
+                    <UIBloqueio
+                        permissao={PERMISSAO_CRIAR_EVENTO}
+                        bloqueado={!podeCriarEvento}
+                        mensagem="Apenas administradores e supervisores podem criar eventos no calendário."
+                    >
+                        <button type="button" className="cal-ctx-menu-item" onClick={() => abrirFormNovo(ctxMenu.data)}>
+                            <i className="fas fa-plus"></i>
+                            Novo evento em {new Date(ctxMenu.data + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
+                        </button>
+                    </UIBloqueio>
                 </div>
             )}
 
@@ -399,8 +433,12 @@ export default function CalendarioCompleto() {
                                                         </span>
                                                     )}
                                                 </div>
-                                                {isAdmin && (
-                                                    <div className="cal-dia-item-acoes">
+                                                <div className="cal-dia-item-acoes">
+                                                    <UIBloqueio
+                                                        permissao={PERMISSAO_EDITAR_EVENTO}
+                                                        bloqueado={!podeEditarEvento}
+                                                        mensagem="Apenas administradores e supervisores podem editar eventos do calendário."
+                                                    >
                                                         <button
                                                             type="button"
                                                             className="cal-dia-btn-editar"
@@ -409,6 +447,12 @@ export default function CalendarioCompleto() {
                                                         >
                                                             <i className="fas fa-pen"></i>
                                                         </button>
+                                                    </UIBloqueio>
+                                                    <UIBloqueio
+                                                        permissao={PERMISSAO_DELETAR_EVENTO}
+                                                        bloqueado={!podeDeletarEvento}
+                                                        mensagem="Apenas administradores e supervisores podem excluir eventos do calendário."
+                                                    >
                                                         <button
                                                             type="button"
                                                             className="cal-dia-btn-deletar"
@@ -418,15 +462,19 @@ export default function CalendarioCompleto() {
                                                         >
                                                             <i className="fas fa-trash"></i>
                                                         </button>
-                                                    </div>
-                                                )}
+                                                    </UIBloqueio>
+                                                </div>
                                             </li>
                                         );
                                     })}
                                 </ul>
                             )}
 
-                            {isAdmin && (
+                            <UIBloqueio
+                                permissao={PERMISSAO_CRIAR_EVENTO}
+                                bloqueado={!podeCriarEvento}
+                                mensagem="Apenas administradores e supervisores podem criar eventos no calendário."
+                            >
                                 <button
                                     type="button"
                                     className="cal-dia-btn-novo"
@@ -434,7 +482,7 @@ export default function CalendarioCompleto() {
                                 >
                                     <i className="fas fa-plus"></i> Adicionar evento neste dia
                                 </button>
-                            )}
+                            </UIBloqueio>
                         </div>
                     </div>
                 </div>
@@ -457,13 +505,14 @@ export default function CalendarioCompleto() {
                                     type="date"
                                     required
                                     value={form.data}
+                                    disabled={!podeSalvarForm || salvando}
                                     onChange={(e) => atualizarForm('data', e.target.value)}
                                 />
                             </div>
 
                             <div className="cal-form-grupo">
                                 <label>Tipo</label>
-                                <select value={form.tipo} onChange={handleTipoChange}>
+                                <select value={form.tipo} onChange={handleTipoChange} disabled={!podeSalvarForm || salvando}>
                                     {TIPOS.map((t) => (
                                         <option key={t.value} value={t.value}>{t.label}</option>
                                     ))}
@@ -475,6 +524,7 @@ export default function CalendarioCompleto() {
                                     <label>Funcionário</label>
                                     <select
                                         value={form.funcionario_id}
+                                        disabled={!podeSalvarForm || salvando}
                                         onChange={(e) => atualizarForm('funcionario_id', e.target.value)}
                                         required
                                     >
@@ -493,6 +543,7 @@ export default function CalendarioCompleto() {
                                     required
                                     placeholder="Ex: Aniversário de Belo Horizonte"
                                     value={form.descricao}
+                                    disabled={!podeSalvarForm || salvando}
                                     onChange={(e) => atualizarForm('descricao', e.target.value)}
                                 />
                             </div>
@@ -502,6 +553,7 @@ export default function CalendarioCompleto() {
                                     <input
                                         type="checkbox"
                                         checked={form.visivel_dashboard}
+                                        disabled={!podeSalvarForm || salvando}
                                         onChange={(e) => atualizarForm('visivel_dashboard', e.target.checked)}
                                     />
                                     <span>Visível para empregados</span>
@@ -510,6 +562,7 @@ export default function CalendarioCompleto() {
                                     <input
                                         type="checkbox"
                                         checked={form.conta_como_dia_util_pagamento}
+                                        disabled={!podeSalvarForm || salvando}
                                         onChange={(e) => atualizarForm('conta_como_dia_util_pagamento', e.target.checked)}
                                     />
                                     <span>
@@ -525,22 +578,34 @@ export default function CalendarioCompleto() {
 
                             <div className="cal-form-acoes">
                                 {form.id != null && (
-                                    <button
-                                        type="button"
-                                        className="cal-btn-deletar"
-                                        disabled={salvando}
-                                        onClick={() => { void handleDeletar(form.id as number | string); }}
+                                    <UIBloqueio
+                                        permissao={PERMISSAO_DELETAR_EVENTO}
+                                        bloqueado={!podeDeletarEvento}
+                                        mensagem="Apenas administradores e supervisores podem excluir eventos do calendário."
                                     >
-                                        <i className="fas fa-trash"></i> Remover
-                                    </button>
+                                        <button
+                                            type="button"
+                                            className="cal-btn-deletar"
+                                            disabled={salvando}
+                                            onClick={() => { void handleDeletar(form.id as number | string); }}
+                                        >
+                                            <i className="fas fa-trash"></i> Remover
+                                        </button>
+                                    </UIBloqueio>
                                 )}
                                 <button type="button" className="cal-btn-cancelar" onClick={fecharForm} disabled={salvando}>
                                     Cancelar
                                 </button>
-                                <button type="submit" className="cal-btn-salvar" disabled={salvando}>
-                                    {salvando ? <UICarregando variante="inline" /> : <i className="fas fa-check"></i>}
-                                    {form.id ? ' Salvar' : ' Criar'}
-                                </button>
+                                <UIBloqueio
+                                    permissao={form.id ? PERMISSAO_EDITAR_EVENTO : PERMISSAO_CRIAR_EVENTO}
+                                    bloqueado={!podeSalvarForm}
+                                    mensagem="Apenas administradores e supervisores podem salvar eventos do calendário."
+                                >
+                                    <button type="submit" className="cal-btn-salvar" disabled={salvando}>
+                                        {salvando ? <UICarregando variante="inline" /> : <i className="fas fa-check"></i>}
+                                        {form.id ? ' Salvar' : ' Criar'}
+                                    </button>
+                                </UIBloqueio>
                             </div>
                         </form>
                     </div>

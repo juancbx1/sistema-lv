@@ -13,6 +13,8 @@ import imageCompression from 'browser-image-compression';
 import { mostrarMensagem } from '../../js/utils/popups.js';
 import UIFeedbackNotFound from './UIFeedbackNotFound';
 import UICarregando from './UICarregando';
+import UIBloqueio from './UIBloqueio';
+import { mostrarPopupSemPermissao, temPermissao } from '../utils/bloqueio';
 import type {
     AvisoPopup,
     AvisoPopupCompressInfo,
@@ -63,6 +65,14 @@ const DESTS: { id: AvisoPopupDestinatarios; label: string }[] = [
     { id: 'tiktiks',     label: '⚡ Tiktiks' },
     { id: 'individuais', label: '👤 Pessoas específicas' },
 ];
+
+const PERMISSAO_ALERTAS = ['configurar-alertas', 'gerenciar-permissoes'] as const;
+const PERMISSAO_ACAO_POR_MODO: Record<AvisoPopupModo, string | readonly string[]> = {
+    criar: 'criar-novo-aviso',
+    editar: 'editar-aviso',
+    duplicar: PERMISSAO_ALERTAS,
+    'usar-template': 'reaproveitar-aviso',
+};
 
 function normalizarIdsIndividuais(valor: unknown): number[] {
     if (valor == null) return [];
@@ -278,6 +288,8 @@ export interface AvisosPopupModalProps {
 export default function AvisosPopupModal({ aviso, modo = 'criar', onSalvo, onFechar }: AvisosPopupModalProps) {
     // 'criar' | 'editar' | 'duplicar' | 'usar-template'
     const ehEdicao   = modo === 'editar';
+    const permissaoAcao = PERMISSAO_ACAO_POR_MODO[modo];
+    const permissaoOperacaoHeader = typeof permissaoAcao === 'string' ? permissaoAcao : null;
     const ehNovo     = !ehEdicao; // criar, duplicar ou usar-template
     void ehNovo;
 
@@ -458,6 +470,10 @@ export default function AvisosPopupModal({ aviso, modo = 'criar', onSalvo, onFec
     };
 
     const handleSalvar = async () => {
+        if (!temPermissao(permissaoAcao)) {
+            mostrarPopupSemPermissao('Você não tem permissão para salvar avisos popup.');
+            return;
+        }
         if (!titulo.trim()) {
             mostrarMensagem('O título é obrigatório.', 'aviso');
             return;
@@ -479,6 +495,9 @@ export default function AvisosPopupModal({ aviso, modo = 'criar', onSalvo, onFec
                 formData.append('imagem', arquivoSelecionado, arquivoSelecionado.name || 'imagem.jpg');
                 const uploadRes = await fetchApi<{ url: string }>('/api/avisos-popup/upload-imagem', {
                     method: 'POST',
+                    headers: permissaoOperacaoHeader
+                        ? { 'X-Permissao-Operacao': permissaoOperacaoHeader }
+                        : undefined,
                     body: formData,
                 });
                 urlFinal = uploadRes.url;
@@ -503,12 +522,16 @@ export default function AvisosPopupModal({ aviso, modo = 'criar', onSalvo, onFec
             if (ehEdicao && aviso?.id) {
                 await fetchApi(`/api/avisos-popup/${aviso.id}`, {
                     method: 'PUT',
+                    headers: { 'X-Permissao-Operacao': permissaoOperacaoHeader || '' },
                     body: JSON.stringify(payload),
                 });
                 mostrarMensagem('Aviso atualizado com sucesso!', 'sucesso');
             } else {
                 await fetchApi('/api/avisos-popup/', {
                     method: 'POST',
+                    headers: permissaoOperacaoHeader
+                        ? { 'X-Permissao-Operacao': permissaoOperacaoHeader }
+                        : undefined,
                     body: JSON.stringify(payload),
                 });
                 const msgMap: Record<string, string> = {
@@ -926,6 +949,7 @@ export default function AvisosPopupModal({ aviso, modo = 'criar', onSalvo, onFec
                     <button className="gs-btn gs-btn-secundario" onClick={onFechar} disabled={salvando}>
                         Cancelar
                     </button>
+                    <UIBloqueio permissao={permissaoAcao} mensagem="Você não tem permissão para executar esta ação no aviso popup.">
                     <button
                         className="gs-btn gs-btn-primario"
                         onClick={() => { void handleSalvar(); }}
@@ -936,6 +960,7 @@ export default function AvisosPopupModal({ aviso, modo = 'criar', onSalvo, onFec
                             : <><i className="fas fa-check"></i> {btnSalvarTexto}</>
                         }
                     </button>
+                    </UIBloqueio>
                 </div>
             </div>
         </div>

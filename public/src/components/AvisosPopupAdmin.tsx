@@ -10,6 +10,7 @@ import { useState, useEffect } from 'react';
 import { mostrarMensagem, mostrarConfirmacao } from '../../js/utils/popups.js';
 import UICarregando from './UICarregando';
 import UIFeedbackNotFound from './UIFeedbackNotFound';
+import UIBloqueio from './UIBloqueio';
 import AvisosPopupModal from './AvisosPopupModal';
 import AvisosPopupViewersModal from './AvisosPopupViewersModal';
 import type {
@@ -45,6 +46,12 @@ const DEST_LABEL: Record<string, string> = {
     tiktiks: 'Tiktiks',
     individuais: 'Individuais',
 };
+
+const PERMISSAO_ALERTAS = ['configurar-alertas', 'gerenciar-permissoes'] as const;
+const PERMISSAO_EDITAR_AVISO = 'editar-aviso';
+const PERMISSAO_REAPROVEITAR_AVISO = 'reaproveitar-aviso';
+const PERMISSAO_EXCLUIR_AVISO = 'excluir-aviso';
+const PERMISSAO_ARQUIVAR_AVISO = 'arquivar-aviso';
 
 /** Rótulo amigável de destinatários (inclui nomes em avisos individuais, ex.: VT). */
 function rotuloDestinatarios(aviso: AvisoPopup): string {
@@ -167,12 +174,15 @@ function AvisoCard({
 
             {/* Ações */}
             <div className="avp-acoes">
+                <UIBloqueio permissao={PERMISSAO_EDITAR_AVISO} mensagem="Você não tem permissão para editar avisos popup.">
                 <button className="avp-icon-btn" title="Editar" onClick={() => onEditar(aviso)}>
                     <i className="fas fa-pen"></i>
                 </button>
+                </UIBloqueio>
 
                 {/* Reenviar — para arquivados */}
                 {ehArquivado && (
+                    <UIBloqueio permissao={PERMISSAO_ALERTAS} mensagem="Você não tem permissão para reenviar avisos popup.">
                     <button
                         className="avp-icon-btn avp-icon-btn--reenviar"
                         title="Reenviar (cria cópia nova)"
@@ -180,10 +190,12 @@ function AvisoCard({
                     >
                         <i className="fas fa-rotate-right"></i>
                     </button>
+                    </UIBloqueio>
                 )}
 
                 {/* Usar modelo — para templates */}
                 {ehTemplate && (
+                    <UIBloqueio permissao={PERMISSAO_REAPROVEITAR_AVISO} mensagem="Você não tem permissão para reaproveitar avisos popup.">
                     <button
                         className="avp-icon-btn avp-icon-btn--usar-modelo"
                         title="Usar como base para novo aviso"
@@ -191,10 +203,12 @@ function AvisoCard({
                     >
                         <i className="fas fa-paper-plane"></i>
                     </button>
+                    </UIBloqueio>
                 )}
 
                 {/* Arquivar — para ativos */}
                 {ehAtivo && (
+                    <UIBloqueio permissao={PERMISSAO_ARQUIVAR_AVISO} mensagem="Você não tem permissão para arquivar avisos popup.">
                     <button
                         className="avp-icon-btn avp-icon-btn--arquivar"
                         title="Arquivar aviso"
@@ -202,10 +216,12 @@ function AvisoCard({
                     >
                         <i className="fas fa-box-archive"></i>
                     </button>
+                    </UIBloqueio>
                 )}
 
                 {/* Ativar / Reativar — para arquivados */}
                 {ehArquivado && (
+                    <UIBloqueio permissao={PERMISSAO_ALERTAS} mensagem="Você não tem permissão para reativar avisos popup.">
                     <button
                         className="avp-icon-btn avp-icon-btn--ativar"
                         title="Reativar aviso"
@@ -213,10 +229,12 @@ function AvisoCard({
                     >
                         <i className="fas fa-play"></i>
                     </button>
+                    </UIBloqueio>
                 )}
 
                 {/* Deletar — só para arquivados e templates */}
                 {(ehArquivado || ehTemplate) && (
+                    <UIBloqueio permissao={PERMISSAO_EXCLUIR_AVISO} mensagem="Você não tem permissão para excluir avisos popup.">
                     <button
                         className="avp-icon-btn avp-icon-btn--deletar"
                         title="Deletar permanentemente"
@@ -224,6 +242,7 @@ function AvisoCard({
                     >
                         <i className="fas fa-trash"></i>
                     </button>
+                    </UIBloqueio>
                 )}
             </div>
         </div>

@@ -57,6 +57,18 @@ async function buscarConfiguracoesDaEmpresa(dbClient, empresaId, somenteAtivas =
     return result.rows;
 }
 
+async function consultarCompatibilidade(dbClient, texto, parametros = []) {
+    try {
+        return await dbClient.query(texto, parametros);
+    } catch (error) {
+        // Durante a transição, uma restauração ainda pode não possuir uma das
+        // tabelas novas. A ausência do contrato opcional não deve derrubar o
+        // motor inteiro de alertas; erros de dados/conexão continuam subindo.
+        if (error?.code === '42P01') return { rows: [] };
+        throw error;
+    }
+}
+
 // Middleware de Autenticação (pode ser copiado de outros arquivos de API)
 router.use(async (req, res, next) => {
     try {
@@ -97,9 +109,11 @@ router.put('/configuracoes', async (req, res) => {
 
     try {
         dbClient = await pool.connect();
-        // Apenas usuários com alta permissão podem alterar as configurações
+        // A página usa `configurar-alertas`; o alias administrativo preserva
+        // acessos antigos que já dependiam de `gerenciar-permissoes`.
         const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id, req.empresaId);
-        if (!permissoes.includes('gerenciar-permissoes')) { // Reutilizando permissão de admin
+        if ((!permissoes.includes('configurar-alertas') && !permissoes.includes('gerenciar-permissoes'))
+            || !permissoes.includes('salvar-alteracoes-de-alertas')) {
             return res.status(403).json({ error: 'Permissão negada para alterar configurações de alerta.' });
         }
 
@@ -190,7 +204,8 @@ router.put('/dias-trabalho', async (req, res) => {
     try {
         dbClient = await pool.connect();
         const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, req.usuarioLogado.id, req.empresaId);
-        if (!permissoes.includes('gerenciar-permissoes')) {
+        if ((!permissoes.includes('configurar-alertas') && !permissoes.includes('gerenciar-permissoes'))
+            || !permissoes.includes('salvar-alteracoes-de-alertas')) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
 
@@ -300,30 +315,92 @@ router.get('/verificar-status', async (req, res) => {
                 SELECT 
                     u.id, u.nome, ue.status_atual, ue.status_data_modificacao,
                     ue.ultimo_alerta_ociosidade_em, ue.ultimo_alerta_lentidao_em,
-                    s.data_inicio, s.produto_id, s.quantidade_entregue,
+                    s.data_inicio, s.produto_id, s.quantidade_entregue, s.processo,
                     (
-                        SELECT MAX(s2.data_fim) 
-                        FROM sessoes_trabalho_arremate s2 
-                        WHERE s2.usuario_tiktik_id = u.id 
-                          AND s2.empresa_id = ue.empresa_id
-                          AND s2.status = 'FINALIZADA'
-                          AND s2.data_fim >= date_trunc('day', NOW() AT TIME ZONE 'America/Sao_Paulo')
+                        SELECT MAX(tarefa.data_fim)
+                        FROM (
+                            SELECT s2.data_fim
+                            FROM sessoes_trabalho_producao s2
+                            WHERE s2.funcionario_id = u.id
+                              AND s2.empresa_id = ue.empresa_id
+                              AND s2.status IN ('FINALIZADA', 'FINALIZADA_FORCADA')
+                              AND s2.data_fim >= date_trunc('day', NOW() AT TIME ZONE 'America/Sao_Paulo')
+                            UNION ALL
+                            SELECT s2.data_fim
+                            FROM sessoes_trabalho_arremate s2
+                            WHERE s2.usuario_tiktik_id = u.id
+                              AND s2.empresa_id = ue.empresa_id
+                              AND s2.status = 'FINALIZADA'
+                              AND s2.data_fim >= date_trunc('day', NOW() AT TIME ZONE 'America/Sao_Paulo')
+                        ) tarefa
                     ) as data_ultima_tarefa_finalizada_hoje
                 FROM usuarios u
                 JOIN usuarios_empresas ue
                   ON ue.usuario_id = u.id
                  AND ue.empresa_id = $1
                  AND ue.ativo
-                LEFT JOIN sessoes_trabalho_arremate s
-                  ON ue.id_sessao_trabalho_atual = s.id
-                 AND s.empresa_id = ue.empresa_id
+                LEFT JOIN LATERAL (
+                    SELECT atual.data_inicio,
+                           atual.produto_id,
+                           atual.quantidade_entregue,
+                           atual.processo,
+                           atual.prioridade
+                    FROM (
+                        SELECT sp.data_inicio,
+                               sp.produto_id,
+                               sp.quantidade_atribuida AS quantidade_entregue,
+                               sp.processo,
+                               1 AS prioridade
+                        FROM sessoes_trabalho_producao sp
+                        WHERE sp.id = ue.id_sessao_trabalho_atual
+                          AND sp.funcionario_id = u.id
+                          AND sp.empresa_id = ue.empresa_id
+                          AND sp.status = 'EM_ANDAMENTO'
+                        UNION ALL
+                        SELECT sa.data_inicio,
+                               sa.produto_id,
+                               sa.quantidade_entregue,
+                               NULL::text AS processo,
+                               2 AS prioridade
+                        FROM sessoes_trabalho_arremate sa
+                        WHERE sa.id = ue.id_sessao_trabalho_atual
+                          AND sa.usuario_tiktik_id = u.id
+                          AND sa.empresa_id = ue.empresa_id
+                          AND sa.status = 'EM_ANDAMENTO'
+                    ) atual
+                    ORDER BY atual.prioridade
+                    LIMIT 1
+                ) s ON TRUE
                 WHERE 'tiktik' = ANY(ue.tipos)
                   AND ue.data_demissao IS NULL
             `, [req.empresaId]);
             const tiktiks = tiktiksResult.rows;
 
-            const temposResult = await dbClient.query('SELECT produto_id, tempo_segundos_por_peca FROM tempos_padrao_arremate WHERE empresa_id = $1', [req.empresaId]);
-            const temposMap = new Map(temposResult.rows.map(row => [row.produto_id, parseFloat(row.tempo_segundos_por_peca)]));
+            const [temposProducaoResult, temposArremateResult] = await Promise.all([
+                consultarCompatibilidade(
+                    dbClient,
+                    `SELECT tpp.produto_id, tpp.processo, tpp.tempo_segundos
+                       FROM tempos_padrao_producao tpp
+                       JOIN produtos p
+                         ON p.id = tpp.produto_id
+                        AND p.empresa_id = $1`,
+                    [req.empresaId],
+                ),
+                consultarCompatibilidade(
+                    dbClient,
+                    'SELECT produto_id, tempo_segundos_por_peca FROM tempos_padrao_arremate WHERE empresa_id = $1',
+                    [req.empresaId],
+                ),
+            ]);
+            const temposProducaoMap = new Map(
+                temposProducaoResult.rows.map(row => [
+                    `${row.produto_id}-${row.processo}`,
+                    parseFloat(row.tempo_segundos),
+                ]),
+            );
+            const temposArremateMap = new Map(
+                temposArremateResult.rows.map(row => [row.produto_id, parseFloat(row.tempo_segundos_por_peca)]),
+            );
 
             for (const tiktik of tiktiks) {
                 // --- Verificação de Ociosidade (LÓGICA CORRIGIDA) ---
@@ -373,7 +450,10 @@ router.get('/verificar-status', async (req, res) => {
                     const minutosDesdeUltimoAlerta = (agoraMs - ultimoAlerta) / (1000 * 60);
 
                     if (minutosDesdeUltimoAlerta >= configLentidao.intervalo_repeticao_minutos) {
-                        const tpe = temposMap.get(tiktik.produto_id);
+                        const tpe = tiktik.processo
+                            ? temposProducaoMap.get(`${tiktik.produto_id}-${tiktik.processo}`)
+                                ?? temposArremateMap.get(tiktik.produto_id)
+                            : temposArremateMap.get(tiktik.produto_id);
                         const dataInicio = new Date(tiktik.data_inicio);
                         const minutosEmTarefa = (agoraMs - dataInicio.getTime()) / (1000 * 60);
 
@@ -458,7 +538,12 @@ router.get('/verificar-status', async (req, res) => {
 
             // Busca TPP de produção — chave composta: produto_id + processo
             const tppProducaoResult = await dbClient.query(
-                'SELECT produto_id, processo, tempo_segundos FROM tempos_padrao_producao'
+                `SELECT tpp.produto_id, tpp.processo, tpp.tempo_segundos
+                   FROM tempos_padrao_producao tpp
+                   JOIN produtos p
+                     ON p.id = tpp.produto_id
+                    AND p.empresa_id = $1`,
+                [req.empresaId],
             );
             const tppProducaoMap = new Map(
                 tppProducaoResult.rows.map(r => [`${r.produto_id}-${r.processo}`, parseFloat(r.tempo_segundos)])

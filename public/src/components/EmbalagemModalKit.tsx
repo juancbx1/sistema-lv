@@ -10,6 +10,8 @@ import {
 import EmbalagemControleQuantidade from './EmbalagemControleQuantidade';
 import UIFeedbackNotFound from './UIFeedbackNotFound';
 import UICarregando from './UICarregando';
+import UIBloqueio from './UIBloqueio';
+import { mostrarPopupSemPermissao, temPermissao } from '../utils/bloqueio';
 import {
   listarLotesPorProdutoVariante,
   registrarMontagemKit,
@@ -385,6 +387,10 @@ export default function EmbalagemModalKit({
 
   const montarKit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!temPermissao('lancar-embalagem')) {
+      mostrarPopupSemPermissao('Você não tem permissão para montar e embalar kits.');
+      return;
+    }
     setErro(null);
 
     if (!kitSelecionado || !gradeSelecionada || maxKitsMontaveis <= 0) {
@@ -406,29 +412,18 @@ export default function EmbalagemModalKit({
     const componentesConsumidos: EmbalagemKitComponenteConsumido[] = [];
 
     for (const componente of disponibilidades) {
-      let restante = quantidadeInformada * componente.quantidadeNecessaria;
-
-      for (const lote of componente.lotes) {
-        if (restante <= 0) break;
-
-        const quantidadeUsada = Math.min(restante, getSaldoLote(lote));
-        if (quantidadeUsada <= 0) continue;
-
-        componentesConsumidos.push({
-          id_arremate: lote.id,
-          produto_id: componente.produtoId,
-          variacao: componente.variante === '-' ? null : componente.variante,
-          quantidade_usada: quantidadeUsada,
-        });
-        restante -= quantidadeUsada;
-      }
-
-      if (restante > 0) {
+      const quantidadeNecessaria = quantidadeInformada * componente.quantidadeNecessaria;
+      if (componente.saldo < quantidadeNecessaria) {
         setErro(
           `O saldo do componente "${componente.nome}" mudou. Atualize a fila e tente novamente.`,
         );
         return;
       }
+      componentesConsumidos.push({
+        produto_id: componente.produtoId,
+        variacao: componente.variante === '-' ? null : componente.variante,
+        quantidade_usada: quantidadeNecessaria,
+      });
     }
 
     const nomeKit = getNomeProduto(kitSelecionado.produto);
@@ -450,7 +445,7 @@ export default function EmbalagemModalKit({
           kit_produto_id: kitSelecionado.produto.id,
           kit_variante: variacaoKit === '-' ? null : variacaoKit,
           quantidade_kits_montados: quantidadeInformada,
-          componentes_consumidos_de_arremates: componentesConsumidos,
+          componentes_consumidos: componentesConsumidos,
           observacao: observacao.trim() || null,
         },
         `embalagem-kit:${item.id}:${Date.now()}`,
@@ -749,14 +744,19 @@ export default function EmbalagemModalKit({
             </p>
           ) : null}
 
-          <button
-            className="gs-btn gs-btn-primario ep-modal-confirmar"
-            type="submit"
-            disabled={enviando || carregandoComponentes || maxKitsMontaveis <= 0}
+          <UIBloqueio
+            permissao="lancar-embalagem"
+            mensagem="Você não tem permissão para montar e embalar kits."
           >
-            <i className="fas fa-cubes" aria-hidden="true" />
-            {enviando ? 'Montando kit...' : 'Montar e embalar kit'}
-          </button>
+            <button
+              className="gs-btn gs-btn-primario ep-modal-confirmar"
+              type="submit"
+              disabled={enviando || carregandoComponentes || maxKitsMontaveis <= 0}
+            >
+              <i className="fas fa-cubes" aria-hidden="true" />
+              {enviando ? 'Montando kit...' : 'Montar e embalar kit'}
+            </button>
+          </UIBloqueio>
         </>
       )}
     </form>

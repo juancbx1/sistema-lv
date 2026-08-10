@@ -19,6 +19,8 @@ import EmbalagemControleQuantidade from './EmbalagemControleQuantidade';
 import EmbalagemModalHistorico from './EmbalagemModalHistorico';
 import EmbalagemModalKit from './EmbalagemModalKit';
 import UICarregando from './UICarregando';
+import UIBloqueio from './UIBloqueio';
+import { mostrarPopupSemPermissao, temPermissao } from '../utils/bloqueio';
 // @ts-expect-error popups sistêmicos legados, mantidos por compatibilidade visual.
 import { mostrarConfirmacao, mostrarMensagem } from '/js/utils/popups.js';
 
@@ -119,6 +121,10 @@ export default function EmbalagemModalOpcoes({
 
   const enviarEmbalagem = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!temPermissao('lancar-embalagem')) {
+      mostrarPopupSemPermissao('Você não tem permissão para registrar embalagens de produtos prontos.');
+      return;
+    }
     setErroOperacao(null);
 
     const quantidadeInformada = Number(quantidade);
@@ -283,14 +289,19 @@ export default function EmbalagemModalOpcoes({
                       {erroOperacao}
                     </p>
                   ) : null}
-                  <button
-                    className="gs-btn gs-btn-primario ep-modal-confirmar"
-                    type="submit"
-                    disabled={enviando || carregandoLotes || totalDosLotes <= 0}
+                  <UIBloqueio
+                    permissao="lancar-embalagem"
+                    mensagem="Você não tem permissão para registrar embalagens de produtos prontos."
                   >
-                    <i className="fas fa-box-open" aria-hidden="true" />
-                    {enviando ? 'Registrando...' : 'Registrar embalagem'}
-                  </button>
+                    <button
+                      className="gs-btn gs-btn-primario ep-modal-confirmar"
+                      type="submit"
+                      disabled={enviando || carregandoLotes || totalDosLotes <= 0}
+                    >
+                      <i className="fas fa-box-open" aria-hidden="true" />
+                      {enviando ? 'Registrando...' : 'Registrar embalagem'}
+                    </button>
+                  </UIBloqueio>
                 </>
               )}
             </form>

@@ -3,11 +3,16 @@
 import { useState } from 'react';
 import { mostrarMensagem } from '../../../js/utils/popups.js';
 import UIHeaderPagina from '../../components/UIHeaderPagina';
+import UIBloqueio from '../../components/UIBloqueio';
 import UITabNav from '../../components/UITabNav';
 import ConfigAlertasGerais from '../../components/ConfigAlertasGerais';
 import AvisosPopupAdmin from '../../components/AvisosPopupAdmin';
 import AvisosPopupGaleria from '../../components/AvisosPopupGaleria';
 import type { ConfigAlertasAba } from '../../utils/alertas-types';
+
+const PERMISSAO_ALERTAS = ['configurar-alertas', 'gerenciar-permissoes'] as const;
+const PERMISSAO_CRIAR_AVISO = 'criar-novo-aviso';
+const PERMISSAO_SALVAR_ALERTAS = ['salvar-alteracoes-de-alertas'] as const;
 
 export default function ConfigAlertasPage() {
     const [aba, setAba] = useState<ConfigAlertasAba>('alertas');
@@ -25,19 +30,29 @@ export default function ConfigAlertasPage() {
             <UIHeaderPagina titulo="Central de Alertas">
                 {aba === 'avisos' && (
                     <>
-                        <button
-                            className="gs-btn gs-btn-secundario"
-                            onClick={() => setGaleriaAberta(true)}
-                            title="Galeria de imagens"
+                        <UIBloqueio
+                            permissao={PERMISSAO_ALERTAS}
+                            mensagem="Você não tem permissão para gerenciar avisos popup."
                         >
-                            <i className="fas fa-images"></i>
-                        </button>
-                        <button
-                            className="gs-btn gs-btn-primario"
-                            onClick={() => setModalNovoAvisoAberto(true)}
+                            <button
+                                className="gs-btn gs-btn-secundario"
+                                onClick={() => setGaleriaAberta(true)}
+                                title="Galeria de imagens"
+                            >
+                                <i className="fas fa-images"></i>
+                            </button>
+                        </UIBloqueio>
+                        <UIBloqueio
+                            permissao={PERMISSAO_CRIAR_AVISO}
+                            mensagem="Você não tem permissão para criar avisos popup."
                         >
-                            <i className="fas fa-plus"></i> Novo Aviso
-                        </button>
+                            <button
+                                className="gs-btn gs-btn-primario"
+                                onClick={() => setModalNovoAvisoAberto(true)}
+                            >
+                                <i className="fas fa-plus"></i> Novo Aviso
+                            </button>
+                        </UIBloqueio>
                     </>
                 )}
                 {aba === 'alertas' && (
@@ -59,7 +74,10 @@ export default function ConfigAlertasPage() {
 
             <div className="gs-conteudo-pagina">
                 {aba === 'alertas' && (
-                    <ConfigAlertasGerais onTestarSom={handleTestarSom} />
+                    <ConfigAlertasGerais
+                        onTestarSom={handleTestarSom}
+                        permissao={PERMISSAO_SALVAR_ALERTAS}
+                    />
                 )}
                 {aba === 'avisos' && (
                     <AvisosPopupAdmin

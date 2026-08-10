@@ -5,11 +5,13 @@ import pg from 'pg';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
 import { put, del, list } from '@vercel/blob';
+import { getPermissoesCompletasUsuarioDB } from './usuarios.js';
 
 const { Pool } = pg;
 const router = express.Router();
 const pool = new Pool({ connectionString: process.env.POSTGRES_URL });
 const SECRET_KEY = process.env.JWT_SECRET;
+const PERMISSOES_GERENCIAR_ALERTAS = ['configurar-alertas', 'gerenciar-permissoes'];
 
 // Multer: mantém arquivo em memória para enviar ao Vercel Blob
 const storage = multer.memoryStorage();
@@ -85,6 +87,31 @@ function normalizarIdsIndividuais(valor) {
     }
     const n = Number(valor);
     return Number.isSafeInteger(n) && n > 0 ? [n] : [];
+}
+
+async function usuarioPodeGerenciarAlertas(dbClient, req) {
+    const permissoes = await getPermissoesCompletasUsuarioDB(
+        dbClient,
+        req.usuarioLogado.id,
+        req.empresaId,
+    );
+    return PERMISSOES_GERENCIAR_ALERTAS.some((permissao) => permissoes.includes(permissao));
+}
+
+async function negarSemPermissao(dbClient, req, res, permissaoAcao = null) {
+    if (permissaoAcao) {
+        const permissoes = await getPermissoesCompletasUsuarioDB(
+            dbClient,
+            req.usuarioLogado.id,
+            req.empresaId,
+        );
+        const temAcessoPagina = PERMISSOES_GERENCIAR_ALERTAS.some((permissao) => permissoes.includes(permissao));
+        if (temAcessoPagina && permissoes.includes(permissaoAcao)) return false;
+    } else if (await usuarioPodeGerenciarAlertas(dbClient, req)) {
+        return false;
+    }
+    res.status(403).json({ error: 'Permissão negada para gerenciar avisos popup.' });
+    return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -188,6 +215,7 @@ router.get('/', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        if (await negarSemPermissao(dbClient, req, res)) return;
 
         const result = await dbClient.query(
             `SELECT
@@ -290,6 +318,7 @@ router.get('/:id/visualizacoes', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        if (await negarSemPermissao(dbClient, req, res)) return;
         const avisoId = parseInt(req.params.id, 10);
         if (isNaN(avisoId)) return res.status(400).json({ error: 'ID inválido.' });
 
@@ -357,11 +386,17 @@ router.get('/:id/visualizacoes', async (req, res) => {
 // ---------------------------------------------------------------------------
 router.post('/upload-imagem', upload.single('imagem'), async (req, res) => {
     const empresaId = req.empresaId;
+    let dbClient;
     if (!req.file) {
         return res.status(400).json({ error: 'Nenhum arquivo recebido.' });
     }
 
     try {
+        dbClient = await pool.connect();
+        const operacao = req.get('x-permissao-operacao');
+        const permissoesDeUpload = ['criar-novo-aviso', 'editar-aviso', 'reaproveitar-aviso'];
+        const permissaoAcao = permissoesDeUpload.includes(operacao) ? operacao : null;
+        if (await negarSemPermissao(dbClient, req, res, permissaoAcao)) return;
         const ext = req.file.mimetype === 'image/webp' ? 'webp'
                   : req.file.mimetype === 'image/png'  ? 'png'
                   : 'jpg';
@@ -376,6 +411,8 @@ router.post('/upload-imagem', upload.single('imagem'), async (req, res) => {
     } catch (error) {
         console.error('[API /avisos-popup/upload-imagem POST] Erro:', error);
         res.status(500).json({ error: 'Erro ao fazer upload da imagem.' });
+    } finally {
+        if (dbClient) dbClient.release();
     }
 });
 
@@ -389,6 +426,10 @@ router.post('/', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        const permissaoAcao = req.get('x-permissao-operacao') === 'reaproveitar-aviso'
+            ? 'reaproveitar-aviso'
+            : 'criar-novo-aviso';
+        if (await negarSemPermissao(dbClient, req, res, permissaoAcao)) return;
         const {
             titulo,
             tipo,
@@ -465,6 +506,7 @@ router.put('/:id', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        if (await negarSemPermissao(dbClient, req, res, 'editar-aviso')) return;
         const avisoId = parseInt(req.params.id, 10);
         if (isNaN(avisoId)) return res.status(400).json({ error: 'ID inválido.' });
 
@@ -570,6 +612,15 @@ router.put('/:id/toggle-ativo', async (req, res) => {
         const avisoId = parseInt(req.params.id, 10);
         if (isNaN(avisoId)) return res.status(400).json({ error: 'ID inválido.' });
 
+        const { rows: [avisoAtual] } = await dbClient.query(
+            'SELECT ativo FROM avisos_popup WHERE id = $1 AND empresa_id = $2',
+            [avisoId, empresaId]
+        );
+        if (!avisoAtual) return res.status(404).json({ error: 'Aviso não encontrado.' });
+
+        const permissaoAcao = avisoAtual.ativo ? 'arquivar-aviso' : null;
+        if (await negarSemPermissao(dbClient, req, res, permissaoAcao)) return;
+
         const result = await dbClient.query(
             `UPDATE avisos_popup
              SET ativo = NOT ativo
@@ -603,6 +654,7 @@ router.delete('/:id', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        if (await negarSemPermissao(dbClient, req, res, 'excluir-aviso')) return;
         const avisoId = parseInt(req.params.id, 10);
         if (isNaN(avisoId)) return res.status(400).json({ error: 'ID inválido.' });
 
@@ -647,6 +699,7 @@ router.get('/blob-imagens', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        if (await negarSemPermissao(dbClient, req, res)) return;
 
         // Busca as imagens da empresa no Blob com paginação automática. A
         // empresa legada também consulta o prefixo antigo para preservar os
@@ -713,6 +766,7 @@ router.delete('/blob-imagens', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        if (await negarSemPermissao(dbClient, req, res)) return;
         const { url } = req.body;
 
         if (!url || !url.includes('vercel-storage.com')) {

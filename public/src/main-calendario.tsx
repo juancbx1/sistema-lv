@@ -44,7 +44,11 @@ function App() {
     useEffect(() => {
         const checarAuth = async () => {
             try {
-                const auth = await verificarAutenticacao('admin/calendario.html', []);
+                const auth = await verificarAutenticacao(
+                    'admin/calendario.html',
+                    ['acesso-calendario', 'gerenciar-permissoes'],
+                    'any',
+                );
                 if (auth) {
                     removerCarregamentoInicial();
                     setAutenticado(true);

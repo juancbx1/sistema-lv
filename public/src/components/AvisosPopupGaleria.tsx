@@ -5,6 +5,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import UICarregando from './UICarregando';
 import UIFeedbackNotFound from './UIFeedbackNotFound';
+import UIBloqueio from './UIBloqueio';
+import { mostrarPopupSemPermissao, temPermissao } from '../utils/bloqueio';
 import { mostrarMensagem, mostrarConfirmacao } from '../../js/utils/popups.js';
 import type {
     AvisoPopupBlobImagem,
@@ -28,6 +30,8 @@ function nomeArquivo(pathname: string): string {
     const partes = pathname.split('/');
     return partes[partes.length - 1] ?? pathname;
 }
+
+const PERMISSAO_ALERTAS = ['configurar-alertas', 'gerenciar-permissoes'] as const;
 
 export interface AvisosPopupGaleriaProps {
     onFechar: () => void;
@@ -81,6 +85,10 @@ export default function AvisosPopupGaleria({ onFechar }: AvisosPopupGaleriaProps
     };
 
     const handleDeletar = async (imagem: AvisoPopupBlobImagem) => {
+        if (!temPermissao(PERMISSAO_ALERTAS)) {
+            mostrarPopupSemPermissao('Você não tem permissão para excluir imagens de avisos popup.');
+            return;
+        }
         if (imagem.emUso && imagem.avisoAtivo) {
             mostrarMensagem(
                 `Imagem em uso pelo aviso ativo "${imagem.emUso}". Desative o aviso antes de deletar.`,
@@ -254,6 +262,7 @@ export default function AvisosPopupGaleria({ onFechar }: AvisosPopupGaleriaProps
                                             <i className={`fas ${copiado === img.url ? 'fa-check' : 'fa-copy'}`}></i>
                                             {copiado === img.url ? 'Copiado!' : 'Copiar URL'}
                                         </button>
+                                        <UIBloqueio permissao={PERMISSAO_ALERTAS} mensagem="Você não tem permissão para excluir imagens de avisos popup.">
                                         <button
                                             className={`avpg-acao-btn avpg-acao-btn--deletar ${img.emUso && img.avisoAtivo ? 'avpg-acao-btn--bloqueado' : ''}`}
                                             onClick={() => { void handleDeletar(img); }}
@@ -265,6 +274,7 @@ export default function AvisosPopupGaleria({ onFechar }: AvisosPopupGaleriaProps
                                                 : <><i className="fas fa-trash"></i></>
                                             }
                                         </button>
+                                        </UIBloqueio>
                                     </div>
                                 </div>
                             ))}

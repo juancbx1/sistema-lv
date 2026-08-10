@@ -4,10 +4,12 @@ import pkg from 'pg';
 const { Pool } = pkg;
 import jwt from 'jsonwebtoken';
 import express from 'express';
+import { getPermissoesCompletasUsuarioDB } from './usuarios.js';
 
 const router = express.Router();
 const pool = new Pool({ connectionString: process.env.POSTGRES_URL });
 const SECRET_KEY = process.env.JWT_SECRET;
+const PERMISSOES_GERENCIAR_CALENDARIO = ['acesso-calendario', 'gerenciar-permissoes'];
 
 router.use((req, res, next) => {
     try {
@@ -23,6 +25,24 @@ router.use((req, res, next) => {
 const tiposDoVinculo = (req) => req.vinculoEmpresa?.tipos || req.usuarioLogado?.tipos || [];
 const isAdminOuSupervisor = (req) =>
     tiposDoVinculo(req).some(t => ['administrador', 'supervisor'].includes(t));
+
+async function usuarioPodeGerenciarCalendario(dbClient, req) {
+    const permissoes = await getPermissoesCompletasUsuarioDB(
+        dbClient,
+        req.usuarioLogado.id,
+        req.empresaId,
+    );
+    return PERMISSOES_GERENCIAR_CALENDARIO.some((permissao) => permissoes.includes(permissao));
+}
+
+async function usuarioTemPermissaoCalendario(dbClient, req, permissao) {
+    const permissoes = await getPermissoesCompletasUsuarioDB(
+        dbClient,
+        req.usuarioLogado.id,
+        req.empresaId,
+    );
+    return permissoes.includes(permissao);
+}
 
 async function validarFuncionarioDaEmpresa(dbClient, funcionarioId, empresaId) {
     if (funcionarioId == null || funcionarioId === '') return true;
@@ -232,6 +252,10 @@ router.post('/', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        if (!(await usuarioPodeGerenciarCalendario(dbClient, req))
+            || !(await usuarioTemPermissaoCalendario(dbClient, req, 'criar-novo-evento'))) {
+            return res.status(403).json({ error: 'Permissão negada para gerenciar eventos do calendário.' });
+        }
         if (!(await validarFuncionarioDaEmpresa(dbClient, funcionario_id, empresaId))) {
             return res.status(404).json({ error: 'Funcionário não encontrado na empresa ativa.' });
         }
@@ -277,6 +301,10 @@ router.put('/:id', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        if (!(await usuarioPodeGerenciarCalendario(dbClient, req))
+            || !(await usuarioTemPermissaoCalendario(dbClient, req, 'editar-evento'))) {
+            return res.status(403).json({ error: 'Permissão negada para gerenciar eventos do calendário.' });
+        }
         if (!(await validarFuncionarioDaEmpresa(dbClient, funcionario_id, empresaId))) {
             return res.status(404).json({ error: 'Funcionário não encontrado na empresa ativa.' });
         }
@@ -317,6 +345,10 @@ router.delete('/:id', async (req, res) => {
     let dbClient;
     try {
         dbClient = await pool.connect();
+        if (!(await usuarioPodeGerenciarCalendario(dbClient, req))
+            || !(await usuarioTemPermissaoCalendario(dbClient, req, 'deletar-evento'))) {
+            return res.status(403).json({ error: 'Permissão negada para gerenciar eventos do calendário.' });
+        }
         const result = await dbClient.query(
             'DELETE FROM calendario_empresa WHERE id = $1 AND empresa_id = $2 RETURNING id',
             [req.params.id, empresaId]

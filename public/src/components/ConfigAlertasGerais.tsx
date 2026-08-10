@@ -7,6 +7,8 @@ import AlertaCard from '../pages/ConfigAlertas/AlertaCard';
 import DiasTrabalhoCard from '../pages/ConfigAlertas/DiasTrabalhoCard';
 import HorariosCard from '../pages/ConfigAlertas/HorariosCard';
 import UICarregando from './UICarregando';
+import UIBloqueio from './UIBloqueio';
+import { mostrarPopupSemPermissao, temPermissao } from '../utils/bloqueio';
 import type {
     AlertaConfig,
     AlertaConfigCampo,
@@ -56,9 +58,13 @@ const GRUPOS: GrupoAlerta[] = [
 
 export interface ConfigAlertasGeraisProps {
     onTestarSom: () => void;
+    permissao?: readonly string[];
 }
 
-export default function ConfigAlertasGerais({ onTestarSom }: ConfigAlertasGeraisProps) {
+export default function ConfigAlertasGerais({
+    onTestarSom,
+    permissao = ['configurar-alertas', 'gerenciar-permissoes'],
+}: ConfigAlertasGeraisProps) {
     const [configuracoes, setConfiguracoes] = useState<AlertaConfig[]>([]);
     const [diasDeTrabalho, setDiasDeTrabalho] = useState<DiasTrabalhoMap>({});
     const [horarioInicio, setHorarioInicio]       = useState('07:00');
@@ -92,6 +98,10 @@ export default function ConfigAlertasGerais({ onTestarSom }: ConfigAlertasGerais
     };
 
     const handleSalvar = async () => {
+        if (!temPermissao(permissao)) {
+            mostrarPopupSemPermissao('Você não tem permissão para salvar as configurações da Central de Alertas.');
+            return;
+        }
         setSalvando(true);
         try {
             await Promise.all([
@@ -128,12 +138,17 @@ export default function ConfigAlertasGerais({ onTestarSom }: ConfigAlertasGerais
                 <button className="gs-btn gs-btn-secundario" onClick={onTestarSom}>
                     <i className="fas fa-volume-up"></i> Testar Som
                 </button>
-                <button className="gs-btn gs-btn-sucesso" onClick={() => { void handleSalvar(); }} disabled={salvando}>
-                    {salvando
-                        ? <><UICarregando variante="inline" /> Salvando...</>
-                        : <><i className="fas fa-save"></i> Salvar Alterações</>
-                    }
-                </button>
+                <UIBloqueio
+                    permissao={permissao}
+                    mensagem="Você não tem permissão para salvar as configurações da Central de Alertas."
+                >
+                    <button className="gs-btn gs-btn-sucesso" onClick={() => { void handleSalvar(); }} disabled={salvando}>
+                        {salvando
+                            ? <><UICarregando variante="inline" /> Salvando...</>
+                            : <><i className="fas fa-save"></i> Salvar Alterações</>
+                        }
+                    </button>
+                </UIBloqueio>
             </div>
 
             <DiasTrabalhoCard

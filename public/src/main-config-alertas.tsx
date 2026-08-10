@@ -15,7 +15,11 @@ function App() {
     useEffect(() => {
         const checarAuth = async () => {
             try {
-                const auth = await verificarAutenticacao('admin/config-alertas.html', ['configurar-alertas']);
+                const auth = await verificarAutenticacao(
+                    'admin/config-alertas.html',
+                    ['configurar-alertas', 'gerenciar-permissoes'],
+                    'any',
+                );
                 if (auth) {
                     removerCarregamentoInicial();
                     setAutenticado(true);

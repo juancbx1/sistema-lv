@@ -17,6 +17,24 @@ const pool = new Pool({
 
 const SECRET_KEY = process.env.JWT_SECRET;
 
+async function compararSenhaComSeguranca(senhaInformada, hashSalvo) {
+  if (
+    typeof hashSalvo !== 'string'
+    || !/^\$2[aby]\$\d{2}\$.{53}$/.test(hashSalvo)
+  ) {
+    return false;
+  }
+
+  try {
+    return await bcrypt.compare(senhaInformada, hashSalvo);
+  } catch (error) {
+    console.warn('[API /login] Hash de senha inválido encontrado; acesso recusado.', {
+      codigo: error?.code || 'BCRYPT_HASH_INVALIDO',
+    });
+    return false;
+  }
+}
+
 // 3. Define a rota POST para a raiz do roteador ('/')
 //    Quando o api/index.js fizer app.use('/login', loginRouter),
 //    esta rota responderá a POST /api/login
@@ -55,7 +73,7 @@ router.post('/', async (req, res) => {
       return res.status(401).json({ error: 'Credenciais inválidas.' });
     }
 
-    const senhaValida = await bcrypt.compare(senha, usuario.senha);
+    const senhaValida = await compararSenhaComSeguranca(senha, usuario.senha);
     if (!senhaValida) {
       return res.status(401).json({ error: 'Credenciais inválidas.' });
     }

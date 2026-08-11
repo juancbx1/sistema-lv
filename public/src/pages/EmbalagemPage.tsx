@@ -5,10 +5,14 @@ import UIHeaderPagina from '../components/UIHeaderPagina';
 import UICarregando from '../components/UICarregando';
 import UIFeedbackNotFound from '../components/UIFeedbackNotFound';
 import EmbalagemCard from '../components/EmbalagemCard.tsx';
-import EmbalagemModalPerda from '../components/EmbalagemModalPerda';
+import EmbalagemModalOcorrencia from '../components/EmbalagemModalOcorrencia';
+import EmbalagemModalConsertos from '../components/EmbalagemModalConsertos';
 import EmbalagemModalOpcoes from '../components/EmbalagemModalOpcoes';
 import EmbalagemPainelFiltros from '../components/EmbalagemPainelFiltros.tsx';
+import UIBloqueio from '../components/UIBloqueio';
+import ProducaoHistoricoModal from '../components/ProducaoHistoricoModal.jsx';
 import {
+  listarConsertosPendentes,
   listarFilaEmbalagem,
   listarNiveisEstoque,
   listarProdutos,
@@ -200,7 +204,10 @@ export default function EmbalagemPage({}: EmbalagemPageProps) {
   const [selecionado, setSelecionado] = useState<EmbalagemFilaItem | null>(null);
   const [paginaAtual, setPaginaAtual] = useState(1);
   const paginacaoContainerRef = useRef<HTMLDivElement>(null);
-  const [perdaAberta, setPerdaAberta] = useState(false);
+  const [ocorrenciaAberta, setOcorrenciaAberta] = useState(false);
+  const [consertosAbertos, setConsertosAbertos] = useState(false);
+  const [historicoAberto, setHistoricoAberto] = useState(false);
+  const [consertosPendentes, setConsertosPendentes] = useState(0);
   const [carregando, setCarregando] = useState(true);
   const [atualizando, setAtualizando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -227,6 +234,15 @@ export default function EmbalagemPage({}: EmbalagemPageProps) {
       setItems(enriquecerFila(fila, produtos));
       setSaldoEstoque(saldo);
       setNiveisEstoque(niveis);
+      try {
+        const consertos = await listarConsertosPendentes();
+        setConsertosPendentes(consertos.length);
+      } catch (error) {
+        if (import.meta.env.DEV) {
+          console.warn('[Embalagem] Os consertos pendentes estão indisponíveis:', error);
+        }
+        setConsertosPendentes(0);
+      }
     } catch (error) {
       setErro(
         error instanceof Error
@@ -294,14 +310,50 @@ export default function EmbalagemPage({}: EmbalagemPageProps) {
   return (
     <>
       <UIHeaderPagina titulo="Embalagem de produtos">
-        <button
-          className="gs-btn gs-btn-secundario"
-          type="button"
-          onClick={() => setPerdaAberta(true)}
+        <UIBloqueio
+          permissao={['acesso-producao-geral', 'acesso-ordens-de-producao', 'acesso-ordens-de-arremates']}
+          mensagem="Você não tem permissão para consultar o Histórico geral."
         >
-          <i className="fas fa-triangle-exclamation" aria-hidden="true" />
-          Registrar perda
-        </button>
+          <button
+            className="gs-btn gs-btn-secundario gs-btn-com-icone"
+            type="button"
+            onClick={() => setHistoricoAberto(true)}
+            title="Consultar Histórico geral"
+          >
+            <i className="fas fa-clipboard-list" aria-hidden="true" />
+            <span>Histórico geral</span>
+          </button>
+        </UIBloqueio>
+        <UIBloqueio
+          permissao={['lancar-embalagem', 'registrar-ocorrencia-embalagem']}
+          mensagem="Você não tem permissão para registrar ocorrências na Embalagem."
+        >
+          <button
+            className="gs-btn gs-btn-secundario"
+            type="button"
+            onClick={() => setOcorrenciaAberta(true)}
+          >
+            <i className="fas fa-triangle-exclamation" aria-hidden="true" />
+            Registrar ocorrência
+          </button>
+        </UIBloqueio>
+        <UIBloqueio
+          permissao={['lancar-embalagem', 'registrar-ocorrencia-embalagem']}
+          mensagem="Você não tem permissão para administrar consertos da Embalagem."
+        >
+          <button
+            className="gs-btn gs-btn-secundario ep-header-consertos"
+            type="button"
+            onClick={() => setConsertosAbertos(true)}
+            title="Consultar consertos pendentes"
+          >
+            <i className="fas fa-screwdriver-wrench" aria-hidden="true" />
+            <span>Consertos</span>
+            {consertosPendentes > 0 ? (
+              <strong className="ep-header-consertos-badge">{consertosPendentes}</strong>
+            ) : null}
+          </button>
+        </UIBloqueio>
       </UIHeaderPagina>
 
       <div className="gs-conteudo-pagina ep-fila-pagina">
@@ -427,8 +479,32 @@ export default function EmbalagemPage({}: EmbalagemPageProps) {
         />
       ) : null}
 
-      {perdaAberta ? (
-        <EmbalagemModalPerda onClose={() => setPerdaAberta(false)} />
+      {ocorrenciaAberta ? (
+        <EmbalagemModalOcorrencia
+          items={items}
+          onClose={() => setOcorrenciaAberta(false)}
+          onConcluida={async () => {
+            setOcorrenciaAberta(false);
+            await carregarFila(true);
+          }}
+        />
+      ) : null}
+
+      {consertosAbertos ? (
+        <EmbalagemModalConsertos
+          onClose={() => setConsertosAbertos(false)}
+          onAtualizado={async () => {
+            await carregarFila(true);
+          }}
+        />
+      ) : null}
+
+      {historicoAberto ? (
+        <ProducaoHistoricoModal
+          isOpen={historicoAberto}
+          onClose={() => setHistoricoAberto(false)}
+          podeEstornar={false}
+        />
       ) : null}
     </>
   );

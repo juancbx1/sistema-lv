@@ -2280,14 +2280,26 @@
 }
 
 .go-permissoes-catalogo .go-permissoes-lista {
-    max-height: 330px;
+    max-height: none;
     margin-top: 11px;
 }
 
 .go-permissoes-catalogo .go-permissoes-lista label {
     position: relative;
+    min-width: 0;
     min-height: 55px;
     transition: border-color .15s ease, background .15s ease;
+}
+
+.go-permissoes-catalogo .go-permissoes-lista label > span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    line-height: 1.35;
+}
+
+.go-permissoes-catalogo .go-permissoes-lista label > span > strong {
+    display: block;
+    line-height: 1.25;
 }
 
 .go-permissoes-catalogo .go-permissoes-lista label.selecionada {

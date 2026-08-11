@@ -21,6 +21,19 @@
 export const changelog = [
 
     {
+        versao: '1.46.2',
+        data: '11/08/2026',
+        admin: [
+            'Seleção de tarefas e confirmação de quantidades agora compartilham o mesmo modal nas produções internas e nos lançamentos externos, com regras de fase e executor preservadas',
+            'Percursos unificados de etapas OP ficaram mais claros na seleção, na confirmação de quantidades e na jornada do empregado, incluindo o tratamento correto das etapas manuais Não Usa',
+            'O painel Jornada e atividades recebeu uma fila operacional mais compacta, com variação, imagem, etapa e quantidade em destaque, além de cards Fora da operação distribuídos em duas colunas',
+            'A página de Embalagem ganhou o registro de ocorrências, fluxo de conserto e histórico de eventos, com motivos operacionais e controle seguro do saldo de produto pronto',
+            'A fila de tarefas e os cards de produção receberam ajustes responsivos para tablet, desktop e celular, mantendo as cores de OP e POS_OP na identificação das etapas',
+        ],
+        dashboard: [],
+    },
+
+    {
         versao: '1.46.1',
         data: '09/08/2026',
         admin: [

@@ -3,6 +3,8 @@ import type {
   EmbalagemFilaItem,
   EmbalagemFilaItemApi,
   EmbalagemHistoricoResposta,
+  EmbalagemOcorrenciaConserto,
+  EmbalagemOcorrenciaPayload,
   EmbalagemKitMontagemPayload,
   EmbalagemEstoqueSaldo,
   EmbalagemNivelEstoque,
@@ -28,6 +30,10 @@ interface ListaEstoqueResponse {
 
 interface ListaNiveisEstoqueResponse {
   rows?: EmbalagemNivelEstoque[];
+}
+
+interface OcorrenciasConsertoResponse {
+  rows?: EmbalagemOcorrenciaConserto[];
 }
 
 async function requestJson<T>(
@@ -171,6 +177,57 @@ export async function registrarEmbalagemUnitaria(
       produto_id: item.produtoId,
       variante_nome: item.variante === '-' ? null : item.variante,
       quantidade_embalada: quantidade,
+      observacao: observacao.trim() || null,
+    }),
+  });
+}
+
+function gerarChaveIdempotencia(prefixo: string): string {
+  const sufixo = typeof globalThis.crypto?.randomUUID === 'function'
+    ? globalThis.crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `${prefixo}:${sufixo}`;
+}
+
+export async function registrarOcorrenciaEmbalagem(
+  payload: EmbalagemOcorrenciaPayload,
+): Promise<void> {
+  await requestJson('/api/embalagens/ocorrencias', {
+    method: 'POST',
+    headers: {
+      'Idempotency-Key': gerarChaveIdempotencia('ocorrencia-embalagem'),
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function listarConsertosPendentes(): Promise<EmbalagemOcorrenciaConserto[]> {
+  const payload = await requestJson<OcorrenciasConsertoResponse>(
+    '/api/embalagens/ocorrencias/consertos',
+  );
+  return Array.isArray(payload.rows) ? payload.rows : [];
+}
+
+export async function retornarProdutoDoConserto(
+  ocorrenciaId: number | string,
+  quantidade: number,
+  observacao: string,
+): Promise<void> {
+  await requestJson(`/api/embalagens/ocorrencias/${ocorrenciaId}/retornar-conserto`, {
+    method: 'POST',
+    body: JSON.stringify({ quantidade, observacao: observacao.trim() || null }),
+  });
+}
+
+export async function converterConsertoEmAvaria(
+  ocorrenciaId: number | string,
+  quantidade: number | null,
+  observacao: string,
+): Promise<void> {
+  await requestJson(`/api/embalagens/ocorrencias/${ocorrenciaId}/converter-avaria`, {
+    method: 'POST',
+    body: JSON.stringify({
+      ...(quantidade === null ? {} : { quantidade }),
       observacao: observacao.trim() || null,
     }),
   });

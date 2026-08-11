@@ -127,6 +127,10 @@ function formatarPontos(valor?: number | string | null) {
     });
 }
 
+function formatarTotalPontos(valor?: number | string | null) {
+    return Math.round(Number(valor || 0)).toLocaleString('pt-BR');
+}
+
 export default function DashAtividadesRecentesRedesign() {
     const hoje = dataHojeISO();
     const [filtroPeriodo, setFiltroPeriodo] = useState<DashFiltroPeriodoAtividades>('hoje');
@@ -263,7 +267,7 @@ export default function DashAtividadesRecentesRedesign() {
                     <span>processos</span>
                 </div>
                 <div>
-                    <strong>{formatarPontos(totalPontos)}</strong>
+                    <strong>{formatarTotalPontos(totalPontos)}</strong>
                     <span>pontos no período</span>
                 </div>
                 <div className="ds-atividades-redesign-barras" aria-label="Distribuição de pontos nas atividades">

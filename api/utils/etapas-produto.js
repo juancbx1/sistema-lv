@@ -1,4 +1,5 @@
 const FASES_VALIDAS = new Set(['OP', 'POS_OP']);
+const MODOS_EXECUCAO_VALIDOS = new Set(['MANUAL', 'LIBERACAO_AUTOMATICA']);
 
 function textoOuNulo(valor) {
     if (typeof valor !== 'string') return null;
@@ -21,6 +22,23 @@ export function normalizarFaseEtapa(fase, fallback = null) {
     return FASES_VALIDAS.has(fallback) ? fallback : null;
 }
 
+/**
+ * POS_OP continua sendo o gate que libera a embalagem, mas nem todo produto
+ * possui trabalho físico de arremate. O modo automático representa apenas
+ * essa liberação; ele nunca transforma uma etapa OP em POS_OP.
+ */
+export function normalizarModoExecucaoEtapa(modo, fase = null) {
+    if (fase !== 'POS_OP') return 'MANUAL';
+    const valor = textoOuNulo(modo)?.toUpperCase() || 'MANUAL';
+    return MODOS_EXECUCAO_VALIDOS.has(valor) ? valor : 'MANUAL';
+}
+
+export function etapaEhLiberacaoAutomatica(etapa) {
+    return etapa?.fase === 'POS_OP'
+        && normalizarModoExecucaoEtapa(etapa?.modoExecucao ?? etapa?.modo_execucao, etapa.fase)
+            === 'LIBERACAO_AUTOMATICA';
+}
+
 export function normalizarEtapaProduto(etapa, {
     indice = 0,
     origem = 'etapas',
@@ -40,6 +58,10 @@ export function normalizarEtapaProduto(etapa, {
         maquina: textoOuNulo(objeto.maquina),
         feitoPor: normalizarExecutoresEtapa(objeto.feitoPor),
         fase: normalizarFaseEtapa(objeto.fase, fasePadrao),
+        modoExecucao: normalizarModoExecucaoEtapa(
+            objeto.modoExecucao ?? objeto.modo_execucao,
+            normalizarFaseEtapa(objeto.fase, fasePadrao),
+        ),
         origem: textoOuNulo(objeto.origem) || origem,
     };
 }

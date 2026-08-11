@@ -1,43 +1,15 @@
 // public/src/components/OPExternoTela.tsx
-// Aba inline de lancamento externo, sem modal/overlay.
+// Aba de lançamento externo que reutiliza o modal canônico de produção.
 
-import { Fragment, type ComponentType, useCallback, useState } from 'react';
+import { useCallback, useState } from 'react';
 // @ts-expect-error popups JS legado sem declaracao TypeScript
 import { mostrarMensagem, mostrarConfirmacao } from '/js/utils/popups.js';
-import OPTelaSelecaoEtapa from './OPTelaSelecaoEtapa.tsx';
+import OPAtribuicaoModal from './OPAtribuicaoModal.jsx';
 import UIFeedbackNotFound from './UIFeedbackNotFound';
-import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio';
 import UIBloqueio from './UIBloqueio';
 
-type OpTelaExterna = 'tipo' | 'selecao' | 'confirmacao' | 'historico';
+type OpTelaExterna = 'tipo' | 'historico';
 type OpFreelanceTipo = 'costureira' | 'tiktik';
-
-interface OpEtapaUnificada {
-  processo: string;
-  etapa_index?: number;
-  maquina?: string | null;
-}
-
-interface OpGrupoUnificacao {
-  grupo_id: string;
-  etapas: OpEtapaUnificada[];
-}
-
-interface OpEtapaExterna {
-  produto_id: number;
-  variante?: string | null;
-  processo: string;
-  processo_id?: string | number | null;
-  etapa_id?: string | null;
-  fase?: string | null;
-  quantidade_disponivel: number | string;
-  produto_nome: string;
-  imagem_produto?: string | null;
-  origem_ops?: Array<number | string>;
-  origens_pos_op?: Array<{ op_numero?: number | string; quantidade?: number | string }>;
-  _unificada?: boolean;
-  _grupo_unificacao?: OpGrupoUnificacao;
-}
 
 interface OpHistoricoExterno {
   id: number;
@@ -50,19 +22,6 @@ interface OpHistoricoExterno {
   lancado_por?: string | null;
   freelance_nome?: string | null;
 }
-
-interface OpFuncionarioExterno {
-  id: null;
-  nome: string;
-  tipos: OpFreelanceTipo[];
-}
-
-interface OpTelaSelecaoEtapaProps {
-  onEtapaSelect: (etapa: OpEtapaExterna | OpEtapaExterna[]) => void;
-  funcionario: OpFuncionarioExterno;
-}
-
-const OPTelaSelecaoEtapaTipado = OPTelaSelecaoEtapa as unknown as ComponentType<OpTelaSelecaoEtapaProps>;
 
 function fmtHora(iso?: string | null) {
   if (!iso) return '--:--';
@@ -86,33 +45,13 @@ function mensagemDoErro(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
-function chaveTarefa(tarefa: Pick<OpEtapaExterna, 'produto_id' | 'variante' | 'processo' | 'processo_id' | 'etapa_id' | 'fase' | 'origem_ops'>) {
-  const origem = tarefa.fase === 'POS_OP' ? (tarefa.origem_ops || []).join(',') : '';
-  return [
-    tarefa.produto_id,
-    tarefa.variante || '',
-    tarefa.fase || 'OP',
-    tarefa.etapa_id || tarefa.processo_id || tarefa.processo,
-    origem,
-  ].join('::');
-}
-
 export default function OPExternoTela() {
   const [tela, setTela] = useState<OpTelaExterna>('tipo');
   const [freelanceTipo, setFreelanceTipo] = useState<OpFreelanceTipo | null>(null);
-  const [itensSelecionados, setItensSelecionados] = useState<OpEtapaExterna[]>([]);
-  const [quantidades, setQuantidades] = useState<Record<string, number | string>>({});
-  const [carregando, setCarregando] = useState(false);
+  const [modalAberto, setModalAberto] = useState(false);
   const [historico, setHistorico] = useState<OpHistoricoExterno[]>([]);
   const [carregandoHistorico, setCarregandoHistorico] = useState(false);
   const [desfazendoId, setDesfazendoId] = useState<number | null>(null);
-
-  const resetar = () => {
-    setTela('tipo');
-    setFreelanceTipo(null);
-    setItensSelecionados([]);
-    setQuantidades({});
-  };
 
   const carregarHistorico = useCallback(async () => {
     setCarregandoHistorico(true);
@@ -164,7 +103,7 @@ export default function OPExternoTela() {
     }
   };
 
-  const fakeFuncionario: OpFuncionarioExterno | null = freelanceTipo
+  const fakeFuncionario = freelanceTipo
     ? {
         id: null,
         nome: `Freelance ${freelanceTipo === 'costureira' ? 'Costureira' : 'TikTik'}`,
@@ -174,92 +113,58 @@ export default function OPExternoTela() {
 
   const handleTipoSelect = (tipo: OpFreelanceTipo) => {
     setFreelanceTipo(tipo);
-    setTela('selecao');
+    setModalAberto(true);
   };
 
-  const handleEtapaSelect = (etapa: OpEtapaExterna | OpEtapaExterna[]) => {
-    const itens = Array.isArray(etapa) ? etapa : [etapa];
-    const quantidadesIniciais: Record<string, number | string> = {};
-    itens.forEach((item) => {
-      quantidadesIniciais[chaveTarefa(item)] = item.quantidade_disponivel;
-    });
-    setItensSelecionados(itens);
-    setQuantidades(quantidadesIniciais);
-    setTela('confirmacao');
+  const handleFecharModal = () => {
+    setModalAberto(false);
+    setFreelanceTipo(null);
   };
 
-  const ajustarQtd = (key: string, delta: number, max: number | string) => {
-    setQuantidades((prev) => ({
-      ...prev,
-      [key]: Math.max(0, Math.min(Number(max), (parseInt(String(prev[key]), 10) || 0) + delta)),
+  const handleConfirmarExterno = async (payloadItens: Array<Record<string, unknown>>) => {
+    if (!freelanceTipo) throw new Error('Selecione o tipo do prestador externo.');
+
+    const itens = payloadItens.map((item) => ({
+      op_numero: item.opNumero,
+      produto_id: item.produto_id,
+      variante: item.variante === '-' ? null : item.variante || null,
+      processo: item.processo,
+      processo_id: item.processo_id ?? null,
+      etapa_id: item.etapa_id ?? null,
+      fase: item.fase || 'OP',
+      quantidade: item.quantidade,
+      ...(item.fase === 'POS_OP' && Array.isArray(item.origens_pos_op)
+        ? { origens_pos_op: item.origens_pos_op }
+        : {}),
+      ...(Array.isArray(item.etapas_unificadas)
+        ? { etapas_unificadas: item.etapas_unificadas }
+        : {}),
     }));
-  };
 
-  const podeConfirmar = temPermissao('confirmar-lancamento');
-
-  const handleConfirmar = async () => {
-    setCarregando(true);
     try {
       const token = localStorage.getItem('token');
-      const itensPayload = itensSelecionados
-        .map((item) => {
-          const key = chaveTarefa(item);
-          const qtd = parseInt(String(quantidades[key]), 10) || 0;
-          if (qtd <= 0) return null;
-          return {
-            op_numero: item.origem_ops?.[0],
-            produto_id: item.produto_id,
-            variante: item.variante || null,
-            processo: item.processo,
-            processo_id: item.processo_id ?? null,
-            etapa_id: item.etapa_id ?? null,
-            fase: item.fase || 'OP',
-            quantidade: qtd,
-            ...(item.fase === 'POS_OP'
-              ? {
-                origens_pos_op: item.origens_pos_op?.length
-                  ? item.origens_pos_op
-                  : [{ op_numero: item.origem_ops?.[0], quantidade: qtd }],
-              }
-              : {}),
-            ...(item._unificada && item._grupo_unificacao?.etapas
-              ? { etapas_unificadas: item._grupo_unificacao.etapas }
-              : {}),
-          };
-        })
-        .filter((item): item is NonNullable<typeof item> => item !== null);
-
-      if (itensPayload.length === 0) throw new Error('Defina pelo menos uma quantidade válida.');
-
       const res = await fetch('/api/producoes/externo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ freelance_tipo: freelanceTipo, itens: itensPayload }),
+        body: JSON.stringify({ freelance_tipo: freelanceTipo, itens }),
       });
       if (!res.ok) {
         const errorData = (await res.json()) as { error?: string };
         throw new Error(errorData.error || 'Erro ao registrar produção externa.');
       }
       mostrarMensagem('Produção externa registrada com sucesso!', 'sucesso');
-      resetar();
     } catch (error) {
-      mostrarMensagem(mensagemDoErro(error, 'Erro ao registrar produção externa.'), 'erro');
-    } finally {
-      setCarregando(false);
+      throw new Error(mensagemDoErro(error, 'Erro ao registrar produção externa.'));
     }
   };
 
   const handleVoltar = () => {
-    if (tela === 'confirmacao') return setTela('selecao');
-    if (tela === 'selecao') return setTela('tipo');
     if (tela === 'historico') return setTela('tipo');
     setTela('tipo');
   };
 
   const titulos: Record<OpTelaExterna, string> = {
     tipo: 'Lançamento Externo',
-    selecao: 'Selecionar Tarefa',
-    confirmacao: 'Confirmar Quantidade',
     historico: 'Histórico de Lançamentos',
   };
 
@@ -319,153 +224,6 @@ export default function OPExternoTela() {
             </div>
             <button className="op-externo-ver-historico" onClick={handleVerHistorico}>
               <i className="fas fa-history"></i> Ver lançamentos recentes (desfazer)
-            </button>
-          </div>
-        )}
-
-        {tela === 'selecao' && fakeFuncionario && (
-          <OPTelaSelecaoEtapaTipado onEtapaSelect={handleEtapaSelect} funcionario={fakeFuncionario} />
-        )}
-
-        {tela === 'confirmacao' && (
-          <div className="op-confirmacao-container">
-            <div className="op-confirmacao-lista">
-              {itensSelecionados.map((item) => {
-                const key = chaveTarefa(item);
-                const qtd = quantidades[key] !== undefined ? quantidades[key] : item.quantidade_disponivel;
-                return (
-                  <div key={key} className="op-item-confirmacao-card borda-etapa-normal">
-                    <div className="card-borda-charme" aria-hidden="true"></div>
-                    <div className="item-info-visual">
-                      <img
-                        src={item.imagem_produto || '/img/placeholder-image.png'}
-                        alt={item.produto_nome}
-                      />
-                      <div>
-                        <h4>{item.produto_nome}</h4>
-                        {item.variante && <p className="variante">{item.variante}</p>}
-                        {item._unificada && item._grupo_unificacao?.etapas ? (
-                          <div className="op-confirmacao-processos-unif">
-                            {item._grupo_unificacao.etapas.map((etapa, index) => (
-                              <Fragment key={etapa.processo}>
-                                <span className="op-confirmacao-etapa-chip">{etapa.processo}</span>
-                                {index < item._grupo_unificacao!.etapas.length - 1 && (
-                                  <i className="fas fa-arrow-right op-confirmacao-unif-seta"></i>
-                                )}
-                              </Fragment>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="processo">{item.processo}</p>
-                        )}
-                        {item.origem_ops && item.origem_ops.length > 0 && (
-                          <p className="op-confirmacao-op-link">
-                            <i className="fas fa-link"></i>
-                            {' OP #'}
-                            {item.origem_ops.slice(0, 2).join(' • #')}
-                            {item.origem_ops.length > 2 ? ` +${item.origem_ops.length - 2}` : ''}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    <div className="item-controles-qtd">
-                      <div className="qtd-display-linha">
-                        <button
-                          className="btn-ajuste mini"
-                          onClick={() => ajustarQtd(key, -1, item.quantidade_disponivel)}
-                        >
-                          -
-                        </button>
-                        <input
-                          type="number"
-                          value={qtd}
-                          onChange={(event) => {
-                            const n = parseInt(event.target.value, 10);
-                            if (
-                              event.target.value === '' ||
-                              (!Number.isNaN(n) && n >= 0 && n <= Number(item.quantidade_disponivel))
-                            ) {
-                              setQuantidades((prev) => ({
-                                ...prev,
-                                [key]: event.target.value === '' ? '' : n,
-                              }));
-                            }
-                          }}
-                        />
-                        <button
-                          className="btn-ajuste mini"
-                          onClick={() => ajustarQtd(key, 1, item.quantidade_disponivel)}
-                        >
-                          +
-                        </button>
-                      </div>
-                      <div className="qtd-atalhos-linha">
-                        <button onClick={() => ajustarQtd(key, 10, item.quantidade_disponivel)}>+10</button>
-                        <button
-                          className="btn-max"
-                          onClick={() =>
-                            setQuantidades((prev) => ({
-                              ...prev,
-                              [key]: item.quantidade_disponivel,
-                            }))
-                          }
-                        >
-                          Max ({item.quantidade_disponivel})
-                        </button>
-                      </div>
-                    </div>
-                    {item._unificada && item._grupo_unificacao?.etapas && (
-                      <div className="op-confirmacao-unif-detalhe">
-                        <div className="op-confirmacao-unif-titulo">
-                          <i className="fas fa-link"></i> {item._grupo_unificacao.etapas.length} etapas — registradas juntas
-                        </div>
-                        {item._grupo_unificacao.etapas.map((etapa, index) => {
-                          const isLast = index === item._grupo_unificacao!.etapas.length - 1;
-                          return (
-                            <div key={etapa.processo} className="op-confirmacao-unif-item">
-                              <span className="op-confirmacao-unif-step-label">
-                                {isLast ? 'Etapa Final' : `Etapa ${etapa.etapa_index! + 1}`}
-                              </span>
-                              <span className="op-confirmacao-etapa-chip">{etapa.processo}</span>
-                              {etapa.maquina && etapa.maquina !== 'Não Definida' && (
-                                <span className="op-confirmacao-unif-maquina">
-                                  <i className="fas fa-cog"></i> {etapa.maquina}
-                                </span>
-                              )}
-                              <span className="op-confirmacao-unif-qtd-label">{parseInt(String(qtd), 10) || 0} pçs</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            <button
-              className={`op-selecao-fab${!podeConfirmar ? ' op-selecao-fab--bloqueado' : ''}`}
-              onClick={() => {
-                if (!podeConfirmar) {
-                  mostrarPopupSemPermissao('Você não tem permissão para confirmar lançamentos de produção.');
-                  return;
-                }
-                void handleConfirmar();
-              }}
-              disabled={carregando}
-            >
-              {carregando ? (
-                <>
-                  <div className="spinner-btn-interno"></div> Registrando...
-                </>
-              ) : !podeConfirmar ? (
-                <>
-                  <i className="fas fa-lock"></i> Sem permissão
-                </>
-              ) : (
-                <>
-                  <i className="fas fa-check-double"></i> Confirmar Lançamento
-                </>
-              )}
             </button>
           </div>
         )}
@@ -536,6 +294,16 @@ export default function OPExternoTela() {
         )}
         </div>
       </div>
+      {modalAberto && fakeFuncionario && (
+        <OPAtribuicaoModal
+          funcionario={fakeFuncionario}
+          isOpen={modalAberto}
+          onClose={handleFecharModal}
+          tpp={undefined}
+          onConfirmarLote={handleConfirmarExterno}
+          fasesPermitidas={freelanceTipo === 'costureira' ? ['OP'] : ['POS_OP']}
+        />
+      )}
     </div>
   );
 }

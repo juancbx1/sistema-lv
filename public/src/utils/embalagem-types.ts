@@ -141,3 +141,38 @@ export interface EmbalagemFiltroOpcoes {
   tamanhos: string[];
   cores: string[];
 }
+
+export type EmbalagemOcorrenciaMotivo =
+  | 'QUANTIDADE_DIVERGENTE'
+  | 'LANCAMENTO_ERRADO'
+  | 'PRODUTO_AVARIADO'
+  | 'ENVIAR_CONSERTO';
+
+export interface EmbalagemOcorrenciaPayload {
+  produto_id: number | string;
+  variante: string | null;
+  motivo: EmbalagemOcorrenciaMotivo;
+  quantidade?: number | null;
+  quantidade_fisica?: number | null;
+  observacao: string;
+}
+
+export interface EmbalagemOcorrenciaConserto {
+  id: number | string;
+  produto_id: number | string;
+  produto_nome?: string | null;
+  produto_imagem?: string | null;
+  variante?: string | null;
+  motivo: EmbalagemOcorrenciaMotivo;
+  quantidade_total: number | string;
+  quantidade_em_conserto: number | string;
+  quantidade_retornada?: number | string | null;
+  quantidade_baixada?: number | string | null;
+  status: 'EM_CONSERTO' | 'CONCLUIDA' | string;
+  observacao?: string | null;
+  usuario_responsavel_nome?: string | null;
+  criado_em?: string | null;
+  atualizado_em?: string | null;
+  op_numero?: string | null;
+  [key: string]: unknown;
+}

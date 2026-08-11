@@ -503,6 +503,14 @@ export const permissoesDisponiveis = [
         aba: 'Principal',
         tipo: 'acao',
     }),
+    criarPermissao('registrar-ocorrencia-embalagem', {
+        label: 'Registrar ocorrência na Embalagem',
+        descricao: 'Permite baixar divergências, registrar avarias e controlar envios para conserto antes do estoque.',
+        modulo: 'Embalagem e Estoque',
+        pagina: 'Embalagem de Produtos',
+        aba: 'Principal',
+        tipo: 'acao',
+    }),
     criarPermissao('cancelar-tarefa-arremate', {
         label: 'Cancelar tarefa de arremate',
         descricao: 'Permite cancelar uma tarefa atribuída no fluxo de arremate.',

@@ -423,6 +423,28 @@ body.autenticado {
     min-width: 130px;
 }
 
+.cp-etapa-execucao {
+    min-width: 170px;
+}
+
+.cp-etapa-execucao__ajuda,
+.cp-etapa-execucao__op {
+    display: block;
+    margin-top: 0.35rem;
+    color: #64748b;
+    font-size: 0.75rem;
+    line-height: 1.35;
+}
+
+.cp-etapa-execucao__op {
+    padding-top: 0.45rem;
+    white-space: nowrap;
+}
+
+.cp-etapa-executores--desabilitados {
+    opacity: 0.55;
+}
+
 .cp-etapa-executor {
     display: flex;
     align-items: center;

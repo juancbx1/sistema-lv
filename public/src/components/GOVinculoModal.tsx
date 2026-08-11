@@ -5,6 +5,7 @@ import {
 } from '../../js/utils/permissoes.js';
 import GOIdentidadeCampos from './GOIdentidadeCampos';
 import UICarregando from './UICarregando';
+import UIFeedbackNotFound from './UIFeedbackNotFound';
 import type {
     GOClassificacaoVinculo,
     GODiasTrabalho,
@@ -17,6 +18,16 @@ import type {
 } from '../utils/go-types';
 
 const catalogoPermissoes = permissoesCatalogoVisivel as GOPermissaoCatalogo[];
+
+function normalizarTermoBusca(valor: unknown): string {
+    return String(valor ?? '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLocaleLowerCase('pt-BR')
+        .replace(/[^\p{L}\p{N}]+/gu, ' ')
+        .trim()
+        .replace(/\s+/g, ' ');
+}
 
 const ROTULOS_TIPO_PERMISSAO: Record<string, string> = {
     pagina: 'Página',
@@ -315,7 +326,7 @@ export function GOVinculoCampos({
             ? 'Fim da prestação de serviços'
             : 'Data de demissão';
     const permissoesFiltradas = useMemo(() => {
-        const busca = buscaPermissao.trim().toLowerCase();
+        const busca = normalizarTermoBusca(buscaPermissao);
         return busca
             ? catalogoPermissoes.filter((item) =>
                 [
@@ -326,9 +337,12 @@ export function GOVinculoCampos({
                     item.categoria,
                     item.pagina,
                     item.aba,
+                    item.tipo,
+                    ROTULOS_TIPO_PERMISSAO[item.tipo || ''],
                 ]
                     .filter(Boolean)
-                    .some((campo) => String(campo).toLowerCase().includes(busca)))
+                    .map(normalizarTermoBusca)
+                    .some((campo) => campo.includes(busca)))
             : catalogoPermissoes;
     }, [buscaPermissao]);
     const permissoesAgrupadas = useMemo(() => {
@@ -608,7 +622,14 @@ export function GOVinculoCampos({
                                     );
                                 })}
                                 {!permissoesAgrupadas.length && (
-                                    <p className="go-permissoes-editor-vazio"><i className="fas fa-circle-info"></i> Nenhuma permissão encontrada.</p>
+                                    <UIFeedbackNotFound
+                                        variante="compacto"
+                                        icon="fa-search"
+                                        titulo="Nenhuma permissão encontrada"
+                                        mensagem={buscaPermissao.trim()
+                                            ? `Nenhuma permissão corresponde a “${buscaPermissao.trim()}”. Tente outro termo.`
+                                            : 'Não há permissões disponíveis para exibir.'}
+                                    />
                                 )}
                             </div>
                         </div>

@@ -784,13 +784,6 @@ router.get('/atividades', async (req, res) => {
         const estruturaOrigens = await obterEstruturaOrigensProdutoPronto(dbClient);
         const cteOrigens = construirCteOrigensProdutoPronto(estruturaOrigens.origens);
         
-        const userRes = await dbClient.query(
-            `SELECT tipos FROM usuarios_empresas
-             WHERE usuario_id = $1 AND empresa_id = $2 AND ativo`,
-            [usuarioId, empresaId]
-        );
-        const tipoUsuario = userRes.rows[0]?.tipos?.[0] || 'costureira';
-
         // 1. Monta a Subquery
         let subQuery = `
             SELECT pr.id, pr.data, pr.pontos_gerados, pr.op_numero, pr.processo, p.nome as nome_produto, pr.quantidade, pr.variacao, 'OP' as tipo_origem, pr.funcionario_id as uid
@@ -798,18 +791,21 @@ router.get('/atividades', async (req, res) => {
             WHERE pr.empresa_id = $2
         `;
 
-        if (tipoUsuario === 'tiktik') {
-            subQuery += `
-                UNION ALL
-                SELECT ar.origem_id::text as id, ar.data_disponibilizacao as data, ar.pontos_gerados,
-                       ar.op_numero, COALESCE(ar.processo, 'Arremate') as processo,
-                       p.nome as nome_produto, ar.quantidade_disponibilizada as quantidade,
-                       ar.variante as variacao, 'Arremate' as tipo_origem, ar.executor_id as uid
-                FROM OrigensProdutoProntoCompat ar
-                JOIN produtos p ON ar.produto_id = p.id AND p.empresa_id = $2
-                WHERE ar.empresa_id = $2
-            `;
-        }
+        // POS_OP não é exclusivo de TikTik: costureiras e freelancers também
+        // podem concluir a etapa quando estiverem em feitoPor. A origem
+        // canônica já traz o executor correto; o filtro externo por uid mantém
+        // a dashboard restrita ao empregado logado.
+        subQuery += `
+            UNION ALL
+            SELECT ar.origem_id::text as id, ar.data_disponibilizacao as data, ar.pontos_gerados,
+                   ar.op_numero, COALESCE(ar.processo, 'Arremate') as processo,
+                   p.nome as nome_produto, ar.quantidade_disponibilizada as quantidade,
+                   ar.variante as variacao, 'Arremate' as tipo_origem, ar.executor_id as uid
+            FROM OrigensProdutoProntoCompat ar
+            JOIN produtos p ON ar.produto_id = p.id AND p.empresa_id = $2
+            WHERE ar.empresa_id = $2
+              AND ar.executor_id IS NOT NULL
+        `;
 
         // Pontos extras para todos os tipos (costureira e tiktik)
         // Usa data_lancamento (TIMESTAMPTZ) como data para que fmtHora() mostre o horário real
@@ -833,11 +829,9 @@ router.get('/atividades', async (req, res) => {
         whereClauses.push('uid = $1');
 
         if (data) {
-            // `producoes.data` e `arremates.data_lancamento` representam o
-            // instante em UTC; o filtro da dashboard precisa respeitar o dia
-            // civil da colaboradora em America/Sao_Paulo, inclusive no
-            // historico antigo e nos registros proximos da meia-noite.
-            whereClauses.push(`((data AT TIME ZONE 'UTC') AT TIME ZONE 'America/Sao_Paulo')::date = $${paramIndex++}::date`);
+            // As fontes usam timestamptz. Uma unica conversao para o fuso da
+            // colaboradora preserva o dia civil, inclusive perto da meia-noite.
+            whereClauses.push(`(data AT TIME ZONE 'America/Sao_Paulo')::date = $${paramIndex++}::date`);
             params.push(data);
         }
 

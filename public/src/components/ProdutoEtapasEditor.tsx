@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 // @ts-expect-error catálogo JS legado sem declaração TypeScript
 import { MAQUINAS, PROCESSOS } from '/js/utils/prod-proc-maq.js';
-import type { EtapaProdutoLike } from '../utils/etapas-produto';
+import type { EtapaProdutoLike, ModoExecucaoEtapa } from '../utils/etapas-produto';
 import { obterExecutoresEtapa } from '../utils/etapas-produto';
 import UIBloqueio from './UIBloqueio';
 
@@ -24,6 +24,7 @@ interface EtapaEditor extends Record<string, unknown> {
   maquina: string | null;
   feitoPor: string[];
   fase: FaseEtapa;
+  modoExecucao: ModoExecucaoEtapa;
   origem?: string;
 }
 
@@ -135,6 +136,10 @@ function normalizarEtapas(produto: ProdutoComEtapas | null): EtapaEditor[] {
     const objeto = typeof etapa === 'string' ? { processo: etapa } : (etapa || {});
     const executores = obterExecutoresEtapa(objeto);
     const fase = objeto.fase === 'OP' || objeto.fase === 'POS_OP' ? objeto.fase : null;
+    const modoExecucao: ModoExecucaoEtapa = fase === 'POS_OP'
+      && String(objeto.modoExecucao ?? objeto.modo_execucao ?? '').toUpperCase() === 'LIBERACAO_AUTOMATICA'
+      ? 'LIBERACAO_AUTOMATICA'
+      : 'MANUAL';
 
     return {
       ...objeto,
@@ -145,6 +150,7 @@ function normalizarEtapas(produto: ProdutoComEtapas | null): EtapaEditor[] {
       maquina: typeof objeto.maquina === 'string' && objeto.maquina ? objeto.maquina : null,
       feitoPor: executores,
       fase,
+      modoExecucao,
       origem: typeof objeto.origem === 'string' ? objeto.origem : 'etapas',
     };
   });
@@ -229,12 +235,18 @@ export default function ProdutoEtapasEditor() {
     window.obterEtapasCanonicas = () => etapas.map((etapa, indice) => ({
       ...etapa,
       ordem: indice + 1,
-      feitoPor: [...etapa.feitoPor],
+      // Uma etapa automática não pode carregar executores, para que nenhum
+      // fluxo antigo tente oferecê-la como tarefa de funcionário.
+      feitoPor: etapa.modoExecucao === 'LIBERACAO_AUTOMATICA' ? [] : [...etapa.feitoPor],
     }));
   }, [etapas]);
 
   const etapasPendentes = useMemo(
-    () => etapas.filter((etapa) => !etapa.fase || !etapa.processo || etapa.feitoPor.length === 0),
+    () => etapas.filter((etapa) => (
+      !etapa.fase
+      || !etapa.processo
+      || (etapa.modoExecucao !== 'LIBERACAO_AUTOMATICA' && etapa.feitoPor.length === 0)
+    )),
     [etapas],
   );
 
@@ -266,6 +278,7 @@ export default function ProdutoEtapasEditor() {
         maquina: config.maquina ?? (config.fase === 'POS_OP' ? 'Não Usa' : MAQUINAS[0] || null),
         feitoPor: [...config.executores],
         fase: config.fase,
+        modoExecucao: 'MANUAL',
         origem: 'etapas',
       },
     ]));
@@ -288,10 +301,26 @@ export default function ProdutoEtapasEditor() {
   const alternarExecutor = (indice: number, tipo: TipoExecutor) => {
     const etapa = etapas[indice];
     if (!etapa) return;
+    if (etapa.modoExecucao === 'LIBERACAO_AUTOMATICA') return;
     const feitoPor = etapa.feitoPor.includes(tipo)
       ? etapa.feitoPor.filter((executor) => executor !== tipo)
       : [...etapa.feitoPor, tipo];
     atualizarEtapa(indice, { feitoPor });
+  };
+
+  const alterarFase = (indice: number, valor: string) => {
+    const fase = (valor || null) as FaseEtapa;
+    atualizarEtapa(indice, {
+      fase,
+      modoExecucao: fase === 'POS_OP' ? etapas[indice]?.modoExecucao || 'MANUAL' : 'MANUAL',
+    });
+  };
+
+  const alterarModoExecucao = (indice: number, valor: string) => {
+    const modoExecucao: ModoExecucaoEtapa = valor === 'LIBERACAO_AUTOMATICA'
+      ? 'LIBERACAO_AUTOMATICA'
+      : 'MANUAL';
+    atualizarEtapa(indice, { modoExecucao });
   };
 
   const alterarProcesso = (indice: number, valor: string) => {
@@ -366,6 +395,7 @@ export default function ProdutoEtapasEditor() {
       </div>
 
       <div className="cp-etapas-editor__legenda" aria-label="Legenda das fases">
+        <span><strong>Liberacao automatica:</strong> libera embalagem sem criar tarefa ou pontos de arremate.</span>
         <span><strong>Dentro da OP:</strong> continua o fluxo da ordem de produção.</span>
         <span><strong>Arremate pós-OP:</strong> só aparece depois do encerramento e libera embalagem.</span>
       </div>
@@ -439,6 +469,7 @@ export default function ProdutoEtapasEditor() {
               <th scope="col">Processo</th>
               <th scope="col">Máquina</th>
               <th scope="col">Fase</th>
+              <th scope="col">Execucao</th>
               <th scope="col">Feita por</th>
               <th scope="col">Ações</th>
             </tr>
@@ -446,7 +477,7 @@ export default function ProdutoEtapasEditor() {
           <tbody>
             {etapas.length === 0 ? (
               <tr>
-                <td colSpan={6} className="cp-etapas-editor__vazio">Nenhuma etapa cadastrada.</td>
+                <td colSpan={7} className="cp-etapas-editor__vazio">Nenhuma etapa cadastrada.</td>
               </tr>
             ) : etapas.map((etapa, indice) => (
               <tr key={etapa.id || `${etapa.processo}-${indice}`} className={!etapa.fase ? 'cp-etapa-linha--pendente' : ''}>
@@ -490,26 +521,51 @@ export default function ProdutoEtapasEditor() {
                   <select
                     className={`cp-select cp-etapa-fase cp-etapa-fase--${etapa.fase || 'pendente'}`}
                     value={etapa.fase || ''}
-                    onChange={(event) => atualizarEtapa(indice, { fase: (event.target.value || null) as FaseEtapa })}
+                    onChange={(event) => alterarFase(indice, event.target.value)}
                   >
                     <option value="">Classificar fase</option>
                     <option value="OP">Dentro da OP</option>
                     <option value="POS_OP">Arremate pós-OP</option>
                   </select>
                 </td>
+                <td data-label="Execucao">
+                  {etapa.fase === 'POS_OP' ? (
+                    <>
+                      <select
+                        className="cp-select cp-etapa-execucao"
+                        value={etapa.modoExecucao}
+                        onChange={(event) => alterarModoExecucao(indice, event.target.value)}
+                      >
+                        <option value="MANUAL">Arremate manual</option>
+                        <option value="LIBERACAO_AUTOMATICA">Liberacao automatica</option>
+                      </select>
+                      {etapa.modoExecucao === 'LIBERACAO_AUTOMATICA' && (
+                        <small className="cp-etapa-execucao__ajuda">
+                          Ao encerrar a OP, libera para embalagem sem tarefa nem pontos.
+                        </small>
+                      )}
+                    </>
+                  ) : (
+                    <span className="cp-etapa-execucao__op">Trabalho da OP</span>
+                  )}
+                </td>
                 <td data-label="Feita por">
-                  <div className="cp-etapa-executores">
+                  <div className={`cp-etapa-executores${etapa.modoExecucao === 'LIBERACAO_AUTOMATICA' ? ' cp-etapa-executores--desabilitados' : ''}`}>
                     {TIPOS_EXECUTORES.map((tipo) => (
                       <label key={tipo.value} className="cp-etapa-executor">
                         <input
                           type="checkbox"
                           checked={etapa.feitoPor.includes(tipo.value)}
                           onChange={() => alternarExecutor(indice, tipo.value)}
+                          disabled={etapa.modoExecucao === 'LIBERACAO_AUTOMATICA'}
                         />
                         <span>{tipo.label}</span>
                       </label>
                     ))}
                   </div>
+                  {etapa.modoExecucao === 'LIBERACAO_AUTOMATICA' && (
+                    <small className="cp-etapa-execucao__ajuda">Sistema</small>
+                  )}
                 </td>
                 <td data-label="Ações">
                   <button type="button" className="cp-remove-btn" onClick={() => removerEtapa(indice)} aria-label={`Remover etapa ${indice + 1}`}>

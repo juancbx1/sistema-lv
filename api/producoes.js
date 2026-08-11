@@ -16,7 +16,7 @@ import {
     registrarEventoTarefa,
     TIPOS_EVENTO_TAREFA,
 } from './ponto-eventos.js';
-import { construirEtapasCanonicas } from './utils/etapas-produto.js';
+import { construirEtapasCanonicas, etapaEhLiberacaoAutomatica } from './utils/etapas-produto.js';
 import {
     registrarOrigemProdutoPronto,
     obterEstruturaOrigensProdutoPronto,
@@ -129,7 +129,7 @@ async function validarTarefaAtribuicao(dbClient, {
     if (!produto) throw new Error('Produto não pertence à empresa ativa.');
 
     const opResult = await dbClient.query(
-        `SELECT numero, status, produto_id, variante, etapas
+        `SELECT numero, status, produto_id, variante, quantidade, etapas
            FROM ordens_de_producao
           WHERE numero = $1
             AND empresa_id = $2
@@ -161,6 +161,9 @@ async function validarTarefaAtribuicao(dbClient, {
     if (!etapa) {
         throw new Error(`Processo "${processo}" não está configurado para esta fase do produto.`);
     }
+    if (faseNormalizada === 'POS_OP' && etapaEhLiberacaoAutomatica(etapa)) {
+        throw new Error('Esta etapa POS_OP e uma liberacao automatica e nao pode ser atribuida a um funcionario.');
+    }
     if (!Array.isArray(etapa.feitoPor) || etapa.feitoPor.length === 0) {
         throw new Error(`O processo "${etapa.processo}" ainda não possui executor configurado.`);
     }
@@ -179,6 +182,100 @@ async function validarTarefaAtribuicao(dbClient, {
         : (funcionarioResult.rows[0]?.tipos || []);
     if (!etapa.feitoPor.some(tipo => tiposFuncionario.includes(tipo))) {
         throw new Error(`O empregado não está autorizado a executar "${etapa.processo}".`);
+    }
+
+    if (faseNormalizada === 'OP') {
+        const chaveTrava = [
+            'op-saldo', empresaId, produtoId,
+            varianteParaBanco(variante) || '-', etapa.id || etapa.processo_id || etapa.processo,
+        ].join(':');
+        await dbClient.query(
+            'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+            [chaveTrava],
+        );
+
+        const [opsAtivasResult, producoesResult, sessoesAtivasResult] = await Promise.all([
+            dbClient.query(
+                `SELECT numero, quantidade, etapas
+                   FROM ordens_de_producao
+                  WHERE empresa_id = $1
+                    AND produto_id = $2
+                    AND (variante = $3 OR ($3 IS NULL AND variante IS NULL))
+                    AND status IN ('em-aberto', 'produzindo')
+                  ORDER BY numero ASC`,
+                [empresaId, Number(produtoId), varianteParaBanco(variante)],
+            ),
+            dbClient.query(
+                `SELECT op_numero, etapa_index, COALESCE(SUM(quantidade), 0)::int AS total
+                  FROM producoes
+                  WHERE empresa_id = $1
+                    AND produto_id = $2
+                    AND (
+                        NULLIF(variacao, '-') = $3
+                        OR ($3 IS NULL AND NULLIF(variacao, '-') IS NULL)
+                    )
+                  GROUP BY op_numero, etapa_index`,
+                [empresaId, Number(produtoId), varianteParaBanco(variante)],
+            ),
+            dbClient.query(
+                `SELECT processo, quantidade_atribuida, etapas_unificadas
+                   FROM sessoes_trabalho_producao
+                  WHERE empresa_id = $1
+                    AND produto_id = $2
+                    AND (variante = $3 OR ($3 IS NULL AND variante IS NULL))
+                    AND status = 'EM_ANDAMENTO'
+                    ${estruturaPosOp ? "AND fase = 'OP'" : ''}`,
+                [empresaId, Number(produtoId), varianteParaBanco(variante)],
+            ),
+        ]);
+
+        const lancamentosPorEtapa = new Map(
+            producoesResult.rows.map(row => [
+                `${row.op_numero}-${row.etapa_index}`,
+                Number(row.total) || 0,
+            ]),
+        );
+        const saldoFisico = opsAtivasResult.rows.reduce((total, opAtiva) => {
+            const indice = indiceEtapaNaOp(opAtiva.etapas, etapa);
+            if (indice < 0) return total;
+
+            const entrada = indice === 0
+                ? Number(opAtiva.quantidade) || 0
+                : (lancamentosPorEtapa.get(`${opAtiva.numero}-${indice - 1}`) || 0);
+            const concluido = lancamentosPorEtapa.get(`${opAtiva.numero}-${indice}`) || 0;
+            return total + Math.max(0, entrada - concluido);
+        }, 0);
+        const reservado = sessoesAtivasResult.rows.reduce((total, sessao) => {
+            const referencias = [
+                { processo: sessao.processo },
+                ...(Array.isArray(sessao.etapas_unificadas) ? sessao.etapas_unificadas : []),
+            ];
+            return referencias.some(referencia => referenciaCorrespondeEtapa(referencia, etapa))
+                ? total + (Number(sessao.quantidade_atribuida) || 0)
+                : total;
+        }, 0);
+        const saldoDisponivel = Math.max(0, saldoFisico - reservado);
+
+        if (consultarSaldo) {
+            return {
+                produto,
+                op,
+                etapa,
+                tiposExecutor: tiposFuncionario,
+                processo: etapa.processo,
+                fase: faseNormalizada,
+                variante: varianteParaBanco(variante),
+                saldoDisponivel,
+            };
+        }
+
+        const quantidadeSolicitada = Number(quantidade);
+        if (!Number.isInteger(quantidadeSolicitada) || quantidadeSolicitada <= 0) {
+            throw new Error('A quantidade atribuída deve ser um número inteiro positivo.');
+        }
+        if (quantidadeSolicitada > saldoDisponivel) {
+            throw new Error(`Saldo insuficiente para "${etapa.processo}". Disponível: ${saldoDisponivel}.`);
+        }
     }
 
     if (faseNormalizada === 'POS_OP') {
@@ -343,10 +440,66 @@ async function validarTarefaAtribuicao(dbClient, {
         produto,
         op,
         etapa,
+        tiposExecutor: tiposFuncionario,
         processo: etapa.processo,
         fase: faseNormalizada,
         variante: varianteParaBanco(variante),
     };
+}
+
+function referenciaCorrespondeEtapa(referencia, etapa) {
+    if (!referencia || !etapa) return false;
+    const etapaIdReferencia = referencia.etapa_id ?? referencia.id;
+    if (etapaIdReferencia && etapa.id) {
+        return String(etapaIdReferencia) === String(etapa.id);
+    }
+    if (referencia.processo_id && etapa.processo_id) {
+        return String(referencia.processo_id) === String(etapa.processo_id);
+    }
+    return String(referencia.processo || '') === String(etapa.processo || '');
+}
+
+function validarPercursoUnificado({
+    produto,
+    etapaInicial,
+    etapasSolicitadas,
+    tiposExecutor,
+}) {
+    if (etapasSolicitadas === undefined || etapasSolicitadas === null) return null;
+    if (!Array.isArray(etapasSolicitadas) || etapasSolicitadas.length < 2) {
+        throw new Error('Uma unificaÃ§Ã£o deve conter pelo menos duas etapas consecutivas.');
+    }
+
+    const etapasOp = construirEtapasCanonicas({
+        etapas: produto?.etapas,
+        etapasTiktik: produto?.etapas_tiktik,
+    }).etapasCanonicas.filter(etapa => etapa.fase === 'OP');
+    const indiceInicial = etapasOp.findIndex(etapa => referenciaCorrespondeEtapa(etapaInicial, etapa));
+    if (indiceInicial < 0) {
+        throw new Error('A etapa inicial da unificaÃ§Ã£o nÃ£o pertence Ã  receita atual do produto.');
+    }
+
+    return etapasSolicitadas.map((solicitada, deslocamento) => {
+        const etapaEsperada = etapasOp[indiceInicial + deslocamento];
+        if (!etapaEsperada || !referenciaCorrespondeEtapa(solicitada, etapaEsperada)) {
+            throw new Error('As etapas unificadas devem formar uma sequÃªncia contÃ­nua, sem pular processos.');
+        }
+        if (!Array.isArray(etapaEsperada.feitoPor)
+            || !etapaEsperada.feitoPor.some(tipo => tiposExecutor.includes(tipo))) {
+            throw new Error(`O empregado nÃ£o estÃ¡ autorizado a executar "${etapaEsperada.processo}".`);
+        }
+
+        return {
+            etapa_index: indiceInicial + deslocamento,
+            etapa_id: etapaEsperada.id || null,
+            processo_id: etapaEsperada.processo_id || null,
+            ordem: etapaEsperada.ordem || indiceInicial + deslocamento + 1,
+            processo: etapaEsperada.processo,
+            maquina: etapaEsperada.maquina || 'NÃ£o Definida',
+            feitoPor: etapaEsperada.feitoPor,
+            fase: 'OP',
+        };
+    });
 }
 
 function normalizarOrigensPosOp(origins) {
@@ -729,6 +882,155 @@ async function atualizarTPPProporcionado(dbClient, produto_id, etapas, duracaoSe
 }
 
 // Função verificarToken
+function indiceEtapaNaOp(etapasOp, referencia) {
+    if (!Array.isArray(etapasOp)) return -1;
+    return etapasOp.findIndex((etapaBruta) => {
+        const etapa = typeof etapaBruta === 'string'
+            ? { processo: etapaBruta }
+            : etapaBruta;
+        return referenciaCorrespondeEtapa(referencia, etapa);
+    });
+}
+
+async function registrarPercursoUnificadoConcluido(dbClient, {
+    sessao,
+    etapas,
+    quantidade,
+    nomeFuncionario,
+    lancadoPor,
+    empresaId,
+}) {
+    if (quantidade === 0) return;
+
+    const opsResult = await dbClient.query(
+        `SELECT numero, etapas, quantidade
+           FROM ordens_de_producao
+          WHERE empresa_id = $3
+            AND produto_id = $1
+            AND (variante = $2 OR ($2 IS NULL AND variante IS NULL))
+            AND status IN ('em-aberto', 'produzindo')
+          ORDER BY numero ASC
+          FOR UPDATE`,
+        [sessao.produto_id, sessao.variante, empresaId],
+    );
+    const ops = opsResult.rows;
+    if (ops.length === 0) {
+        throw new Error('Nenhuma OP ativa encontrada para concluir o percurso unificado.');
+    }
+
+    const numerosOps = ops.map(op => String(op.numero));
+    const lancamentosResult = await dbClient.query(
+        `SELECT op_numero, etapa_index, COALESCE(SUM(quantidade), 0)::int AS total
+           FROM producoes
+          WHERE empresa_id = $2
+            AND op_numero = ANY($1::text[])
+          GROUP BY op_numero, etapa_index`,
+        [numerosOps, empresaId],
+    );
+    const mapaSaldo = new Map(
+        lancamentosResult.rows.map(row => [
+            `${row.op_numero}-${row.etapa_index}`,
+            Number(row.total) || 0,
+        ]),
+    );
+
+    const etapaInicial = etapas[0];
+    const sessoesAnterioresResult = await dbClient.query(
+        `SELECT processo, processo_id, etapa_id, quantidade_atribuida, etapas_unificadas
+           FROM sessoes_trabalho_producao
+          WHERE empresa_id = $1
+            AND produto_id = $2
+            AND (variante = $3 OR ($3 IS NULL AND variante IS NULL))
+            AND status = 'EM_ANDAMENTO'
+            AND id < $4
+            AND COALESCE(fase, 'OP') = 'OP'
+          ORDER BY id ASC`,
+        [empresaId, sessao.produto_id, sessao.variante, sessao.id],
+    );
+    let reservadoAnterior = sessoesAnterioresResult.rows.reduce((total, row) => {
+        const referencias = [
+            { processo: row.processo, processo_id: row.processo_id, etapa_id: row.etapa_id },
+            ...(Array.isArray(row.etapas_unificadas) ? row.etapas_unificadas : []),
+        ];
+        return referencias.some(referencia => referenciaCorrespondeEtapa(referencia, etapaInicial))
+            ? total + (Number(row.quantidade_atribuida) || 0)
+            : total;
+    }, 0);
+
+    let restante = quantidade;
+    const distribuicao = [];
+    for (const op of ops) {
+        if (restante <= 0) break;
+        const indiceInicial = indiceEtapaNaOp(op.etapas, etapaInicial);
+        if (indiceInicial < 0) continue;
+        const entrada = indiceInicial === 0
+            ? Number(op.quantidade) || 0
+            : (mapaSaldo.get(`${op.numero}-${indiceInicial - 1}`) || 0);
+        const saida = mapaSaldo.get(`${op.numero}-${indiceInicial}`) || 0;
+        const saldoBruto = Math.max(0, entrada - saida);
+        const descontoReserva = Math.min(saldoBruto, reservadoAnterior);
+        reservadoAnterior -= descontoReserva;
+        const disponivel = saldoBruto - descontoReserva;
+        if (disponivel <= 0) continue;
+        const quantidadeOp = Math.min(restante, disponivel);
+        distribuicao.push({ op, quantidade: quantidadeOp });
+        restante -= quantidadeOp;
+    }
+
+    if (restante > 0) {
+        throw new Error(`Saldo insuficiente para concluir o percurso unificado. Disponivel: ${quantidade - restante}.`);
+    }
+
+    for (const origem of distribuicao) {
+        for (const etapa of etapas) {
+            const etapaIndex = indiceEtapaNaOp(origem.op.etapas, etapa);
+            if (etapaIndex < 0) {
+                throw new Error(`A etapa "${etapa.processo}" nÃ£o existe na receita da OP #${origem.op.numero}.`);
+            }
+            const entrada = etapaIndex === 0
+                ? Number(origem.op.quantidade) || 0
+                : (mapaSaldo.get(`${origem.op.numero}-${etapaIndex - 1}`) || 0);
+            const saida = mapaSaldo.get(`${origem.op.numero}-${etapaIndex}`) || 0;
+            if (Math.max(0, entrada - saida) < origem.quantidade) {
+                throw new Error(`A OP #${origem.op.numero} nÃ£o possui saldo suficiente em "${etapa.processo}".`);
+            }
+
+            const { pontosGerados, valorPontoAplicado } = await calcularPontosProducao(
+                dbClient,
+                sessao.produto_id,
+                etapa.processo,
+                origem.quantidade,
+                sessao.funcionario_id,
+                empresaId,
+            );
+            await dbClient.query(
+                `INSERT INTO producoes
+                    (id, op_numero, etapa_index, processo, produto_id, variacao,
+                     maquina, quantidade, funcionario, funcionario_id, data,
+                     lancado_por, valor_ponto_aplicado, pontos_gerados, empresa_id)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), $11, $12, $13, $14)`,
+                [
+                    `prod_unif_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+                    origem.op.numero,
+                    etapaIndex,
+                    etapa.processo,
+                    sessao.produto_id,
+                    sessao.variante || '-',
+                    etapa.maquina || 'NÃ£o Definida',
+                    origem.quantidade,
+                    nomeFuncionario,
+                    sessao.funcionario_id,
+                    lancadoPor,
+                    valorPontoAplicado,
+                    pontosGerados,
+                    empresaId,
+                ],
+            );
+            mapaSaldo.set(`${origem.op.numero}-${etapaIndex}`, saida + origem.quantidade);
+        }
+    }
+}
+
 const verificarToken = (reqOriginal) => {
     const authHeader = reqOriginal.headers.authorization;
     if (!authHeader) {
@@ -906,6 +1208,74 @@ router.get('/historico', async (req, res) => {
 
         const estruturaOrigens = await obterEstruturaOrigensProdutoPronto(dbClient);
         const cteOrigens = construirCteOrigensProdutoPronto(estruturaOrigens.origens);
+        const ocorrenciasEmbalagemResult = await dbClient.query(`
+            SELECT
+                to_regclass('public.ocorrencias_embalagem_eventos') IS NOT NULL AS eventos,
+                to_regclass('public.ocorrencias_embalagem_origens') IS NOT NULL AS origens
+        `);
+        const possuiOcorrenciasEmbalagem = ocorrenciasEmbalagemResult.rows[0]?.eventos === true
+            && ocorrenciasEmbalagemResult.rows[0]?.origens === true;
+        const origemCanonicaOcorrencia = estruturaOrigens.origens
+            ? `
+                            SELECT opp.op_numero
+                              FROM ocorrencias_embalagem_origens eo
+                              JOIN origens_produto_pronto opp
+                                ON opp.empresa_id = eo.empresa_id
+                               AND opp.id = eo.origem_produto_pronto_id
+                             WHERE eo.empresa_id = ee.empresa_id
+                               AND eo.ocorrencia_id = oe.id
+
+                            UNION
+`
+            : '';
+        const historicoOcorrenciasEmbalagem = possuiOcorrenciasEmbalagem
+            ? `
+            UNION ALL
+
+            SELECT
+                'EMBALAGEM_OCORRENCIA'::text AS origem,
+                ee.id::text AS origem_id,
+                ee.tipo_evento::text AS tipo_evento,
+                ee.criado_em AS data_evento,
+                ee.empresa_id,
+                oe.produto_id,
+                NULLIF(oe.variante, '-') AS variante,
+                (
+                    SELECT string_agg(DISTINCT origem.op_numero, ', ' ORDER BY origem.op_numero)
+                      FROM (
+${origemCanonicaOcorrencia}
+                            SELECT ar.op_numero
+                              FROM ocorrencias_embalagem_origens eo
+                              JOIN arremates ar
+                                ON ar.empresa_id = eo.empresa_id
+                               AND ar.id = eo.arremate_legado_id
+                             WHERE eo.empresa_id = ee.empresa_id
+                               AND eo.ocorrencia_id = oe.id
+                      ) AS origem
+                ) AS op_numero,
+                'Embalagem'::text AS processo,
+                NULL::text AS fase,
+                ee.usuario_id AS executor_id,
+                ee.usuario_nome AS executor_nome,
+                NULL::text AS executor_tipo,
+                ee.quantidade,
+                NULL::numeric AS valor_ponto_aplicado,
+                0::numeric AS pontos_gerados,
+                ee.usuario_nome AS autor,
+                COALESCE(ee.observacao, oe.observacao) AS observacao,
+                CASE
+                    WHEN ee.tipo_evento = 'PERDA_CONSERTO' THEN 'PRODUTO_AVARIADO'
+                    ELSE oe.motivo
+                END AS categoria,
+                ee.status_depois AS status,
+                NULL::integer AS arremate_id,
+                NULL::integer AS embalagem_id
+              FROM ocorrencias_embalagem_eventos ee
+              JOIN ocorrencias_embalagem oe
+                ON oe.empresa_id = ee.empresa_id
+               AND oe.id = ee.ocorrencia_id
+        `
+            : '';
         const historicoBase = `${cteOrigens}
             SELECT
                 'PRODUCAO_OP'::text AS origem,
@@ -1110,7 +1480,7 @@ router.get('/historico', async (req, res) => {
                 em.origem_arremate_id AS arremate_id,
                 em.embalagem_origem_id AS embalagem_id
               FROM estoque_movimentos em
-        `;
+            ${historicoOcorrenciasEmbalagem}`;
 
         const params = [req.empresaId];
         const filtros = ['h.empresa_id = $1'];
@@ -1131,9 +1501,14 @@ router.get('/historico', async (req, res) => {
 
         const gruposEvento = {
             CONCLUSAO: ['CONCLUSAO_OP', 'CONCLUSAO_POS_OP'],
-            PERDA: ['PERDA'],
+            PERDA: ['PERDA', 'PERDA_EMBALAGEM', 'PERDA_CONSERTO'],
             CANCELAMENTO: ['CANCELAMENTO_TAREFA', 'PRODUCAO_ANULADA'],
-            EMBALAGEM: ['EMBALAGEM_UNIDADE', 'EMBALAGEM_KIT'],
+            EMBALAGEM: [
+                'EMBALAGEM_UNIDADE',
+                'EMBALAGEM_KIT',
+                'ENVIO_CONSERTO',
+                'RETORNO_CONSERTO',
+            ],
             ESTORNO: ['ESTORNO_PRODUCAO', 'ESTORNO_EMBALAGEM'],
         };
         if (tipoEvento === 'ESTOQUE') {
@@ -1252,22 +1627,20 @@ router.post('/', async (req, res) => {
             throw new Error("Dados insuficientes para iniciar sessão.");
         }
 
-        const tarefaValidada = (posOpDisponivel || fase === 'POS_OP')
-            ? await validarTarefaAtribuicao(dbClient, {
-                empresaId: req.empresaId,
-                funcionarioId: funcionario_id,
-                opNumero,
-                produtoId: produto_id,
-                variante,
-                processo,
-                processoId: processo_id,
-                etapaId: etapa_id,
-                fase,
-                estruturaPosOp: posOpDisponivel,
-                origensPosOpDisponivel,
-                quantidade,
-            })
-            : null;
+        const tarefaValidada = await validarTarefaAtribuicao(dbClient, {
+            empresaId: req.empresaId,
+            funcionarioId: funcionario_id,
+            opNumero,
+            produtoId: produto_id,
+            variante,
+            processo,
+            processoId: processo_id,
+            etapaId: etapa_id,
+            fase,
+            estruturaPosOp: posOpDisponivel,
+            origensPosOpDisponivel,
+            quantidade,
+        });
         if (tarefaValidada?.processo) processo = tarefaValidada.processo;
 
         const origemValida = await dbClient.query(
@@ -1463,8 +1836,7 @@ router.post('/lote', async (req, res) => {
                     origensPosOpDisponivel,
                 })
                 : {
-                    tarefaValidada: (posOpDisponivel || fase === 'POS_OP')
-                        ? await validarTarefaAtribuicao(dbClient, {
+                    tarefaValidada: await validarTarefaAtribuicao(dbClient, {
                             empresaId: req.empresaId,
                             funcionarioId: funcionario_id,
                             opNumero,
@@ -1477,8 +1849,7 @@ router.post('/lote', async (req, res) => {
                             estruturaPosOp: posOpDisponivel,
                             origensPosOpDisponivel,
                             quantidade,
-                        })
-                        : null,
+                        }),
                     opNumero: String(opNumero),
                     quantidade,
                     origensPosOp: null,
@@ -1492,6 +1863,15 @@ router.post('/lote', async (req, res) => {
             if (fase === 'POS_OP' && etapas_unificadas) {
                 throw new Error('Etapas unificadas são exclusivas da produção interna da OP.');
             }
+
+            const etapasUnificadasValidadas = fase === 'OP'
+                ? validarPercursoUnificado({
+                    produto: tarefaValidada.produto,
+                    etapaInicial: tarefaValidada.etapa,
+                    etapasSolicitadas: etapas_unificadas,
+                    tiposExecutor: tarefaValidada.tiposExecutor,
+                })
+                : null;
 
             const origemValida = await dbClient.query(
                 `SELECT op.numero
@@ -1536,7 +1916,7 @@ router.post('/lote', async (req, res) => {
                 `;
             const sessaoResult = await dbClient.query(sessaoQuery, [
                 funcionario_id, opNumeroRegistrado, produto_id, (tarefaValidada?.variante ?? variante) || null, processoRegistrado, quantidadeRegistrada,
-                etapas_unificadas ? JSON.stringify(etapas_unificadas) : null,
+                etapasUnificadasValidadas ? JSON.stringify(etapasUnificadasValidadas) : null,
                 ...(posOpDisponivel
                     ? [tarefaValidada?.fase || 'OP', tarefaValidada?.etapa?.processo_id || null, tarefaValidada?.etapa?.id || null]
                     : []),
@@ -2224,31 +2604,26 @@ router.put('/finalizar', async (req, res) => {
                 }
             }
         } else if (etapasUnificadas) {
+            const quantidadeUnificada = Number(quantidade_finalizada);
+            if (!Number.isInteger(quantidadeUnificada)
+                || quantidadeUnificada < 0
+                || quantidadeUnificada > Number(sessao.quantidade_atribuida)) {
+                throw new Error('Quantidade finalizada invalida para o percurso unificado.');
+            }
             const duracaoTotalMs = Date.now() - new Date(sessao.data_inicio).getTime();
             const pausaMs = Math.max(0, parseInt(pausa_manual_ms) || 0);
-            const duracaoSegPorPeca = parseInt(quantidade_finalizada) > 0
-                ? Math.max(0, duracaoTotalMs - pausaMs) / 1000 / parseInt(quantidade_finalizada)
+            const duracaoSegPorPeca = quantidadeUnificada > 0
+                ? Math.max(0, duracaoTotalMs - pausaMs) / 1000 / quantidadeUnificada
                 : 0;
 
-            for (const etapaUnif of etapasUnificadas) {
-                const idxUnif = etapasDoProduto.findIndex(e => (e.processo || e) === etapaUnif.processo);
-                const { pontosGerados, valorPontoAplicado } = await calcularPontosProducao(
-                    dbClient, sessao.produto_id, etapaUnif.processo,
-                    parseInt(quantidade_finalizada), sessao.funcionario_id,
-                    req.empresaId
-                );
-                await dbClient.query(
-                    `INSERT INTO producoes (id, op_numero, etapa_index, processo, produto_id, variacao, maquina, quantidade, funcionario, funcionario_id, data, lancado_por, valor_ponto_aplicado, pontos_gerados, empresa_id)
-                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), $11, $12, $13, $14)`,
-                    [
-                        `prod_unif_${Date.now()}_${Math.random().toString(36).substr(2,4)}`,
-                        sessao.op_numero, idxUnif, etapaUnif.processo, sessao.produto_id,
-                        sessao.variante || '-', etapaUnif.maquina || 'Não Definida',
-                        parseInt(quantidade_finalizada), nomeFuncionario, sessao.funcionario_id,
-                        usuarioLogado.nome, valorPontoAplicado, pontosGerados, req.empresaId,
-                    ]
-                );
-            }
+            await registrarPercursoUnificadoConcluido(dbClient, {
+                sessao,
+                etapas: etapasUnificadas,
+                quantidade: quantidadeUnificada,
+                nomeFuncionario,
+                lancadoPor: usuarioLogado.nome,
+                empresaId: req.empresaId,
+            });
             await atualizarTPPProporcionado(dbClient, sessao.produto_id, etapasUnificadas, duracaoSegPorPeca, req.empresaId);
         } else {
         // ─── SESSÃO NORMAL — distribuição por múltiplas OPs ──────────────────────────────
@@ -2630,6 +3005,16 @@ router.post('/externo', async (req, res) => {
                 etapas_unificadas,
                 origens_pos_op,
             } = itens[i];
+
+            if (!['OP', 'POS_OP'].includes(fase)) {
+                throw new Error('Fase de lançamento externo inválida.');
+            }
+            if (freelance_tipo === 'costureira' && fase === 'POS_OP') {
+                throw new Error('Freelance costureira pode lançar somente processos da OP.');
+            }
+            if (freelance_tipo === 'tiktik' && fase !== 'POS_OP') {
+                throw new Error('Freelance TikTik pode lançar somente arremates pós-OP.');
+            }
 
             if (fase === 'POS_OP') {
                 if (!posOpDisponivel) {

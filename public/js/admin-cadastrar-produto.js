@@ -811,14 +811,25 @@ function obterEtapasDoEditorParaSalvar() {
                 : (Array.isArray(editingProduct?.etapastiktik) ? editingProduct.etapastiktik : [])),
         ]);
 
-    const etapasInvalidas = etapasCanonicas.filter(etapa =>
-        !etapa?.processo || !['OP', 'POS_OP'].includes(etapa.fase) ||
-        !Array.isArray(etapa.feitoPor) || etapa.feitoPor.length === 0
-    );
+    const etapasInvalidas = etapasCanonicas.filter(etapa => {
+        const liberacaoAutomatica = etapa?.fase === 'POS_OP'
+            && String(etapa?.modoExecucao || etapa?.modo_execucao || '').toUpperCase() === 'LIBERACAO_AUTOMATICA';
+        return !etapa?.processo || !['OP', 'POS_OP'].includes(etapa.fase) ||
+            (!liberacaoAutomatica && (!Array.isArray(etapa.feitoPor) || etapa.feitoPor.length === 0));
+    });
 
     if (etapasInvalidas.length > 0) {
-        mostrarPopup('Revise as etapas: todas precisam de processo, fase e pelo menos um executor.', 'erro');
+        mostrarPopup('Revise as etapas: todas precisam de processo, fase e executor, ou liberaÃ§Ã£o automÃ¡tica.', 'erro');
         throw new Error('Há etapas de produção sem classificação completa.');
+    }
+
+    const etapasPosOp = etapasCanonicas.filter(etapa => etapa?.fase === 'POS_OP');
+    const etapasAutomaticas = etapasPosOp.filter(etapa =>
+        String(etapa?.modoExecucao || etapa?.modo_execucao || '').toUpperCase() === 'LIBERACAO_AUTOMATICA'
+    );
+    if (etapasAutomaticas.length > 1 || (etapasAutomaticas.length > 0 && etapasAutomaticas.length !== etapasPosOp.length)) {
+        mostrarPopup('Use uma unica etapa POS_OP: todas manuais ou uma liberacao automatica.', 'erro');
+        throw new Error('A configuracao POS_OP automatica nao pode ser misturada com arremates manuais.');
     }
 
     return {

@@ -1,15 +1,11 @@
 // public/src/components/OPTelaConfirmacaoQtd.jsx
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { mostrarMensagem } from '/js/utils/popups.js';
 import { obterProdutos as obterProdutosDoStorage } from '/js/utils/storage.js';
 import { temPermissao, mostrarPopupSemPermissao } from '../utils/bloqueio';
+import { obterChaveTarefa } from '../utils/op-tarefas';
 
-/**
- * Calcula se atribuir `qtd` peças deste item vai ultrapassar o horário de saída (S3).
- * Retorna null se tudo estiver ok ou se não houver dados suficientes.
- * @returns {{ excedenteMin: number, terminoEstimado: string, s3Formatado: string } | null}
- */
 function calcularAvisoHorario(item, qtd, funcionario, tpp) {
     const s3Str = funcionario?.horario_saida_3 || funcionario?.horario_saida_2 || funcionario?.horario_saida_1;
     if (!s3Str) return null;
@@ -19,122 +15,122 @@ function calcularAvisoHorario(item, qtd, funcionario, tpp) {
     if (!tppSegundos || !qtd || qtd <= 0) return null;
 
     const estimadoMin = Math.ceil((tppSegundos * qtd) / 60);
-
     const agora = new Date();
     const horaAtualStr = agora.toLocaleTimeString('en-GB', {
-        timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit'
+        timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit',
     });
     const [ah, am] = horaAtualStr.split(':').map(Number);
     const [s3h, s3m] = String(s3Str).substring(0, 5).split(':').map(Number);
-
-    const agoraMin = ah * 60 + am;
+    const terminoEstimadoMin = (ah * 60 + am) + estimadoMin;
     const s3Min = s3h * 60 + s3m;
-    const terminoEstimadoMin = agoraMin + estimadoMin;
-
     if (terminoEstimadoMin <= s3Min) return null;
 
-    const excedenteMin = terminoEstimadoMin - s3Min;
-    const terminoHH = String(Math.floor(terminoEstimadoMin / 60) % 24).padStart(2, '0');
-    const terminoMM = String(terminoEstimadoMin % 60).padStart(2, '0');
-
     return {
-        excedenteMin,
-        terminoEstimado: `${terminoHH}:${terminoMM}`,
+        excedenteMin: terminoEstimadoMin - s3Min,
+        terminoEstimado: `${String(Math.floor(terminoEstimadoMin / 60) % 24).padStart(2, '0')}:${String(terminoEstimadoMin % 60).padStart(2, '0')}`,
         s3Formatado: String(s3Str).substring(0, 5),
     };
 }
 
-function obterChaveItemConfirmacao(item) {
-    return [
-        item.produto_id,
-        item.variante || '-',
-        item.fase || 'OP',
-        item.etapa_id || item.processo_id || item.processo,
-        item.origem_ops?.join(',') || item.opNumero || '',
-    ].join('-');
+function obterEtapasOp(produto) {
+    if (Array.isArray(produto?.etapasCanonicas)) {
+        return produto.etapasCanonicas.filter(etapa => etapa?.fase === 'OP');
+    }
+    return Array.isArray(produto?.etapas) ? produto.etapas : [];
 }
 
-export default function OPTelaConfirmacaoQtd({ etapa, funcionario, onClose, tpp, modoHoraExtra }) {
-    const itensLote = Array.isArray(etapa) ? etapa : [etapa];
+function formatarOps(origens = []) {
+    if (!origens.length) return null;
+    return `OP #${origens.slice(0, 2).join(' • #')}${origens.length > 2 ? ` +${origens.length - 2}` : ''}`;
+}
 
+function formatarPecas(quantidade) {
+    const numero = parseInt(quantidade, 10) || 0;
+    return `${numero} ${numero === 1 ? 'pç' : 'pçs'}`;
+}
+
+export default function OPTelaConfirmacaoQtd({ etapa, funcionario, onClose, onVoltarTarefa, tpp, modoHoraExtra, onConfirmarLote }) {
+    const itensLote = useMemo(() => (Array.isArray(etapa) ? etapa : [etapa]), [etapa]);
     const [quantidades, setQuantidades] = useState({});
     const [carregando, setCarregando] = useState(false);
-    const [mapaImagens, setMapaImagens] = useState({});
-    const [mapaEtapas, setMapaEtapas] = useState({});
+    const [metadados, setMetadados] = useState({});
+    const [itensRemovendo, setItensRemovendo] = useState(() => new Set());
 
     useEffect(() => {
         async function carregarDados() {
             try {
                 const todosProdutos = await obterProdutosDoStorage();
-                const novoMapaImagens = {};
-                const novoMapaEtapas = {};
-
+                const novosMetadados = {};
                 itensLote.forEach(item => {
-                    const chave = `${item.produto_id}-${item.variante}`;
-                    const produto = todosProdutos.find(p => p.id === item.produto_id);
-
-                    let img = '/img/placeholder-image.png';
-                    if (produto) {
-                        img = produto.imagem;
-                        if (item.variante && produto.grade) {
-                            const varObj = produto.grade.find(g => g.variacao === item.variante);
-                            if (varObj && varObj.imagem) img = varObj.imagem;
-                        }
+                    const key = obterChaveTarefa(item);
+                    const produto = todosProdutos.find(produtoItem => String(produtoItem.id) === String(item.produto_id));
+                    let imagem = produto?.imagem || '/img/placeholder-image.png';
+                    if (item.variante && Array.isArray(produto?.grade)) {
+                        const variacao = produto.grade.find(gradeItem => gradeItem.variacao === item.variante);
+                        if (variacao?.imagem) imagem = variacao.imagem;
                     }
-                    novoMapaImagens[chave] = img;
-
-                    // Detectar se é etapa final
-                    const processoLower = item.processo.toLowerCase();
-                    if (processoLower === 'corte') {
-                        novoMapaEtapas[chave] = { bordaClasse: 'borda-corte', isFinal: false };
-                    } else if (produto?.etapas) {
-                        const index = produto.etapas.findIndex(e => (e.processo || e) === item.processo);
-                        const isFinal = index === produto.etapas.length - 1;
-                        novoMapaEtapas[chave] = {
-                            bordaClasse: isFinal ? 'borda-etapa-final' : 'borda-etapa-normal',
-                            isFinal
-                        };
-                    } else {
-                        novoMapaEtapas[chave] = { bordaClasse: 'borda-etapa-normal', isFinal: false };
-                    }
+                    const etapasOp = obterEtapasOp(produto);
+                    const indiceEtapa = etapasOp.findIndex(etapaProduto => {
+                        if (item.etapa_id && etapaProduto?.id) return String(item.etapa_id) === String(etapaProduto.id);
+                        if (item.processo_id && etapaProduto?.processo_id) return String(item.processo_id) === String(etapaProduto.processo_id);
+                        return (etapaProduto?.processo || etapaProduto) === item.processo;
+                    });
+                    novosMetadados[key] = {
+                        imagem,
+                        produtoNome: produto?.nome || item.produto_nome,
+                        indiceEtapa,
+                        totalEtapas: etapasOp.length,
+                        isFinal: indiceEtapa >= 0 && indiceEtapa === etapasOp.length - 1,
+                    };
                 });
-
-                setMapaImagens(novoMapaImagens);
-                setMapaEtapas(novoMapaEtapas);
+                setMetadados(novosMetadados);
             } catch (error) {
-                console.error("Erro ao carregar dados de confirmação:", error);
+                console.error('Erro ao carregar dados de confirmação:', error);
             }
         }
-        carregarDados();
-    }, [etapa]);
+        void carregarDados();
+    }, [itensLote]);
 
     useEffect(() => {
-        const inits = {};
+        const valoresIniciais = {};
         itensLote.forEach(item => {
-            const key = obterChaveItemConfirmacao(item);
-            inits[key] = item.quantidade_disponivel;
+            valoresIniciais[obterChaveTarefa(item)] = item.quantidade_disponivel;
         });
-        setQuantidades(inits);
-    }, [etapa]);
+        setQuantidades(valoresIniciais);
+    }, [itensLote]);
+
+    const voltarTarefa = (item) => {
+        const key = obterChaveTarefa(item);
+        if (itensLote.length <= 1) {
+            onVoltarTarefa(item);
+            return;
+        }
+        setItensRemovendo(prev => new Set([...prev, key]));
+        window.setTimeout(() => onVoltarTarefa(item), 260);
+    };
 
     const handleQtdChange = (key, valor, max) => {
-        const num = parseInt(valor);
-        if (valor === '' || (!isNaN(num) && num >= 0 && num <= max)) {
+        const numero = parseInt(valor, 10);
+        if (valor === '' || (!Number.isNaN(numero) && numero >= 0 && numero <= Number(max))) {
             setQuantidades(prev => ({ ...prev, [key]: valor }));
         }
     };
 
     const ajustarQuantidade = (key, delta, max) => {
         setQuantidades(prev => {
-            const atual = parseInt(prev[key]) || 0;
-            const novo = Math.max(0, Math.min(max, atual + delta));
-            return { ...prev, [key]: novo };
+            const atual = parseInt(prev[key], 10) || 0;
+            return { ...prev, [key]: Math.max(0, Math.min(Number(max), atual + delta)) };
         });
     };
 
     const definirMaximo = (key, max) => {
-        setQuantidades(prev => ({ ...prev, [key]: max }));
+        setQuantidades(prev => ({ ...prev, [key]: Number(max) }));
     };
+
+    const itensPorFase = useMemo(() => ({
+        OP: itensLote.filter(item => item?.fase !== 'POS_OP'),
+        POS_OP: itensLote.filter(item => item?.fase === 'POS_OP'),
+    }), [itensLote]);
 
     const podeConfirmar = temPermissao('confirmar-lancamento');
 
@@ -142,243 +138,250 @@ export default function OPTelaConfirmacaoQtd({ etapa, funcionario, onClose, tpp,
         setCarregando(true);
         try {
             const token = localStorage.getItem('token');
-
             const payloadItens = itensLote.map(item => {
-                const key = obterChaveItemConfirmacao(item);
-                const qtd = parseInt(quantidades[key]);
-                if (!qtd || qtd <= 0) return null;
+                const key = obterChaveTarefa(item);
+                const quantidade = parseInt(quantidades[key], 10);
+                if (!quantidade || quantidade <= 0) return null;
                 return {
-                    opNumero: item.origem_ops[0],
+                    opNumero: item.origem_ops?.[0],
+                    origem_ops: item.origem_ops || [],
                     produto_id: item.produto_id,
                     variante: item.variante || '-',
                     processo: item.processo,
                     fase: item.fase || 'OP',
                     processo_id: item.processo_id || null,
                     etapa_id: item.etapa_id || null,
-                    quantidade: qtd,
+                    quantidade,
                     ...(item.fase === 'POS_OP' && Array.isArray(item.origens_pos_op)
                         ? { origens_pos_op: item.origens_pos_op }
                         : {}),
                     ...(item._unificada && { etapas_unificadas: item._grupo_unificacao.etapas }),
                 };
-            }).filter(i => i !== null);
+            }).filter(Boolean);
 
-            if (payloadItens.length === 0) throw new Error("Defina pelo menos uma quantidade válida.");
+            if (payloadItens.length === 0) throw new Error('Defina pelo menos uma quantidade válida.');
+            if (onConfirmarLote) {
+                await onConfirmarLote(payloadItens);
+                onClose();
+                return;
+            }
 
             const response = await fetch('/api/producoes/lote', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
                 body: JSON.stringify({
                     itens: payloadItens,
                     funcionario_id: funcionario.id,
-                    funcionario_nome: funcionario.nome
-                })
+                    funcionario_nome: funcionario.nome,
+                }),
             });
-
             if (!response.ok) {
-                const err = await response.json();
-                throw new Error(err.error || "Erro ao atribuir lote.");
+                const erro = await response.json();
+                throw new Error(erro.error || 'Erro ao atribuir lote.');
             }
 
             mostrarMensagem(`Sucesso! ${payloadItens.length} tarefa${payloadItens.length !== 1 ? 's' : ''} atribuída${payloadItens.length !== 1 ? 's' : ''}.`, 'sucesso');
-
             if (modoHoraExtra) {
                 const primeiroItem = payloadItens[0];
                 fetch('/api/alertas/hora-extra', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
                     body: JSON.stringify({
                         funcionario_id: funcionario.id,
                         funcionario_nome: funcionario.nome,
-                        produto_nome: primeiroItem ? itensLote.find(i => i.produto_id === primeiroItem.produto_id)?.produto_nome || '' : '',
-                        processo: primeiroItem?.processo || '',
-                        quantidade: primeiroItem ? (parseInt(quantidades[obterChaveItemConfirmacao(primeiroItem)]) || 0) : 0,
-                    })
+                        produto_nome: itensLote.find(item => item.produto_id === primeiroItem.produto_id)?.produto_nome || '',
+                        processo: primeiroItem.processo,
+                        quantidade: primeiroItem.quantidade,
+                    }),
                 }).catch(() => {});
             }
-
             onClose();
-        } catch (err) {
-            mostrarMensagem(err.message, 'erro');
+        } catch (error) {
+            mostrarMensagem(error.message, 'erro');
         } finally {
             setCarregando(false);
         }
     };
 
     const textoBotao = itensLote.length === 1
-        ? 'Confirmar 1 Tarefa'
-        : `Confirmar ${itensLote.length} Tarefas`;
-
-    const fasesLote = [...new Set(itensLote.map(item => item?.fase === 'POS_OP' ? 'POS_OP' : 'OP'))];
-    const loteSomentePosOp = fasesLote.length === 1 && fasesLote[0] === 'POS_OP';
-    const quantidadeTotalDisponivel = itensLote.reduce(
-        (total, item) => total + (parseInt(item?.quantidade_disponivel, 10) || 0),
-        0,
-    );
-    const quantidadeTotalSelecionada = itensLote.reduce((total, item) => {
-        const key = obterChaveItemConfirmacao(item);
-        return total + (parseInt(quantidades[key], 10) || 0);
-    }, 0);
-
+        ? 'Confirmar 1 tarefa'
+        : `Confirmar ${itensLote.length} tarefas`;
+    const loteMisto = itensPorFase.OP.length > 0 && itensPorFase.POS_OP.length > 0;
     return (
-        <div className="op-confirmacao-container">
-
-            <div className={`op-confirmacao-resumo ${loteSomentePosOp ? 'op-confirmacao-resumo--pos-op' : ''}`}>
-                <div className="op-confirmacao-resumo-titulo">
-                    <span className="op-selecao-eyebrow">Conferência do lote</span>
-                    <strong>{itensLote.length === 1 ? '1 tarefa selecionada' : `${itensLote.length} tarefas selecionadas`}</strong>
+        <div className="op-confirmacao-container op-confirmacao-v4">
+            <div className="op-confirmacao-v4__resumo">
+                <div>
+                    <span className="op-confirmacao-v4__eyebrow">Quantidades por fase</span>
+                    <strong>{itensLote.length} tarefa{itensLote.length === 1 ? '' : 's'} selecionada{itensLote.length === 1 ? '' : 's'}</strong>
+                    <p>{loteMisto
+                        ? 'Processos da OP e arremates permanecem separados para evitar confusão.'
+                        : 'Revise a quantidade antes de colocar o trabalho na jornada.'}</p>
                 </div>
-                <div className="op-confirmacao-resumo-dados">
-                    <span className="op-confirmacao-resumo-chip">
-                        <i className={`fas ${loteSomentePosOp ? 'fa-box-open' : fasesLote.length > 1 ? 'fa-layer-group' : 'fa-gears'}`}></i>
-                        {loteSomentePosOp ? 'Arremate pós-OP' : fasesLote.length > 1 ? 'Produção + pós-OP' : 'Produção da OP'}
-                    </span>
-                    <span className="op-confirmacao-resumo-efeito">
-                        <i className={`fas ${loteSomentePosOp ? 'fa-box-open' : 'fa-arrow-right'}`}></i>
-                        {loteSomentePosOp ? 'Libera para embalagem' : fasesLote.length > 1 ? 'Confira a fase de cada item' : 'Continua na OP'}
-                    </span>
-                    <span className="op-confirmacao-resumo-qtd">
-                        <strong>{quantidadeTotalSelecionada}</strong> de {quantidadeTotalDisponivel} pcs
-                    </span>
+                <div className="op-confirmacao-v4__resumo-pills">
+                    {itensPorFase.OP.length > 0 && <span className="op-confirmacao-v4__pill op"><i className="fas fa-gears"></i>{itensPorFase.OP.length} OP</span>}
+                    {itensPorFase.POS_OP.length > 0 && <span className="op-confirmacao-v4__pill pos-op"><i className="fas fa-box-open"></i>{itensPorFase.POS_OP.length} pós-OP</span>}
                 </div>
             </div>
 
-            <div className="op-confirmacao-lista">
-                {itensLote.map((item, idx) => {
-                    const key = obterChaveItemConfirmacao(item);
-                    const chaveImagem = `${item.produto_id}-${item.variante}`;
-                    const qtd = quantidades[key] !== undefined ? quantidades[key] : item.quantidade_disponivel;
-                    const imgUrl = mapaImagens[chaveImagem] || '/img/placeholder-image.png';
-                    const etapaInfo = mapaEtapas[chaveImagem] || { bordaClasse: 'borda-etapa-normal' };
+            {[
+                { fase: 'OP', itens: itensPorFase.OP, titulo: 'Processos da OP', descricao: 'A mesma quantidade percorre as etapas escolhidas.', efeito: 'Continua dentro da OP', icon: 'fa-gears' },
+                { fase: 'POS_OP', itens: itensPorFase.POS_OP, titulo: 'Arremates pós-OP', descricao: 'Trabalho posterior ao encerramento da ordem.', efeito: 'Libera para embalagem', icon: 'fa-box-open' },
+            ].filter(grupo => grupo.itens.length > 0).map(grupo => (
+                <section key={grupo.fase} className={`op-confirmacao-fase-v4 op-confirmacao-fase-v4--${grupo.fase.toLowerCase()}`}>
+                    <div className="op-confirmacao-fase-v4__cabecalho">
+                        <span className="op-confirmacao-fase-v4__icone"><i className={`fas ${grupo.icon}`}></i></span>
+                        <div><strong>{grupo.titulo}</strong><span>{grupo.descricao}</span></div>
+                        <span className="op-confirmacao-fase-v4__efeito"><i className={`fas ${grupo.fase === 'POS_OP' ? 'fa-box-open' : 'fa-arrow-right'}`}></i>{grupo.efeito}</span>
+                    </div>
 
-                    return (
-                        <div key={idx} className="op-item-confirmacao-card">
-                            <div className={`card-borda-charme ${etapaInfo.bordaClasse}`}></div>
+                    <div className="op-confirmacao-fase-v4__lista">
+                        {grupo.itens.map(item => {
+                            const key = obterChaveTarefa(item);
+                            const meta = metadados[key] || {};
+                            const quantidade = quantidades[key] ?? item.quantidade_disponivel;
+                            const ehPosOp = item.fase === 'POS_OP';
+                            const etapasUnificadas = item._unificada ? item._grupo_unificacao?.etapas || [] : [];
+                            const primeiraEtapa = etapasUnificadas[0];
+                            const ultimaEtapa = etapasUnificadas[etapasUnificadas.length - 1];
+                            const rotuloEtapa = ehPosOp
+                                ? 'Arremate pós-OP'
+                                : etapasUnificadas.length >= 2
+                                    ? `Etapas ${(primeiraEtapa.etapa_index ?? meta.indiceEtapa) + 1}–${(ultimaEtapa.etapa_index ?? meta.indiceEtapa) + 1} de ${meta.totalEtapas || '?'}`
+                                    : meta.isFinal ? 'Etapa final' : meta.indiceEtapa >= 0 ? `Etapa ${meta.indiceEtapa + 1} de ${meta.totalEtapas}` : 'Processo da OP';
+                            const aviso = calcularAvisoHorario(item, parseInt(quantidade, 10) || 0, funcionario, tpp);
+                            const varianteLegenda = item.variante && item.variante !== '-' ? item.variante : 'Sem variação';
+                            const classeLegendaVariante = varianteLegenda.length > 28
+                                ? ' op-task-card-v4__imagem-legenda--longa'
+                                : varianteLegenda.length > 19 ? ' op-task-card-v4__imagem-legenda--media' : '';
 
-                            <div className="item-info-visual">
-                                <img src={imgUrl} alt={item.produto_nome} />
-                                <div>
-                                    <h4>{item.produto_nome}</h4>
-                                    <p className="variante">{item.variante}</p>
-                                    {item._unificada && item._grupo_unificacao?.etapas ? (
-                                        <div className="op-confirmacao-processos-unif">
-                                            {item._grupo_unificacao.etapas.map((e, i) => (
-                                                <React.Fragment key={e.processo}>
-                                                    <span className="op-confirmacao-etapa-chip">{e.processo}</span>
-                                                    {i < item._grupo_unificacao.etapas.length - 1 && (
-                                                        <i className="fas fa-arrow-right op-confirmacao-unif-seta"></i>
-                                                    )}
-                                                </React.Fragment>
-                                            ))}
-                                        </div>
-                                    ) : (
-                                        <>
-                                            {item.fase === 'POS_OP' && (
-                                                <span className="op-confirmacao-fase-pos-op">Arremate pós-OP</span>
+                            return (
+                                <article key={key} className={`op-qtd-card-v4 op-qtd-card-v4--${ehPosOp ? 'pos-op' : 'op'}${itensRemovendo.has(key) ? ' op-qtd-card-v4--removendo' : ''}`}>
+                                    <div className="card-borda-charme" aria-hidden="true"></div>
+                                    <div className="op-qtd-card-v4__grid">
+                                        <div className="op-qtd-card-v4__visual">
+                                            <div className="op-qtd-card-v4__imagem-wrap">
+                                                <img src={meta.imagem || '/img/placeholder-image.png'} alt={varianteLegenda} />
+                                                <span className={`op-task-card-v4__imagem-legenda${classeLegendaVariante}`} title={varianteLegenda}>{varianteLegenda}</span>
+                                            </div>
+
+                                            {etapasUnificadas.length >= 2 && (
+                                                <div className="op-qtd-card-v4__percurso">
+                                                    {etapasUnificadas.map((etapaPercurso, indice) => (
+                                                        <React.Fragment key={etapaPercurso.etapa_id || etapaPercurso.processo_id || etapaPercurso.processo}>
+                                                            <span><b>{etapaPercurso.processo}</b><small>{formatarPecas(quantidade)}</small></span>
+                                                            {indice < etapasUnificadas.length - 1 && <i className="fas fa-arrow-right"></i>}
+                                                        </React.Fragment>
+                                                    ))}
+                                                </div>
                                             )}
-                                            <p className="processo">{item.processo}</p>
-                                        </>
-                                    )}
-                                    <div className={`op-confirmacao-fluxo ${item.fase === 'POS_OP' ? 'op-confirmacao-fluxo--pos-op' : ''}`}>
-                                        <span>
-                                            <i className={`fas ${item.fase === 'POS_OP' ? 'fa-box-open' : 'fa-arrow-right'}`}></i>
-                                            {item.fase === 'POS_OP' ? 'Libera para embalagem' : 'Continua na OP'}
-                                        </span>
-                                    </div>
-                                    {item.origem_ops?.length > 0 && (
-                                        <p className="op-confirmacao-op-link">
-                                            <i className="fas fa-link"></i>
-                                            {' OP #'}{item.origem_ops.slice(0, 2).join(' • #')}{item.origem_ops.length > 2 ? ` +${item.origem_ops.length - 2}` : ''}
-                                        </p>
-                                    )}
-                                    {item.origens_pos_op?.length > 1 && (
-                                        <p className="op-confirmacao-origens-consolidadas">
-                                            <i className="fas fa-layer-group"></i>
-                                            {item.origens_pos_op.length} OPs agrupadas por produto, variante e etapa
-                                        </p>
-                                    )}
-                                </div>
-                            </div>
-
-                            <div className="item-controles-qtd">
-                                <div className="qtd-display-linha">
-                                    <button className="btn-ajuste mini" onClick={() => ajustarQuantidade(key, -1, item.quantidade_disponivel)}>-</button>
-                                    <input
-                                        type="number"
-                                        value={qtd}
-                                        onChange={(e) => handleQtdChange(key, e.target.value, item.quantidade_disponivel)}
-                                    />
-                                    <button className="btn-ajuste mini" onClick={() => ajustarQuantidade(key, 1, item.quantidade_disponivel)}>+</button>
-                                </div>
-                                <div className="qtd-atalhos-linha">
-                                    <button onClick={() => ajustarQuantidade(key, 10, item.quantidade_disponivel)}>+10</button>
-                                    <button className="btn-max" onClick={() => definirMaximo(key, item.quantidade_disponivel)}>
-                                        Max ({item.quantidade_disponivel})
-                                    </button>
-                                </div>
-                                {(() => {
-                                    const aviso = calcularAvisoHorario(item, parseInt(qtd) || 0, funcionario, tpp);
-                                    if (!aviso) return null;
-                                    return (
-                                        <div className="op-atrib-aviso-horario">
-                                            ⚠️ Estimativa: término às {aviso.terminoEstimado}
-                                            <br />
-                                            <small>Saída prevista: {aviso.s3Formatado} — {aviso.excedenteMin}min além do horário</small>
                                         </div>
-                                    );
-                                })()}
-                            </div>
 
-                            {item._unificada && item._grupo_unificacao?.etapas && (
-                                <div className="op-confirmacao-unif-detalhe">
-                                    <div className="op-confirmacao-unif-titulo">
-                                        <i className="fas fa-link"></i> {item._grupo_unificacao.etapas.length} etapas — registradas juntas
-                                    </div>
-                                    {item._grupo_unificacao.etapas.map((e, i) => {
-                                        const isLast = i === item._grupo_unificacao.etapas.length - 1;
-                                        return (
-                                            <div key={e.processo} className="op-confirmacao-unif-item">
-                                                <span className="op-confirmacao-unif-step-label">
-                                                    {isLast ? 'Etapa Final' : `Etapa ${e.etapa_index + 1}`}
-                                                </span>
-                                                <span className="op-confirmacao-etapa-chip">{e.processo}</span>
-                                                {e.maquina && e.maquina !== 'Não Definida' && (
-                                                    <span className="op-confirmacao-unif-maquina">
-                                                        <i className="fas fa-cog"></i> {e.maquina}
-                                                    </span>
-                                                )}
-                                                <span className="op-confirmacao-unif-qtd-label">
-                                                    {parseInt(qtd) || 0} pçs
+                                        <div className="op-qtd-card-v4__conteudo">
+                                            <div className="op-qtd-card-v4__topo">
+                                                <span className="op-qtd-card-v4__produto">{meta.produtoNome || item.produto_nome}</span>
+                                                <button
+                                                    type="button"
+                                                    className="op-qtd-card-v4__voltar"
+                                                    onClick={() => voltarTarefa(item)}
+                                                    aria-label={`Voltar tarefa ${item.variante || meta.produtoNome || item.produto_nome} para seleção`}
+                                                >
+                                                    <i className="fas fa-arrow-left"></i> Voltar tarefa
+                                                </button>
+                                            </div>
+                                            <h4>{item.variante && item.variante !== '-' ? item.variante : 'Sem variação'}</h4>
+                                            <div className="op-qtd-card-v4__identidade">
+                                                <span className="op-etapa-step-badge"><i className={`fas ${ehPosOp ? 'fa-sparkles' : 'fa-list-ol'}`}></i>{rotuloEtapa}</span>
+                                                <span className={`op-processo-chip ${ehPosOp ? 'op-processo-chip--pos-op' : ''}`}>
+                                                    <i className={`fas ${etapasUnificadas.length >= 2 ? 'fa-code-branch' : 'fa-industry'}`}></i>
+                                                    {etapasUnificadas.length >= 2 ? 'Fluxo unificado' : item.processo}
                                                 </span>
                                             </div>
-                                        );
-                                    })}
-                                </div>
-                            )}
-                        </div>
-                    );
-                })}
-            </div>
+
+                                            <div className="op-qtd-card-v4__metadados">
+                                                {formatarOps(item.origem_ops) && <span><i className="fas fa-link"></i>{formatarOps(item.origem_ops)}</span>}
+                                                {item.origens_pos_op?.length > 1 && <span><i className="fas fa-layer-group"></i>{item.origens_pos_op.length} OPs agrupadas por produto, variante e etapa</span>}
+                                                <span><i className="fas fa-user-check"></i>{funcionario.nome}</span>
+                                            </div>
+
+                                            <div className={`op-card-fluxo-efeito-v4 ${ehPosOp ? 'op-card-fluxo-efeito-v4--pos-op' : ''}`}>
+                                                <span><i className="fas fa-route"></i>Efeito no fluxo</span>
+                                                <strong><i className={`fas ${ehPosOp ? 'fa-box-open' : 'fa-arrow-right'}`}></i>{grupo.efeito}</strong>
+                                            </div>
+
+                                            {aviso && (
+                                                <div className="op-atrib-aviso-horario">
+                                                    <i className="fas fa-triangle-exclamation"></i>
+                                                    <span>Estimativa: término às {aviso.terminoEstimado}<small>Saída prevista: {aviso.s3Formatado} · {aviso.excedenteMin} min além do horário</small></span>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="op-qtd-card-v4__painel-direito">
+                                            <div className="op-qtd-card-v4__controles">
+                                                <label htmlFor={`quantidade-${key}`}>Quantidade</label>
+                                                <div className="op-qtd-card-v4__ajuste">
+                                                    <button type="button" onClick={() => ajustarQuantidade(key, -1, item.quantidade_disponivel)} aria-label="Diminuir quantidade">−</button>
+                                                    <input
+                                                        id={`quantidade-${key}`}
+                                                        type="number"
+                                                        value={quantidade}
+                                                        min="0"
+                                                        max={item.quantidade_disponivel}
+                                                        onChange={event => handleQtdChange(key, event.target.value, item.quantidade_disponivel)}
+                                                    />
+                                                    <button type="button" onClick={() => ajustarQuantidade(key, 1, item.quantidade_disponivel)} aria-label="Aumentar quantidade">+</button>
+                                                </div>
+                                                <div className="op-qtd-card-v4__atalhos">
+                                                    <button type="button" onClick={() => ajustarQuantidade(key, 1, item.quantidade_disponivel)}>+1</button>
+                                                    <button type="button" onClick={() => ajustarQuantidade(key, 5, item.quantidade_disponivel)}>+5</button>
+                                                    <button type="button" onClick={() => definirMaximo(key, item.quantidade_disponivel)}>MAX</button>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    className="op-qtd-card-v4__limpar"
+                                                    onClick={() => handleQtdChange(key, '', item.quantidade_disponivel)}
+                                                >
+                                                    Limpar
+                                                </button>
+                                            </div>
+
+                                            {etapasUnificadas.length >= 2 && (
+                                                <div className="op-qtd-card-v4__detalhe-unificado">
+                                                    <strong><i className="fas fa-code-branch"></i>{etapasUnificadas.length} etapas registradas juntas</strong>
+                                                    <span>A quantidade informada será lançada em cada etapa do percurso, com pontos individuais.</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </article>
+                            );
+                        })}
+                    </div>
+                </section>
+            ))}
 
             <button
-                className={`op-selecao-fab${!podeConfirmar ? ' op-selecao-fab--bloqueado' : ''}`}
+                type="button"
+                className={`op-selecao-fab op-confirmacao-v4__confirmar${!podeConfirmar ? ' op-selecao-fab--bloqueado bloqueado' : ''}`}
                 onClick={() => {
                     if (!podeConfirmar) {
                         mostrarPopupSemPermissao('Você não tem permissão para confirmar lançamentos de produção.');
                         return;
                     }
-                    handleConfirmar();
+                    void handleConfirmar();
                 }}
                 disabled={carregando}
             >
                 {carregando
-                    ? <><div className="spinner-btn-interno"></div> Processando...</>
-                    : !podeConfirmar
-                        ? <><i className="fas fa-lock"></i> Sem permissão</>
-                        : <><i className="fas fa-check-double"></i> {textoBotao}</>
-                }
+                    ? <><span className="spinner-btn-interno"></span> Processando...</>
+                    : <>
+                        <span className="op-selecao-fab-badge">
+                            {podeConfirmar ? itensLote.length : <i className="fas fa-lock" style={{ fontSize: '0.7rem' }}></i>}
+                        </span>
+                        {podeConfirmar ? textoBotao : 'Sem permissão'}
+                        <i className={`fas ${podeConfirmar ? 'fa-arrow-right' : 'fa-lock'}`}></i>
+                    </>}
             </button>
-
         </div>
     );
 }

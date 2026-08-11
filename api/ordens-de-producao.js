@@ -9,6 +9,8 @@ import { obterEmpresaIdDoContexto } from './contexto-empresa.js';
 // Importar a função de buscar permissões completas
 import { getPermissoesCompletasUsuarioDB } from './usuarios.js';
 import { registrarAuditoria } from './audit.js';
+import { construirEtapasCanonicas, etapaEhLiberacaoAutomatica } from './utils/etapas-produto.js';
+import { registrarLiberacaoAutomaticaProdutoPronto } from './utils/origens-produto-pronto.js';
 
 const router = express.Router();
 const pool = new Pool({
@@ -739,6 +741,41 @@ router.put('/', async (req, res) => {
                 lancado: lancsMap.has(index),
                 quantidade: lancsMap.get(index) || 0
             }));
+
+            // Alguns produtos saem prontos da Ãºltima etapa OP. A etapa POS_OP
+            // permanece como gate de embalagem, mas pode ser explicitamente
+            // marcada como liberaÃ§Ã£o automÃ¡tica, sem tarefa ou pontos.
+            const produtoEtapasResult = await dbClient.query(
+                `SELECT etapas, "etapastiktik" AS etapas_tiktik
+                   FROM produtos
+                  WHERE id = $1
+                    AND empresa_id = $2`,
+                [produto_id, req.empresaId],
+            );
+            const etapasCanonicas = construirEtapasCanonicas({
+                etapas: produtoEtapasResult.rows[0]?.etapas,
+                etapasTiktik: produtoEtapasResult.rows[0]?.etapas_tiktik,
+            }).etapasCanonicas;
+            const etapasPosOp = etapasCanonicas.filter((etapa) => etapa.fase === 'POS_OP');
+            const etapasAutomaticas = etapasPosOp.filter(etapaEhLiberacaoAutomatica);
+
+            if (etapasAutomaticas.length > 1 || (etapasAutomaticas.length > 0 && etapasAutomaticas.length !== etapasPosOp.length)) {
+                throw new Error('Configure apenas uma etapa POS_OP, manual ou automÃ¡tica, para este produto.');
+            }
+
+            if (etapasAutomaticas.length === 1) {
+                const etapaFinal = opData.etapas[opData.etapas.length - 1];
+                const quantidadeFinal = Number(etapaFinal?.quantidade) || 0;
+                await registrarLiberacaoAutomaticaProdutoPronto(dbClient, {
+                    empresaId: req.empresaId,
+                    produtoId: produto_id,
+                    variante: opData.variante,
+                    opNumero: opData.numero,
+                    opEditId: opData.edit_id,
+                    etapa: etapasAutomaticas[0],
+                    quantidade: quantidadeFinal,
+                });
+            }
         }
         // ------------------------------------------
 

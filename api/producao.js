@@ -14,7 +14,7 @@ import {
     TIPOS_EVENTO_TAREFA,
 } from './ponto-eventos.js';
 import { reconciliarJornadaFuncionarios } from './ponto-motor.js';
-import { construirEtapasCanonicas, encontrarEtapaCanonica } from './utils/etapas-produto.js';
+import { construirEtapasCanonicas, encontrarEtapaCanonica, etapaEhLiberacaoAutomatica } from './utils/etapas-produto.js';
 import { listarTemposProducao, salvarTemposProducao } from './utils/tempos-padrao.js';
 import { obterEstruturaOrigensProdutoPronto, construirCteOrigensProdutoPronto } from './utils/origens-produto-pronto.js';
 
@@ -23,6 +23,26 @@ const pool = new Pool({
     connectionString: process.env.POSTGRES_URL,
 });
 const SECRET_KEY = process.env.JWT_SECRET;
+
+function maquinaRepresentaUsoFisico(maquina) {
+    const normalizada = String(maquina ?? '')
+        .trim()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase();
+    return normalizada !== '' && normalizada !== 'nao usa';
+}
+
+function percursoMudaMaquinaFisica(percurso) {
+    return percurso.some((etapa, indice) => {
+        if (indice === 0) return false;
+        const anterior = percurso[indice - 1];
+        if (!maquinaRepresentaUsoFisico(etapa.maquina) || !maquinaRepresentaUsoFisico(anterior.maquina)) {
+            return false;
+        }
+        return String(etapa.maquina).trim() !== String(anterior.maquina).trim();
+    });
+}
 
 function exigirCadeiaProdutivaLegada(req, res) {
     if (req.moduloEmpresa?.multiempresa_pronto && req.moduloEmpresa?.habilitado) return true;
@@ -683,40 +703,57 @@ router.get('/grupos-unificaveis', async (req, res) => {
     try {
         dbClient = await pool.connect();
         const prodRes = await dbClient.query(
-            'SELECT etapas FROM produtos WHERE id = $1 AND empresa_id = $2',
+            `SELECT etapas, "etapastiktik" AS etapas_tiktik
+               FROM produtos
+              WHERE id = $1
+                AND empresa_id = $2`,
             [produto_id, req.empresaId]
         );
-        const etapas = prodRes.rows[0]?.etapas || [];
-
-        const grupos = [];
-        let grupoAtual = null;
-
-        for (let i = 0; i < etapas.length; i++) {
-            const e = etapas[i];
-            const feitoPor = typeof e === 'object' ? e.feitoPor : null;
-            const processo = typeof e === 'object' ? e.processo : e;
-            const maquina = typeof e === 'object' ? (e.maquina || null) : null;
-
-            const executores = Array.isArray(feitoPor) ? feitoPor : [feitoPor];
-
-            if (executores.includes(tipo_funcionario)) {
-                if (grupoAtual) {
-                    grupoAtual.etapas.push({ etapa_index: i, processo, maquina, feitoPor });
-                } else {
-                    grupoAtual = {
-                        grupo_id: `${produto_id}-${i}`,
-                        etapas: [{ etapa_index: i, processo, maquina, feitoPor }],
-                    };
-                }
-            } else {
-                if (grupoAtual && grupoAtual.etapas.length >= 2) {
-                    grupos.push({ ...grupoAtual, muda_maquina: grupoAtual.etapas.some((ep, j) => j > 0 && ep.maquina !== grupoAtual.etapas[j - 1].maquina) });
-                }
-                grupoAtual = null;
-            }
+        const produto = prodRes.rows[0];
+        if (!produto) {
+            return res.status(404).json({ error: 'Produto nÃ£o encontrado na empresa ativa.' });
         }
-        if (grupoAtual && grupoAtual.etapas.length >= 2) {
-            grupos.push({ ...grupoAtual, muda_maquina: grupoAtual.etapas.some((ep, j) => j > 0 && ep.maquina !== grupoAtual.etapas[j - 1].maquina) });
+
+        const etapas = construirEtapasCanonicas({
+            etapas: produto.etapas,
+            etapasTiktik: produto.etapas_tiktik,
+        }).etapasCanonicas.filter(etapa => etapa.fase === 'OP');
+
+        const etapaParaResposta = (etapa, etapaIndex) => ({
+            etapa_index: etapaIndex,
+            etapa_id: etapa.id || null,
+            processo_id: etapa.processo_id || null,
+            ordem: etapa.ordem || etapaIndex + 1,
+            processo: etapa.processo,
+            maquina: etapa.maquina || null,
+            feitoPor: etapa.feitoPor || [],
+            fase: 'OP',
+        });
+        const permiteExecutor = etapa => (
+            Array.isArray(etapa.feitoPor) && etapa.feitoPor.includes(tipo_funcionario)
+        );
+
+        // Cada etapa autorizada pode iniciar um percurso proprio. Isso permite,
+        // por exemplo, concluir Fechamento separadamente e depois unificar
+        // Passar Elastico + Finalizacao com outra costureira.
+        const grupos = [];
+        for (let inicio = 0; inicio < etapas.length; inicio++) {
+            if (!permiteExecutor(etapas[inicio])) continue;
+
+            const percurso = [];
+            for (let indice = inicio; indice < etapas.length; indice++) {
+                if (!permiteExecutor(etapas[indice])) break;
+                percurso.push(etapaParaResposta(etapas[indice], indice));
+            }
+
+            if (percurso.length < 2) continue;
+            grupos.push({
+                grupo_id: `${produto_id}-${percurso[0].etapa_id || percurso[0].processo_id || inicio}`,
+                etapa_inicial_id: percurso[0].etapa_id,
+                etapa_inicial_index: inicio,
+                etapas: percurso,
+                muda_maquina: percursoMudaMaquinaFisica(percurso),
+            });
         }
 
         res.status(200).json(grupos);
@@ -1044,6 +1081,9 @@ router.get('/fila-de-tarefas', async (req, res) => {
                         : (parseInt(op.quantidade, 10) || 0));
 
                 for (const etapa of etapasPosOp) {
+                    // A liberaÃ§Ã£o automÃ¡tica jÃ¡ foi projetada como origem de
+                    // produto pronto no encerramento da OP; nunca vira tarefa.
+                    if (etapaEhLiberacaoAutomatica(etapa)) continue;
                     const chave = chavePosOp(op.numero, etapa);
                     const jaLancado = lancamentosPosOpMap.get(chave) || 0;
                     const emSessaoNova = sessoesPosOpMap.get(chave) || 0;

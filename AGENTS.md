@@ -206,6 +206,9 @@ Neon, commit ou deploy.
 - O login emite sessões de 30 dias por padrão. A troca de empresa deve preservar
   o tempo restante do JWT e tokens legados sem `exp` recebem a política atual de
   30 dias; não reintroduzir a antiga duração de 8 horas.
+- Hashes de senha ausentes ou fora do formato bcrypt devem ser tratados como
+  credencial inválida no login, nunca como erro interno HTTP 500. O sistema não
+  deve criar fallback de comparação em texto puro para contas legadas.
 - Métricas de membros e gestores por empresa devem excluir usuários com
   `is_test = true` ou `arquivado = true`, usando a mesma população da listagem.
 - Na Gestão Organizacional, a edição de identidade global e vínculo empresarial
@@ -2147,6 +2150,12 @@ empresa secundaria porque a Fase 8 esta fora do escopo.
   Os handlers, permissoes, bottom sheets e regras de negocio foram preservados;
   typecheck, build e diff check foram aprovados. A validacao visual manual ainda
   depende de uma sessao autenticada.
+- No card em operacao, o processo atual usa um cartao proprio para separar
+  contexto de etapa e percurso unificado, com chips legiveis e o badge `UNIF`
+  preservado. A fila compacta exibe somente thumbnail, nome da variacao,
+  processo/etapa e quantidade; etapas `OP` usam azul e `POS_OP` usam laranja.
+  A secao Fora da operacao ocupa toda a largura disponivel com duas colunas
+  flexiveis em todas as larguras responsivas previstas para esse painel.
 - O status do painel de OP tambem informa o tipo do dia e se a janela ordinaria
   esta aberta. Falta, saida antecipada e atraso sao bloqueados na interface em
   DSR, folga, trabalho extra ou fora da janela; hora extra usa somente tarefas.
@@ -2156,8 +2165,8 @@ empresa secundaria porque a Fase 8 esta fora do escopo.
 - No desktop, o modal de Jornada e seus sheets ficam centralizados na area util
   apos o menu lateral fixo de 296px; em tablet e celular continuam centralizados
   na viewport.
-- Os cards de Fora de operacao usam duas colunas flexiveis em tablet e desktop,
-  e uma coluna em telas pequenas.
+- Os cards de Fora de operacao usam duas colunas flexiveis, sem sobra lateral,
+  em tablet, desktop e telas pequenas.
 - O modal de atribuicao de tarefa usa duas colunas em tablet e desktop, com
   contexto e disponibilidade compactos; a confirmacao de quantidade usa produto
   e controles lado a lado. Em celular, ambos retornam para uma coluna.
@@ -3790,3 +3799,134 @@ historico. Nenhuma nova migration destrutiva, `DROP`, limpeza de dados ou
 backfill deve ser criada ou executada sem uma nova decisao explicita do
 usuario. A meta atual e estabilidade funcional, testes, revisao seletiva e
 publicacao do codigo, nao a remocao fisica do legado.
+
+### Configuracao POS_OP de liberacao automatica — 2026-08-09
+
+- Uma etapa `POS_OP` pode usar `modoExecucao = LIBERACAO_AUTOMATICA` quando o
+  produto ja sair pronto da ultima etapa `OP`.
+- Essa configuracao mantem o gate `POS_OP`, mas nao cria tarefa, sessao ou
+  pontos de funcionario. Ao encerrar a OP, o backend projeta uma origem de
+  produto pronto idempotente, com pontos zero, para liberar a embalagem.
+- O modo padrao continua sendo `MANUAL`; a regra vale por etapa e pode ser
+  usada por qualquer produto. Nenhuma receita existente e alterada
+  automaticamente.
+
+### Atividades recentes da dashboard apos a unificacao — 2026-08-09
+
+- A rota `/api/dashboard/atividades` deve unir `producoes` e
+  `OrigensProdutoProntoCompat` para qualquer executor autorizado, incluindo
+  costureiras e freelancers em `POS_OP`; a filtragem final por `uid` e
+  `empresa_id` continua obrigatoria.
+- O filtro de dia deve aplicar uma unica conversao de `timestamptz` para
+  `America/Sao_Paulo`; a conversao dupla via UTC desloca atividades da noite
+  para o dia seguinte e deixa o filtro Hoje vazio.
+
+- No resumo “pontos no periodo”, o arredondamento ocorre somente depois da
+  soma: valores individuais como `1,5` continuam com decimal, enquanto um
+  total de `4,5` e exibido como `5`.
+
+### Pontuacao individual na Producao detalhada - 2026-08-09
+
+- Ao abrir o card de um empregado em `producao-geral`, a lista
+  “Producao detalhada” deve exibir a pontuacao de cada produto sem
+  arredondamento para inteiro. A soma agregada pode seguir a regra do resumo,
+  mas o valor individual deve preservar decimais como `1,5`.
+
+### Ajuste do catalogo de permissoes da Gestao Organizacional - 2026-08-10
+
+- Os cards de permissoes individuais devem expandir conforme o conteudo, sem
+  sobrepor titulos, localizacao ou descricao de cards vizinhos.
+- A busca do catalogo normaliza maiusculas, acentos, cedilha, aspas e demais
+  sinais, e tambem considera o tipo da permissao (por exemplo, `pagina` e
+  `Página`).
+- Busca sem resultados usa `UIFeedbackNotFound`, mantendo o retorno visual
+  padronizado do sistema.
+
+### Percurso unificado e redesign da atribuicao de Producoes - 2026-08-10
+
+O handoff executável para concluir esta frente em uma única leva está em
+`_planejamento/plano-finalizacao-selecao-tarefas-quantidades-producao.md`.
+Ele deve ser lido integralmente antes de novas alterações na seleção de tarefas,
+percurso unificado ou confirmação de quantidades.
+
+- A unificacao de etapas `OP` e definida como um percurso continuo iniciado na
+  etapa que possui saldo. O supervisor escolhe ate qual etapa o mesmo empregado
+  executara a mesma quantidade; nenhuma etapa intermediaria pode ser pulada.
+- Toda etapa `OP` autorizada ao empregado pode iniciar um percurso. O backend
+  reconstrói a sequencia pela receita canonica, valida identidade estavel,
+  ordem, executor permitido em todas as etapas, saldo e concorrencia. O JSON do
+  navegador nunca e autoridade para a composicao do percurso.
+- As etapas da receita continuam obrigatorias para a OP; elas nao recebem flag
+  opcional. A flexibilidade esta na atribuicao: na Touca de Cetim, Fechamento e
+  Finalizacao podem ser concluidos juntos e Passar Elastico permanecer para
+  outra costureira; no Scrunchie Padrao, Passar Elastico pode iniciar um novo
+  percurso junto com Finalizacao depois que Fechamento ja foi concluido.
+- `Não Usa` representa uma etapa manual executada no mesmo posto, sem uso da
+  máquina. Ao calcular troca de máquina para o alerta de percurso unificado,
+  transições que envolvam `Não Usa` devem ser ignoradas; trocas físicas entre
+  máquinas configuradas, como Reta para Overloque/Interloque na fronha de cetim,
+  continuam exigindo confirmação.
+- Ao finalizar uma sessao unificada, a quantidade e lancada individualmente em
+  cada etapa do percurso, com pontos proprios e distribuicao FIFO entre OPs que
+  realmente possuem saldo. Nao e permitido gerar estouro artificial.
+- O redesign de Selecionar tarefa e Selecionar quantidade e tablet-first, pois
+  tablets representam aproximadamente 80% do uso operacional. Tablet paisagem
+  e retrato sao gates primarios; desktop e celular continuam obrigatorios.
+- A selecao separa explicitamente Processos da OP e Arremates pos-OP. Nos cards,
+  a imagem e o nome da variante recebem destaque; o nome do produto nao aparece
+  na selecao; badge da etapa e processo ficam conectados; o efeito no fluxo fica
+  evidente; os demais dados operacionais permanecem presentes.
+- A confirmacao de quantidade agrupa as tarefas por fase quando o lote for
+  misto, preserva todos os dados do card e explicita que a mesma quantidade e
+  aplicada a cada etapa do percurso unificado.
+- Os novos cards seguem o contrato `card-borda-charme`: o card controla cor,
+  borda, raio e sombra; o filho `.card-borda-charme` e apenas o overlay interno
+  absoluto, sem classes adicionais de cor.
+- O header do modal de atribuição usa uma régua horizontal enxuta com as duas
+  partes do fluxo: `Selecionar tarefa` e `Confirmar quantidades`. As duas telas
+  exibem `PARTE 1 DE 2`; somente o número da parte atual recebe a bolinha de
+  destaque. A etapa oposta fica visualmente ofuscada, com tipografia adaptativa,
+  enquanto o perfil da funcionária permanece preservado.
+- Na confirmação de quantidade, o percurso unificado fica abaixo da imagem do
+  produto, preservando a paleta roxa e usando `pç`/`pçs` conforme o número. O
+  painel de controles fica centralizado horizontal e verticalmente na própria
+  coluna, independentemente de o card possuir percurso.
+- Depois de escolher um fluxo na seleção, o botão manual `Selecionar` recebe o
+  estado de atenção `Selecionar agora`, com animação e destaque forte. A tarefa
+  nunca é selecionada automaticamente; o supervisor ainda precisa clicar no
+  botão.
+- O detalhe de percurso unificado fica no painel direito, abaixo dos controles
+  de quantidade, e mantém integralmente o título e a explicação do lançamento.
+  Os atalhos de quantidade são `+1`, `+5` e `MAX`; `Limpar` fica centralizado e
+  apenas esvazia o campo, sem enviar quantidade zero.
+- O lançamento externo reutiliza exatamente o `OPAtribuicaoModal` e seus
+  componentes canônicos de seleção e confirmação. Para freelance costureira,
+  somente tarefas `OP` são permitidas; para freelance TikTik, somente tarefas
+  `POS_OP` são permitidas. A restrição é refletida nas abas da interface e
+  validada novamente no endpoint externo.
+
+### Ocorrências no fluxo de Embalagem — decisão aprovada em 2026-08-10
+
+- A ferramenta da página de Embalagem se chama `Registrar ocorrência` e não
+  reutiliza a perda de Produções/Arremates. Os motivos são
+  `QUANTIDADE_DIVERGENTE`, `LANCAMENTO_ERRADO`, `PRODUTO_AVARIADO` e
+  `ENVIAR_CONSERTO`.
+- Uma ocorrência consome o saldo da origem de produto pronto com lock e
+  idempotência, sem excluir ou editar OP, POS_OP, pontos ou comissões. Perdas
+  definitivas não criam movimento de estoque porque acontecem antes da
+  embalagem.
+- O conserto é uma quarentena controlada: a peça sai da fila, pode retornar à
+  mesma origem sem gerar nova comissão e, se não for recuperada, pode ser
+  convertida em produto avariado. Retornos e conversões são eventos próprios.
+- `ocorrencias_embalagem_eventos` é append-only. Todas as ações de negócio da
+  ocorrência entram no Histórico geral, que será acessível pelo header de
+  Embalagem usando o endpoint canônico de histórico de Produções.
+- As três ferramentas adicionais propostas — conferência avançada, origem por
+  QR/lote e painel de qualidade — ficam fora deste incremento e não devem ser
+  implementadas sem nova aprovação.
+- A migration `_planejamento/migration-embalagem-ocorrencias-v1.sql` foi
+  ensaiada duas vezes em clone local isolado e executada/validada na Neon em
+  2026-08-10. O marcador `embalagem-ocorrencias-v1` foi registrado, as três
+  tabelas iniciaram vazias, a FK canônica para `origens_produto_pronto` foi
+  criada e o trigger append-only ficou ativo. Nenhum commit foi criado neste
+  passo.

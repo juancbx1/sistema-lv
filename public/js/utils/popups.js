@@ -33,7 +33,7 @@ function desbloquearAudioContext() {
  * Remove qualquer popup existente da tela com uma animação suave.
  */
 function removerPopupExistente() {
-    const containerExistente = document.querySelector('.popup-container');
+    const containerExistente = document.querySelector('.lv-popup-container');
     if (containerExistente) {
         const popupBox = containerExistente.querySelector('.popup-box');
         const overlay = containerExistente.querySelector('.popup-overlay');
@@ -58,7 +58,7 @@ export function mostrarMensagem(mensagem, tipo = 'info', duracao = 0) {
     removerPopupExistente();
 
     const container = document.createElement('div');
-    container.className = 'popup-container';
+    container.className = 'popup-container lv-popup-container';
 
     container.innerHTML = `
         <div class="popup-overlay"></div>
@@ -103,7 +103,7 @@ export function mostrarConfirmacao(mensagem, opcoes = {}) {
 
     return new Promise((resolve) => {
         const container = document.createElement('div');
-        container.className = 'popup-container';
+        container.className = 'popup-container lv-popup-container';
 
         container.innerHTML = `
             <div class="popup-overlay"></div>
@@ -150,7 +150,7 @@ export function mostrarPromptNumerico(mensagem, opcoes = {}) {
 
     return new Promise((resolve) => {
         const container = document.createElement('div');
-        container.className = 'popup-container';
+        container.className = 'popup-container lv-popup-container';
 
         container.innerHTML = `
             <div class="popup-overlay"></div>
@@ -227,7 +227,7 @@ export function mostrarPromptTexto(mensagem, opcoes = {}) {
 
     return new Promise((resolve) => {
         const container = document.createElement('div');
-        container.className = 'popup-container';
+        container.className = 'popup-container lv-popup-container';
 
         container.innerHTML = `
             <div class="popup-overlay"></div>
@@ -296,7 +296,7 @@ export function mostrarPromptHorario(mensagem, opcoes = {}) {
 
     return new Promise((resolve) => {
         const container = document.createElement('div');
-        container.className = 'popup-container';
+        container.className = 'popup-container lv-popup-container';
 
         container.innerHTML = `
             <div class="popup-overlay"></div>
@@ -344,7 +344,7 @@ export function mostrarPromptFinalizarLote(mensagem, sessoes) {
 
     return new Promise((resolve) => {
         const container = document.createElement('div');
-        container.className = 'popup-container';
+        container.className = 'popup-container lv-popup-container';
 
         // Cria a lista de inputs para cada produto/sessão no lote
         const inputsHTML = sessoes.map(sessao => `

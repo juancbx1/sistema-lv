@@ -9,6 +9,13 @@ function fmtHora(isoStr) {
     });
 }
 
+function fmtPontosIndividuais(valor) {
+    return Number(valor || 0).toLocaleString('pt-BR', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2,
+    });
+}
+
 function PGFuncionarioModal({ funcionario: f, atividades, onFechar }) {
     const foto = f.foto_oficial || f.avatar_url;
     const tipos = Array.isArray(f.tipos) ? f.tipos : [];
@@ -129,7 +136,7 @@ function PGFuncionarioModal({ funcionario: f, atividades, onFechar }) {
                                     </div>
                                     <div className="pg-modal-prod-nums">
                                         <span>{p.quantidade} pçs</span>
-                                        <span className="pg-modal-prod-pts">{p.pontos.toFixed(0)} pts</span>
+                                        <span className="pg-modal-prod-pts">{fmtPontosIndividuais(p.pontos)} pts</span>
                                     </div>
                                 </div>
                             ))}

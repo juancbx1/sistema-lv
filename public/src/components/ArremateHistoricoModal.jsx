@@ -14,6 +14,10 @@ const TIPO_CONFIG = {
     CONCLUSAO_OP:          { label: 'Produção da OP', cor: 'var(--gs-primaria)', icone: 'fa-gears' },
     CONCLUSAO_POS_OP:      { label: 'Arremate pós-OP', cor: '#7c3aed', icone: 'fa-wand-magic-sparkles' },
     PERDA:                 { label: 'Perda', cor: '#f59e0b', icone: 'fa-exclamation-triangle' },
+    PERDA_EMBALAGEM:       { label: 'Perda na embalagem', cor: '#dc2626', icone: 'fa-box-open' },
+    PERDA_CONSERTO:        { label: 'Avaria após conserto', cor: '#dc2626', icone: 'fa-triangle-exclamation' },
+    ENVIO_CONSERTO:        { label: 'Enviado para conserto', cor: '#2563eb', icone: 'fa-screwdriver-wrench' },
+    RETORNO_CONSERTO:      { label: 'Retorno do conserto', cor: '#16a34a', icone: 'fa-rotate-left' },
     CANCELAMENTO_TAREFA:   { label: 'Cancelamento', cor: '#94a3b8', icone: 'fa-ban' },
     PRODUCAO_ANULADA:      { label: 'Produção anulada', cor: '#94a3b8', icone: 'fa-ban' },
     EMBALAGEM_UNIDADE:     { label: 'Embalagem', cor: '#ea580c', icone: 'fa-box-open' },
@@ -310,7 +314,7 @@ export default function ArremateHistoricoModal({ isOpen, onClose, podeEstornar =
                 <div className="arremate-modal-header">
                     <div className="arremate-modal-header-esquerda"></div>
                     <div className="arremate-modal-header-centro">
-                        <h3 className="arremate-modal-titulo">Histórico de Produções</h3>
+                        <h3 className="arremate-modal-titulo">Histórico geral</h3>
                         <div className="arremate-modal-header-info">
                             <span className="arremate-hist-total-badge">
                                 {pagination.totalItems} registro{pagination.totalItems !== 1 ? 's' : ''}

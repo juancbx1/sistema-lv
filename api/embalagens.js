@@ -18,6 +18,13 @@ import {
     registrarAlocacoesEmbalagem,
     serializarAlocacoesCompativeis,
 } from './utils/origens-produto-pronto.js';
+import {
+    converterConsertoEmAvaria,
+    listarOcorrenciasConserto,
+    registrarOcorrenciaEmbalagem,
+    retornarConsertoEmbalagem,
+    verificarAcessoOcorrenciasEmbalagem,
+} from './utils/ocorrencias-embalagem.js';
 
 const router = express.Router();
 const pool = new Pool({
@@ -61,6 +68,117 @@ router.use(async (req, res, next) => {
         const responseError = { error: error.message };
         if (error.details) responseError.details = error.details;
         res.status(statusCode).json(responseError);
+    }
+});
+
+// POST /api/embalagens/ocorrencias
+// Consome saldo pronto para embalagem sem alterar Produções, POS_OP ou pontos.
+router.post('/ocorrencias', async (req, res) => {
+    const idempotencyKey = String(req.get('Idempotency-Key') || '').trim();
+    let dbClient;
+    try {
+        if (!idempotencyKey) {
+            return res.status(400).json({ error: 'Idempotency-Key é obrigatória para registrar uma ocorrência.' });
+        }
+        dbClient = await pool.connect();
+        const resultado = await registrarOcorrenciaEmbalagem({
+            dbClient,
+            usuarioLogado: req.usuarioLogado,
+            empresaId: req.empresaId,
+            payload: req.body,
+            idempotencyKey,
+        });
+        return res.status(resultado.idempotente ? 200 : 201).json(resultado);
+    } catch (error) {
+        console.error('[API POST /embalagens/ocorrencias] Erro:', error);
+        return res.status(error.statusCode || 500).json({
+            error: error.message || 'Erro ao registrar ocorrência na Embalagem.',
+            ...(error.codigo ? { codigo: error.codigo } : {}),
+        });
+    } finally {
+        if (dbClient) dbClient.release();
+    }
+});
+
+// GET /api/embalagens/ocorrencias/consertos
+router.get('/ocorrencias/consertos', async (req, res) => {
+    let dbClient;
+    try {
+        dbClient = await pool.connect();
+        await verificarAcessoOcorrenciasEmbalagem(
+            dbClient,
+            req.usuarioLogado,
+            req.empresaId,
+        );
+        const rows = await listarOcorrenciasConserto({
+            dbClient,
+            empresaId: req.empresaId,
+        });
+        return res.status(200).json({ rows });
+    } catch (error) {
+        console.error('[API GET /embalagens/ocorrencias/consertos] Erro:', error);
+        return res.status(error.statusCode || 500).json({
+            error: error.message || 'Erro ao buscar consertos pendentes.',
+            ...(error.codigo ? { codigo: error.codigo } : {}),
+        });
+    } finally {
+        if (dbClient) dbClient.release();
+    }
+});
+
+// POST /api/embalagens/ocorrencias/:id/retornar-conserto
+router.post('/ocorrencias/:id/retornar-conserto', async (req, res) => {
+    let dbClient;
+    try {
+        const ocorrenciaId = Number(req.params.id);
+        if (!Number.isInteger(ocorrenciaId) || ocorrenciaId <= 0) {
+            return res.status(400).json({ error: 'ID de ocorrência inválido.' });
+        }
+        dbClient = await pool.connect();
+        const resultado = await retornarConsertoEmbalagem({
+            dbClient,
+            usuarioLogado: req.usuarioLogado,
+            empresaId: req.empresaId,
+            ocorrenciaId,
+            payload: req.body,
+        });
+        return res.status(200).json(resultado);
+    } catch (error) {
+        console.error('[API POST /embalagens/ocorrencias/:id/retornar-conserto] Erro:', error);
+        return res.status(error.statusCode || 500).json({
+            error: error.message || 'Erro ao retornar produto do conserto.',
+            ...(error.codigo ? { codigo: error.codigo } : {}),
+        });
+    } finally {
+        if (dbClient) dbClient.release();
+    }
+});
+
+// POST /api/embalagens/ocorrencias/:id/converter-avaria
+router.post('/ocorrencias/:id/converter-avaria', async (req, res) => {
+    let dbClient;
+    try {
+        const ocorrenciaId = Number(req.params.id);
+        if (!Number.isInteger(ocorrenciaId) || ocorrenciaId <= 0) {
+            return res.status(400).json({ error: 'ID de ocorrência inválido.' });
+        }
+        dbClient = await pool.connect();
+        const resultado = await converterConsertoEmAvaria({
+            dbClient,
+            usuarioLogado: req.usuarioLogado,
+            empresaId: req.empresaId,
+            ocorrenciaId,
+            payload: req.body,
+        });
+        return res.status(200).json(resultado);
+    } catch (error) {
+        console.error('[API POST /embalagens/ocorrencias/:id/converter-avaria] Erro:', error);
+        return res.status(error.statusCode || 500).json({
+            error: error.message || 'Erro ao encerrar conserto como avaria.',
+            ...(error.codigo ? { codigo: error.codigo } : {}),
+        });
+    } finally {
+        if (dbClient) dbClient.release();
     }
 });
 

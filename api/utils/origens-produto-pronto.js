@@ -296,6 +296,173 @@ export async function registrarOrigemProdutoPronto(dbClient, {
     return result.rows[0] || null;
 }
 
+/**
+ * Projeta uma etapa POS_OP marcada como liberação automática. A projeção em
+ * `arremates` mantém leitores legados funcionando; a origem canônica continua
+ * sendo a autoridade para a fila de embalagem quando a estrutura nova existe.
+ */
+export async function registrarLiberacaoAutomaticaProdutoPronto(dbClient, {
+    empresaId,
+    produtoId,
+    variante,
+    opNumero,
+    opEditId = null,
+    etapa,
+    quantidade,
+}) {
+    const quantidadeNormalizada = Math.floor(Number(quantidade));
+    if (!Number.isInteger(quantidadeNormalizada) || quantidadeNormalizada <= 0) return null;
+    if (!etapa?.processo) throw new Error('A etapa de liberaÃ§Ã£o automÃ¡tica precisa de um processo.');
+
+    const varianteBanco = varianteNormalizada(variante);
+    const processoId = etapa.processo_id ?? null;
+    const etapaId = etapa.id ?? null;
+    const chave = [
+        'pos-op-automatico', empresaId, opNumero, produtoId,
+        varianteBanco || '-', etapaId || processoId || etapa.processo,
+    ].join(':');
+    await dbClient.query(
+        'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+        [chave],
+    );
+
+    const posOpEstruturaResult = await dbClient.query(`
+        SELECT
+            EXISTS (
+                SELECT 1 FROM information_schema.columns
+                 WHERE table_schema = 'public'
+                   AND table_name = 'arremates'
+                   AND column_name = 'fase'
+            ) AS possui_fase,
+            EXISTS (
+                SELECT 1 FROM information_schema.columns
+                 WHERE table_schema = 'public'
+                   AND table_name = 'arremates'
+                   AND column_name = 'processo_id'
+            ) AS possui_processo_id,
+            EXISTS (
+                SELECT 1 FROM information_schema.columns
+                 WHERE table_schema = 'public'
+                   AND table_name = 'arremates'
+                   AND column_name = 'etapa_id'
+            ) AS possui_etapa_id
+    `);
+    const posOpEstruturaDisponivel = Boolean(
+        posOpEstruturaResult.rows[0]?.possui_fase
+        && posOpEstruturaResult.rows[0]?.possui_processo_id
+        && posOpEstruturaResult.rows[0]?.possui_etapa_id
+    );
+
+    const existenteResult = await dbClient.query(
+        posOpEstruturaDisponivel
+            ? `SELECT id, quantidade_arrematada
+                 FROM arremates
+                WHERE empresa_id = $1
+                  AND op_numero = $2
+                  AND produto_id = $3
+                  AND (variante = $4 OR ($4 IS NULL AND variante IS NULL))
+                  AND tipo_lancamento = 'PRODUCAO'
+                  AND fase = 'POS_OP'
+                  AND processo_id IS NOT DISTINCT FROM $5
+                  AND etapa_id IS NOT DISTINCT FROM $6
+                  AND usuario_tiktik = 'Sistema (liberacao automatica)'
+                ORDER BY id DESC
+                LIMIT 1
+                FOR UPDATE`
+            : `SELECT id, quantidade_arrematada
+                 FROM arremates
+                WHERE empresa_id = $1
+                  AND op_numero = $2
+                  AND produto_id = $3
+                  AND (variante = $4 OR ($4 IS NULL AND variante IS NULL))
+                  AND tipo_lancamento = 'PRODUCAO'
+                  AND usuario_tiktik = 'Sistema (liberacao automatica)'
+                ORDER BY id DESC
+                LIMIT 1
+                FOR UPDATE`,
+        posOpEstruturaDisponivel
+            ? [empresaId, String(opNumero), Number(produtoId), varianteBanco, processoId, etapaId]
+            : [empresaId, String(opNumero), Number(produtoId), varianteBanco],
+    );
+
+    let arremateId;
+    if (existenteResult.rows[0]) {
+        const quantidadeExistente = Number(existenteResult.rows[0].quantidade_arrematada);
+        if (quantidadeExistente !== quantidadeNormalizada) {
+            throw new Error('A liberaÃ§Ã£o automÃ¡tica da OP jÃ¡ existe com quantidade diferente.');
+        }
+        arremateId = existenteResult.rows[0].id;
+    } else {
+        const inserido = await dbClient.query(
+            posOpEstruturaDisponivel
+                ? `INSERT INTO arremates (
+                    empresa_id, op_numero, op_edit_id, produto_id, variante,
+                    quantidade_arrematada, usuario_tiktik, lancado_por,
+                    valor_ponto_aplicado, pontos_gerados, tipo_lancamento,
+                    assinada, fase, processo, processo_id, etapa_id,
+                    executor_nome, executor_tipo
+                 )
+                 VALUES ($1, $2, $3, $4, $5, $6,
+                         'Sistema (liberacao automatica)', 'Sistema', 0, 0,
+                         'PRODUCAO', TRUE, 'POS_OP', $7, $8, $9,
+                         'Sistema (liberacao automatica)', 'sistema')
+                 RETURNING id`
+                : `INSERT INTO arremates (
+                    empresa_id, op_numero, op_edit_id, produto_id, variante,
+                    quantidade_arrematada, usuario_tiktik, lancado_por,
+                    valor_ponto_aplicado, pontos_gerados, tipo_lancamento, assinada
+                 )
+                 VALUES ($1, $2, $3, $4, $5, $6,
+                         'Sistema (liberacao automatica)', 'Sistema', 0, 0,
+                         'PRODUCAO', TRUE)
+                 RETURNING id`,
+            posOpEstruturaDisponivel
+                ? [
+                    empresaId,
+                    String(opNumero),
+                    opEditId,
+                    Number(produtoId),
+                    varianteBanco,
+                    quantidadeNormalizada,
+                    etapa.processo,
+                    processoId,
+                    etapaId,
+                ]
+                : [
+                    empresaId,
+                    String(opNumero),
+                    opEditId,
+                    Number(produtoId),
+                    varianteBanco,
+                    quantidadeNormalizada,
+                ],
+        );
+        arremateId = inserido.rows[0]?.id;
+    }
+
+    const origem = posOpEstruturaDisponivel
+        ? await registrarOrigemProdutoPronto(dbClient, {
+        empresaId,
+        produtoId,
+        variante: varianteBanco,
+        opNumero,
+        processo: etapa.processo,
+        processoId,
+        etapaId,
+        sessaoProducaoId: null,
+        arremateIdLegado: arremateId,
+        quantidade: quantidadeNormalizada,
+        valorPontoAplicado: 0,
+        pontosGerados: 0,
+        executorId: null,
+        executorNome: 'Sistema (liberacao automatica)',
+        executorTipo: 'sistema',
+        })
+        : null;
+
+    return { arremateId, origem };
+}
+
 function varianteNormalizada(valor) {
     const normalizada = String(valor ?? '').trim();
     return !normalizada || normalizada === '-' ? null : normalizada;

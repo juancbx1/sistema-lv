@@ -334,6 +334,10 @@ export default function OPStatusCard({ funcionario, tpp, onAtribuirTarefa, onAca
             const imagemVariacao = tarefaPrincipal.imagem || null;
             const nomeExibido = tarefaPrincipal.variante || tarefaPrincipal.produto_nome;
             const ehArrematePosOp = tarefaPrincipal.fase === 'POS_OP';
+            const etapasUnificadas = Array.isArray(tarefaPrincipal.etapas_unificadas)
+                && tarefaPrincipal.etapas_unificadas.length >= 2
+                ? tarefaPrincipal.etapas_unificadas
+                : null;
             const resumoOrigens = ehArrematePosOp
                 ? resumoOrigensPosOp(tarefaPrincipal.origens_pos_op)
                 : null;
@@ -348,23 +352,31 @@ export default function OPStatusCard({ funcionario, tpp, onAtribuirTarefa, onAca
                                     <i className={`fas ${ehArrematePosOp ? 'fa-check-double' : 'fa-industry'}`}></i>
                                     <span>{rotuloFase}</span>
                                 </div>
-                                {Array.isArray(tarefaPrincipal.etapas_unificadas) && tarefaPrincipal.etapas_unificadas.length >= 2 ? (
-                                    <div className="cracha-tarefa-processo-wrapper">
-                                        <span className="cracha-unif-badge">
-                                            <i className="fas fa-link"></i> UNIF
+                                <div className={`op-redesign-processo-card${etapasUnificadas ? ' unificado' : ''}`}>
+                                    <div className="op-redesign-processo-card-meta">
+                                        <span>
+                                            <i className={`fas ${etapasUnificadas ? 'fa-route' : 'fa-location-dot'}`}></i>
+                                            {etapasUnificadas ? 'Percurso unificado' : 'Etapa atual'}
                                         </span>
-                                        <div className="cracha-tarefa-processo">
-                                            {tarefaPrincipal.etapas_unificadas.map((e, i) => (
-                                                <span key={e.processo}>
+                                        {etapasUnificadas && (
+                                            <span className="cracha-unif-badge">
+                                                <i className="fas fa-link"></i> UNIF
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="cracha-tarefa-processo-wrapper">
+                                        <div className={`cracha-tarefa-processo${etapasUnificadas ? ' unificado' : ''}`}>
+                                            {etapasUnificadas ? etapasUnificadas.map((e, i) => (
+                                                <React.Fragment key={`${e.processo}-${i}`}>
                                                     {i > 0 && <i className="fas fa-arrow-right cracha-unif-seta"></i>}
-                                                    {e.processo}
-                                                </span>
-                                            ))}
+                                                    <span className="op-redesign-processo-chip">{e.processo}</span>
+                                                </React.Fragment>
+                                            )) : (
+                                                <span className="op-redesign-processo-chip">{tarefaPrincipal.processo}</span>
+                                            )}
                                         </div>
                                     </div>
-                                ) : (
-                                    <div className="cracha-tarefa-processo">{tarefaPrincipal.processo}</div>
-                                )}
+                                </div>
                                 {resumoOrigens && (
                                     <div className="op-redesign-origens-pos-op">
                                         <i className="fas fa-layer-group"></i>
@@ -484,36 +496,29 @@ export default function OPStatusCard({ funcionario, tpp, onAtribuirTarefa, onAca
                                         <ul className="op-redesign-fila-lista">
                                             {filaEspera.map((t, i) => {
                                                 const isUnif = Array.isArray(t.etapas_unificadas) && t.etapas_unificadas.length >= 2;
-                                                const resumoOrigensFila = t.fase === 'POS_OP'
-                                                    ? resumoOrigensPosOp(t.origens_pos_op)
-                                                    : null;
+                                                const imagemFila = t.imagem || t.imagem_produto || null;
+                                                const nomeVariacaoFila = t.variante || 'Sem variação';
                                                 return (
-                                                    <li key={t.id_sessao || i} className="op-redesign-fila-item">
-                                                        <span className="op-redesign-fila-ordem">{String(i + 1).padStart(2, '0')}</span>
+                                                    <li key={t.id_sessao || i} className={`op-redesign-fila-item${t.fase === 'POS_OP' ? ' pos-op' : ''}`}>
+                                                        <div className="op-redesign-fila-thumb">
+                                                            {imagemFila ? (
+                                                                <img src={imagemFila} alt={nomeVariacaoFila} />
+                                                            ) : (
+                                                                <i className="fas fa-tshirt" aria-hidden="true"></i>
+                                                            )}
+                                                        </div>
                                                         <div className="op-redesign-fila-conteudo">
-                                                            <div className="fila-linha1">
-                                                                <span className="fila-qtd">{t.quantidade}</span>
-                                                                <span className="fila-nome">{t.produto_nome}</span>
-                                                            </div>
-                                                            <div className="fila-linha2">
-                                                                {t.variante && (
-                                                                    <span className="fila-variante">{t.variante}</span>
-                                                                )}
-                                                                <span className={`fila-fase${t.fase === 'POS_OP' ? ' pos-op' : ''}`}>
-                                                                    {t.fase === 'POS_OP' ? 'Arremate pós-OP' : 'Produção da OP'}
-                                                                </span>
-                                                                <span className={`fila-proc${isUnif ? ' unif' : ''}`}>
-                                                                    {isUnif
-                                                                        ? <><i className="fas fa-link"></i>{t.etapas_unificadas.map(e => e.processo).join(' + ')}</>
-                                                                        : t.processo
-                                                                    }
-                                                                </span>
-                                                                {resumoOrigensFila && (
-                                                                    <span className="fila-origens-pos-op">
-                                                                        <i className="fas fa-layer-group"></i> {resumoOrigensFila}
-                                                                    </span>
-                                                                )}
-                                                            </div>
+                                                            <span className="fila-variante">{nomeVariacaoFila}</span>
+                                                            <span className={`fila-proc${isUnif ? ' unif' : ''}`}>
+                                                                {isUnif
+                                                                    ? <><i className="fas fa-link"></i>{t.etapas_unificadas.map(e => e.processo).join(' → ')}</>
+                                                                    : t.processo
+                                                                }
+                                                            </span>
+                                                        </div>
+                                                        <div className="op-redesign-fila-qtd" aria-label={`${t.quantidade} peças a trabalhar`}>
+                                                            <strong>{t.quantidade}</strong>
+                                                            <small>pçs</small>
                                                         </div>
                                                     </li>
                                                 );

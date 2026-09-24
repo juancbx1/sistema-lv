@@ -1,6 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-// @ts-expect-error paginação legada em JavaScript, mantida por compatibilidade.
-import { renderizarPaginacao } from '/js/utils/Paginacao.js';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import UIHeaderPagina from '../components/UIHeaderPagina';
 import UICarregando from '../components/UICarregando';
 import UIFeedbackNotFound from '../components/UIFeedbackNotFound';
@@ -8,6 +6,8 @@ import EmbalagemCard from '../components/EmbalagemCard.tsx';
 import EmbalagemModalOcorrencia from '../components/EmbalagemModalOcorrencia';
 import EmbalagemModalConsertos from '../components/EmbalagemModalConsertos';
 import EmbalagemModalOpcoes from '../components/EmbalagemModalOpcoes';
+import EmbalagemImpressaoAndamento from '../components/EmbalagemImpressaoAndamento';
+import EmbalagemModalEtiquetasAvulsas from '../components/EmbalagemModalEtiquetasAvulsas';
 import EmbalagemPainelFiltros from '../components/EmbalagemPainelFiltros.tsx';
 import UIBloqueio from '../components/UIBloqueio';
 import ProducaoHistoricoModal from '../components/ProducaoHistoricoModal.jsx';
@@ -24,6 +24,7 @@ import {
   getSkuVariacao,
   getVariacaoPartes,
 } from '../utils/embalagem-produto-helpers';
+import type { ResultadoEmbalagem } from '../utils/etiqueta-resultado';
 import type {
   EmbalagemFilaItem,
   EmbalagemFilaItemApi,
@@ -203,14 +204,19 @@ export default function EmbalagemPage({}: EmbalagemPageProps) {
   const [filtros, setFiltros] = useState<EmbalagemFiltros>(filtrosIniciais);
   const [selecionado, setSelecionado] = useState<EmbalagemFilaItem | null>(null);
   const [paginaAtual, setPaginaAtual] = useState(1);
-  const paginacaoContainerRef = useRef<HTMLDivElement>(null);
   const [ocorrenciaAberta, setOcorrenciaAberta] = useState(false);
   const [consertosAbertos, setConsertosAbertos] = useState(false);
   const [historicoAberto, setHistoricoAberto] = useState(false);
+  const [etiquetasAvulsasAbertas, setEtiquetasAvulsasAbertas] = useState(false);
   const [consertosPendentes, setConsertosPendentes] = useState(0);
   const [carregando, setCarregando] = useState(true);
   const [atualizando, setAtualizando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [telaImpressao, setTelaImpressao] = useState<{
+    fase: 'imprimindo' | 'resultado';
+    quantidade: number;
+    resultado: ResultadoEmbalagem | null;
+  } | null>(null);
 
   const carregarFila = useCallback(async (silencioso = false) => {
     if (silencioso) setAtualizando(true);
@@ -282,23 +288,6 @@ export default function EmbalagemPage({}: EmbalagemPageProps) {
     if (paginaAtual > totalPaginas) setPaginaAtual(totalPaginas);
   }, [paginaAtual, totalPaginas]);
 
-  useEffect(() => {
-    const container = paginacaoContainerRef.current;
-    if (!container) return undefined;
-
-    renderizarPaginacao(
-      container,
-      totalPaginas,
-      paginaRenderizada,
-      setPaginaAtual,
-    );
-
-    return () => {
-      container.innerHTML = '';
-      container.style.display = 'none';
-    };
-  }, [paginaRenderizada, totalPaginas]);
-
   const opcoesFiltro = useMemo(() => montarOpcoesFiltro(items), [items]);
 
   const atualizarFiltros = (parcial: Partial<EmbalagemFiltros>) => {
@@ -310,6 +299,19 @@ export default function EmbalagemPage({}: EmbalagemPageProps) {
   return (
     <>
       <UIHeaderPagina titulo="Embalagem de produtos">
+        <UIBloqueio
+          permissao="lancar-embalagem"
+          mensagem="Você não tem permissão para imprimir etiquetas avulsas."
+        >
+          <button
+            className="gs-btn gs-btn-secundario gs-btn-com-icone"
+            type="button"
+            onClick={() => setEtiquetasAvulsasAbertas(true)}
+          >
+            <i className="fas fa-print" aria-hidden="true" />
+            <span>Etiquetas avulsas</span>
+          </button>
+        </UIBloqueio>
         <UIBloqueio
           permissao={['acesso-producao-geral', 'acesso-ordens-de-producao', 'acesso-ordens-de-arremates']}
           mensagem="Você não tem permissão para consultar o Histórico geral."
@@ -456,11 +458,29 @@ export default function EmbalagemPage({}: EmbalagemPageProps) {
                 />
               ))}
             </section>
-            <div
-              ref={paginacaoContainerRef}
-              className="gs-paginacao-container"
-              aria-label="Paginação da fila de embalagens"
-            />
+            {totalPaginas > 1 ? (
+              <nav className="gs-paginacao-container" aria-label="Paginação da fila de embalagens">
+                <button
+                  type="button"
+                  className="gs-paginacao-btn"
+                  disabled={paginaRenderizada <= 1}
+                  onClick={() => setPaginaAtual(paginaRenderizada - 1)}
+                >
+                  Anterior
+                </button>
+                <span className="gs-paginacao-info">
+                  Pág. {paginaRenderizada} de {totalPaginas}
+                </span>
+                <button
+                  type="button"
+                  className="gs-paginacao-btn"
+                  disabled={paginaRenderizada >= totalPaginas}
+                  onClick={() => setPaginaAtual(paginaRenderizada + 1)}
+                >
+                  Próximo
+                </button>
+              </nav>
+            ) : null}
           </>
         )}
       </div>
@@ -472,6 +492,16 @@ export default function EmbalagemPage({}: EmbalagemPageProps) {
           saldoEstoque={saldoEstoque}
           niveisEstoque={niveisEstoque}
           onClose={() => setSelecionado(null)}
+          onImpressaoIniciada={(quantidade) => setTelaImpressao({
+            fase: 'imprimindo',
+            quantidade,
+            resultado: null,
+          })}
+          onImpressaoConcluida={(resultado, quantidade) => setTelaImpressao({
+            fase: 'resultado',
+            quantidade,
+            resultado,
+          })}
           onEmbalagemConcluida={async () => {
             setSelecionado(null);
             await carregarFila(true);
@@ -504,6 +534,33 @@ export default function EmbalagemPage({}: EmbalagemPageProps) {
           isOpen={historicoAberto}
           onClose={() => setHistoricoAberto(false)}
           podeEstornar={false}
+        />
+      ) : null}
+
+      {etiquetasAvulsasAbertas ? (
+        <EmbalagemModalEtiquetasAvulsas
+          produtos={catalogoProdutos}
+          onClose={() => setEtiquetasAvulsasAbertas(false)}
+          onImpressaoIniciada={(quantidade) => setTelaImpressao({
+            fase: 'imprimindo',
+            quantidade,
+            resultado: null,
+          })}
+          onImpressaoConcluida={(resultado, quantidade) => setTelaImpressao({
+            fase: 'resultado',
+            quantidade,
+            resultado,
+          })}
+          onEstoqueAtualizado={() => carregarFila(true)}
+        />
+      ) : null}
+
+      {telaImpressao ? (
+        <EmbalagemImpressaoAndamento
+          fase={telaImpressao.fase}
+          quantidade={telaImpressao.quantidade}
+          resultado={telaImpressao.resultado}
+          onFechar={() => setTelaImpressao(null)}
         />
       ) : null}
     </>

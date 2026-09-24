@@ -25,7 +25,6 @@ import type {
   OpCriarModalProps,
   OpGerenciamentoProps,
   OpInicioProducaoDados,
-  OpListResponse,
   OpVisao,
 } from './utils/op-types';
 
@@ -66,13 +65,6 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
     }
     return this.props.children;
   }
-}
-
-async function fetchSimples<T>(url: string): Promise<T> {
-  const token = localStorage.getItem('token');
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-  if (!res.ok) throw new Error('Erro fetch');
-  return res.json() as Promise<T>;
 }
 
 function App() {
@@ -122,46 +114,24 @@ function App() {
     void checkAuth();
   }, []);
 
-  const verificarOpsProntas = useCallback(async () => {
-    if (!estaAutenticado) return;
-    try {
-      const data = await fetchSimples<OpListResponse>('/api/ordens-de-producao?status=produzindo&limit=100');
-      const rows = Array.isArray(data.rows) ? data.rows : [];
-      if (rows.length === 0) {
-        setQtdOpsPendentes(0);
-        return;
-      }
-      const contagem = rows.reduce((acc, op) => {
-        if (!op) return acc;
-        const etapasOk = Array.isArray(op.etapas)
-          && op.etapas.length > 0
-          && op.etapas.every((etapa) => etapa.lancado);
-        return etapasOk ? acc + 1 : acc;
-      }, 0);
-      setQtdOpsPendentes(contagem);
-    } catch (error) {
-      console.error('[Monitor OP] Erro:', error);
-    }
-  }, [estaAutenticado]);
+  const atualizarMonitoramento = useCallback(() => {
+    window.dispatchEvent(new CustomEvent('op-encerrada'));
+  }, []);
 
   useEffect(() => {
-    if (!estaAutenticado) return undefined;
-    void verificarOpsProntas();
-    const intervalo = window.setInterval(() => {
-      if (document.visibilityState === 'visible') void verificarOpsProntas();
-    }, 30_000);
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') void verificarOpsProntas();
+    if (!permissoes.includes('acesso-monitoramento-ops')) {
+      setQtdOpsPendentes(0);
+      return undefined;
+    }
+    const handleAtualizacao = (event: Event) => {
+      const detail = (event as CustomEvent<{ resumo?: { pendentes_acao?: number } }>).detail;
+      setQtdOpsPendentes(Number(detail?.resumo?.pendentes_acao) || 0);
     };
-    const handleFocus = () => void verificarOpsProntas();
-    document.addEventListener('visibilitychange', handleVisibility);
-    window.addEventListener('focus', handleFocus);
+    window.addEventListener('lv:op-monitoramento-atualizado', handleAtualizacao);
     return () => {
-      window.clearInterval(intervalo);
-      document.removeEventListener('visibilitychange', handleVisibility);
-      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('lv:op-monitoramento-atualizado', handleAtualizacao);
     };
-  }, [estaAutenticado, verificarOpsProntas]);
+  }, [permissoes]);
 
   if (verificandoAuth) {
     return <UICarregando variante="pagina" texto="Carregando Produções..." />;
@@ -219,7 +189,7 @@ function App() {
         {visaoAtual === 'gerenciamento' && (
           <OPGerenciamentoTelaTipado
             opsPendentesGlobal={qtdOpsPendentes}
-            onRefreshContadores={verificarOpsProntas}
+            onRefreshContadores={atualizarMonitoramento}
             permissoes={permissoes}
           />
         )}
@@ -231,7 +201,7 @@ function App() {
         <OPCriarModalTipado
           isOpen={opCriarModalAberto}
           onClose={() => { setOpCriarModalAberto(false); setOpCriarModalDados(null); }}
-          onOPCriada={() => { setOpCriarModalAberto(false); setOpCriarModalDados(null); void verificarOpsProntas(); }}
+          onOPCriada={() => { setOpCriarModalAberto(false); setOpCriarModalDados(null); atualizarMonitoramento(); }}
           demandaId={opCriarModalDados.demandaId}
           produtoId={opCriarModalDados.produtoId}
           variante={opCriarModalDados.variante}

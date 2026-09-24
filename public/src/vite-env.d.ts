@@ -3,6 +3,8 @@
 declare const __APP_VERSION__: string;
 
 interface Window {
+    /** Ponte temporária para a view legada de movimentação do Estoque. */
+    abrirMovimentoEstoque?: (item: unknown) => void;
     /** Ponte legada de paginação (`public/js/utils/Paginacao.js`). */
     renderizarPaginacao?: (
         container: HTMLElement,

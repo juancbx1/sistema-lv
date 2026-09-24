@@ -1,12 +1,10 @@
 // public/src/components/OPGerenciamentoTela.tsx
 
-import { type ComponentType, useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, type ComponentType, useCallback, useEffect, useRef, useState } from 'react';
 import { OPCard } from './OPCard.tsx';
 import OPEtapasModal from './OPEtapasModal.jsx';
-import OPModalLote from './OPModalLote.jsx';
 import OPFiltros from './OPFiltros.tsx';
 import OPPaginacaoWrapper from './OPPaginacaoWrapper.tsx';
-import OPCentralEncerramento from './OPCentralEncerramento.jsx';
 import UICarregando from './UICarregando';
 import UIFeedbackNotFound from './UIFeedbackNotFound';
 
@@ -18,23 +16,18 @@ import { mostrarConfirmacao, mostrarToast } from '/js/utils/popups.js';
 import type {
   OpApiListResponse,
   OpCardProps,
-  OpCentralEncerramentoProps,
   OpEtapasModalProps,
-  OpModalLoteProps,
   OpFiltroEstado,
   OpProduto,
   OpResumo,
   OpGerenciamentoProps,
-  OpUsuarioLogado,
 } from '../utils/op-types';
 
 const OPCardTipado = OPCard as unknown as ComponentType<OpCardProps>;
 const OPEtapasModalTipado = OPEtapasModal as unknown as ComponentType<OpEtapasModalProps>;
-const OPModalLoteTipado = OPModalLote as unknown as ComponentType<OpModalLoteProps>;
-const OPCentralEncerramentoTipado = OPCentralEncerramento as unknown as ComponentType<OpCentralEncerramentoProps>;
+const OPMonitoramentoPainel = lazy(() => import('./OPMonitoramentoPainel'));
 
 export default function OPGerenciamentoTela({
-  opsPendentesGlobal,
   onRefreshContadores,
   permissoes = [],
 }: OpGerenciamentoProps) {
@@ -43,12 +36,8 @@ export default function OPGerenciamentoTela({
   const [carregando, setCarregando] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
-  const [usuarioLogado, setUsuarioLogado] = useState<OpUsuarioLogado | null>(null);
   const [modalAberto, setModalAberto] = useState(false);
   const [opSelecionada, setOpSelecionada] = useState<OpResumo | null>(null);
-  const [modalLoteAberto, setModalLoteAberto] = useState(false);
-  const [opsParaLote, setOpsParaLote] = useState<OpResumo[]>([]);
-  const [loteResetKey, setLoteResetKey] = useState(0);
   const [filtros, setFiltros] = useState<OpFiltroEstado>({ status: 'todas', busca: '' });
   const [pagina, setPagina] = useState(1);
   const [totalPaginas, setTotalPaginas] = useState(1);
@@ -116,18 +105,6 @@ export default function OPGerenciamentoTela({
   }, [pagina, filtros, buscarDados]);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token) return undefined;
-    fetch('/api/usuarios/me', { headers: { Authorization: `Bearer ${token}` } })
-      .then((response) => response.json())
-      .then((data: OpUsuarioLogado & { error?: string }) => {
-        if (!data.error) setUsuarioLogado(data);
-      })
-      .catch(() => undefined);
-    return undefined;
-  }, []);
-
-  useEffect(() => {
     if (!carregando && isPaginatingRef.current) {
       isPaginatingRef.current = false;
       requestAnimationFrame(() => {
@@ -185,22 +162,6 @@ export default function OPGerenciamentoTela({
     }
   }, [pagina, filtros, buscarDados, onRefreshContadores]);
 
-  const handleAbrirLote = useCallback((lista: OpResumo[]) => {
-    setOpsParaLote(lista);
-    setModalLoteAberto(true);
-  }, []);
-
-  const handleConcluirLote = ({ sucesso }: { sucesso: number }) => {
-    setModalLoteAberto(false);
-    setOpsParaLote([]);
-    if (sucesso > 0) {
-      setLoteResetKey((prev) => prev + 1);
-      lastSearchParamsRef.current = null;
-      void buscarDados(pagina, filtros);
-      void onRefreshContadores();
-    }
-  };
-
   const handlePageChange = useCallback((novaPagina: number) => {
     isPaginatingRef.current = true;
     setPagina(novaPagina);
@@ -215,19 +176,16 @@ export default function OPGerenciamentoTela({
   }, [pagina, filtros, buscarDados, onRefreshContadores]);
 
   const mostrarInitTerminal = carregando && isFirstLoadRef.current;
-  const primeiroNome = (usuarioLogado?.nome || '').split(' ')[0] || null;
+  const podeAcessarMonitoramento = permissoes.includes('acesso-monitoramento-ops');
 
   return (
     <div className="op-aba-gerenciamento">
       <OPFiltros onFiltroChange={handleFiltroChange} />
 
-      {!isFirstLoadRef.current && (
-        <OPCentralEncerramentoTipado
-          opsPendentesGlobal={opsPendentesGlobal}
-          onAbrirLote={handleAbrirLote}
-          resetKey={loteResetKey}
-          nomeUsuario={primeiroNome}
-        />
+      {!isFirstLoadRef.current && podeAcessarMonitoramento && (
+        <Suspense fallback={<UICarregando variante="bloco" texto="Carregando Monitor de OPs..." />}>
+          <OPMonitoramentoPainel modo="inline" />
+        </Suspense>
       )}
 
       {mostrarInitTerminal && <UICarregando variante="bloco" />}
@@ -299,13 +257,6 @@ export default function OPGerenciamentoTela({
         onClose={handleFecharModal}
         onUpdateOP={handleUpdateOP}
         onUpdateGlobal={onRefreshContadores}
-      />
-
-      <OPModalLoteTipado
-        isOpen={modalLoteAberto}
-        ops={opsParaLote}
-        onClose={() => setModalLoteAberto(false)}
-        onConcluido={handleConcluirLote}
       />
     </div>
   );

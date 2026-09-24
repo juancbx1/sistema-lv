@@ -617,9 +617,31 @@ router.post('/movimento-em-lote', async (req, res) => {
         return res.status(400).json({ error: 'Dados inválidos. É necessário um array de itens e um tipo de operação.' });
     }
     
-    // Validação mais flexível do tipo de operação
+    // Preserva os tipos de saída de pedidos existentes e permite novos marketplaces.
     if (!tipo_operacao.startsWith('SAIDA_PEDIDO_')) {
         return res.status(400).json({ error: 'Tipo de operação inválido para movimentação em lote.' });
+    }
+
+    const itensAgrupados = new Map();
+    for (const item of itens) {
+        const produtoId = Number(item?.produto_id);
+        const quantidade = Number(item?.quantidade_movimentada);
+        const varianteParaDB = (item?.variante_nome === '-' || !item?.variante_nome)
+            ? null
+            : String(item.variante_nome).trim();
+
+        if (!Number.isSafeInteger(produtoId) || produtoId <= 0 || !Number.isSafeInteger(quantidade) || quantidade <= 0) {
+            return res.status(400).json({ error: 'Cada item deve possuir produto_id e uma quantidade inteira positiva.' });
+        }
+
+        const chave = `${produtoId}|${varianteParaDB || '-'}`;
+        const existente = itensAgrupados.get(chave);
+        if (existente) existente.quantidade_movimentada += quantidade;
+        else itensAgrupados.set(chave, { produto_id: produtoId, variante_nome: varianteParaDB, quantidade_movimentada: quantidade });
+    }
+    const itensValidados = [...itensAgrupados.values()];
+    if (itensValidados.some((item) => !Number.isSafeInteger(item.quantidade_movimentada))) {
+        return res.status(400).json({ error: 'A quantidade total de um item excede o limite permitido.' });
     }
 
     let dbClient;
@@ -634,20 +656,15 @@ router.post('/movimento-em-lote', async (req, res) => {
         await dbClient.query('BEGIN'); // Inicia a transação
 
         let novosMovimentos = 0;
-        for (const [indice, item] of itens.entries()) {
-            if (!item.produto_id || !item.quantidade_movimentada || item.quantidade_movimentada <= 0) {
-                // Se algum item for inválido, desfaz a transação inteira.
-                throw new Error(`Item inválido no lote: ${item.produto_nome}. Verifique os dados.`);
-            }
-
-            const varianteParaDB = (item.variante_nome === '-' || !item.variante_nome) ? null : item.variante_nome;
+        for (const [indice, item] of itensValidados.entries()) {
+            const varianteParaDB = item.variante_nome || null;
             // Para saídas, a quantidade é sempre negativa
-            const quantidadeNegativa = -Math.abs(parseInt(item.quantidade_movimentada));
-            const produtoId = parseInt(item.produto_id);
+            const quantidadeNegativa = -Math.abs(item.quantidade_movimentada);
+            const produtoId = item.produto_id;
             const movimentoKey = idempotencyKey ? `${idempotencyKey}:${indice}` : null;
 
             const produtoExiste = await dbClient.query(
-                'SELECT id FROM produtos WHERE id = $1 AND empresa_id = $2',
+                'SELECT id FROM produtos WHERE id = $1 AND empresa_id = $2 FOR UPDATE',
                 [produtoId, empresaId],
             );
             if (produtoExiste.rowCount === 0) {
@@ -673,6 +690,35 @@ router.post('/movimento-em-lote', async (req, res) => {
                 }
             }
 
+            const movimentosDoItem = await dbClient.query(
+                `SELECT tipo_movimento, quantidade
+                   FROM estoque_movimentos
+                  WHERE empresa_id = $1
+                    AND produto_id = $2
+                    AND variante_nome IS NOT DISTINCT FROM $3
+                  FOR UPDATE`,
+                [empresaId, produtoId, varianteParaDB],
+            );
+            const saldoAtual = movimentosDoItem.rows.reduce((saldo, movimento) => {
+                const tipoMovimento = String(movimento.tipo_movimento || '');
+                const quantidade = Number(movimento.quantidade) || 0;
+                if (tipoMovimento.startsWith('ENTRADA')
+                    || tipoMovimento === 'AJUSTE_BALANCO_POSITIVO'
+                    || tipoMovimento.startsWith('ESTORNO')) {
+                    return saldo + quantidade;
+                }
+                if (tipoMovimento.startsWith('SAIDA') || tipoMovimento === 'AJUSTE_BALANCO_NEGATIVO') {
+                    return saldo - Math.abs(quantidade);
+                }
+                return saldo;
+            }, 0);
+
+            if (saldoAtual < item.quantidade_movimentada) {
+                const erro = new Error(`Saldo insuficiente para o item ${produtoId}${varianteParaDB ? ` (${varianteParaDB})` : ''}. Disponível: ${saldoAtual}.`);
+                erro.statusCode = 409;
+                throw erro;
+            }
+
             const query = `
                 INSERT INTO estoque_movimentos 
                     (empresa_id, idempotency_key, produto_id, variante_nome, quantidade, tipo_movimento, usuario_responsavel, observacao, data_movimento)
@@ -694,14 +740,14 @@ router.post('/movimento-em-lote', async (req, res) => {
         await dbClient.query('COMMIT'); // Confirma a transação se tudo deu certo
 
         res.status(novosMovimentos === 0 ? 200 : 201).json({
-            message: `${itens.length} movimentações de estoque registradas com sucesso.`,
+            message: `${itensValidados.length} movimentações de estoque registradas com sucesso.`,
             idempotente: novosMovimentos === 0,
         });
 
     } catch (error) {
         if (dbClient) await dbClient.query('ROLLBACK'); // Desfaz tudo em caso de erro
         console.error('[router/estoque POST /movimento-em-lote] Erro:', error);
-        res.status(500).json({ error: 'Erro ao registrar movimentos em lote.', details: error.message });
+        res.status(error.statusCode || 500).json({ error: error.message || 'Erro ao registrar movimentos em lote.' });
     } finally {
         if (dbClient) dbClient.release();
     }

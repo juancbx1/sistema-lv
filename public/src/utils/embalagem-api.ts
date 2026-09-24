@@ -36,10 +36,16 @@ interface OcorrenciasConsertoResponse {
   rows?: EmbalagemOcorrenciaConserto[];
 }
 
-async function requestJson<T>(
+export interface RegistroOperacaoEmbalagem {
+  status: number;
+  idempotente: boolean;
+  embalagemId: number | string | null;
+}
+
+async function executarPedido(
   url: string,
   init: RequestInit = {},
-): Promise<T> {
+): Promise<{ status: number; payload: unknown }> {
   const headers = new Headers(init.headers);
   const token = localStorage.getItem('token');
 
@@ -64,7 +70,30 @@ async function requestJson<T>(
     throw new Error(message);
   }
 
+  return { status: response.status, payload };
+}
+
+async function requestJson<T>(
+  url: string,
+  init: RequestInit = {},
+): Promise<T> {
+  const { payload } = await executarPedido(url, init);
   return payload as T;
+}
+
+function lerRegistroOperacao(
+  status: number,
+  payload: unknown,
+): RegistroOperacaoEmbalagem {
+  const corpo = payload && typeof payload === 'object' ? payload as {
+    idempotente?: boolean;
+    embalagem_id?: number | string | null;
+  } : {};
+  return {
+    status,
+    idempotente: Boolean(corpo.idempotente),
+    embalagemId: corpo.embalagem_id ?? null,
+  };
 }
 
 export async function listarProdutos(): Promise<ProdutoCadastro[]> {
@@ -151,12 +180,13 @@ export async function listarHistoricoEmbalagem(
 export async function registrarMontagemKit(
   payload: EmbalagemKitMontagemPayload,
   idempotencyKey: string,
-): Promise<void> {
-  await requestJson('/api/kits/montar', {
+): Promise<RegistroOperacaoEmbalagem> {
+  const resultado = await executarPedido('/api/kits/montar', {
     method: 'POST',
     headers: { 'Idempotency-Key': idempotencyKey },
     body: JSON.stringify(payload),
   });
+  return lerRegistroOperacao(resultado.status, resultado.payload);
 }
 
 export async function registrarEmbalagemUnitaria(
@@ -164,11 +194,11 @@ export async function registrarEmbalagemUnitaria(
   _lotes: EmbalagemArremateLote[],
   quantidade: number,
   observacao: string,
-): Promise<void> {
+): Promise<RegistroOperacaoEmbalagem> {
   const chaveAleatoria = typeof globalThis.crypto?.randomUUID === 'function'
     ? globalThis.crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  await requestJson('/api/embalagens/unidade', {
+  const resultado = await executarPedido('/api/embalagens/unidade', {
     method: 'POST',
     headers: {
       'Idempotency-Key': `embalagem-unidade:${item.id}:${chaveAleatoria}`,
@@ -180,6 +210,7 @@ export async function registrarEmbalagemUnitaria(
       observacao: observacao.trim() || null,
     }),
   });
+  return lerRegistroOperacao(resultado.status, resultado.payload);
 }
 
 function gerarChaveIdempotencia(prefixo: string): string {
@@ -187,6 +218,28 @@ function gerarChaveIdempotencia(prefixo: string): string {
     ? globalThis.crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   return `${prefixo}:${sufixo}`;
+}
+
+export async function registrarEntradaAvulsa(payload: {
+  produtoId: number | string;
+  variante: string | null;
+  sku: string;
+  quantidade: number;
+  observacao?: string;
+}): Promise<void> {
+  await executarPedido('/api/estoque/entrada-producao', {
+    method: 'POST',
+    headers: {
+      'Idempotency-Key': gerarChaveIdempotencia('etiqueta-avulsa'),
+    },
+    body: JSON.stringify({
+      produto_id: payload.produtoId,
+      variante_nome: !payload.variante || payload.variante === '-' ? null : payload.variante,
+      quantidade_entrada: payload.quantidade,
+      produto_ref_id: payload.sku,
+      observacao: payload.observacao?.trim() || 'Entrada pela impressão avulsa de etiqueta.',
+    }),
+  });
 }
 
 export async function registrarOcorrenciaEmbalagem(

@@ -2,6 +2,7 @@ export interface MenuEmpresa {
   id: number;
   codigo?: string | null;
   nome_fantasia?: string | null;
+  cnpj?: string | null;
   razao_social?: string | null;
   logo_url?: string | null;
   cor_identificacao?: string | null;

@@ -11,6 +11,18 @@ import { getPermissoesCompletasUsuarioDB } from './usuarios.js';
 import { registrarAuditoria } from './audit.js';
 import { construirEtapasCanonicas, etapaEhLiberacaoAutomatica } from './utils/etapas-produto.js';
 import { registrarLiberacaoAutomaticaProdutoPronto } from './utils/origens-produto-pronto.js';
+import { finalizarOrdemProducao } from './utils/finalizar-op.js';
+import {
+    atualizarImpedimentoMonitoramento,
+    consultarMonitoramentoOps,
+    erroMonitoramento,
+    MONITORAMENTO_OPS_PERMISSOES,
+    obterEstruturaMonitoramentoOps,
+    registrarAdiamentoMonitoramento,
+    registrarImpedimentoMonitoramento,
+    usuarioPodeAcessarMonitoramento,
+    usuarioPodeOperarMonitoramento,
+} from './utils/monitoramento-ops.js';
 
 const router = express.Router();
 const pool = new Pool({
@@ -18,6 +30,15 @@ const pool = new Pool({
     timezone: 'UTC',
 });
 const SECRET_KEY = process.env.JWT_SECRET;
+
+function responderErroMonitoramento(res, error, contexto) {
+    const status = Number(error?.statusCode) || 500;
+    if (status >= 500) console.error(contexto, error);
+    return res.status(status).json({
+        error: error?.message || 'Erro no monitoramento de OPs.',
+        codigo: error?.codigo || (status >= 500 ? 'MONITORAMENTO_OPS_ERRO_INTERNO' : 'MONITORAMENTO_OPS_INVALIDO'),
+    });
+}
 
 const verificarTokenOriginal = (reqOriginal) => {
     const authHeader = reqOriginal.headers.authorization;
@@ -250,7 +271,308 @@ router.get('/', async (req, res) => {
     }
 });
 
-// GET /api/ordens-de-producao/prontas-para-encerrar
+// GET /api/ordens-de-producao/monitoramento
+router.get('/monitoramento', async (req, res) => {
+    const { usuarioLogado } = req;
+    let dbClient;
+    try {
+        dbClient = await pool.connect();
+        const permissoes = await getPermissoesCompletasUsuarioDB(
+            dbClient,
+            usuarioLogado.id,
+            req.empresaId,
+        );
+        if (!usuarioPodeAcessarMonitoramento(permissoes)) {
+            return res.status(403).json({ error: 'Permissão negada.' });
+        }
+        const resultado = await consultarMonitoramentoOps(dbClient, {
+            empresaId: req.empresaId,
+            usuarioId: usuarioLogado.id,
+            podeFinalizar: usuarioPodeOperarMonitoramento(permissoes),
+        });
+        return res.status(200).json(resultado);
+    } catch (error) {
+        return responderErroMonitoramento(res, error, '[GET /monitoramento]');
+    } finally {
+        if (dbClient) dbClient.release();
+    }
+});
+
+// POST /api/ordens-de-producao/monitoramento/adiar
+router.post('/monitoramento/adiar', async (req, res) => {
+    const { usuarioLogado } = req;
+    let dbClient;
+    try {
+        dbClient = await pool.connect();
+        await dbClient.query('BEGIN');
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, req.empresaId);
+        if (!usuarioPodeOperarMonitoramento(permissoes)) {
+            throw erroMonitoramento('Permissão negada.', 403, 'PERMISSAO_NEGADA');
+        }
+        const adiamento = await registrarAdiamentoMonitoramento(dbClient, {
+            empresaId: req.empresaId,
+            usuarioId: usuarioLogado.id,
+            idempotencyKey: req.body?.idempotency_key,
+        });
+        await registrarAuditoria(
+            dbClient,
+            { ...usuarioLogado, empresa_id: req.empresaId },
+            'op.monitoramento_adiado',
+            'monitoramento_op',
+            adiamento.id,
+            { vence_em: adiamento.vence_em },
+        );
+        await dbClient.query('COMMIT');
+        return res.status(201).json({
+            id: Number(adiamento.id),
+            vence_em: new Date(adiamento.vence_em).toISOString(),
+        });
+    } catch (error) {
+        if (dbClient) await dbClient.query('ROLLBACK').catch(() => undefined);
+        return responderErroMonitoramento(res, error, '[POST /monitoramento/adiar]');
+    } finally {
+        if (dbClient) dbClient.release();
+    }
+});
+
+// POST /api/ordens-de-producao/monitoramento/impedimentos
+router.post('/monitoramento/impedimentos', async (req, res) => {
+    const { usuarioLogado } = req;
+    let dbClient;
+    try {
+        dbClient = await pool.connect();
+        await dbClient.query('BEGIN');
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, req.empresaId);
+        if (!usuarioPodeAcessarMonitoramento(permissoes)) {
+            throw erroMonitoramento('Permissão negada.', 403, 'PERMISSAO_NEGADA');
+        }
+        const resultado = await registrarImpedimentoMonitoramento(dbClient, {
+            empresaId: req.empresaId,
+            usuarioId: usuarioLogado.id,
+            opId: req.body?.op_id,
+            motivo: req.body?.motivo,
+        });
+        await registrarAuditoria(
+            dbClient,
+            { ...usuarioLogado, empresa_id: req.empresaId },
+            'op.monitoramento_impedimento_registrado',
+            'op',
+            resultado.op.numero,
+            { op_id: resultado.op.id, motivo: resultado.impedimento.motivo },
+        );
+        await dbClient.query('COMMIT');
+        return res.status(201).json(resultado.impedimento);
+    } catch (error) {
+        if (dbClient) await dbClient.query('ROLLBACK').catch(() => undefined);
+        return responderErroMonitoramento(res, error, '[POST /monitoramento/impedimentos]');
+    } finally {
+        if (dbClient) dbClient.release();
+    }
+});
+
+// PATCH /api/ordens-de-producao/monitoramento/impedimentos/:id
+router.patch('/monitoramento/impedimentos/:id', async (req, res) => {
+    const { usuarioLogado } = req;
+    let dbClient;
+    try {
+        dbClient = await pool.connect();
+        await dbClient.query('BEGIN');
+        const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, req.empresaId);
+        if (!usuarioPodeAcessarMonitoramento(permissoes)) {
+            throw erroMonitoramento('Permissão negada.', 403, 'PERMISSAO_NEGADA');
+        }
+        const impedimento = await atualizarImpedimentoMonitoramento(dbClient, {
+            empresaId: req.empresaId,
+            usuarioId: usuarioLogado.id,
+            impedimentoId: req.params.id,
+            acao: req.body?.acao,
+            motivo: req.body?.motivo,
+        });
+        await registrarAuditoria(
+            dbClient,
+            { ...usuarioLogado, empresa_id: req.empresaId },
+            req.body?.acao === 'resolver'
+                ? 'op.monitoramento_impedimento_resolvido'
+                : 'op.monitoramento_impedimento_atualizado',
+            'op',
+            impedimento.op_id,
+            { impedimento_id: impedimento.id },
+        );
+        await dbClient.query('COMMIT');
+        return res.status(200).json(impedimento);
+    } catch (error) {
+        if (dbClient) await dbClient.query('ROLLBACK').catch(() => undefined);
+        return responderErroMonitoramento(res, error, '[PATCH /monitoramento/impedimentos]');
+    } finally {
+        if (dbClient) dbClient.release();
+    }
+});
+
+// POST /api/ordens-de-producao/monitoramento/finalizar-lote
+router.post('/monitoramento/finalizar-lote', async (req, res) => {
+    const { usuarioLogado } = req;
+    const opIds = Array.isArray(req.body?.op_ids)
+        ? [...new Set(req.body.op_ids.map(Number).filter(Number.isSafeInteger))]
+        : [];
+    const idempotencyKey = String(req.body?.idempotency_key || '').trim();
+    if (opIds.length === 0 || opIds.length > 100) {
+        return res.status(400).json({ error: 'Informe entre 1 e 100 OPs.', codigo: 'LOTE_OPS_INVALIDO' });
+    }
+    if (idempotencyKey.length < 8 || idempotencyKey.length > 120) {
+        return res.status(400).json({ error: 'Chave de idempotência inválida.', codigo: 'IDEMPOTENCY_KEY_INVALIDA' });
+    }
+
+    let controleClient;
+    let loteId = null;
+    try {
+        controleClient = await pool.connect();
+        await controleClient.query('BEGIN');
+        const permissoes = await getPermissoesCompletasUsuarioDB(
+            controleClient,
+            usuarioLogado.id,
+            req.empresaId,
+        );
+        if (!usuarioPodeOperarMonitoramento(permissoes)) {
+            throw erroMonitoramento('Permissão negada.', 403, 'PERMISSAO_NEGADA');
+        }
+        const estrutura = await obterEstruturaMonitoramentoOps(controleClient);
+        if (!estrutura.lotes) {
+            throw erroMonitoramento(
+                'A persistência do monitoramento ainda não está disponível.',
+                503,
+                'MONITORAMENTO_OPS_SCHEMA_INDISPONIVEL',
+            );
+        }
+        const insertLote = await controleClient.query(`
+            INSERT INTO op_monitoramento_lotes (
+                empresa_id,
+                usuario_id,
+                idempotency_key,
+                op_ids,
+                status
+            ) VALUES ($1, $2, $3, $4::integer[], 'PROCESSANDO')
+            ON CONFLICT (empresa_id, usuario_id, idempotency_key) DO NOTHING
+            RETURNING id
+        `, [req.empresaId, usuarioLogado.id, idempotencyKey, opIds]);
+
+        if (!insertLote.rows[0]) {
+            const existente = await controleClient.query(`
+                SELECT id, status, resultado, op_ids
+                  FROM op_monitoramento_lotes
+                 WHERE empresa_id = $1
+                   AND usuario_id = $2
+                   AND idempotency_key = $3
+                 FOR UPDATE
+            `, [req.empresaId, usuarioLogado.id, idempotencyKey]);
+            const loteExistente = existente.rows[0];
+            const idsExistentes = Array.isArray(loteExistente?.op_ids)
+                ? loteExistente.op_ids.map(Number)
+                : [];
+            const mesmaRequisicao = idsExistentes.length === opIds.length
+                && idsExistentes.every((id, index) => id === opIds[index]);
+            await controleClient.query('COMMIT');
+            if (!mesmaRequisicao) {
+                return res.status(409).json({
+                    error: 'A chave de idempotência já foi usada com outro conjunto de OPs.',
+                    codigo: 'IDEMPOTENCY_KEY_REUTILIZADA',
+                });
+            }
+            if (loteExistente?.status === 'CONCLUIDO') {
+                return res.status(200).json({ ...loteExistente.resultado, reutilizado: true });
+            }
+            return res.status(409).json({
+                error: 'Este lote já está sendo processado.',
+                codigo: 'LOTE_EM_PROCESSAMENTO',
+            });
+        }
+        loteId = Number(insertLote.rows[0].id);
+        await controleClient.query('COMMIT');
+        controleClient.release();
+        controleClient = null;
+
+        const detalhes = [];
+        for (const opId of opIds) {
+            let opClient;
+            try {
+                opClient = await pool.connect();
+                await opClient.query('BEGIN');
+                const op = await finalizarOrdemProducao(opClient, {
+                    empresaId: req.empresaId,
+                    usuarioLogado,
+                    opId,
+                });
+                await opClient.query('COMMIT');
+                detalhes.push({
+                    op_id: opId,
+                    numero: op.numero,
+                    ok: true,
+                    ja_finalizada: Boolean(op.ja_finalizada),
+                });
+            } catch (error) {
+                if (opClient) await opClient.query('ROLLBACK').catch(() => undefined);
+                detalhes.push({
+                    op_id: opId,
+                    ok: false,
+                    codigo: error?.codigo || 'FINALIZACAO_OP_FALHOU',
+                    erro: error?.message || 'Erro ao finalizar OP.',
+                });
+            } finally {
+                if (opClient) opClient.release();
+            }
+        }
+
+        const resultado = {
+            lote_id: loteId,
+            sucesso: detalhes.filter((item) => item.ok).length,
+            erro: detalhes.filter((item) => !item.ok).length,
+            detalhes,
+        };
+        controleClient = await pool.connect();
+        await controleClient.query(`
+            UPDATE op_monitoramento_lotes
+               SET status = 'CONCLUIDO',
+                   resultado = $2::jsonb,
+                   concluido_em = CURRENT_TIMESTAMP,
+                   atualizado_em = CURRENT_TIMESTAMP
+             WHERE id = $1
+               AND empresa_id = $3
+        `, [loteId, JSON.stringify(resultado), req.empresaId]);
+        await registrarAuditoria(
+            controleClient,
+            { ...usuarioLogado, empresa_id: req.empresaId },
+            'op.monitoramento_lote_finalizado',
+            'monitoramento_op_lote',
+            loteId,
+            { sucesso: resultado.sucesso, erro: resultado.erro, op_ids: opIds },
+        );
+        return res.status(200).json(resultado);
+    } catch (error) {
+        if (controleClient) await controleClient.query('ROLLBACK').catch(() => undefined);
+        if (loteId) {
+            let falhaClient;
+            try {
+                falhaClient = await pool.connect();
+                await falhaClient.query(`
+                    UPDATE op_monitoramento_lotes
+                       SET status = 'FALHOU',
+                           atualizado_em = CURRENT_TIMESTAMP
+                     WHERE id = $1
+                       AND empresa_id = $2
+                `, [loteId, req.empresaId]);
+            } catch {
+                // A resposta original é mais importante que a atualização auxiliar.
+            } finally {
+                if (falhaClient) falhaClient.release();
+            }
+        }
+        return responderErroMonitoramento(res, error, '[POST /monitoramento/finalizar-lote]');
+    } finally {
+        if (controleClient) controleClient.release();
+    }
+});
+
+// Compatibilidade temporária: usa a mesma fonte canônica do v2 e a nova
+// permissão. Consumidores novos devem usar GET /monitoramento.
 router.get('/prontas-para-encerrar', async (req, res) => {
     const { usuarioLogado } = req;
     let dbClient;
@@ -258,83 +580,17 @@ router.get('/prontas-para-encerrar', async (req, res) => {
     try {
         dbClient = await pool.connect();
         const permissoes = await getPermissoesCompletasUsuarioDB(dbClient, usuarioLogado.id, req.empresaId);
-        if (!permissoes.includes('acesso-ordens-de-producao')) {
+        if (!usuarioPodeAcessarMonitoramento(permissoes)) {
             return res.status(403).json({ error: 'Permissão negada.' });
         }
-
-        const result = await dbClient.query(`
-            SELECT
-                op.id, op.edit_id, op.numero, op.variante, op.quantidade,
-                op.etapas, op.status, op.data_entrega, op.observacoes,
-                op.produto_id,
-                p.nome AS produto_nome,
-                COALESCE(
-                    CASE WHEN p.grade IS NOT NULL THEN
-                        (SELECT (elem->>'imagem')
-                         FROM jsonb_array_elements(p.grade) AS elem
-                         WHERE (elem->>'variacao') = op.variante
-                           AND (elem->>'imagem') IS NOT NULL
-                           AND (elem->>'imagem') != ''
-                         LIMIT 1)
-                    END,
-                    p.imagem
-                ) AS produto_imagem,
-                (
-                    SELECT MAX(prod.data)
-                    FROM producoes prod
-                    WHERE prod.op_numero = op.numero
-                ) AS ultima_producao_em,
-                (
-                    SELECT COALESCE(SUM(prod.quantidade), 0)
-                    FROM producoes prod
-                    WHERE prod.op_numero = op.numero
-                      AND prod.etapa_index = jsonb_array_length(op.etapas) - 1
-                ) AS quantidade_feita_ultima_etapa
-            FROM ordens_de_producao op
-            LEFT JOIN produtos p ON op.produto_id = p.id AND p.empresa_id = op.empresa_id
-            WHERE op.empresa_id = $1
-              AND op.status IN ('em-aberto', 'produzindo')
-              AND op.etapas IS NOT NULL
-              AND jsonb_array_length(op.etapas) > 0
-              AND (
-                  SELECT COUNT(DISTINCT prod.etapa_index)
-                  FROM producoes prod
-                  WHERE prod.op_numero = op.numero
-              ) >= jsonb_array_length(op.etapas)
-            ORDER BY ultima_producao_em ASC NULLS LAST
-        `, [req.empresaId]);
-
-        const agora = new Date();
-        const HORAS_MINIMAS_PARA_ALERTAR = 3;
-
-        const ops = result.rows
-            .map(row => {
-                const etapas = row.etapas || [];
-                const ultima = row.ultima_producao_em ? new Date(row.ultima_producao_em) : null;
-                return {
-                    // campos para OPModalLote (PUT /api/ordens-de-producao)
-                    id: row.id,
-                    edit_id: row.edit_id,
-                    numero: row.numero,
-                    variante: row.variante,
-                    quantidade: row.quantidade,
-                    etapas: row.etapas,
-                    status: row.status,
-                    data_entrega: row.data_entrega,
-                    observacoes: row.observacoes,
-                    produto_id: row.produto_id,
-                    // campos para display
-                    produto_nome: row.produto_nome,
-                    produto_imagem: row.produto_imagem,
-                    etapa_final: etapas.length > 0 ? (etapas[etapas.length - 1]?.processo ?? null) : null,
-                    ultima_producao_em: row.ultima_producao_em,
-                    horas_aguardando: ultima ? Math.round((agora - ultima) / 360000) / 10 : 0,
-                    quantidade_feita_ultima_etapa: parseInt(row.quantidade_feita_ultima_etapa || 0),
-                };
-            })
-            .filter(op => op.horas_aguardando >= HORAS_MINIMAS_PARA_ALERTAR);
-
-        res.status(200).json(ops);
+        const monitoramento = await consultarMonitoramentoOps(dbClient, {
+            empresaId: req.empresaId,
+            usuarioId: usuarioLogado.id,
+            podeFinalizar: usuarioPodeOperarMonitoramento(permissoes),
+        });
+        return res.status(200).json(
+            monitoramento.ops.filter((op) => op.faixa !== 'ACOMPANHAMENTO'),
+        );
 
     } catch (error) {
         console.error('[GET /prontas-para-encerrar]', error);
@@ -655,6 +911,23 @@ router.put('/', async (req, res) => {
         if (!edit_id) {
             throw new Error('O campo "edit_id" é obrigatório para atualização.');
         }
+
+        // A finalização não confia mais no objeto completo enviado pelo
+        // navegador. O serviço relê, trava e recalcula a OP na empresa ativa.
+        if (status === 'finalizado') {
+            if (!permissoesCompletas.includes(MONITORAMENTO_OPS_PERMISSOES.finalizar)) {
+                await dbClient.query('ROLLBACK');
+                return res.status(403).json({ error: 'Permissão negada para finalizar esta OP.' });
+            }
+            const opFinalizada = await finalizarOrdemProducao(dbClient, {
+                empresaId: req.empresaId,
+                usuarioLogado,
+                editId: edit_id,
+            });
+            await dbClient.query('COMMIT');
+            return res.status(200).json(opFinalizada);
+        }
+
         if (!produto_id && status !== 'cancelada') {
             throw new Error('O campo "produto_id" é obrigatório para atualização.');
         }
@@ -839,7 +1112,12 @@ router.put('/', async (req, res) => {
         console.error('[router/ordens-de-producao PUT] Erro:', error);
         // O res.status(403) já é enviado antes, aqui tratamos outros erros.
         if (!res.headersSent) {
-            res.status(500).json({ error: 'Erro ao atualizar Ordem de Produção.', details: error.message });
+            const statusCode = Number(error?.statusCode) || 500;
+            res.status(statusCode).json({
+                error: statusCode >= 500 ? 'Erro ao atualizar Ordem de Produção.' : error.message,
+                details: error.message,
+                codigo: error?.codigo,
+            });
         }
     } finally {
         if (dbClient) {

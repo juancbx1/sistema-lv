@@ -46,10 +46,6 @@ export interface OpResumo {
   etapas?: OpEtapaResumo[] | null;
 }
 
-export interface OpListResponse {
-  rows?: Array<OpResumo | null>;
-}
-
 export interface OpGerenciamentoProps {
   opsPendentesGlobal: number;
   onRefreshContadores: () => void | Promise<void>;
@@ -89,11 +85,6 @@ export interface OpProduto {
   grade?: OpProdutoGrade[] | null;
 }
 
-export interface OpUsuarioLogado {
-  nome?: string | null;
-  [key: string]: unknown;
-}
-
 export interface OpApiListResponse {
   rows: OpResumo[];
   pages?: number;
@@ -113,18 +104,4 @@ export interface OpEtapasModalProps {
   onClose: () => void;
   onUpdateOP: () => void;
   onUpdateGlobal?: () => void | Promise<void>;
-}
-
-export interface OpModalLoteProps {
-  isOpen: boolean;
-  ops: OpResumo[];
-  onClose: () => void;
-  onConcluido: (resultado: { sucesso: number }) => void;
-}
-
-export interface OpCentralEncerramentoProps {
-  opsPendentesGlobal: number;
-  onAbrirLote: (ops: OpResumo[]) => void;
-  resetKey: number;
-  nomeUsuario: string | null;
 }

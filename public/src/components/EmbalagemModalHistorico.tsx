@@ -2,13 +2,20 @@ import { useCallback, useEffect, useState } from 'react';
 import UIFeedbackNotFound from './UIFeedbackNotFound';
 import UICarregando from './UICarregando';
 import { listarHistoricoEmbalagem } from '../utils/embalagem-api';
+import { montarEtiquetaProduto } from '../utils/etiqueta-embalagem';
+import { imprimirEtiqueta } from '../utils/printnow-agente';
 import type {
   EmbalagemFilaItem,
   EmbalagemHistoricoItem,
+  ProdutoCadastro,
 } from '../utils/embalagem-types';
+// @ts-expect-error popups sistêmicos legados, mantidos por compatibilidade visual.
+import { mostrarMensagem } from '/js/utils/popups.js';
 
 interface EmbalagemModalHistoricoProps {
   item: EmbalagemFilaItem;
+  produtos: ProdutoCadastro[];
+  cnpjEmpresa: string;
 }
 
 function toNumber(value: unknown): number {
@@ -39,12 +46,48 @@ function getResponsavel(item: EmbalagemHistoricoItem): string {
 
 export default function EmbalagemModalHistorico({
   item,
+  produtos,
+  cnpjEmpresa,
 }: EmbalagemModalHistoricoProps) {
   const [registros, setRegistros] = useState<EmbalagemHistoricoItem[]>([]);
   const [pagina, setPagina] = useState(1);
   const [paginas, setPaginas] = useState(1);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
+  const [reimprimindoId, setReimprimindoId] = useState<number | string | null>(null);
+
+  const reimprimir = async (registro: EmbalagemHistoricoItem) => {
+    const quantidade = toNumber(registro.quantidade_embalada);
+    const produto = produtos.find(
+      (candidato) => String(candidato.id) === String(registro.produto_embalado_id),
+    ) || (String(registro.tipo_embalagem || '').toUpperCase() === 'UNIDADE' ? item.produto : null);
+    const etiqueta = montarEtiquetaProduto(
+      produto,
+      registro.variante_embalada_nome || item.variante,
+      cnpjEmpresa,
+    );
+
+    if (!etiqueta || quantidade <= 0) {
+      mostrarMensagem('Não há SKU desta embalagem para reimprimir a etiqueta.', 'erro');
+      return;
+    }
+
+    setReimprimindoId(registro.id);
+    try {
+      await imprimirEtiqueta(etiqueta, quantidade);
+      mostrarMensagem(
+        `Etiquetas reenviadas: <strong>${quantidade}</strong>. O estoque não foi alterado.`,
+        'sucesso',
+      );
+    } catch (error: unknown) {
+      mostrarMensagem(
+        error instanceof Error ? error.message : 'Não foi possível reimprimir as etiquetas.',
+        'erro',
+      );
+    } finally {
+      setReimprimindoId(null);
+    }
+  };
 
   const carregarHistorico = useCallback(async () => {
     setCarregando(true);
@@ -141,6 +184,18 @@ export default function EmbalagemModalHistorico({
                   <p className="ep-modal-historico-item-observacao">
                     {registro.observacao}
                   </p>
+                ) : null}
+                {String(registro.status || 'ATIVO').toUpperCase() === 'ATIVO'
+                  && toNumber(registro.quantidade_embalada) > 0 ? (
+                  <button
+                    className="gs-btn gs-btn-secundario ep-etiqueta-reimprimir"
+                    type="button"
+                    onClick={() => void reimprimir(registro)}
+                    disabled={reimprimindoId === registro.id}
+                  >
+                    <i className="fas fa-print" aria-hidden="true" />
+                    {reimprimindoId === registro.id ? 'Imprimindo...' : 'Reimprimir etiquetas'}
+                  </button>
                 ) : null}
               </div>
             </article>

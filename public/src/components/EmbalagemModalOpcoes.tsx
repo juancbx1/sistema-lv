@@ -1,4 +1,8 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { montarEtiquetaProduto, type EtiquetaImpressao } from '../utils/etiqueta-embalagem';
+import { mensagemEmbalagem, mensagemEstoqueSemEtiqueta, type ResultadoEmbalagem } from '../utils/etiqueta-resultado';
+import { imprimirEtiqueta, obterCnpjEmpresaAtiva } from '../utils/printnow-agente';
+import { EmbalagemImpressora, EmbalagemPreviewEtiqueta } from './EmbalagemEtiqueta';
 import {
   listarLotesParaEmbalagem,
   registrarEmbalagemUnitaria,
@@ -32,6 +36,8 @@ interface EmbalagemModalOpcoesProps {
   saldoEstoque: EmbalagemEstoqueSaldo[];
   niveisEstoque: EmbalagemNivelEstoque[];
   onClose: () => void;
+  onImpressaoIniciada?: (quantidade: number) => void;
+  onImpressaoConcluida?: (resultado: ResultadoEmbalagem, quantidade: number) => void;
   onEmbalagemConcluida?: () => Promise<void> | void;
 }
 
@@ -41,6 +47,8 @@ export default function EmbalagemModalOpcoes({
   saldoEstoque,
   niveisEstoque,
   onClose,
+  onImpressaoIniciada,
+  onImpressaoConcluida,
   onEmbalagemConcluida,
 }: EmbalagemModalOpcoesProps) {
   const [aba, setAba] = useState<EmbalagemModalAba>('unidade');
@@ -49,7 +57,22 @@ export default function EmbalagemModalOpcoes({
   const [quantidade, setQuantidade] = useState<number | null>(1);
   const [observacao, setObservacao] = useState('');
   const [enviando, setEnviando] = useState(false);
+  const [imprimindo, setImprimindo] = useState(false);
+  const [semEtiqueta, setSemEtiqueta] = useState(false);
   const [erroOperacao, setErroOperacao] = useState<string | null>(null);
+  const [cnpjEmpresa, setCnpjEmpresa] = useState('');
+  const [etiquetaDoKit, setEtiquetaDoKit] = useState<EtiquetaImpressao | null>(null);
+
+  useEffect(() => {
+    void obterCnpjEmpresaAtiva()
+      .then(setCnpjEmpresa)
+      .catch(() => setCnpjEmpresa(''));
+  }, []);
+
+  const etiquetaUnidade = useMemo(
+    () => montarEtiquetaProduto(item.produto, item.variante, cnpjEmpresa),
+    [cnpjEmpresa, item],
+  );
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -137,11 +160,16 @@ export default function EmbalagemModalOpcoes({
       return;
     }
 
+    if (semEtiqueta) {
+      await estocarSemEtiqueta();
+      return;
+    }
+
     const confirmado = await mostrarConfirmacao(
       `Confirma a embalagem de <strong>${quantidadeInformada}</strong> ${quantidadeInformada === 1 ? 'unidade' : 'unidades'} de<br><strong>${nomeProduto} — ${item.variante}</strong>?`,
       {
         tipo: 'aviso',
-        textoConfirmar: 'Embalar',
+        textoConfirmar: 'Embalar produto',
         textoCancelar: 'Cancelar',
       },
     );
@@ -149,15 +177,62 @@ export default function EmbalagemModalOpcoes({
 
     setEnviando(true);
     try {
-      await registrarEmbalagemUnitaria(
-        item,
-        lotes,
+      if (!etiquetaUnidade) {
+        onImpressaoConcluida?.(mensagemEmbalagem({
+          quantidade: quantidadeInformada,
+          tipo: 'unidade',
+          impresso: false,
+          motivo: 'Esta variação não tem SKU para a etiqueta.',
+        }), quantidadeInformada);
+        return;
+      }
+
+      setImprimindo(true);
+      onImpressaoIniciada?.(quantidadeInformada);
+      try {
+        await imprimirEtiqueta(etiquetaUnidade, quantidadeInformada);
+      } catch (error: unknown) {
+        onImpressaoConcluida?.(mensagemEmbalagem({
+          quantidade: quantidadeInformada,
+          tipo: 'unidade',
+          impresso: false,
+          motivo: error instanceof Error ? error.message : 'A impressão falhou.',
+        }), quantidadeInformada);
+        return;
+      } finally {
+        setImprimindo(false);
+      }
+
+      let registro;
+      try {
+        registro = await registrarEmbalagemUnitaria(
+          item,
+          lotes,
+          quantidadeInformada,
+          observacao,
+        );
+      } catch (error: unknown) {
+        const motivo = error instanceof Error ? error.message : 'Não foi possível registrar a embalagem.';
+        onImpressaoConcluida?.({
+          impresso: true,
+          titulo: quantidadeInformada === 1 ? '1 etiqueta adicionada' : `${quantidadeInformada} etiquetas adicionadas`,
+          detalhe: `O estoque não foi atualizado. ${motivo}`,
+        }, quantidadeInformada);
+        return;
+      }
+      onImpressaoConcluida?.(
+        registro.idempotente
+          ? {
+            impresso: true,
+            titulo: quantidadeInformada === 1 ? '1 etiqueta adicionada' : `${quantidadeInformada} etiquetas adicionadas`,
+            detalhe: 'Esta embalagem já estava registrada. Nenhuma unidade nova entrou no estoque.',
+          }
+          : mensagemEmbalagem({
+            quantidade: quantidadeInformada,
+            tipo: 'unidade',
+            impresso: true,
+          }),
         quantidadeInformada,
-        observacao,
-      );
-      mostrarMensagem(
-        `Embalagem concluída com sucesso: <strong>${quantidadeInformada}</strong> ${quantidadeInformada === 1 ? 'unidade' : 'unidades'} registrada${quantidadeInformada === 1 ? '' : 's'}.`,
-        'sucesso',
       );
       await onEmbalagemConcluida?.();
     } catch (error: unknown) {
@@ -165,6 +240,50 @@ export default function EmbalagemModalOpcoes({
         error instanceof Error
           ? error.message
           : 'Não foi possível registrar a embalagem.';
+      setErroOperacao(mensagemErro);
+      mostrarMensagem(mensagemErro, 'erro');
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  const estocarSemEtiqueta = async () => {
+    if (!temPermissao('lancar-embalagem')) {
+      mostrarPopupSemPermissao('Você não tem permissão para registrar embalagens de produtos prontos.');
+      return;
+    }
+    const quantidadeInformada = Number(quantidade);
+    if (
+      !Number.isInteger(quantidadeInformada) ||
+      quantidadeInformada <= 0 ||
+      quantidadeInformada > totalDosLotes
+    ) {
+      setErroOperacao('Informe uma quantidade inteira dentro do saldo disponível.');
+      return;
+    }
+    const confirmado = await mostrarConfirmacao(
+      `Estocar <strong>${quantidadeInformada}</strong> ${quantidadeInformada === 1 ? 'unidade' : 'unidades'} de<br><strong>${getNomeProduto(item.produto, item.nomeProduto)} — ${item.variante}</strong> sem imprimir etiqueta?`,
+      {
+        tipo: 'aviso',
+        textoConfirmar: 'Estocar sem etiquetar',
+        textoCancelar: 'Cancelar',
+      },
+    );
+    if (!confirmado) return;
+
+    setEnviando(true);
+    setErroOperacao(null);
+    try {
+      await registrarEmbalagemUnitaria(item, lotes, quantidadeInformada, observacao);
+      onImpressaoConcluida?.(
+        mensagemEstoqueSemEtiqueta(quantidadeInformada, 'unidade'),
+        quantidadeInformada,
+      );
+      await onEmbalagemConcluida?.();
+    } catch (error: unknown) {
+      const mensagemErro = error instanceof Error
+        ? error.message
+        : 'Não foi possível registrar a embalagem.';
       setErroOperacao(mensagemErro);
       mostrarMensagem(mensagemErro, 'erro');
     } finally {
@@ -213,7 +332,11 @@ export default function EmbalagemModalOpcoes({
                   <strong>{item.quantidadeDisponivel} un.</strong>
                 </span>
               </div>
+              <EmbalagemImpressora />
             </div>
+          </div>
+          <div className="ep-modal-etiqueta">
+            <EmbalagemPreviewEtiqueta etiqueta={aba === 'kit' ? etiquetaDoKit : etiquetaUnidade} />
           </div>
           <button type="button" onClick={onClose} aria-label="Fechar modal">
             <i className="fas fa-xmark" aria-hidden="true" />
@@ -293,14 +416,29 @@ export default function EmbalagemModalOpcoes({
                     permissao="lancar-embalagem"
                     mensagem="Você não tem permissão para registrar embalagens de produtos prontos."
                   >
-                    <button
-                      className="gs-btn gs-btn-primario ep-modal-confirmar"
-                      type="submit"
-                      disabled={enviando || carregandoLotes || totalDosLotes <= 0}
-                    >
-                      <i className="fas fa-box-open" aria-hidden="true" />
-                      {enviando ? 'Registrando...' : 'Registrar embalagem'}
-                    </button>
+                    <div className="ep-modal-acoes">
+                      <button
+                        className="gs-btn gs-btn-primario ep-modal-confirmar"
+                        type="submit"
+                        disabled={enviando || carregandoLotes || totalDosLotes <= 0}
+                      >
+                        <i className="fas fa-box-open" aria-hidden="true" />
+                        {imprimindo ? 'Imprimindo etiqueta...' : enviando ? 'Embalando...' : 'Embalar produto'}
+                      </button>
+                      <label className={`ep-sem-etiqueta${semEtiqueta ? ' ativo' : ''}`}>
+                        <input
+                          type="checkbox"
+                          checked={semEtiqueta}
+                          disabled={enviando}
+                          onChange={(event) => setSemEtiqueta(event.target.checked)}
+                        />
+                        <span className="ep-sem-etiqueta-topo">
+                          <span className="ep-sem-etiqueta-marca" aria-hidden="true" />
+                          <small>Opcional</small>
+                        </span>
+                        <span className="ep-sem-etiqueta-texto">Estocar sem etiquetar</span>
+                      </label>
+                    </div>
                   </UIBloqueio>
                 </>
               )}
@@ -311,10 +449,18 @@ export default function EmbalagemModalOpcoes({
               produtos={produtos}
               saldoEstoque={saldoEstoque}
               niveisEstoque={niveisEstoque}
+              cnpjEmpresa={cnpjEmpresa}
+              onEtiquetaChange={setEtiquetaDoKit}
+              onImpressaoIniciada={onImpressaoIniciada}
+              onImpressaoConcluida={onImpressaoConcluida}
               onEmbalagemConcluida={onEmbalagemConcluida}
             />
           ) : (
-            <EmbalagemModalHistorico item={item} />
+            <EmbalagemModalHistorico
+              item={item}
+              produtos={produtos}
+              cnpjEmpresa={cnpjEmpresa}
+            />
           )}
         </div>
       </section>

@@ -141,7 +141,6 @@ async function forcarAtualizacaoEstoque() {
     const originalText = span ? span.textContent : '';
     if(span) span.textContent = 'Atualizando...';
 
-    console.log('[forcarAtualizacaoEstoque] Forçando atualização do estoque...');
 
     try {
         // Limpa os caches locais para forçar uma busca na API
@@ -173,13 +172,11 @@ async function forcarAtualizacaoEstoque() {
         // Reabilita o botão e restaura o texto
         if(span) span.textContent = originalText;
         btn.disabled = false;
-        console.log('[forcarAtualizacaoEstoque] Atualização concluída.');
     }
 }
 
 // --- LÓGICA DE NÍVEIS DE ALERTA (Sem alterações) ---
 async function abrirModalConfigurarNiveis() {
-    console.log(`%c[ABRINDO MODAL] - 'Configurar Níveis' foi chamada.`, 'color: #27ae60; font-weight: bold;');
     
     if (!permissoesGlobaisEstoque.includes('gerenciar-niveis-alerta-estoque')) {
         mostrarBloqueioAcaoEstoque('Seu vínculo atual não possui permissão para configurar níveis de estoque.');
@@ -575,7 +572,6 @@ function gerarFiltrosDinamicos() {
 
 
 async function obterSaldoEstoqueAtualAPI() {
-    console.log('[obterSaldoEstoqueAtualAPI] Buscando saldo do estoque...');
     try {
         const saldo = await fetchEstoqueAPI('/estoque/saldo'); 
         saldosEstoqueGlobaisCompletos = saldo || [];
@@ -950,6 +946,7 @@ function atualizarInterfaceFila() {
 function voltarDaFilaParaEstoque() {
     document.getElementById('filaProducaoView').style.display = 'none';
     document.getElementById('mainViewEstoque').style.display = 'block';
+    window.dispatchEvent(new CustomEvent('estoque:principal'));
 }
 
 function renderizarFilaDeProducao() {
@@ -1296,7 +1293,6 @@ async function salvarPrioridades() {
 
 // NOVO: Função para abrir a nova view unificada
 function abrirViewMovimento(item) {
-    console.log('[abrirViewMovimento] Abrindo para o item:', item);
     if (!permissoesGlobaisEstoque.includes('gerenciar-estoque')) {
         mostrarBloqueioAcaoEstoque('Seu vínculo atual não possui permissão para gerenciar o estoque.');
         return;
@@ -1641,7 +1637,6 @@ async function arquivarItemEstoque() {
     }
 
     const skuParaArquivar = itemEstoqueSelecionado.produto_ref_id;
-    console.log(`[arquivarItemEstoque] SKU a ser arquivado: ${skuParaArquivar}`);
 
     // 2. Confirmação do usuário
     const mensagemConfirmacao = `Tem certeza que deseja arquivar o item <br><b>"${itemEstoqueSelecionado.produto_nome} - ${itemEstoqueSelecionado.variante_nome}"</b> (SKU: ${skuParaArquivar})?<br><br>Esta ação irá removê-lo da lista de estoque se o saldo for zero.`;
@@ -1649,7 +1644,6 @@ async function arquivarItemEstoque() {
     const confirmado = await mostrarConfirmacao(mensagemConfirmacao, 'perigo');
 
     if (!confirmado) {
-        console.log("[arquivarItemEstoque] Arquivamento cancelado pelo usuário.");
         return; 
     }
 
@@ -1661,7 +1655,6 @@ async function arquivarItemEstoque() {
     }
 
     try {
-        console.log(`[arquivarItemEstoque] Enviando requisição para API /estoque/arquivar-item com SKU: ${skuParaArquivar}`);
         
         await fetchEstoqueAPI('/estoque/arquivar-item', {
             method: 'POST',
@@ -1815,7 +1808,6 @@ function handleHashChangeEstoque() {
     // Rota para a nova view de movimento
     else if (hash === '#editar-estoque-movimento') {
         if (!itemEstoqueSelecionado) {
-            console.warn("Tentativa de acessar #editar-estoque-movimento sem um item selecionado. Redirecionando.");
             window.location.hash = ''; // Volta para a lista
             return;
         }
@@ -2174,7 +2166,6 @@ function renderizarProdutosBase() {
         if (cardClicado) {
             const nomeProduto = cardClicado.dataset.nomeProduto;
             if (nomeProduto) {
-                console.log(`Card clicado: ${nomeProduto}`);
                 mostrarViewDetalheSeparacao(nomeProduto);
             }
         }
@@ -2218,6 +2209,7 @@ function voltarParaEstoquePrincipal() {
                     document.getElementById('mainViewEstoque').style.display = 'block';
                     document.getElementById('separacaoView').style.display = 'none';
                     document.getElementById('separacaoDetalheView').style.display = 'none';
+                    window.dispatchEvent(new CustomEvent('estoque:principal'));
                 }
             });
     } else {
@@ -2225,6 +2217,7 @@ function voltarParaEstoquePrincipal() {
         document.getElementById('separacaoView').style.display = 'none';
         document.getElementById('separacaoDetalheView').style.display = 'none';
         document.getElementById('carrinhoSeparacao').classList.add('hidden');
+        window.dispatchEvent(new CustomEvent('estoque:principal'));
 
     }
 }
@@ -2396,7 +2389,6 @@ function atualizarCarrinhoFlutuante() {
 }
 
 function abrirModalFinalizacao() {
-    console.log(`[abrirModalFinalizacao] Chamada. Itens no carrinho: ${itensEmSeparacao.size}`);
     
     // Pega as referências dos elementos
     const modal = document.getElementById('modalFinalizarSeparacao');
@@ -2422,10 +2414,8 @@ function abrirModalFinalizacao() {
 
     // --- Populando a tabela de resumo ---
     if (itensEmSeparacao.size === 0) {
-        console.log("[abrirModalFinalizacao] Carrinho vazio. Exibindo mensagem.");
         corpoTabela.innerHTML = '<tr><td colspan="3" style="text-align: center; padding: 20px;">O carrinho de separação está vazio.</td></tr>';
     } else {
-        console.log("[abrirModalFinalizacao] Populando tabela com itens:", itensEmSeparacao);
         let tabelaHTML = '';
         itensEmSeparacao.forEach((item, refId) => {
             tabelaHTML += `
@@ -2559,7 +2549,6 @@ window.removerItemDoCarrinho = function(produtoRefId) {
 // --- INICIALIZAÇÃO DA PÁGINA E EVENT LISTENERS ---
 
 async function inicializarPaginaEstoque() {
-    console.log('[Estoque inicializarPaginaEstoque]');
     
     const overlay = document.getElementById('paginaLoadingOverlay');
     // Mostra o overlay imediatamente
@@ -2586,7 +2575,6 @@ async function inicializarPaginaEstoque() {
     
     setupEventListenersEstoque();
     handleHashChangeEstoque(); 
-    console.log('[Estoque inicializarPaginaEstoque] Concluído.');
 }
 
 // =========================================================================
@@ -2594,7 +2582,6 @@ async function inicializarPaginaEstoque() {
 // =========================================================================
 
 async function prepararViewInventario() {
-    console.log('[prepararViewInventario] Preparando a view de inventário...');
     
     // Garante que a tela de contagem esteja oculta e a tela inicial visível
     document.getElementById('inventarioHome').classList.remove('hidden');
@@ -2637,7 +2624,6 @@ async function prepararViewInventario() {
 }
 
 async function iniciarNovoInventario() {
-    console.log('[iniciarNovoInventario] Tentando iniciar novo inventário...');
     const btn = document.getElementById('btnIniciarNovoInventario');
     const overlay = document.getElementById('inventarioLoadingOverlay');
 
@@ -2781,7 +2767,6 @@ window.abrirModalDetalhesInventario = abrirModalDetalhesInventario;
 let itensSessaoInventarioCache = [];
 
 async function mostrarTelaDeContagem(idSessao) {
-    console.log(`[mostrarTelaDeContagem] Carregando contagem para sessão #${idSessao}`);
 
     document.getElementById('inventarioHome').classList.add('hidden');
     document.getElementById('inventarioContagem').classList.remove('hidden');
@@ -3188,7 +3173,6 @@ function gerenciarRodapeAcoesFixo() {
 
 
 function setupEventListenersEstoque() {
-    console.log('[Estoque setupEventListenersEstoque] Configurando listeners...');
 
     // Listener para o corpo do documento para tratar cliques em botões dinâmicos de forma segura
     document.getElementById('modalFinalizarSeparacao')?.addEventListener('click', function(event) {
@@ -3277,7 +3261,6 @@ function setupEventListenersEstoque() {
     document.getElementById('btnCancelarFinalizacao')?.addEventListener('click', fecharModalFinalizacao);
     document.getElementById('btnConfirmarSaidaEstoque')?.addEventListener('click', confirmarSaidaEstoque);
     window.addEventListener('hashchange', handleHashChangeEstoque);
-    console.log('[Estoque setupEventListenersEstoque] Todos os listeners foram configurados corretamente.');
     
     // --- LÓGICA DO BOTÃO VOLTAR AO TOPO ---
         const btnVoltarAoTopo = document.getElementById('btnVoltarAoTopo');
@@ -3407,7 +3390,8 @@ const funcoesGlobaisEstoque = {
     iniciarProducao,
     anularPromessa,
     moverItemFila,
-    removerItemDoCarrinho
+    removerItemDoCarrinho,
+    abrirMovimentoEstoque: abrirViewMovimento,
 };
 
 // Anexa todas as funções acima ao objeto window

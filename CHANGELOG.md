@@ -6,6 +6,26 @@ Versionamento segue [SemVer](https://semver.org/lang/pt-BR/): `MAJOR.MINOR.PATCH
 
 ---
 
+## [1.47.0] — 2026-09-24
+
+### Adicionado
+- Embalagem imprime a etiqueta do produto e do kit pelo agente local
+  PrintNow, só grava o estoque depois que a impressão confirma, e permite
+  estocar sem etiquetar.
+- Etiquetas avulsas, no cabeçalho da embalagem, listam os produtos e as
+  variações para imprimir ou imprimir e lançar no estoque.
+- A grade do cadastro de produto passou a guardar GTIN/EAN e quantidade do
+  pacote de cada variação.
+- Central de Monitoramento de OPs substitui os agentes antigos de
+  encerramento, com permissão própria.
+- Página de estoque passou a carregar a interface em React.
+
+### Alterado
+- A fila de embalagem voltou a paginar abaixo dos produtos.
+- O documento mestre de multiempresas permanece no repositório.
+
+---
+
 ## [1.46.0] — 2026-08-09
 
 ### Alterado

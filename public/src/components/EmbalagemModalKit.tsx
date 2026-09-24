@@ -21,6 +21,9 @@ import {
   getNomeProduto,
   getSkuVariacao,
 } from '../utils/embalagem-produto-helpers';
+import { montarEtiquetaProduto, type EtiquetaImpressao } from '../utils/etiqueta-embalagem';
+import { mensagemEmbalagem, mensagemEstoqueSemEtiqueta, type ResultadoEmbalagem } from '../utils/etiqueta-resultado';
+import { imprimirEtiqueta } from '../utils/printnow-agente';
 import type {
   EmbalagemArremateLote,
   EmbalagemEstoqueSaldo,
@@ -39,6 +42,10 @@ interface EmbalagemModalKitProps {
   produtos: ProdutoCadastro[];
   saldoEstoque: EmbalagemEstoqueSaldo[];
   niveisEstoque: EmbalagemNivelEstoque[];
+  cnpjEmpresa: string;
+  onEtiquetaChange?: (etiqueta: EtiquetaImpressao | null) => void;
+  onImpressaoIniciada?: (quantidade: number) => void;
+  onImpressaoConcluida?: (resultado: ResultadoEmbalagem, quantidade: number) => void;
   onEmbalagemConcluida?: () => Promise<void> | void;
 }
 
@@ -138,6 +145,10 @@ export default function EmbalagemModalKit({
   produtos,
   saldoEstoque,
   niveisEstoque,
+  cnpjEmpresa,
+  onEtiquetaChange,
+  onImpressaoIniciada,
+  onImpressaoConcluida,
   onEmbalagemConcluida,
 }: EmbalagemModalKitProps) {
   const kits = useMemo<KitCatalogo[]>(
@@ -218,6 +229,8 @@ export default function EmbalagemModalKit({
   const [quantidade, setQuantidade] = useState<number | null>(0);
   const [observacao, setObservacao] = useState('');
   const [enviando, setEnviando] = useState(false);
+  const [imprimindo, setImprimindo] = useState(false);
+  const [semEtiqueta, setSemEtiqueta] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const modalScrollRef = useRef<{ element: HTMLElement; top: number } | null>(null);
   const carregamentoIniciadoRef = useRef(false);
@@ -250,6 +263,20 @@ export default function EmbalagemModalKit({
   const gradeSelecionada = kitSelecionado?.variacoes.find(
     (grade) => getGradeKey(grade) === variacaoKit,
   );
+  const etiquetaKit = useMemo(
+    () => montarEtiquetaProduto(
+      kitSelecionado?.produto,
+      variacaoKit || gradeSelecionada?.variacao,
+      cnpjEmpresa,
+    ),
+    [cnpjEmpresa, gradeSelecionada?.variacao, kitSelecionado?.produto, variacaoKit],
+  );
+
+  useEffect(() => {
+    onEtiquetaChange?.(etiquetaKit);
+    return () => onEtiquetaChange?.(null);
+  }, [etiquetaKit, onEtiquetaChange]);
+
   const composicao = gradeSelecionada?.composicao || [];
   const inteligenciaSelecionada =
     kitSelecionado && gradeSelecionada
@@ -408,6 +435,11 @@ export default function EmbalagemModalKit({
       return;
     }
 
+    if (semEtiqueta) {
+      await estocarSemEtiqueta();
+      return;
+    }
+
     const quantidadeInformada = quantidade;
     const componentesConsumidos: EmbalagemKitComponenteConsumido[] = [];
 
@@ -432,7 +464,118 @@ export default function EmbalagemModalKit({
       `Confirma a montagem e embalagem de <strong>${quantidade}</strong> ${quantidade === 1 ? 'kit' : 'kits'} de<br><strong>${nomeKit} — ${nomeVariacaoKit}</strong>?`,
       {
         tipo: 'aviso',
-        textoConfirmar: 'Montar e embalar',
+        textoConfirmar: 'Embalar kits',
+        textoCancelar: 'Cancelar',
+      },
+    );
+    if (!confirmado) return;
+
+    setEnviando(true);
+    try {
+      if (!etiquetaKit) {
+        onImpressaoConcluida?.(mensagemEmbalagem({
+          quantidade: quantidadeInformada,
+          tipo: 'kit',
+          impresso: false,
+          motivo: 'Este kit não tem SKU para a etiqueta.',
+        }), quantidadeInformada);
+        return;
+      }
+
+      setImprimindo(true);
+      onImpressaoIniciada?.(quantidadeInformada);
+      try {
+        await imprimirEtiqueta(etiquetaKit, quantidadeInformada);
+      } catch (error: unknown) {
+        onImpressaoConcluida?.(mensagemEmbalagem({
+          quantidade: quantidadeInformada,
+          tipo: 'kit',
+          impresso: false,
+          motivo: error instanceof Error ? error.message : 'A impressão falhou.',
+        }), quantidadeInformada);
+        return;
+      } finally {
+        setImprimindo(false);
+      }
+
+      try {
+        await registrarMontagemKit(
+        {
+          kit_produto_id: kitSelecionado.produto.id,
+          kit_variante: variacaoKit === '-' ? null : variacaoKit,
+          quantidade_kits_montados: quantidadeInformada,
+          componentes_consumidos: componentesConsumidos,
+          observacao: observacao.trim() || null,
+        },
+        `embalagem-kit:${item.id}:${Date.now()}`,
+      );
+      } catch (error: unknown) {
+        const motivo = error instanceof Error ? error.message : 'Não foi possível montar o kit.';
+        onImpressaoConcluida?.({
+          impresso: true,
+          titulo: quantidadeInformada === 1 ? '1 etiqueta adicionada' : `${quantidadeInformada} etiquetas adicionadas`,
+          detalhe: `O estoque não foi atualizado. ${motivo}`,
+        }, quantidadeInformada);
+        return;
+      }
+      onImpressaoConcluida?.(mensagemEmbalagem({
+        quantidade: quantidadeInformada,
+        tipo: 'kit',
+        impresso: true,
+      }), quantidadeInformada);
+      await onEmbalagemConcluida?.();
+    } catch (error: unknown) {
+      const mensagemErro =
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível montar o kit.';
+      setErro(mensagemErro);
+      mostrarMensagem(mensagemErro, 'erro');
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  const estocarSemEtiqueta = async () => {
+    if (!temPermissao('lancar-embalagem')) {
+      mostrarPopupSemPermissao('Você não tem permissão para montar e embalar kits.');
+      return;
+    }
+    setErro(null);
+    if (!kitSelecionado || !gradeSelecionada || maxKitsMontaveis <= 0) {
+      setErro('Selecione um kit com componentes disponíveis.');
+      return;
+    }
+    if (
+      quantidade === null ||
+      !Number.isInteger(quantidade) ||
+      quantidade <= 0 ||
+      quantidade > maxKitsMontaveis
+    ) {
+      setErro('Informe uma quantidade de kits dentro do saldo disponível.');
+      return;
+    }
+
+    const quantidadeInformada = quantidade;
+    const componentesConsumidos: EmbalagemKitComponenteConsumido[] = [];
+    for (const componente of disponibilidades) {
+      const quantidadeNecessaria = quantidadeInformada * componente.quantidadeNecessaria;
+      if (componente.saldo < quantidadeNecessaria) {
+        setErro(`O saldo do componente "${componente.nome}" mudou. Atualize a fila e tente novamente.`);
+        return;
+      }
+      componentesConsumidos.push({
+        produto_id: componente.produtoId,
+        variacao: componente.variante === '-' ? null : componente.variante,
+        quantidade_usada: quantidadeNecessaria,
+      });
+    }
+
+    const confirmado = await mostrarConfirmacao(
+      `Estocar <strong>${quantidadeInformada}</strong> ${quantidadeInformada === 1 ? 'kit' : 'kits'} de<br><strong>${getNomeProduto(kitSelecionado.produto)} — ${variacaoKit === '-' ? 'Padrão' : variacaoKit}</strong> sem imprimir etiqueta?`,
+      {
+        tipo: 'aviso',
+        textoConfirmar: 'Estocar sem etiquetar',
         textoCancelar: 'Cancelar',
       },
     );
@@ -448,18 +591,17 @@ export default function EmbalagemModalKit({
           componentes_consumidos: componentesConsumidos,
           observacao: observacao.trim() || null,
         },
-        `embalagem-kit:${item.id}:${Date.now()}`,
+        `embalagem-kit-sem-etiqueta:${item.id}:${Date.now()}`,
       );
-      mostrarMensagem(
-        `Montagem concluída com sucesso: <strong>${quantidadeInformada}</strong> ${quantidadeInformada === 1 ? 'kit' : 'kits'} registrado${quantidadeInformada === 1 ? '' : 's'} no estoque.`,
-        'sucesso',
+      onImpressaoConcluida?.(
+        mensagemEstoqueSemEtiqueta(quantidadeInformada, 'kit'),
+        quantidadeInformada,
       );
       await onEmbalagemConcluida?.();
     } catch (error: unknown) {
-      const mensagemErro =
-        error instanceof Error
-          ? error.message
-          : 'Não foi possível montar o kit.';
+      const mensagemErro = error instanceof Error
+        ? error.message
+        : 'Não foi possível montar o kit.';
       setErro(mensagemErro);
       mostrarMensagem(mensagemErro, 'erro');
     } finally {
@@ -748,14 +890,29 @@ export default function EmbalagemModalKit({
             permissao="lancar-embalagem"
             mensagem="Você não tem permissão para montar e embalar kits."
           >
-            <button
-              className="gs-btn gs-btn-primario ep-modal-confirmar"
-              type="submit"
-              disabled={enviando || carregandoComponentes || maxKitsMontaveis <= 0}
-            >
-              <i className="fas fa-cubes" aria-hidden="true" />
-              {enviando ? 'Montando kit...' : 'Montar e embalar kit'}
-            </button>
+            <div className="ep-modal-acoes">
+              <button
+                className="gs-btn gs-btn-primario ep-modal-confirmar"
+                type="submit"
+                disabled={enviando || carregandoComponentes || maxKitsMontaveis <= 0}
+              >
+                <i className="fas fa-cubes" aria-hidden="true" />
+                {imprimindo ? 'Imprimindo etiqueta...' : enviando ? 'Embalando kits...' : 'Embalar kits'}
+              </button>
+              <label className={`ep-sem-etiqueta${semEtiqueta ? ' ativo' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={semEtiqueta}
+                  disabled={enviando || maxKitsMontaveis <= 0}
+                  onChange={(event) => setSemEtiqueta(event.target.checked)}
+                />
+                <span className="ep-sem-etiqueta-topo">
+                  <span className="ep-sem-etiqueta-marca" aria-hidden="true" />
+                  <small>Opcional</small>
+                </span>
+                <span className="ep-sem-etiqueta-texto">Estocar sem etiquetar</span>
+              </label>
+            </div>
           </UIBloqueio>
         </>
       )}

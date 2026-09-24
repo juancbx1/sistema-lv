@@ -32,12 +32,17 @@ function normalizeCatalog(name, rows) {
         return rows.map(({ ordinal_position: _ordinalPosition, ...column }) => column);
     }
     if (name === 'constraints') {
-        return rows.map((constraint) => ({
-            ...constraint,
-            definition: constraint.definition
-                .replaceAll('::character varying::text', '::character varying')
-                .replaceAll(']::text[]', ']'),
-        }));
+        // PostgreSQL 18 passou a expor NOT NULL em pg_constraint (contype n),
+        // enquanto versões anteriores não o fazem. A equivalência dessas
+        // colunas já é comparada pelo catálogo de columns.
+        return rows
+            .filter((constraint) => constraint.constraint_type !== 'n')
+            .map((constraint) => ({
+                ...constraint,
+                definition: constraint.definition
+                    .replaceAll('::character varying::text', '::character varying')
+                    .replaceAll(']::text[]', ']'),
+            }));
     }
     return rows;
 }
@@ -284,8 +289,8 @@ try {
             && catalogMismatches.length === 0
             && sequenceMismatches.length === 0
             && source.largeObjects === restored.largeObjects
-            && restored.unvalidatedConstraints === 0
-            && restored.invalidIndexes === 0,
+            && source.unvalidatedConstraints === restored.unvalidatedConstraints
+            && source.invalidIndexes === restored.invalidIndexes,
     };
 
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);

@@ -224,8 +224,8 @@ router.get('/historico', async (req, res) => {
         // Query de Dados
         const dataQuery = `
             SELECT 
-                er.id, er.tipo_embalagem, er.quantidade_embalada, er.data_embalagem, er.observacao, er.status, 
-                p.nome as produto_embalado_nome, er.variante_embalada_nome, u.nome as usuario_responsavel
+                er.id, er.produto_embalado_id, er.tipo_embalagem, er.quantidade_embalada, er.data_embalagem, er.observacao, er.status,
+                p.nome as produto_embalado_nome, p.sku as produto_sku, er.variante_embalada_nome, u.nome as usuario_responsavel
             FROM embalagens_realizadas er
             JOIN produtos p ON er.produto_embalado_id = p.id
             LEFT JOIN usuarios u ON er.usuario_responsavel_id = u.id

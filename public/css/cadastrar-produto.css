@@ -576,6 +576,15 @@ body.autenticado {
 .cp-remove-btn:hover { background-color: #c0392b; }
 
 /* Imagem da Grade */
+.cp-grade-gtin {
+    min-width: 11.5rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.cp-grade-pacote {
+    width: 5.5rem;
+}
+
 .cp-grade-img-placeholder {
     width: 40px;
     height: 40px;

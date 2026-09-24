@@ -69,8 +69,7 @@ módulos aprovados. A migration `multiempresas-fase8-liberacao-v1` foi
 executada e validada na Neon em 2026-08-06, habilitando os módulos aprovados
 para as empresas existentes e deixando o provisionamento de novas empresas
 automático para módulos já marcados como prontos. O fechamento dos gates
-G1–G12 fica registrado em `_planejamento/sistema-multiempresas.md` e
-`_planejamento/plano-op-reorganizacao-ponto-jornada-e-redesign.md`.
+G1–G12 fica registrado em `_planejamento/sistema-multiempresas.md`.
 A fundação multiempresa e a Gestão Organizacional já estão em produção. A
 migration de preparação do Financeiro foi executada e validada na Neon em
 28/07/2026; a API foi isolada e validada, e o teste transacional das constraints
@@ -307,8 +306,7 @@ Neon, commit ou deploy.
   `ponto_diario` e status do vínculo como projeções rápidas. O motor deve ser a
   única autoridade de transições ordinárias; React, polling, cron, produção e
   arremates não podem manter regras concorrentes.
-- O plano executável dessa frente fica em
-  `_planejamento/plano-op-reorganizacao-ponto-jornada-e-redesign.md`.
+- O plano executável dessa frente ainda não está versionado no repositório.
 - A auditoria dos escritores e consumidores da cadeia produtiva para a Fase 8
   foi aberta em `_planejamento/auditoria-cadeia-produtiva-fase8.md`. Enquanto
   ela não for concluída, nenhum domínio da cadeia pode ser liberado para uma
@@ -495,6 +493,109 @@ tenha um ID pertencente à mesma empresa. O trigger de banco impede alteração
 direta do código. O ensaio passou em PostgreSQL temporário com duas empresas,
 processos legados adicionais, entradas string, validação read-only e testes de
 imutabilidade/duplicidade. A Neon não foi acessada nem alterada.
+
+---
+
+## Central de Monitoramento de OPs v2 — decisão aprovada em 2026-08-12
+
+O plano executável está em
+`_planejamento/plano-monitoramento-ops-v2.md`. A implementação foi concluída
+localmente em 2026-08-12 no código de frontend e backend. A migration foi
+executada e validada na Neon em 2026-08-12; não houve deploy. Publicação e smoke
+produtivo continuam exigindo autorização explícita e gate separado.
+
+Decisões obrigatórias:
+
+- A ferramenta atual de encerramento será substituída por uma única Central de
+  Monitoramento de OPs, compartilhada entre o acesso global e a aba de OPs.
+- A nova permissão canônica será `acesso-monitoramento-ops`, do tipo `escopo`.
+  Quem não a possuir não verá FAB, central, badge, bloqueio, mensagem, espaço
+  reservado nem chamada de rede relacionada à ferramenta.
+- `finalizar-op` continuará protegendo o encerramento. O interceptor obrigatório
+  só será aplicado a quem tiver a nova permissão e poder de finalizar, evitando
+  bloquear usuários de consulta.
+- `usar-agente-encerrador` e `usar-agente-central-ops` serão legadas e não
+  concederão acesso ao v2. Elas não serão apagadas ou fundidas sem auditoria e
+  nova decisão explícita.
+- O backend será a única autoridade para elegibilidade, faixa, empresa, saldo e
+  concorrência. O tempo começa quando a última etapa `OP` obrigatória recebe o
+  primeiro lançamento válido; `POS_OP` não bloqueia o encerramento da OP e a
+  fase nunca pode ser inferida pelo nome.
+- As faixas aprovadas são: menos de 3h, apenas acompanhamento; a partir de 3h,
+  atenção; a partir de 8h, revisão obrigatória; e a partir de 24h, crítica sem
+  adiamento.
+- No modo obrigatório não haverá Cancelar, fechar, clique externo, `Esc` ou
+  seleção vazia como saída. Recarga, navegação e troca de dispositivo não
+  resolvem a pendência.
+- Uma OP obrigatória só recebe decisão por finalização ou impedimento com motivo
+  persistido. Entre 8h e 24h, cada usuário pode adiar 30 minutos no máximo duas
+  vezes por empresa e dia; esse estado fica no backend. A partir de 24h não há
+  adiamento.
+- O lote enviará somente IDs e chave de idempotência. O backend relê e bloqueia
+  cada OP por `empresa_id`, usa um serviço canônico também consumido pela
+  finalização individual e nunca confia no objeto completo enviado pelo
+  navegador.
+- Toda a nova ferramenta será React + TypeScript. Fantasminha, varredura
+  simulada, textos digitados, tremores, componentes JSX e pollings duplicados
+  serão removidos somente depois dos gates do plano.
+- Score operacional, checklist inteligente avançado, responsável/prazo de
+  divergências e indicadores históricos foram descartados por enquanto e não
+  devem ser implementados sem nova aprovação.
+
+Estado local obrigatório desta frente:
+
+- `acesso-monitoramento-ops` foi incluída no catálogo; permissões antigas são
+  apenas compatibilidade oculta e não concedem acesso ao v2;
+- a fila canônica, impedimentos, adiamentos e lotes ficam em
+  `api/utils/monitoramento-ops.js`; a finalização individual e em lote reutiliza
+  `api/utils/finalizar-op.js`;
+- a migration aditiva e o validador são
+  `_planejamento/migration-monitoramento-ops-v2.sql` e
+  `_planejamento/validacao-monitoramento-ops-v2.sql`;
+- FAB, painel, lista e confirmação são React + TypeScript e só recebem import,
+  montagem e polling depois da nova permissão; os agentes JSX, o lote antigo,
+  o polling duplicado e o storage operacional legado foram removidos;
+- por decisão visual de 2026-08-12, o FAB global é compacto e sem texto
+  visível: 56 x 56 px no desktop, 52 x 52 px no celular e badge de contagem
+  externo de 22 x 22 px. O nome do recurso permanece apenas no rótulo
+  acessível para leitores de tela;
+- seis testes automatizados, typecheck, sintaxe Node e build Vite passaram. O
+  fluxo visual isolado foi aprovado em desktop e 390 px, incluindo `Esc`
+  bloqueado, impedimento, adiamento, finalização parcial e fechamento somente
+  depois da decisão;
+- a migration foi aplicada duas vezes em PostgreSQL 18.4 local sobre clone com
+  9.763 OPs. A restauração disponível era anterior à Fase 8, portanto somente
+  no clone foi reproduzido o pré-requisito atual
+  `ordens_de_producao.empresa_id NOT NULL`. O validador aprovou três tabelas,
+  FK composta, sete índices, zero objetos inválidos e os testes transacionais;
+  hashes dos dados existentes não mudaram e o rollback deixou zero fixtures;
+- com autorização explícita, um `pg_dump` read-only da Neon foi restaurado sem
+  adaptação de schema. A comparação PostgreSQL 15.18 → 18.4 aprovou 100
+  tabelas, 132.213 linhas, 85 sequências e catálogo com `exactMatch: true`;
+- nessa restauração pós-Fase 8, a migration passou duas vezes, o validador e os
+  testes SQL passaram, e a consulta canônica do backend aprovou isolamento
+  entre as duas empresas, impedimento e finalização transacional com rollback;
+- o gate HTTP autenticado foi aprovado em 2026-08-12 com 10 de 10 cenários em
+  clone local limpo: a nova permissão e as permissões legadas foram isoladas,
+  usuário somente consulta não recebeu interceptor diante de OP obrigatória,
+  o contexto do JWT prevaleceu sobre o body, duas empresas ficaram isoladas,
+  adiamento e lote foram idempotentes e a faixa crítica recusou adiamento;
+- duas finalizações HTTP concorrentes da mesma OP produziram somente um
+  encerramento efetivo e exatamente um evento canônico `op.encerrada`. O banco
+  local usado pelo teste é descartável e deve ser removido ao final;
+- o dump e sua evidência ficam em `_backups` sob o prefixo
+  `sistema-lv-pre-monitoramento-ops-v2-20260812-223305`;
+- após autorização explícita, a migration foi executada na Neon em 2026-08-12
+  às `23:01:29.147-03`, com SHA-256
+  `ee2e896da718846f0bec2a2f7899ad42875b53a5dd0c12e5c9a0119a66e24b6a`;
+- a validação interna e a validação independente `READ ONLY` retornaram
+  `aprovado: true`: três tabelas presentes, uma FK empresarial composta, sete
+  índices esperados, zero índices inválidos, zero constraints novas não
+  validadas e um marcador `monitoramento-ops-v2` em `sistema_migrations`;
+- o pós-flight confirmou 9.895 OPs antes e depois da migration e zero registros
+  em impedimentos, adiamentos e lotes; nenhum fixture foi deixado na Neon;
+- nenhum deploy foi executado. O próximo gate exige autorização separada para
+  publicação e smoke autenticado de produção.
 
 ---
 
@@ -3930,3 +4031,60 @@ percurso unificado ou confirmação de quantidades.
   tabelas iniciaram vazias, a FK canônica para `origens_produto_pronto` foi
   criada e o trigger append-only ficou ativo. Nenhum commit foi criado neste
   passo.
+
+## Atualização operacional — primeira fatia do redesign de Estoque — 2026-08-12
+
+- `public/admin/estoque.html` passou a usar o shell padrão `main#root.gs-card`.
+  A página principal é montada por `public/src/main-estoque.tsx` e
+  `public/src/components/EstoquePage.tsx`, com `UIHeaderPagina`,
+  `gs-conteudo-pagina`, busca, filtros, alertas, paginação e cards de saldo.
+- A página principal não aceita mais o HTML legado como fonte visual. Os cards
+  de produto/variação usam `card-borda-charme` com cor semântica por status.
+- `public/js/admin-estoque.js` permanece somente como compatibilidade das
+  rotinas secundárias ainda não migradas (separação, fila, inventário,
+  movimentação e modais). O contêiner `.estoque-legado` fica oculto na visão
+  principal e recebe apenas pontes explícitas para abertura/retorno.
+- Nenhuma API, regra de saldo, estrutura de banco ou serviço compartilhado de
+  outras páginas foi alterado nesta fatia. `npm run typecheck` e `npm run build`
+  foram aprovados localmente; a validação visual autenticada ainda é necessária
+  antes de commit, push ou deploy.
+
+### Atualizacao operacional - painel Saude do Estoque - 2026-08-12
+
+- O bloco introdutorio da pagina principal nao e renderizado no novo shell.
+- O antigo `estoque-alert-grid` foi substituido visualmente pelo painel
+  `estoque-health-section`, com indicadores clicaveis de total, itens em dia,
+  estoque baixo e reposicao urgente, alem de uma lista das prioridades.
+- Os indicadores reutilizam os saldos e filtros ja carregados pela pagina; nao
+  foi criada API nova nem alterada a regra de estoque.
+
+### Atualizacao operacional - conformidade do shell principal de Estoque - 2026-08-12
+
+- O `main#root.gs-card` de Estoque segue diretamente as dimensoes globais, sem
+  `max-width` local que altere o alinhamento do card principal.
+- `public/css/estoque-page.css` declara o respiro obrigatorio do `body` em
+  tablets e os breakpoints padrao de `main.gs-card` em 768px e 480px.
+- A grade de itens usa tres cards por linha no desktop e dois no tablet.
+- A paginacao da listagem reutiliza `public/js/utils/Paginacao.js` e as classes
+  globais `gs-paginacao-container`, `gs-paginacao-btn` e `gs-paginacao-info`.
+
+### Atualizacao operacional - separacao manual por pedidos impressos - 2026-08-12
+
+- A separacao foi redesenhada em `public/src/components/SeparacaoPage.tsx` e
+  entra pelo fluxo React/TypeScript da pagina de Estoque; o menu lateral e os
+  servicos compartilhados permanecem externos a esta migracao.
+- Shopee, Shein e TikTok Shop sao apenas o contexto da sessao. Os pedidos sao
+  impressos fora do sistema e nao existe integracao ou calculo de pedidos
+  pendentes nesta etapa.
+- A busca por SKU, produto ou variacao substitui selects. O operador acumula
+  varias unidades do mesmo SKU, revisa a lista, confirma a conferencia fisica e
+  registra uma unica baixa em lote.
+- `POST /api/estoque/movimento-em-lote` agrega itens repetidos, valida saldo
+  novamente dentro da transacao com lock por produto e preserva idempotencia.
+  A nova operacao `SAIDA_PEDIDO_TIKTOK_SHOP` segue o mesmo fluxo das demais
+  saidas de pedidos.
+- O catalogo da separacao e agrupado por produto. A primeira camada exibe um
+  card por produto; o operador entra na segunda camada para escolher a
+  variacao, com busca por SKU, abertura direta de SKU exato pelo Enter e
+  retorno explicito por `Todos os produtos`. Variacoes sem saldo ficam fora da
+  lista operacional, mas os lancamentos da sessao continuam preservados.

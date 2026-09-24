@@ -1,11 +1,12 @@
 {
   "name": "sistema-lv",
-  "version": "1.46.2",
+  "version": "1.47.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "server": "nodemon server.js",
     "typecheck": "tsc --noEmit",
+    "test:monitoramento-ops": "node --test tests/monitoramento-ops.test.js",
     "build": "vite build",
     "vercel-build": "vite build"
   },

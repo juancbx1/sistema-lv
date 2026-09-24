@@ -695,7 +695,7 @@ function gerarCombinacoesEAtualizarGrade() {
     gradeTemp = gradeTemp.filter(item => novasCombinacoesSet.has(item.variacao));
     novasCombinacoesStr.forEach(novaVariacao => {
         if (!gradeTemp.some(item => item.variacao === novaVariacao)) {
-            gradeTemp.push({ variacao: novaVariacao, sku: '', imagem: '', composicao: (editingProduct?.is_kit) ? [] : ['-'] });
+            gradeTemp.push({ variacao: novaVariacao, sku: '', gtin: '', qtd_pacote: 1, imagem: '', composicao: (editingProduct?.is_kit) ? [] : ['-'] });
         }
     });
     loadGrade();
@@ -710,11 +710,12 @@ function loadGrade() {
     if (isKit) {
         headerHTML += '<th>Composto Por</th>';
     }
-    headerHTML += '<th>Código (SKU)</th><th>Imagem</th><th>Ações</th></tr>';
+    headerHTML += '<th>Código (SKU)</th><th>GTIN/EAN</th><th>Pacote</th><th>Imagem</th><th>Ações</th></tr>';
     elements.gradeHeader.innerHTML = headerHTML;
+    const colunasFixas = (isKit ? 1 : 0) + 5;
 
     if (gradeTemp.length === 0 && headers.length > 0) { // Só mostra mensagem se houver variações definidas
-        elements.gradeBody.innerHTML = `<tr><td colspan="${headers.length + (isKit ? 3 : 2)}">${htmlUIFeedbackNotFound({
+        elements.gradeBody.innerHTML = `<tr><td colspan="${headers.length + colunasFixas}">${htmlUIFeedbackNotFound({
             icon: 'fa-table-list',
             titulo: 'Nenhuma combinação gerada',
             mensagem: 'Defina os valores das variações para montar a grade.',
@@ -722,7 +723,7 @@ function loadGrade() {
         return;
     }
     if (gradeTemp.length === 0 && headers.length === 0 && isKit) {
-         elements.gradeBody.innerHTML = `<tr><td colspan="${(isKit ? 3 : 2)}" style="text-align:center;">Defina as variações do kit acima para gerar a grade.</td></tr>`;
+         elements.gradeBody.innerHTML = `<tr><td colspan="${colunasFixas}" style="text-align:center;">Defina as variações do kit acima para gerar a grade.</td></tr>`;
         return;
     }
      if (gradeTemp.length === 0 && !isKit) { // Para produto simples sem variações
@@ -765,6 +766,8 @@ function loadGrade() {
         
         rowHTML += `
              <td data-label="SKU"><input type="text" class="cp-input cp-grade-sku" data-permissao="gerenciar-produtos" value="${item.sku || ''}" onblur="updateGradeSku(${idx}, this.value)"></td>
+             <td data-label="GTIN/EAN"><input type="text" class="cp-input cp-grade-gtin" inputmode="numeric" autocomplete="off" spellcheck="false" data-permissao="gerenciar-produtos" value="${item.gtin || ''}" onblur="updateGradeGtin(${idx}, this.value)"></td>
+             <td data-label="Pacote"><input type="number" min="1" max="999" class="cp-input cp-grade-pacote" data-permissao="gerenciar-produtos" value="${item.qtd_pacote || 1}" onblur="updateGradePacote(${idx}, this.value)"></td>
             <td data-label="Imagem">
                  <div class="cp-grade-img-placeholder" data-permissao="gerenciar-produtos" onclick="abrirModalSelecaoImagem('${idx}')" title="Editar Imagem">
                     ${item.imagem ? `<img src="${item.imagem}" onerror="this.onerror=null;this.src='/img/placeholder-image.png';">` : '<i class="fas fa-image"></i>'}
@@ -781,6 +784,17 @@ function loadGrade() {
 window.updateGradeSku = (index, sku) => {
     if (!exigirGerenciamentoProdutos()) return;
     if (gradeTemp[index]) gradeTemp[index].sku = sku.trim();
+};
+window.updateGradeGtin = (index, gtin) => {
+    if (!exigirGerenciamentoProdutos()) return;
+    if (gradeTemp[index]) gradeTemp[index].gtin = String(gtin || '').trim();
+};
+window.updateGradePacote = (index, pacote) => {
+    if (!exigirGerenciamentoProdutos()) return;
+    const quantidade = Number.parseInt(pacote, 10);
+    if (gradeTemp[index]) {
+        gradeTemp[index].qtd_pacote = Number.isInteger(quantidade) && quantidade > 0 ? quantidade : 1;
+    }
 };
 window.excluirGrade = (index) => {
     if (!exigirGerenciamentoProdutos()) return;
@@ -853,6 +867,13 @@ async function salvarProdutoNoBackend() {
     gradeTemp.forEach((item, idx) => {
         const skuInput = elements.gradeBody.querySelector(`tr[data-index="${idx}"] .cp-grade-sku`);
         if (skuInput) item.sku = skuInput.value.trim();
+        const gtinInput = elements.gradeBody.querySelector(`tr[data-index="${idx}"] .cp-grade-gtin`);
+        if (gtinInput) item.gtin = gtinInput.value.trim();
+        const pacoteInput = elements.gradeBody.querySelector(`tr[data-index="${idx}"] .cp-grade-pacote`);
+        if (pacoteInput) {
+            const quantidade = Number.parseInt(pacoteInput.value, 10);
+            item.qtd_pacote = Number.isInteger(quantidade) && quantidade > 0 ? quantidade : 1;
+        }
     });
     const etapasParaSalvar = obterEtapasDoEditorParaSalvar();
     const updatedProduct = {

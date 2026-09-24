@@ -8,6 +8,9 @@ test-jwt.js
 *.log
 dist
 build
+__pycache__/
+*.pyc
+agente-printnow/amostra-fr-01001.png
 .env.development.local
 *.bak
 regra de negocio das OP.txt

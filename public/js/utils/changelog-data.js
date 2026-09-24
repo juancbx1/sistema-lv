@@ -21,6 +21,21 @@
 export const changelog = [
 
     {
+        versao: '1.47.0',
+        data: '24/09/2026',
+        admin: [
+            'A embalagem imprime a etiqueta pelo PrintNow e só lança no estoque depois que a impressão confirma. Se a impressora falhar, nada entra no estoque',
+            'A opção Estocar sem etiquetar fica ao lado de Embalar produto e Embalar kits, para lançar a quantidade escolhida sem imprimir',
+            'Etiquetas avulsas, no topo da embalagem, listam os produtos e abrem as variações para só imprimir ou imprimir e enviar ao estoque',
+            'A busca de etiquetas avulsas entende várias palavras, ignora acento e mostra a variação direto, como preto p ou rose gg',
+            'O cadastro de produto guarda o GTIN/EAN e a quantidade do pacote em cada variação',
+            'A Central de Monitoramento de OPs substitui os agentes antigos de encerramento',
+            'A página de estoque passou a abrir a interface em React',
+        ],
+        dashboard: [],
+    },
+
+    {
         versao: '1.46.2',
         data: '11/08/2026',
         admin: [

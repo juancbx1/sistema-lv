@@ -1,0 +1,4 @@
+Pillow>=10
+python-barcode>=0.15
+pywin32>=306
+pystray>=0.19

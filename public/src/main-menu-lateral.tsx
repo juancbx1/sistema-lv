@@ -9,8 +9,6 @@ function montarMenu() {
   container.id = 'menu-lateral-container';
   document.body.prepend(container);
   createRoot(container).render(<MenuLateral />);
-
-  void import('./main-agentes-globais.jsx');
 }
 
 if (document.readyState === 'loading') {

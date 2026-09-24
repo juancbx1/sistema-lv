@@ -10910,16 +10910,6 @@ body.autenticado {
 }
 
 /* ==========================================================================
-   BOTÃO FECHAR NO TOPO DO RESULTADO DO AGENTE (OPCentralEncerramento)
-   ========================================================================== */
-
-.op-agente-resultado-top {
-    display: flex;
-    justify-content: flex-end;
-    margin-bottom: 8px;
-}
-
-/* ==========================================================================
    REDESIGN DO PAINEL DE JORNADA — primeira fatia visual
    ========================================================================== */
 

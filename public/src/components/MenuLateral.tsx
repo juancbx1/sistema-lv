@@ -57,6 +57,22 @@ export default function MenuLateral() {
   const [mostrarTodosFavoritos, setMostrarTodosFavoritos] = useState(false);
 
   useEffect(() => {
+    const permitido = usuario?.permissoes?.includes('acesso-monitoramento-ops');
+    if (!permitido) return undefined;
+    let cancelado = false;
+    let modulo: typeof import('../main-monitoramento-ops') | null = null;
+    void import('../main-monitoramento-ops').then((carregado) => {
+      if (cancelado) return;
+      modulo = carregado;
+      carregado.montarMonitoramentoOps();
+    });
+    return () => {
+      cancelado = true;
+      modulo?.desmontarMonitoramentoOps();
+    };
+  }, [usuario?.permissoes]);
+
+  useEffect(() => {
     const hamburger = document.querySelector<HTMLElement>('.hamburger-menu');
     if (!hamburger) return;
     hamburger.innerHTML =

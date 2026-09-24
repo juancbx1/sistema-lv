@@ -9,6 +9,8 @@ export interface ProdutoComponenteKit {
 export interface ProdutoGradeItem {
   variacao?: string | null;
   sku?: string | null;
+  gtin?: string | null;
+  qtd_pacote?: number | null;
   imagem?: string | null;
   composicao?: ProdutoComponenteKit[] | null;
   [key: string]: unknown;
@@ -18,6 +20,7 @@ export interface ProdutoCadastro {
   id: number | string;
   nome?: string | null;
   sku?: string | null;
+  gtin?: string | null;
   imagem?: string | null;
   is_kit?: boolean | null;
   grade?: ProdutoGradeItem[] | null;
@@ -68,6 +71,8 @@ export interface EmbalagemArremateLote {
 
 export interface EmbalagemHistoricoItem {
   id: number | string;
+  produto_embalado_id?: number | string | null;
+  produto_sku?: string | null;
   tipo_embalagem?: string | null;
   quantidade_embalada?: number | string | null;
   data_embalagem?: string | null;

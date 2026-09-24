@@ -36,6 +36,7 @@ export default function OPMonitoramentoPainel({
   const [feedback, setFeedback] = useState<string | null>(null);
   const [opImpedimento, setOpImpedimento] = useState<OPMonitoramentoItem | null>(null);
   const [motivo, setMotivo] = useState('');
+  const [expandido, setExpandido] = useState(modo !== 'inline');
   const painelRef = useRef<HTMLElement>(null);
 
   const opsObrigatorias = useMemo(() => itensObrigatorios(dados?.ops || []), [dados?.ops]);
@@ -200,6 +201,17 @@ export default function OPMonitoramentoPainel({
               <h2 id="opm-titulo">Monitor de OPs</h2>
               <p>{obrigatorio ? 'Existem ordens que precisam de uma decisão agora.' : 'Acompanhe e resolva o encerramento das ordens em um só lugar.'}</p>
             </div>
+            {modo === 'inline' && (
+              <button
+                className="opm-acordeon"
+                type="button"
+                aria-expanded={expandido}
+                aria-label={expandido ? 'Recolher Monitor de OPs' : 'Expandir Monitor de OPs'}
+                onClick={() => setExpandido((aberto) => !aberto)}
+              >
+                <i className={`fas fa-chevron-${expandido ? 'up' : 'down'}`} aria-hidden="true" />
+              </button>
+            )}
             {modo === 'drawer' && !obrigatorio && (
               <button className="opm-fechar" type="button" onClick={onClose} aria-label="Fechar Monitor de OPs">
                 <i className="fas fa-times" aria-hidden="true" />
@@ -207,7 +219,7 @@ export default function OPMonitoramentoPainel({
             )}
           </header>
 
-          {obrigatorio && (
+          {expandido && obrigatorio && (
             <div className="opm-obrigatorio-aviso" role="alert">
               <i className="fas fa-shield-halved" aria-hidden="true" />
               <div>
@@ -217,8 +229,8 @@ export default function OPMonitoramentoPainel({
             </div>
           )}
 
-          {carregando && <div className="opm-carregando"><UICarregando variante="bloco" texto="Atualizando ordens..." /></div>}
-          {erro && !dados && (
+          {expandido && carregando && <div className="opm-carregando"><UICarregando variante="bloco" texto="Atualizando ordens..." /></div>}
+          {expandido && erro && !dados && (
             <div className="opm-erro">
               <i className="fas fa-wifi" aria-hidden="true" />
               <p>{erro}</p>
@@ -226,7 +238,7 @@ export default function OPMonitoramentoPainel({
             </div>
           )}
 
-          {dados && (
+          {expandido && dados && (
             <>
               <div className="opm-resumo" aria-label="Resumo do monitoramento">
                 <div><span>Total</span><strong>{dados.resumo.total}</strong></div>

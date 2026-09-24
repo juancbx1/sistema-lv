@@ -21,6 +21,17 @@
 export const changelog = [
 
     {
+        versao: '1.47.1',
+        data: '24/09/2026',
+        admin: [
+            'As etapas da OP sem lançamento agora mostram só a linha Nenhum lançamento ainda, sem cortar o cartão da fase',
+            'O Monitor de OPs na aba de OPs abre fechado e expande pela seta à direita do título',
+            'A foto do Monitor de OPs passou a ser a da variação da ordem. Se a variação não tiver imagem, usa a do produto pai',
+        ],
+        dashboard: [],
+    },
+
+    {
         versao: '1.47.0',
         data: '24/09/2026',
         admin: [

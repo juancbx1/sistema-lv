@@ -100,11 +100,31 @@ body.opm-painel-aberto { overflow: hidden; }
 
 .opm-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 14px;
   padding: 22px 24px 18px;
   border-bottom: 1px solid var(--opm-borda);
   background: linear-gradient(135deg, #fff, #f5f8ff);
+}
+.opm-acordeon {
+  margin-left: auto;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--opm-borda);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--opm-azul);
+  cursor: pointer;
+}
+.opm-acordeon:hover {
+  background: #eef3ff;
+}
+.opm-header > div:nth-child(2) {
+  flex: 1;
+  min-width: 0;
 }
 .opm-header-icone {
   width: 48px;

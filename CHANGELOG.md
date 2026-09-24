@@ -6,6 +6,17 @@ Versionamento segue [SemVer](https://semver.org/lang/pt-BR/): `MAJOR.MINOR.PATCH
 
 ---
 
+## [1.47.1] — 2026-09-24
+
+### Corrigido
+- As etapas da OP sem lançamento deixam de usar o bloco grande de “não
+  encontrado” e passam a uma linha, para o cartão da fase não ficar cortado.
+- O Monitor de OPs na aba de OPs abre fechado e expande pela seta à direita.
+- A foto do monitor passa a ser a da variação da ordem. Sem imagem na
+  variação, continua a do produto pai.
+
+---
+
 ## [1.47.0] — 2026-09-24
 
 ### Adicionado

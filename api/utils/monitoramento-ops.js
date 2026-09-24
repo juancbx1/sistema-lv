@@ -120,7 +120,20 @@ export async function consultarMonitoramentoOps(dbClient, {
             op.status,
             op.etapas,
             p.nome AS produto_nome,
-            p.imagem AS produto_imagem,
+            COALESCE(
+                (
+                    SELECT NULLIF(grade_item.value->>'imagem', '')
+                      FROM jsonb_array_elements(
+                          CASE
+                              WHEN jsonb_typeof(p.grade) = 'array' THEN p.grade
+                              ELSE '[]'::jsonb
+                          END
+                      ) AS grade_item(value)
+                     WHERE grade_item.value->>'variacao' = op.variante
+                     LIMIT 1
+                ),
+                p.imagem
+            ) AS produto_imagem,
             e.elegivel_desde,
             e.ultima_producao_em,
             e.etapa_final_index,

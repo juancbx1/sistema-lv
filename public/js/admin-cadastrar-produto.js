@@ -73,15 +73,22 @@ const elements = {
     novaVariacaoDescricao: document.getElementById('novaVariacaoDescricao'),
     configurarVariacaoView: document.getElementById('configurarVariacaoView'),
     configurarVariacaoTitle: document.getElementById('configurarVariacaoTitle'),
-    produtoKitSelect: document.getElementById('produtoKitSelect'),
-    variacaoKitSelect: document.getElementById('variacaoKitSelect'),
-    addVariacaoKitBtn: document.getElementById('addVariacaoKitBtn'),
+    btnDropdownFiltroProd: document.getElementById('btnDropdownFiltroProd'),
+    filtroProdLabel: document.getElementById('filtroProdLabel'),
+    dropdownFiltroProdMenu: document.getElementById('dropdownFiltroProdMenu'),
+    inputBuscaProdDropdown: document.getElementById('inputBuscaProdDropdown'),
+    listaProdsDropdown: document.getElementById('listaProdsDropdown'),
+    cpKitBuscaInput: document.getElementById('cpKitBuscaInput'),
+    cpKitBuscaLimpar: document.getElementById('cpKitBuscaLimpar'),
+    cpKitCatalogoContainer: document.getElementById('cpKitCatalogoContainer'),
+    cpKitResumoPecas: document.getElementById('cpKitResumoPecas'),
     composicaoKitContainer: document.getElementById('composicaoKitContainer'),
 };
 
 let currentGradeIndex = null;
 let currentKitVariationIndex = null;
 let kitComposicaoTemp = [];
+let filtroProdutoAtivo = null;
 
 function mostrarPopup(mensagem, tipo = 'sucesso', duracao = 4000) {
     // Encontra ou cria o container para os pop-ups
@@ -193,9 +200,42 @@ function configurarEventListeners() {
     document.getElementById('gradeImageInput')?.addEventListener('change', (event) => handleImagemChange(event, 'grade'));
     document.getElementById('btnFecharModalSelecaoImagem')?.addEventListener('click', fecharModalSelecaoImagem);
 
-    // Modal de Configuração de Kit
+    // Modal de Configuração de Kit (Visual, sem selects)
     document.getElementById('saveKitConfigBtn')?.addEventListener('click', salvarComposicaoKit);
-    elements.addVariacaoKitBtn?.addEventListener('click', handleAddVariacaoKit);
+    elements.cpKitBuscaInput?.addEventListener('input', (e) => {
+        const val = e.target.value;
+        if (elements.cpKitBuscaLimpar) {
+            elements.cpKitBuscaLimpar.style.display = val ? 'block' : 'none';
+        }
+        renderizarCatalogoComponentes(val);
+    });
+    elements.cpKitBuscaLimpar?.addEventListener('click', () => {
+        if (elements.cpKitBuscaInput) {
+            elements.cpKitBuscaInput.value = '';
+            elements.cpKitBuscaInput.focus();
+        }
+        if (elements.cpKitBuscaLimpar) {
+            elements.cpKitBuscaLimpar.style.display = 'none';
+        }
+        renderizarCatalogoComponentes('');
+    });
+
+    // Seletor Visual de Produto (Dropdown)
+    elements.btnDropdownFiltroProd?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        alternarDropdownFiltroProd();
+    });
+    elements.dropdownFiltroProdMenu?.addEventListener('click', (e) => {
+        e.stopPropagation();
+    });
+    elements.inputBuscaProdDropdown?.addEventListener('input', (e) => {
+        renderizarDropdownProdutos(e.target.value);
+    });
+    document.addEventListener('click', (e) => {
+        if (!elements.dropdownFiltroProdMenu?.contains(e.target) && e.target !== elements.btnDropdownFiltroProd) {
+            fecharDropdownFiltroProd();
+        }
+    });
     
     // --- Delegação de Eventos para a Grade (Itens Dinâmicos) ---
     // Adicionamos um único listener ao corpo da tabela da grade.
@@ -213,8 +253,9 @@ function configurarEventListeners() {
 
     // --- Delegação de Eventos para as Abas ---
     elements.tabFilter.addEventListener('click', (event) => {
-        if (event.target.classList.contains('cp-tab-btn')) {
-            switchTab(event.target.dataset.tab);
+        const btn = event.target.closest('.cp-tab-btn');
+        if (btn && btn.dataset.tab) {
+            switchTab(btn.dataset.tab);
         }
     });
 }
@@ -307,8 +348,7 @@ async function iniciarEdicaoProduto(nome) {
 
 function limparFormularioDeEdicao() {
     console.log("Limpando formulário de edição...");
-    // Limpa os campos de texto e inputs
-    elements.editProductNameDisplay.textContent = 'Carregando...';
+    elements.editProductNameDisplay.innerHTML = '<span class="cp-edit-badge"><i class="fas fa-spinner fa-spin"></i></span> Carregando...';
     elements.inputProductName.value = '';
     elements.sku.value = '';
     elements.gtin.value = '';
@@ -477,8 +517,7 @@ async function editProduct(nome) {
         document.body.style.cursor = 'wait';
         
         // A view já foi trocada pelo clique do usuário ou pelo hashchange,
-        // então apenas mostramos um estado de carregamento.
-        elements.editProductNameDisplay.textContent = 'Carregando produto...';
+        elements.editProductNameDisplay.innerHTML = '<span class="cp-edit-badge"><i class="fas fa-spinner fa-spin"></i></span> Carregando produto...';
         // Limpa o conteúdo antigo para evitar confusão visual
         elements.productForm.style.visibility = 'hidden'; 
 
@@ -529,8 +568,9 @@ function loadEditForm(produto) {
     if (imagemWrapperEl) imagemWrapperEl.classList.remove('has-image');
     // (outras limpezas de formulário se não feitas antes)
 
-    // --- Preenchimento dos Dados Gerais ---
-    elements.editProductNameDisplay.textContent = produto.id ? `Editando: ${produto.nome}` : 'Cadastrando Novo Produto';
+    elements.editProductNameDisplay.innerHTML = produto.id 
+        ? `<span class="cp-edit-badge"><i class="fas fa-pen-to-square"></i> Edição</span> <span>${produto.nome}</span>` 
+        : `<span class="cp-edit-badge cp-badge-new"><i class="fas fa-plus"></i> Novo</span> <span>Cadastrar Produto</span>`;
     elements.inputProductName.value = produto.nome || '';
     elements.sku.value = produto.sku || '';
     elements.gtin.value = produto.gtin || '';
@@ -701,6 +741,23 @@ function gerarCombinacoesEAtualizarGrade() {
     loadGrade();
 }
 
+// --- Helper: Resolução de imagem e dados de componente de kit ---
+function getComponenteInfo(comp) {
+    const nome = comp.produto_nome || comp.produto || 'Componente';
+    const variacao = (comp.variacao && comp.variacao !== '-') ? comp.variacao : 'Padrão';
+    const prodRef = produtos.find(p => p.id === comp.produto_id || p.nome === nome);
+    let imagem = '';
+    if (prodRef) {
+        if (Array.isArray(prodRef.grade)) {
+            const varItem = prodRef.grade.find(g => (g.variacao || '').trim().toLowerCase() === variacao.trim().toLowerCase());
+            if (varItem && varItem.imagem) imagem = varItem.imagem;
+        }
+        if (!imagem && prodRef.imagem) imagem = prodRef.imagem;
+    }
+    if (!imagem) imagem = '/img/placeholder-image.png';
+    return { nome, variacao, imagem, prodRef };
+}
+
 function loadGrade() {
     elements.gradeBody.innerHTML = '';
     const isKit = (editingProduct?.tipos || []).includes('kits');
@@ -736,46 +793,136 @@ function loadGrade() {
         const tr = document.createElement('tr');
         tr.dataset.index = idx;
         const valores = item.variacao.split(' | ');
-        let rowHTML = valores.map((v, i) => `<td data-label="${headers[i] || ''}">${v}</td>`).join('');
         
-        if (isKit) {
-            let composicaoDisplayHtml = '';
-            if (item.composicao && item.composicao.length > 0) {
-                composicaoDisplayHtml = '<div class="composicao-tags">';
-                item.composicao.forEach(comp => {
-                    // Prioriza comp.produto_nome, fallback para comp.produto
-                    const nomeComponente = comp.produto_nome || comp.produto || 'Componente Desconhecido';
-                    // Pega a variação do componente. Se for nula ou '-', pode exibir 'Padrão' ou omitir.
-                    const variacaoComponente = comp.variacao && comp.variacao !== '-' ? ` - ${comp.variacao}` : '';
-                    const quantidadeComponente = comp.quantidade || 0;
-
-                    // Monta a string do componente
-                    composicaoDisplayHtml += `<span class="composicao-tag">${nomeComponente}${variacaoComponente} (${quantidadeComponente})</span>`;
-                });
-                composicaoDisplayHtml += '</div>';
-            }
-            // Adiciona o botão de configurar/editar
-            const textoBotao = (item.composicao && item.composicao.length > 0 && item.composicao.some(c => c.produto_id || c.produto)) 
-                                ? 'Editar Composição' 
-                                : 'Configurar Composição';
-             composicaoDisplayHtml += `<button type="button" class="cp-btn" data-permissao="gerenciar-produtos" style="margin-top: 5px;" onclick="abrirConfigurarVariacao('${idx}')">
-                                        ${textoBotao}
-                                     </button>`;
-            rowHTML += `<td data-label="Composto Por">${composicaoDisplayHtml}</td>`;
-        }
-        
-        rowHTML += `
-             <td data-label="SKU"><input type="text" class="cp-input cp-grade-sku" data-permissao="gerenciar-produtos" value="${item.sku || ''}" onblur="updateGradeSku(${idx}, this.value)"></td>
-             <td data-label="GTIN/EAN"><input type="text" class="cp-input cp-grade-gtin" inputmode="numeric" autocomplete="off" spellcheck="false" data-permissao="gerenciar-produtos" value="${item.gtin || ''}" onblur="updateGradeGtin(${idx}, this.value)"></td>
-             <td data-label="Pacote"><input type="number" min="1" max="999" class="cp-input cp-grade-pacote" data-permissao="gerenciar-produtos" value="${item.qtd_pacote || 1}" onblur="updateGradePacote(${idx}, this.value)"></td>
-            <td data-label="Imagem">
-                 <div class="cp-grade-img-placeholder" data-permissao="gerenciar-produtos" onclick="abrirModalSelecaoImagem('${idx}')" title="Editar Imagem">
-                    ${item.imagem ? `<img src="${item.imagem}" onerror="this.onerror=null;this.src='/img/placeholder-image.png';">` : '<i class="fas fa-image"></i>'}
+        // 1. Bloco de Imagem à esquerda (ampla)
+        let imagemHtml = `
+            <td data-label="Imagem" class="cp-grade-col-imagem">
+                <div class="cp-grade-img-placeholder" data-permissao="gerenciar-produtos" onclick="abrirModalSelecaoImagem('${idx}')" title="Clique para escolher a imagem desta combinação">
+                    ${item.imagem ? `<img src="${item.imagem}" onerror="this.onerror=null;this.src='/img/placeholder-image.png';" alt="${item.variacao}">` : '<div class="cp-grade-img-vazia"><i class="fas fa-camera" aria-hidden="true"></i><span>Foto</span></div>'}
                 </div>
             </td>
-             <td data-label="Ações"><button type="button" class="cp-remove-btn" data-permissao="gerenciar-produtos" onclick="excluirGrade('${idx}')">X</button></td>
         `;
-        tr.innerHTML = rowHTML;
+
+        if (isKit) {
+            // ==========================================================
+            // KITS COM COMPOSIÇÃO: Estrutura em 2 Níveis (Print 1)
+            // ==========================================================
+            tr.classList.add('cp-grade-card-kit');
+            const composicao = item.composicao || [];
+            const totalPecas = composicao.reduce((acc, c) => acc + (Number(c.quantidade) || 0), 0);
+            const totalItens = composicao.length;
+
+            let tagsHtml = '';
+            if (composicao.length > 0) {
+                tagsHtml = '<div class="composicao-tags">';
+                composicao.forEach(comp => {
+                    const info = getComponenteInfo(comp);
+                    const qtd = comp.quantidade || 1;
+                    tagsHtml += `
+                        <span class="composicao-tag" title="${info.nome} - ${info.variacao} (${qtd} un)">
+                            <img src="${info.imagem}" class="composicao-tag-thumb" onerror="this.onerror=null;this.src='/img/placeholder-image.png';" alt="">
+                            <span class="composicao-tag-nome">${info.nome} <strong class="composicao-tag-var">· ${info.variacao}</strong></span>
+                            <span class="composicao-tag-qtd">${qtd} un</span>
+                        </span>
+                    `;
+                });
+                tagsHtml += '</div>';
+            } else {
+                tagsHtml = `
+                    <div class="cp-kit-comp-vazia">
+                        <i class="fas fa-boxes-stacked"></i>
+                        <span>Nenhum componente vinculado a esta variação de kit. Clique em "Configurar Composição".</span>
+                    </div>
+                `;
+            }
+
+            const textoBotao = (composicao.length > 0 && composicao.some(c => c.produto_id || c.produto || c.produto_nome))
+                ? 'Editar Composição'
+                : 'Configurar Composição';
+
+            tr.innerHTML = `
+                ${imagemHtml}
+                <td class="cp-grade-kit-conteudo" colspan="${headers.length + colunasFixas - 1}">
+                    <div class="cp-grade-kit-topo">
+                        <div class="cp-grade-variacao-titulo">
+                            ${valores.map((v, i) => `<span class="cp-grade-val-tag" data-label="${headers[i] || ''}">${v}</span>`).join(' <span class="cp-grade-val-sep">·</span> ')}
+                        </div>
+                        <div class="cp-grade-kit-inputs-row">
+                            <div class="cp-grade-campo-item cp-campo-sku">
+                                <label for="gradeSku_${idx}">SKU</label>
+                                <input type="text" id="gradeSku_${idx}" class="cp-input cp-grade-sku" data-permissao="gerenciar-produtos" value="${item.sku || ''}" onblur="updateGradeSku(${idx}, this.value)" placeholder="SKU">
+                            </div>
+                            <div class="cp-grade-campo-item cp-campo-gtin">
+                                <label for="gradeGtin_${idx}">GTIN / EAN</label>
+                                <input type="text" id="gradeGtin_${idx}" class="cp-input cp-grade-gtin" inputmode="numeric" autocomplete="off" spellcheck="false" data-permissao="gerenciar-produtos" value="${item.gtin || ''}" onblur="updateGradeGtin(${idx}, this.value)" placeholder="GTIN/EAN">
+                            </div>
+                            <div class="cp-grade-campo-item cp-campo-pacote">
+                                <label for="gradePacote_${idx}">Pacote</label>
+                                <input type="number" id="gradePacote_${idx}" min="1" max="999" class="cp-input cp-grade-pacote" data-permissao="gerenciar-produtos" value="${item.qtd_pacote || 1}" onblur="updateGradePacote(${idx}, this.value)">
+                            </div>
+                            <div class="cp-grade-campo-item cp-grade-col-acoes" style="margin-left: 2px;">
+                                <label>&nbsp;</label>
+                                <button type="button" class="cp-remove-btn" data-permissao="gerenciar-produtos" onclick="excluirGrade('${idx}')" title="Excluir combinação">
+                                    <i class="fas fa-trash-alt" aria-hidden="true"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="cp-grade-kit-composicao-painel">
+                        <div class="cp-grade-kit-composicao-bar">
+                            <div class="cp-grade-kit-comp-meta">
+                                <i class="fas fa-boxes-stacked cp-grade-kit-comp-ico"></i>
+                                <span>Composição da Combinação:</span>
+                                <span class="cp-grade-kit-comp-contagem"><strong>${totalPecas}</strong> peças no total (${totalItens} ${totalItens === 1 ? 'item' : 'itens'})</span>
+                            </div>
+                            <button type="button" class="cp-btn-editar-composicao" data-permissao="gerenciar-produtos" onclick="abrirConfigurarVariacao('${idx}')">
+                                <i class="fas fa-sliders" aria-hidden="true"></i>
+                                <span>${textoBotao}</span>
+                            </button>
+                        </div>
+                        ${tagsHtml}
+                    </div>
+                </td>
+            `;
+        } else {
+            // ==========================================================
+            // PRODUTOS UNITÁRIOS: Mantido 100% como está!
+            // ==========================================================
+            let infoHtml = `
+                <td data-label="Variação" class="cp-grade-col-info">
+                    <div class="cp-grade-variacao-titulo">${valores.map((v, i) => `<span class="cp-grade-val-tag" data-label="${headers[i] || ''}">${v}</span>`).join(' <span class="cp-grade-val-sep">·</span> ')}</div>
+                </td>
+            `;
+
+            let camposHtml = `
+                <td data-label="Dados" class="cp-grade-col-campos">
+                    <div class="cp-grade-campo-item cp-campo-sku">
+                        <label for="gradeSku_${idx}">SKU</label>
+                        <input type="text" id="gradeSku_${idx}" class="cp-input cp-grade-sku" data-permissao="gerenciar-produtos" value="${item.sku || ''}" onblur="updateGradeSku(${idx}, this.value)" placeholder="SKU">
+                    </div>
+                    <div class="cp-grade-campo-item cp-campo-gtin">
+                        <label for="gradeGtin_${idx}">GTIN / EAN</label>
+                        <input type="text" id="gradeGtin_${idx}" class="cp-input cp-grade-gtin" inputmode="numeric" autocomplete="off" spellcheck="false" data-permissao="gerenciar-produtos" value="${item.gtin || ''}" onblur="updateGradeGtin(${idx}, this.value)" placeholder="GTIN/EAN">
+                    </div>
+                    <div class="cp-grade-campo-item cp-campo-pacote">
+                        <label for="gradePacote_${idx}">Pacote</label>
+                        <input type="number" id="gradePacote_${idx}" min="1" max="999" class="cp-input cp-grade-pacote" data-permissao="gerenciar-produtos" value="${item.qtd_pacote || 1}" onblur="updateGradePacote(${idx}, this.value)">
+                    </div>
+                </td>
+            `;
+
+            let acoesHtml = `
+                <td data-label="Ações" class="cp-grade-col-acoes">
+                    <button type="button" class="cp-remove-btn" data-permissao="gerenciar-produtos" onclick="excluirGrade('${idx}')" title="Excluir combinação">
+                        <i class="fas fa-trash-alt" aria-hidden="true"></i>
+                    </button>
+                </td>
+            `;
+
+            tr.innerHTML = imagemHtml + infoHtml + camposHtml + acoesHtml;
+        }
+
         elements.gradeBody.appendChild(tr);
     });
     atualizarEstadoVisualDasAcoes();
@@ -1053,7 +1200,10 @@ window.switchTab = function(tabId) {
     console.log(`Tentando trocar para a aba: ${tabId}`);
 
     // Primeiro, desativa todas as abas e conteúdos.
-    document.querySelectorAll('.cp-tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.cp-tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+        btn.setAttribute('aria-selected', 'false');
+    });
     document.querySelectorAll('.cp-tab-content').forEach(content => content.classList.remove('active'));
 
     // Agora, encontra e ativa a aba e o conteúdo corretos.
@@ -1063,6 +1213,7 @@ window.switchTab = function(tabId) {
     // Verificações de segurança: só ativa se os elementos existirem.
     if (tabButton) {
         tabButton.classList.add('active');
+        tabButton.setAttribute('aria-selected', 'true');
         console.log(`Botão da aba "${tabId}" ativado.`);
     } else {
         console.warn(`Botão para a aba "${tabId}" não foi encontrado.`);
@@ -1076,87 +1227,20 @@ window.switchTab = function(tabId) {
     }
 };
 
-async function loadVariacoesKit(produtoIdComponenteSelecionado) {
-    // 'produtoIdComponenteSelecionado' é o ID do produto que foi escolhido no select "Produto Componente"
-
-    elements.variacaoKitSelect.innerHTML = '<option value="">Carregando variações...</option>'; // Feedback inicial
-    elements.variacaoKitSelect.disabled = true;
-
-    if (!produtoIdComponenteSelecionado) {
-        elements.variacaoKitSelect.innerHTML = '<option value="">Selecione um produto primeiro</option>';
-        // Não precisa desabilitar explicitamente aqui se o estado inicial já for desabilitado
-        // ou se a lógica de quando habilitar estiver correta.
-        return;
-    }
-
-    try {
-        // 'produtos' deve ser a sua lista completa de produtos carregada (ex: de obterProdutosDoStorage())
-        // Certifique-se que 'produtos' está acessível aqui ou passe-a como argumento se necessário.
-        if (!produtos || produtos.length === 0) {
-            console.error("[loadVariacoesKit] Lista de produtos principal não está carregada.");
-            elements.variacaoKitSelect.innerHTML = '<option value="">Erro ao carregar produtos</option>';
-            return;
-        }
-
-        const produtoComponente = produtos.find(p => String(p.id) === String(produtoIdComponenteSelecionado));
-
-        if (!produtoComponente) {
-            console.warn(`[loadVariacoesKit] Produto componente com ID "${produtoIdComponenteSelecionado}" não encontrado.`);
-            elements.variacaoKitSelect.innerHTML = '<option value="">Produto não encontrado</option>';
-            return;
-        }
-
-        let variantesDisponiveis = [];
-
-        // Lógica para extrair variações da GRADE do produto componente
-        if (produtoComponente.grade && Array.isArray(produtoComponente.grade) && produtoComponente.grade.length > 0) {
-            // Pega todas as strings de 'variacao' da grade e remove duplicatas
-            variantesDisponiveis = [...new Set(produtoComponente.grade.map(g => g.variacao).filter(Boolean))].sort();
-        }
-        // Você pode adicionar um fallback para 'produtoComponente.variacoes' se alguns produtos simples
-        // que podem ser componentes não usarem 'grade' mas sim a estrutura 'variacoes' (o que seria menos comum para componentes).
-        // else if (produtoComponente.variacoes && produtoComponente.variacoes.length > 0) {
-        //    // Lógica para extrair de produtoComponente.variacoes (se aplicável a componentes)
-        // }
-
-
-        if (variantesDisponiveis.length > 0) {
-            elements.variacaoKitSelect.innerHTML = '<option value="">Selecione uma variação</option>';
-            variantesDisponiveis.forEach(varianteNome => {
-                elements.variacaoKitSelect.add(new Option(varianteNome, varianteNome));
-            });
-            elements.variacaoKitSelect.disabled = false;
-        } else {
-            // Se não houver variações de grade, consideramos "Padrão" como a única opção.
-            // Isso é importante para produtos simples que podem ser componentes de kit.
-            elements.variacaoKitSelect.innerHTML = '<option value="-">Padrão</option>'; // Usar "-" ou "" para padrão?
-            // Se usar "-", seu backend/lógica de salvar precisa saber que "-" significa sem variação ou padrão.
-            // Se usar "", certifique-se que isso é tratado corretamente.
-            // Vou usar "-" como no seu código `loadVariacoesKit` original.
-            elements.variacaoKitSelect.disabled = false; // Habilita mesmo para "Padrão"
-        }
-
-    } catch (error) {
-        console.error(`[loadVariacoesKit] Erro ao carregar variações para produto ID ${produtoIdComponenteSelecionado}:`, error);
-        elements.variacaoKitSelect.innerHTML = '<option value="">Erro ao carregar variações</option>';
-        elements.variacaoKitSelect.disabled = true;
-    }
-}
-
-
 window.toggleTabs = function() {
     const tipos = Array.from(document.querySelectorAll('input[name="tipo"]:checked')).map(cb => cb.value);
-    let variacoesBtn = document.querySelector('.cp-tab-btn[data-tab="variacoes"]');
+    const variacoesBtn = document.querySelector('.cp-tab-btn[data-tab="variacoes"]');
     if (tipos.includes('variacoes') || tipos.includes('kits')) {
-    if (!variacoesBtn) {
-        const btn = document.createElement('button');
-        btn.className = 'cp-tab-btn';
-        btn.dataset.tab = 'variacoes'; // Apenas o data-attribute é necessário
-        btn.type = 'button'; // Boa prática
-        btn.textContent = 'Variações e Grade';
-        // NENHUM ONCLICK AQUI. A delegação de eventos vai cuidar disso.
-        elements.tabFilter.appendChild(btn);
-    }
+        if (!variacoesBtn) {
+            const btn = document.createElement('button');
+            btn.className = 'cp-tab-btn gs-tab-btn';
+            btn.dataset.tab = 'variacoes';
+            btn.type = 'button';
+            btn.role = 'tab';
+            btn.setAttribute('aria-selected', 'false');
+            btn.innerHTML = '<i class="fas fa-cubes" aria-hidden="true"></i> <span class="gs-tab-label">Variações e Grade</span>';
+            elements.tabFilter.appendChild(btn);
+        }
     } else if (variacoesBtn) {
         const abaAtiva = variacoesBtn.classList.contains('active');
         variacoesBtn.remove();
@@ -1256,161 +1340,412 @@ function initializeDragAndDrop() {
         });
     });
 }
-window.abrirConfigurarVariacao = async function(index) { // Tornando async para usar await
-    currentKitVariationIndex = parseInt(index);
-    if (isNaN(currentKitVariationIndex) || !editingProduct?.grade[currentKitVariationIndex]) {
-        alert('Erro: Variação de kit não encontrada.');
+// --- Catálogo de Componentes Elegíveis para Kits (Seletor Visual sem Selects) ---
+let catalogoComponentesCache = [];
+
+function getCatalogoComponentesDisponiveis() {
+    const catalogo = [];
+    const prodsValidos = produtos.filter(p =>
+        (p.tipos?.includes('simples') || p.tipos?.includes('variacoes')) &&
+        String(p.id) !== String(editingProduct?.id)
+    ).sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
+
+    prodsValidos.forEach(p => {
+        if (Array.isArray(p.grade) && p.grade.length > 0) {
+            p.grade.forEach(g => {
+                const varNome = (g.variacao && g.variacao !== '-') ? g.variacao : 'Padrão';
+                const imagem = g.imagem || p.imagem || '/img/placeholder-image.png';
+                catalogo.push({
+                    produto_id: p.id,
+                    produto_nome: p.nome,
+                    variacao: varNome,
+                    imagem: imagem,
+                    sku: g.sku || ''
+                });
+            });
+        } else {
+            catalogo.push({
+                produto_id: p.id,
+                produto_nome: p.nome,
+                variacao: 'Padrão',
+                imagem: p.imagem || '/img/placeholder-image.png',
+                sku: p.sku || ''
+            });
+        }
+    });
+
+    return catalogo;
+}
+
+function atualizarBotaoFiltroProduto() {
+    if (!elements.filtroProdLabel) return;
+    if (filtroProdutoAtivo === null) {
+        elements.filtroProdLabel.innerHTML = `
+            <i class="fas fa-layer-group"></i>
+            <span>Todos os Produtos</span>
+        `;
+    } else {
+        const prod = produtos.find(p => String(p.id) === String(filtroProdutoAtivo));
+        if (prod) {
+            const img = prod.imagem || '/img/placeholder-image.png';
+            elements.filtroProdLabel.innerHTML = `
+                <img src="${img}" class="cp-kit-filtro-prod-thumb" onerror="this.onerror=null;this.src='/img/placeholder-image.png';" alt="">
+                <span>${prod.nome}</span>
+            `;
+        } else {
+            filtroProdutoAtivo = null;
+            elements.filtroProdLabel.innerHTML = `
+                <i class="fas fa-layer-group"></i>
+                <span>Todos os Produtos</span>
+            `;
+        }
+    }
+}
+
+function alternarDropdownFiltroProd() {
+    const menu = elements.dropdownFiltroProdMenu;
+    if (!menu) return;
+    const isHidden = menu.style.display === 'none' || !menu.classList.contains('active');
+    if (isHidden) {
+        menu.style.display = 'flex';
+        menu.classList.add('active');
+        elements.btnDropdownFiltroProd?.setAttribute('aria-expanded', 'true');
+        if (elements.inputBuscaProdDropdown) {
+            elements.inputBuscaProdDropdown.value = '';
+        }
+        renderizarDropdownProdutos('');
+        setTimeout(() => elements.inputBuscaProdDropdown?.focus(), 50);
+    } else {
+        fecharDropdownFiltroProd();
+    }
+}
+
+function fecharDropdownFiltroProd() {
+    if (elements.dropdownFiltroProdMenu) {
+        elements.dropdownFiltroProdMenu.style.display = 'none';
+        elements.dropdownFiltroProdMenu.classList.remove('active');
+    }
+    elements.btnDropdownFiltroProd?.setAttribute('aria-expanded', 'false');
+}
+
+function renderizarDropdownProdutos(termoFiltro = '') {
+    const lista = elements.listaProdsDropdown;
+    if (!lista) return;
+    lista.innerHTML = '';
+
+    const prodsValidos = produtos.filter(p =>
+        (p.tipos?.includes('simples') || p.tipos?.includes('variacoes')) &&
+        String(p.id) !== String(editingProduct?.id)
+    ).sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
+
+    const termo = (termoFiltro || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+    // Se não filtrou por busca, inclui a opção "Todos os Produtos"
+    if (!termo) {
+        const itemTodos = document.createElement('button');
+        itemTodos.type = 'button';
+        const isActive = filtroProdutoAtivo === null;
+        itemTodos.className = `cp-kit-prod-dropdown-item ${isActive ? 'active' : ''}`;
+        itemTodos.innerHTML = `
+            <div class="cp-kit-prod-item-left">
+                <i class="fas fa-layer-group" style="width: 24px; text-align: center; font-size: 0.82rem; color: #64748b;"></i>
+                <span class="cp-kit-prod-item-nome">Todos os Produtos</span>
+            </div>
+            <span class="cp-kit-prod-item-badge">${prodsValidos.length}</span>
+        `;
+        itemTodos.addEventListener('click', () => {
+            filtroProdutoAtivo = null;
+            atualizarBotaoFiltroProduto();
+            fecharDropdownFiltroProd();
+            renderizarCatalogoComponentes(elements.cpKitBuscaInput?.value || '');
+        });
+        lista.appendChild(itemTodos);
+    }
+
+    const prodsFiltrados = termo
+        ? prodsValidos.filter(p => {
+            const nomeNorm = (p.nome || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            const skuNorm = (p.sku || '').toLowerCase();
+            return nomeNorm.includes(termo) || skuNorm.includes(termo);
+        })
+        : prodsValidos;
+
+    if (prodsFiltrados.length === 0) {
+        const vazio = document.createElement('div');
+        vazio.style.cssText = 'padding: 12px; text-align: center; color: #94a3b8; font-size: 0.78rem;';
+        vazio.innerHTML = '<i class="fas fa-search" style="margin-right: 4px;"></i> Nenhum produto encontrado';
+        lista.appendChild(vazio);
         return;
     }
-    const variacaoKit = editingProduct.grade[currentKitVariationIndex];
-    elements.configurarVariacaoTitle.textContent = `Configurar: ${variacaoKit.variacao}`;
-    kitComposicaoTemp = deepClone(variacaoKit.composicao || []);
 
-    // Popula o select de PRODUTOS componentes (o value já é o ID)
-    const produtosComponentes = produtos.filter(p =>
-        (p.tipos?.includes('simples') || p.tipos?.includes('variacoes')) && // Produtos que podem ser componentes
-        String(p.id) !== String(editingProduct.id) // Kit não pode ser componente de si mesmo
-    ).sort((a,b) => a.nome.localeCompare(b.nome));
+    prodsFiltrados.forEach(p => {
+        const item = document.createElement('button');
+        item.type = 'button';
+        const isActive = filtroProdutoAtivo !== null && String(filtroProdutoAtivo) === String(p.id);
+        item.className = `cp-kit-prod-dropdown-item ${isActive ? 'active' : ''}`;
+        const qtdVariacoes = (Array.isArray(p.grade) && p.grade.length > 0) ? p.grade.length : 1;
+        const img = p.imagem || '/img/placeholder-image.png';
 
-    elements.produtoKitSelect.innerHTML = '<option value="">Selecione um produto</option>' +
-        produtosComponentes.map(p => `<option value="${p.id}">${p.nome}</option>`).join('');
+        item.innerHTML = `
+            <div class="cp-kit-prod-item-left">
+                <img src="${img}" class="cp-kit-prod-item-thumb" onerror="this.onerror=null;this.src='/img/placeholder-image.png';" alt="">
+                <span class="cp-kit-prod-item-nome" title="${p.nome}">${p.nome}</span>
+            </div>
+            <span class="cp-kit-prod-item-badge">${qtdVariacoes} var</span>
+        `;
 
-    // Limpa e desabilita o select de VARIAÇÕES de componente inicialmente
-    elements.variacaoKitSelect.innerHTML = '<option value="">Selecione um produto primeiro</option>';
-    elements.variacaoKitSelect.disabled = true;
+        item.addEventListener('click', () => {
+            filtroProdutoAtivo = p.id;
+            atualizarBotaoFiltroProduto();
+            fecharDropdownFiltroProd();
+            renderizarCatalogoComponentes(elements.cpKitBuscaInput?.value || '');
+        });
 
-    // Remove listener antigo para evitar duplicação se abrirConfigurarVariacao for chamada múltiplas vezes
-    const novoSelectProduto = elements.produtoKitSelect.cloneNode(true); // Clona para remover listeners
-    elements.produtoKitSelect.parentNode.replaceChild(novoSelectProduto, elements.produtoKitSelect);
-    elements.produtoKitSelect = novoSelectProduto; // Reatribui a referência global
-
-    // Adiciona o listener de change para o select de Produto Componente
-    elements.produtoKitSelect.addEventListener('change', async (event) => {
-        const produtoIdSelecionado = event.target.value;
-        await loadVariacoesKit(produtoIdSelecionado); // Chama a função para carregar as variações do componente
+        lista.appendChild(item);
     });
-
-    renderizarComposicaoKit();
-    elements.configurarVariacaoView.classList.add('active');
-};
-
-
-window.loadVariacoesKit = function() {
-    const produtoNome = elements.produtoKitSelect.value;
-    const produto = produtos.find(p => p.nome === produtoNome);
-    elements.variacaoKitSelect.innerHTML = '<option value="">Selecione uma variação</option>';
-    if (produto?.grade?.length > 0) {
-        produto.grade.forEach(g => { elements.variacaoKitSelect.innerHTML += `<option value="${g.variacao}">${g.variacao}</option>`; });
-    } else {
-        elements.variacaoKitSelect.innerHTML += '<option value="-">Padrão</option>';
-    }
-};
-
-
-function handleAddVariacaoKit() {
-    if (!exigirGerenciamentoProdutos()) return;
-    const produtoIdComponente = elements.produtoKitSelect.value;
-    const selectElement = elements.produtoKitSelect;
-    const produtoNomeComponente = selectElement.options[selectElement.selectedIndex].text;
-    const variacao = elements.variacaoKitSelect.value;
-
-    if (!produtoIdComponente || !variacao) {
-        alert('Selecione produto e variação do componente.'); return;
-    }
-
-    // MUDANÇA AQUI: Ao verificar duplicatas, considere que itens antigos em kitComposicaoTemp
-    // podem não ter 'produto_id' e podem ter 'produto' (nome) em vez disso.
-    // Esta verificação agora é mais complexa e depende de como você quer tratar
-    // a migração de componentes antigos.
-
-    // Abordagem 1: Se um componente com o mesmo nome/variação já existe (mesmo que sem ID), avisa.
-    // Isso pode ser muito restritivo se você está tentando "atualizar" um componente antigo para ter ID.
-    /*
-    if (kitComposicaoTemp.some(c =>
-        (c.produto_id && String(c.produto_id) === String(produtoIdComponente) && c.variacao === variacao) ||
-        (!c.produto_id && c.produto === produtoNomeComponente && c.variacao === variacao)
-    )) {
-        alert('Componente já adicionado ou um componente com o mesmo nome/variação já existe.'); return;
-    }
-    */
-
-    // Abordagem 2 (Recomendada): Se você está adicionando um NOVO componente (que terá ID),
-    // apenas verifique se já existe um com o MESMO ID e VARIAÇÃO.
-    // Se o usuário quiser "atualizar" um componente antigo (que só tem nome), ele deve
-    // primeiro remover o antigo e depois adicionar o novo com o ID.
-    if (kitComposicaoTemp.some(c => c.produto_id && String(c.produto_id) === String(produtoIdComponente) && c.variacao === variacao)) {
-        alert('Este componente (com ID e variação) já foi adicionado.'); return;
-    }
-
-    // Se você está tentando substituir um componente antigo que só tinha nome:
-    // Primeiro, procure e remova o componente antigo se ele existir com o mesmo nome e variação.
-    const indexComponenteAntigo = kitComposicaoTemp.findIndex(c =>
-        !c.produto_id && // Só se não tiver ID (é um antigo)
-        c.produto === produtoNomeComponente &&
-        c.variacao === variacao
-    );
-    if (indexComponenteAntigo > -1) {
-        console.log("Substituindo componente antigo (baseado em nome) por um novo com ID:", produtoNomeComponente, variacao);
-        kitComposicaoTemp.splice(indexComponenteAntigo, 1);
-    }
-
-
-    kitComposicaoTemp.push({
-        produto_id: parseInt(produtoIdComponente),
-        produto_nome: produtoNomeComponente,
-        variacao: variacao,
-        quantidade: 1
-    });
-    renderizarComposicaoKit();
 }
 
+function renderizarCatalogoComponentes(termoBusca = '') {
+    const container = elements.cpKitCatalogoContainer;
+    if (!container) return;
+    container.innerHTML = '';
+
+    const termo = (termoBusca || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+    // Se NÃO digitou busca E NÃO filtrou por produto específico:
+    // Mantém o estado inicial limpo (0 itens renderizados no DOM!)
+    if (!termo && filtroProdutoAtivo === null) {
+        container.innerHTML = `
+            <div class="cp-kit-busca-prompt">
+                <i class="fas fa-magnifying-glass"></i>
+                <span>Digite acima para buscar variações ou selecione um produto para listar suas opções.</span>
+            </div>
+        `;
+        return;
+    }
+
+    let itensFiltrados = catalogoComponentesCache;
+
+    // Filtro por produto selecionado
+    if (filtroProdutoAtivo !== null) {
+        itensFiltrados = itensFiltrados.filter(item => String(item.produto_id) === String(filtroProdutoAtivo));
+    }
+
+    // Filtro por texto digitado
+    if (termo) {
+        itensFiltrados = itensFiltrados.filter(item => {
+            const nomeNorm = (item.produto_nome || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            const varNorm = (item.variacao || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            const skuNorm = (item.sku || '').toLowerCase();
+            return nomeNorm.includes(termo) || varNorm.includes(termo) || skuNorm.includes(termo);
+        });
+    }
+
+    if (itensFiltrados.length === 0) {
+        container.innerHTML = `
+            <div class="cp-kit-cat-vazio">
+                <i class="fas fa-search" style="font-size: 1.5rem; color: #cbd5e1;"></i>
+                <span>Nenhuma variação encontrada${termoBusca ? ` para "${termoBusca}"` : ''}.</span>
+            </div>
+        `;
+        return;
+    }
+
+    // LIMITA A NO MÁXIMO 12 ITENS NO DOM
+    const MAX_EXIBIR = 12;
+    const itensExibidos = itensFiltrados.slice(0, MAX_EXIBIR);
+
+    itensExibidos.forEach((item) => {
+        const itemExistente = kitComposicaoTemp.find(c =>
+            (c.produto_id && String(c.produto_id) === String(item.produto_id) && c.variacao === item.variacao) ||
+            (!c.produto_id && (c.produto === item.produto_nome || c.produto_nome === item.produto_nome) && c.variacao === item.variacao)
+        );
+        const qtdNoKit = itemExistente ? (Number(itemExistente.quantidade) || 1) : 0;
+
+        const card = document.createElement('div');
+        card.className = 'cp-kit-cat-card';
+        card.title = `Clique para adicionar ${item.produto_nome} - ${item.variacao} ao kit`;
+        card.innerHTML = `
+            <img src="${item.imagem}" class="cp-kit-cat-thumb" onerror="this.onerror=null;this.src='/img/placeholder-image.png';" alt="">
+            <div class="cp-kit-cat-info">
+                <span class="cp-kit-cat-prod" title="${item.produto_nome}">${item.produto_nome}</span>
+                <span class="cp-kit-cat-var" title="${item.variacao}">${item.variacao}</span>
+            </div>
+            <button type="button" class="cp-kit-cat-btn" aria-label="Adicionar ao kit">
+                <i class="fas fa-plus"></i>
+            </button>
+            ${qtdNoKit > 0 ? `<span class="cp-kit-cat-badge-adicionado" title="${qtdNoKit} peças no kit">${qtdNoKit}</span>` : ''}
+        `;
+
+        card.addEventListener('click', () => {
+            adicionarComponenteAoKit(item);
+        });
+
+        container.appendChild(card);
+    });
+
+    if (itensFiltrados.length > MAX_EXIBIR) {
+        const maisInfo = document.createElement('div');
+        maisInfo.className = 'cp-kit-cat-mais-info';
+        maisInfo.innerHTML = `<i class="fas fa-info-circle"></i> Mostrando 12 de ${itensFiltrados.length} variações. Digite mais para refinar a busca.`;
+        container.appendChild(maisInfo);
+    }
+}
+
+function adicionarComponenteAoKit(comp) {
+    if (!exigirGerenciamentoProdutos()) return;
+
+    const idxExistente = kitComposicaoTemp.findIndex(c =>
+        (c.produto_id && String(c.produto_id) === String(comp.produto_id) && c.variacao === comp.variacao) ||
+        (!c.produto_id && (c.produto === comp.produto_nome || c.produto_nome === comp.produto_nome) && c.variacao === comp.variacao)
+    );
+
+    if (idxExistente > -1) {
+        kitComposicaoTemp[idxExistente].quantidade = (Number(kitComposicaoTemp[idxExistente].quantidade) || 1) + 1;
+        kitComposicaoTemp[idxExistente].produto_id = parseInt(comp.produto_id, 10);
+        kitComposicaoTemp[idxExistente].produto_nome = comp.produto_nome;
+    } else {
+        kitComposicaoTemp.push({
+            produto_id: parseInt(comp.produto_id, 10),
+            produto_nome: comp.produto_nome,
+            variacao: comp.variacao,
+            quantidade: 1
+        });
+    }
+
+    renderizarComposicaoKit();
+    renderizarCatalogoComponentes(elements.cpKitBuscaInput?.value || '');
+}
 
 function renderizarComposicaoKit() {
-    elements.composicaoKitContainer.innerHTML = '';
-    kitComposicaoTemp.forEach((comp, idx) => {
-        const div = document.createElement('div');
-        div.className = 'composicao-kit-row';
-        const quantidade = comp.quantidade || 1;
-        
-        // MUDANÇA AQUI: Prioriza 'produto_nome', mas usa 'produto' como fallback
-        const nomeDoProdutoComponenteParaExibir = comp.produto_nome || comp.produto || 'Componente Desconhecido';
-        
-        div.innerHTML = `
-            <span>${nomeDoProdutoComponenteParaExibir} - ${comp.variacao || 'Padrão'}</span> 
-            <input type="number" class="cp-input" min="1" value="${quantidade}" onchange="atualizarQuantidadeKit(${idx}, this.value)">
-            <button type="button" class="cp-remove-btn" onclick="removerComposicaoKit(${idx})">X</button>
+    const container = elements.composicaoKitContainer;
+    if (!container) return;
+    container.innerHTML = '';
+
+    const totalPecas = kitComposicaoTemp.reduce((acc, c) => acc + (Number(c.quantidade) || 0), 0);
+    const totalItens = kitComposicaoTemp.length;
+
+    if (elements.cpKitResumoPecas) {
+        elements.cpKitResumoPecas.innerHTML = `
+            <i class="fas fa-boxes-stacked"></i>
+            <span><strong>${totalPecas}</strong> peças no total (${totalItens} ${totalItens === 1 ? 'item' : 'itens'})</span>
         `;
-        elements.composicaoKitContainer.appendChild(div);
+    }
+
+    if (kitComposicaoTemp.length === 0) {
+        container.innerHTML = `
+            <div class="cp-kit-comp-lista-vazia">
+                <i class="fas fa-boxes-packing"></i>
+                <span style="font-weight: 600; color: #475569;">Nenhum componente adicionado a este kit ainda.</span>
+                <span style="font-size: 0.78rem; color: #64748b;">Clique nas variações do catálogo acima para incluir peças nesta combinação.</span>
+            </div>
+        `;
+        return;
+    }
+
+    kitComposicaoTemp.forEach((comp, idx) => {
+        const info = getComponenteInfo(comp);
+        const quantidade = Number(comp.quantidade) || 1;
+
+        const row = document.createElement('div');
+        row.className = 'cp-kit-comp-item';
+        row.innerHTML = `
+            <div class="cp-kit-comp-item-left">
+                <img src="${info.imagem}" class="cp-kit-comp-item-img" onerror="this.onerror=null;this.src='/img/placeholder-image.png';" alt="">
+                <div class="cp-kit-comp-item-text">
+                    <span class="cp-kit-comp-item-nome" title="${info.nome}">${info.nome}</span>
+                    <span class="cp-kit-comp-item-var"><i class="fas fa-circle-dot"></i> ${info.variacao}</span>
+                </div>
+            </div>
+            <div class="cp-kit-comp-item-right">
+                <div class="cp-kit-comp-stepper">
+                    <button type="button" class="cp-kit-stepper-btn" onclick="alterarQtdKit(${idx}, -1)" title="Diminuir quantidade" ${quantidade <= 1 ? 'disabled' : ''}>
+                        <i class="fas fa-minus"></i>
+                    </button>
+                    <input type="number" min="1" max="999" class="cp-kit-stepper-input" value="${quantidade}" onchange="atualizarQuantidadeKit(${idx}, this.value)" aria-label="Quantidade">
+                    <span class="cp-kit-stepper-un">un</span>
+                    <button type="button" class="cp-kit-stepper-btn" onclick="alterarQtdKit(${idx}, 1)" title="Aumentar quantidade">
+                        <i class="fas fa-plus"></i>
+                    </button>
+                </div>
+                <button type="button" class="cp-kit-comp-delete-btn" onclick="removerComposicaoKit(${idx})" title="Remover este componente do kit">
+                    <i class="fas fa-trash-alt"></i>
+                </button>
+            </div>
+        `;
+        container.appendChild(row);
     });
 }
 
+window.alterarQtdKit = (index, delta) => {
+    if (!exigirGerenciamentoProdutos()) return;
+    const item = kitComposicaoTemp[index];
+    if (!item) return;
+    const atual = Number(item.quantidade) || 1;
+    const nova = atual + delta;
+    if (nova < 1) return;
+    item.quantidade = nova;
+    renderizarComposicaoKit();
+    renderizarCatalogoComponentes(elements.cpKitBuscaInput?.value || '');
+};
 
 window.atualizarQuantidadeKit = (index, qty) => {
     if (!exigirGerenciamentoProdutos()) return;
-    kitComposicaoTemp[index].quantidade = parseInt(qty) || 1;
+    const parsed = parseInt(qty, 10);
+    kitComposicaoTemp[index].quantidade = !isNaN(parsed) && parsed > 0 ? parsed : 1;
+    renderizarComposicaoKit();
+    renderizarCatalogoComponentes(elements.cpKitBuscaInput?.value || '');
 };
+
 window.removerComposicaoKit = (index) => {
     if (!exigirGerenciamentoProdutos()) return;
     kitComposicaoTemp.splice(index, 1);
     renderizarComposicaoKit();
+    renderizarCatalogoComponentes(elements.cpKitBuscaInput?.value || '');
 };
 
+window.abrirConfigurarVariacao = function(index) {
+    if (!exigirGerenciamentoProdutos()) return;
+    currentKitVariationIndex = parseInt(index, 10);
+    if (isNaN(currentKitVariationIndex) || !editingProduct?.grade?.[currentKitVariationIndex]) {
+        console.error("Variação de kit inválida:", index);
+        return;
+    }
+    const variacaoKit = editingProduct.grade[currentKitVariationIndex];
+    elements.configurarVariacaoTitle.textContent = `Configurar Kit: ${variacaoKit.variacao}`;
+    kitComposicaoTemp = deepClone(variacaoKit.composicao || []);
+
+    filtroProdutoAtivo = null;
+    catalogoComponentesCache = getCatalogoComponentesDisponiveis();
+
+    if (elements.cpKitBuscaInput) {
+        elements.cpKitBuscaInput.value = '';
+    }
+    if (elements.cpKitBuscaLimpar) {
+        elements.cpKitBuscaLimpar.style.display = 'none';
+    }
+
+    atualizarBotaoFiltroProduto();
+    fecharDropdownFiltroProd();
+    renderizarDropdownProdutos('');
+    renderizarCatalogoComponentes('');
+    renderizarComposicaoKit();
+    elements.configurarVariacaoView.classList.add('active');
+};
 
 async function salvarComposicaoKit() {
     if (!exigirGerenciamentoProdutos()) return;
-    if (currentKitVariationIndex !== null && editingProduct.grade[currentKitVariationIndex]) {
-        // kitComposicaoTemp já deve ter a estrutura { produto_id, produto_nome, variacao, quantidade }
+    if (currentKitVariationIndex !== null && editingProduct?.grade?.[currentKitVariationIndex]) {
         editingProduct.grade[currentKitVariationIndex].composicao = deepClone(kitComposicaoTemp);
-        gradeTemp = deepClone(editingProduct.grade); // Atualiza gradeTemp também se você a usa em outro lugar
-        loadGrade(); // Recarrega a visualização da grade principal
-        
-        fecharPopupConfigurarVariacao(); 
-        
-        await salvarProdutoNoBackend(); // Salva o produto principal com a grade atualizada
+        gradeTemp = deepClone(editingProduct.grade);
+        loadGrade();
+        fecharPopupConfigurarVariacao();
+        await salvarProdutoNoBackend();
     }
 }
 
 function fecharPopupConfigurarVariacao() {
+    fecharDropdownFiltroProd();
     const modal = document.getElementById('configurarVariacaoView');
     if (modal) modal.classList.remove('active');
     currentKitVariationIndex = null;
@@ -1437,7 +1772,8 @@ Object.assign(window, {
     
     // Funções de Kit
     abrirConfigurarVariacao,
-    loadVariacoesKit,
+    adicionarComponenteAoKit,
+    alterarQtdKit,
     atualizarQuantidadeKit,
     removerComposicaoKit
 });

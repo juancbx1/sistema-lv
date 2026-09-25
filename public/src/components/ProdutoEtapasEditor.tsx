@@ -382,224 +382,359 @@ export default function ProdutoEtapasEditor() {
 
   return (
     <div className="cp-form-group cp-etapas-editor">
+      {/* 1. CABEÇALHO DO FLUXO */}
       <div className="cp-etapas-editor__cabecalho">
-        <div>
-          <h3>Etapas da produção</h3>
+        <div className="cp-etapas-cabecalho-info">
+          <div className="cp-etapas-titulo-row">
+            <span className="cp-etapas-badge-topo">
+              <i className="fas fa-diagram-project" aria-hidden="true"></i> Roteiro de Fabricação
+            </span>
+            <span className="cp-etapas-contador">
+              {etapas.length} etapa{etapas.length === 1 ? '' : 's'} configurada{etapas.length === 1 ? '' : 's'}
+            </span>
+          </div>
           <p className="cp-etapas-editor__descricao">
-            Cadastre o fluxo completo. A fase define quando a tarefa poderá ser atribuída.
+            Defina a sequência de fabricação, as máquinas exigidas, a fase da tarefa e os cargos habilitados para execução.
           </p>
         </div>
-        <span className="cp-etapas-editor__contador">
-          {etapas.length} etapa{etapas.length === 1 ? '' : 's'}
-        </span>
       </div>
 
-      <div className="cp-etapas-editor__legenda" aria-label="Legenda das fases">
-        <span><strong>Liberacao automatica:</strong> libera embalagem sem criar tarefa ou pontos de arremate.</span>
-        <span><strong>Dentro da OP:</strong> continua o fluxo da ordem de produção.</span>
-        <span><strong>Arremate pós-OP:</strong> só aparece depois do encerramento e libera embalagem.</span>
+      {/* 2. LEGENDA / GUIA DAS FASES */}
+      <div className="cp-etapas-legendas-grid" aria-label="Legenda das fases">
+        <div className="cp-legenda-card cp-legenda-card--op">
+          <div className="cp-legenda-topo">
+            <span className="cp-legenda-tag cp-tag--op">
+              <i className="fas fa-industry" aria-hidden="true"></i> Dentro da OP
+            </span>
+          </div>
+          <p className="cp-legenda-texto">
+            Processos internos da OP (corte, costura, bainha, finalização).
+          </p>
+        </div>
+
+        <div className="cp-legenda-card cp-legenda-card--pos">
+          <div className="cp-legenda-topo">
+            <span className="cp-legenda-tag cp-tag--pos">
+              <i className="fas fa-scissors" aria-hidden="true"></i> Arremate pós-OP
+            </span>
+          </div>
+          <p className="cp-legenda-texto">
+            Tarefas liberadas após a conclusão da OP. Ao finalizar, libera para embalagem.
+          </p>
+        </div>
+
+        <div className="cp-legenda-card cp-legenda-card--auto">
+          <div className="cp-legenda-topo">
+            <span className="cp-legenda-tag cp-tag--auto">
+              <i className="fas fa-bolt" aria-hidden="true"></i> Liberação automática
+            </span>
+          </div>
+          <p className="cp-legenda-texto">
+            Libera direto para embalagem sem criar tarefas de arremate nem pontos.
+          </p>
+        </div>
       </div>
 
+      {/* 3. ALERTA DE REVISÃO (SE HOUVER ETAPA PENDENTE) */}
       {etapasPendentes.length > 0 && (
-        <div className="cp-etapas-editor__alerta" role="alert">
-          <i className="fas fa-triangle-exclamation" aria-hidden="true"></i>
-          <span>
-            {etapasPendentes.length} etapa{etapasPendentes.length === 1 ? '' : 's'} precisa{etapasPendentes.length === 1 ? '' : 'm'} de revisão: informe processo, fase e pelo menos um executor.
-          </span>
+        <div className="cp-etapas-alerta-revisao" role="alert">
+          <i className="fas fa-triangle-exclamation cp-alerta-icone" aria-hidden="true"></i>
+          <div className="cp-alerta-texto">
+            <strong>Atenção:</strong> {etapasPendentes.length} etapa{etapasPendentes.length === 1 ? '' : 's'} precisa{etapasPendentes.length === 1 ? '' : 'm'} de revisão. Certifique-se de preencher o processo, a fase e pelo menos um executor.
+          </div>
         </div>
       )}
 
+      {/* 4. GERENCIADOR DO CATÁLOGO DE PROCESSOS */}
       <UIBloqueio
         permissao="gerenciar-produtos"
         mensagem="Você não tem permissão para criar ou renomear processos do catálogo."
         style={{ display: 'block', width: '100%' }}
       >
-      <details className="cp-processos-configuracao">
-        <summary><i className="fas fa-sliders" aria-hidden="true"></i> Configuração de processos</summary>
-        <div className="cp-processos-configuracao__conteudo">
-          <p>
-            O código do processo é permanente. Você pode alterar o nome sem quebrar produtos, OPs ou históricos.
-          </p>
-          {catalogoErro && (
-            <div className="cp-processos-configuracao__aviso" role="status">
-              Catálogo backend indisponível. A lista atual do sistema está sendo usada como contingência; criação e renomeação ficam bloqueadas.
+        <details className="cp-processos-configuracao">
+          <summary className="cp-processos-summary">
+            <div className="cp-summary-left">
+              <div className="cp-summary-icon-box">
+                <i className="fas fa-sliders" aria-hidden="true"></i>
+              </div>
+              <div>
+                <span className="cp-summary-title">Gerenciar Catálogo Empresarial de Processos</span>
+                <span className="cp-summary-sub">Cadastre novos processos ou renomeie itens existentes para toda a empresa</span>
+              </div>
             </div>
-          )}
-          <form className="cp-processos-configuracao__form" onSubmit={adicionarProcesso}>
-            <input
-              className="cp-input"
-              value={novoProcessoNome}
-              onChange={(event) => setNovoProcessoNome(event.target.value)}
-              placeholder="Novo processo"
-              maxLength={120}
-              disabled={!catalogoDisponivel || salvandoProcesso}
-            />
-            <button type="submit" className="cp-btn cp-btn-primary" disabled={!catalogoDisponivel || salvandoProcesso || !novoProcessoNome.trim()}>
-              <i className="fas fa-plus" aria-hidden="true"></i> Adicionar
-            </button>
-          </form>
-          <ul className="cp-processos-configuracao__lista">
-            {processos.map((processo) => (
-              <li key={processo.id === null ? processo.codigo : String(processo.id)}>
-                <span>
-                  <strong>{processo.nome}</strong>
-                  <small>{processo.codigo}{processo.ativo ? '' : ' · inativo'}</small>
-                </span>
-                <button type="button" className="cp-btn cp-btn-secondary" onClick={() => renomearProcesso(processo)} disabled={!catalogoDisponivel || processo.id === null || salvandoProcesso}>
-                  Renomear
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </details>
+            <div className="cp-summary-right">
+              <span className="cp-summary-badge">{processos.length} processos</span>
+              <i className="fas fa-chevron-down cp-summary-chevron" aria-hidden="true"></i>
+            </div>
+          </summary>
+
+          <div className="cp-processos-configuracao__conteudo">
+            <p className="cp-processos-aviso-permanencia">
+              O código do processo é permanente. Você pode alterar o nome de exibição sem afetar históricos ou ordens de produção antigas.
+            </p>
+            {catalogoErro && (
+              <div className="cp-processos-configuracao__aviso" role="status">
+                Catálogo backend indisponível. A lista atual do sistema está sendo usada como contingência; criação e renomeação ficam bloqueadas.
+              </div>
+            )}
+            <form className="cp-processos-configuracao__form" onSubmit={adicionarProcesso}>
+              <input
+                className="cp-input"
+                value={novoProcessoNome}
+                onChange={(event) => setNovoProcessoNome(event.target.value)}
+                placeholder="Nome do novo processo (ex: Pregar Botão, Casear)..."
+                maxLength={120}
+                disabled={!catalogoDisponivel || salvandoProcesso}
+              />
+              <button
+                type="submit"
+                className="gs-btn gs-btn-primario gs-btn-com-icone"
+                disabled={!catalogoDisponivel || salvandoProcesso || !novoProcessoNome.trim()}
+              >
+                <i className="fas fa-plus" aria-hidden="true"></i>
+                <span>Adicionar</span>
+              </button>
+            </form>
+            <div className="cp-processos-configuracao__grid">
+              {processos.map((processo) => (
+                <div key={processo.id === null ? processo.codigo : String(processo.id)} className="cp-processo-item-card">
+                  <div className="cp-processo-item-info">
+                    <strong className="cp-processo-item-nome">{processo.nome}</strong>
+                    <span className="cp-processo-item-codigo">
+                      {processo.codigo}{processo.ativo ? '' : ' · inativo'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="cp-btn-renomear-processo"
+                    title="Renomear processo"
+                    onClick={() => renomearProcesso(processo)}
+                    disabled={!catalogoDisponivel || processo.id === null || salvandoProcesso}
+                  >
+                    <i className="fas fa-pen" aria-hidden="true"></i>
+                    <span>Renomear</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </details>
       </UIBloqueio>
 
+      {/* 5. LISTA DE ETAPAS DE PRODUÇÃO (ESTRUTURA EM CARDS ZERO TABLE) */}
       <UIBloqueio
         permissao="gerenciar-produtos"
         mensagem="Você não tem permissão para editar as etapas de produção deste produto."
         style={{ display: 'block', width: '100%' }}
       >
-      <>
-      <div className="cp-etapas-editor__tabela-wrapper">
-        <table className="cp-table cp-etapas-editor__tabela" aria-label="Etapas da produção">
-          <thead>
-            <tr>
-              <th scope="col">Ordem</th>
-              <th scope="col">Processo</th>
-              <th scope="col">Máquina</th>
-              <th scope="col">Fase</th>
-              <th scope="col">Execucao</th>
-              <th scope="col">Feita por</th>
-              <th scope="col">Ações</th>
-            </tr>
-          </thead>
-          <tbody>
+        <>
+          <div className="cp-etapas-cards-lista">
             {etapas.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="cp-etapas-editor__vazio">Nenhuma etapa cadastrada.</td>
-              </tr>
-            ) : etapas.map((etapa, indice) => (
-              <tr key={etapa.id || `${etapa.processo}-${indice}`} className={!etapa.fase ? 'cp-etapa-linha--pendente' : ''}>
-                <td data-label="Ordem">
-                  <div className="cp-etapa-ordem">
-                    <span>{indice + 1}</span>
+              <div className="cp-etapas-vazio-card">
+                <i className="fas fa-list-check cp-vazio-icone" aria-hidden="true"></i>
+                <h4>Nenhuma etapa configurada</h4>
+                <p>Adicione os processos da OP ou arremates pós-OP abaixo para definir o roteiro de fabricação deste produto.</p>
+              </div>
+            ) : (
+              etapas.map((etapa, indice) => (
+                <div
+                  key={etapa.id || `${etapa.processo}-${indice}`}
+                  className={`cp-etapa-card ${!etapa.fase ? 'cp-etapa-card--pendente' : ''} ${etapa.fase === 'POS_OP' ? 'cp-etapa-card--pos-op' : 'cp-etapa-card--op'}`}
+                >
+                  {/* ORDEM E REORDENAÇÃO */}
+                  <div className="cp-etapa-card__ordem">
+                    <span className="cp-etapa-ordem-badge">{indice + 1}</span>
                     <div className="cp-etapa-ordem__acoes">
-                      <button type="button" title="Subir etapa" aria-label="Subir etapa" disabled={indice === 0} onClick={() => moverEtapa(indice, -1)}>↑</button>
-                      <button type="button" title="Descer etapa" aria-label="Descer etapa" disabled={indice === etapas.length - 1} onClick={() => moverEtapa(indice, 1)}>↓</button>
+                      <button
+                        type="button"
+                        className="cp-btn-reordenar"
+                        title="Subir etapa"
+                        aria-label="Subir etapa"
+                        disabled={indice === 0}
+                        onClick={() => moverEtapa(indice, -1)}
+                      >
+                        <i className="fas fa-chevron-up" aria-hidden="true"></i>
+                      </button>
+                      <button
+                        type="button"
+                        className="cp-btn-reordenar"
+                        title="Descer etapa"
+                        aria-label="Descer etapa"
+                        disabled={indice === etapas.length - 1}
+                        onClick={() => moverEtapa(indice, 1)}
+                      >
+                        <i className="fas fa-chevron-down" aria-hidden="true"></i>
+                      </button>
                     </div>
                   </div>
-                </td>
-                <td data-label="Processo">
-                  <select
-                    className="cp-select"
-                    value={(() => {
-                      const atual = encontrarProcesso(processos, etapa);
-                      return atual ? chaveProcesso(atual) : etapa.processo;
-                    })()}
-                    onChange={(event) => alterarProcesso(indice, event.target.value)}
-                  >
-                    <option value="">Selecione o processo</option>
-                    {processosParaSelecao(etapa).map((processo) => (
-                      <option key={chaveProcesso(processo)} value={chaveProcesso(processo)}>
-                        {processo.nome}{processo.ativo ? '' : ' (inativo)'}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-                <td data-label="Máquina">
-                  <select
-                    className="cp-select"
-                    value={etapa.maquina || ''}
-                    onChange={(event) => atualizarEtapa(indice, { maquina: event.target.value || null })}
-                  >
-                    <option value="">Selecione a máquina</option>
-                    {MAQUINAS.map((maquina: string) => <option key={maquina} value={maquina}>{maquina}</option>)}
-                  </select>
-                </td>
-                <td data-label="Fase">
-                  <select
-                    className={`cp-select cp-etapa-fase cp-etapa-fase--${etapa.fase || 'pendente'}`}
-                    value={etapa.fase || ''}
-                    onChange={(event) => alterarFase(indice, event.target.value)}
-                  >
-                    <option value="">Classificar fase</option>
-                    <option value="OP">Dentro da OP</option>
-                    <option value="POS_OP">Arremate pós-OP</option>
-                  </select>
-                </td>
-                <td data-label="Execucao">
-                  {etapa.fase === 'POS_OP' ? (
-                    <>
-                      <select
-                        className="cp-select cp-etapa-execucao"
-                        value={etapa.modoExecucao}
-                        onChange={(event) => alterarModoExecucao(indice, event.target.value)}
-                      >
-                        <option value="MANUAL">Arremate manual</option>
-                        <option value="LIBERACAO_AUTOMATICA">Liberacao automatica</option>
-                      </select>
-                      {etapa.modoExecucao === 'LIBERACAO_AUTOMATICA' && (
-                        <small className="cp-etapa-execucao__ajuda">
-                          Ao encerrar a OP, libera para embalagem sem tarefa nem pontos.
-                        </small>
-                      )}
-                    </>
-                  ) : (
-                    <span className="cp-etapa-execucao__op">Trabalho da OP</span>
-                  )}
-                </td>
-                <td data-label="Feita por">
-                  <div className={`cp-etapa-executores${etapa.modoExecucao === 'LIBERACAO_AUTOMATICA' ? ' cp-etapa-executores--desabilitados' : ''}`}>
-                    {TIPOS_EXECUTORES.map((tipo) => (
-                      <label key={tipo.value} className="cp-etapa-executor">
-                        <input
-                          type="checkbox"
-                          checked={etapa.feitoPor.includes(tipo.value)}
-                          onChange={() => alternarExecutor(indice, tipo.value)}
-                          disabled={etapa.modoExecucao === 'LIBERACAO_AUTOMATICA'}
-                        />
-                        <span>{tipo.label}</span>
-                      </label>
-                    ))}
-                  </div>
-                  {etapa.modoExecucao === 'LIBERACAO_AUTOMATICA' && (
-                    <small className="cp-etapa-execucao__ajuda">Sistema</small>
-                  )}
-                </td>
-                <td data-label="Ações">
-                  <button type="button" className="cp-remove-btn" onClick={() => removerEtapa(indice)} aria-label={`Remover etapa ${indice + 1}`}>
-                    <i className="fas fa-trash" aria-hidden="true"></i>
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
 
-      <div className="cp-etapas-editor__acoes-adicionar">
-        <button
-          type="button"
-          className="cp-btn cp-btn-add"
-          onClick={() => adicionarEtapa()}
-        >
-          <i className="fas fa-plus" aria-hidden="true"></i> Adicionar processo da OP
-        </button>
-        <button
-          type="button"
-          className="cp-btn cp-btn-add-pos"
-          onClick={() => adicionarEtapa({
-            fase: 'POS_OP',
-            processoCodigoPreferido: 'arrematar',
-            maquina: 'Não Usa',
-            executores: ['costureira', 'tiktik'],
-          })}
-        >
-          <i className="fas fa-scissors" aria-hidden="true"></i> Adicionar arremate pós-OP
-        </button>
-      </div>
-      </>
+                  {/* CORPO PRINCIPAL DO CARD */}
+                  <div className="cp-etapa-card__corpo">
+                    {/* LINHA 1: CAMPOS OPERACIONAIS (PROCESSO, MÁQUINA, FASE, EXECUÇÃO) */}
+                    <div className="cp-etapa-card__linha-topo">
+                      {/* PROCESSO */}
+                      <div className="cp-etapa-campo cp-campo-processo">
+                        <label className="cp-etapa-label">
+                          <i className="fas fa-arrows-spin" aria-hidden="true"></i> Processo
+                        </label>
+                        <select
+                          className="cp-select cp-select-processo"
+                          value={(() => {
+                            const atual = encontrarProcesso(processos, etapa);
+                            return atual ? chaveProcesso(atual) : etapa.processo;
+                          })()}
+                          onChange={(event) => alterarProcesso(indice, event.target.value)}
+                        >
+                          <option value="">Selecione o processo</option>
+                          {processosParaSelecao(etapa).map((processo) => (
+                            <option key={chaveProcesso(processo)} value={chaveProcesso(processo)}>
+                              {processo.nome}{processo.ativo ? '' : ' (inativo)'}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* MÁQUINA */}
+                      <div className="cp-etapa-campo cp-campo-maquina">
+                        <label className="cp-etapa-label">
+                          <i className="fas fa-gears" aria-hidden="true"></i> Máquina
+                        </label>
+                        <select
+                          className="cp-select cp-select-maquina"
+                          value={etapa.maquina || ''}
+                          onChange={(event) => atualizarEtapa(indice, { maquina: event.target.value || null })}
+                        >
+                          <option value="">Selecione a máquina</option>
+                          {MAQUINAS.map((maquina: string) => (
+                            <option key={maquina} value={maquina}>{maquina}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* FASE */}
+                      <div className="cp-etapa-campo cp-campo-fase">
+                        <label className="cp-etapa-label">
+                          <i className="fas fa-layer-group" aria-hidden="true"></i> Fase
+                        </label>
+                        <select
+                          className={`cp-select cp-etapa-fase-select cp-etapa-fase--${etapa.fase || 'pendente'}`}
+                          value={etapa.fase || ''}
+                          onChange={(event) => alterarFase(indice, event.target.value)}
+                        >
+                          <option value="">Classificar fase</option>
+                          <option value="OP">Dentro da OP</option>
+                          <option value="POS_OP">Arremate pós-OP</option>
+                        </select>
+                      </div>
+
+                      {/* EXECUÇÃO */}
+                      <div className="cp-etapa-campo cp-campo-execucao">
+                        <label className="cp-etapa-label">
+                          <i className="fas fa-circle-play" aria-hidden="true"></i> Execução
+                        </label>
+                        {etapa.fase === 'POS_OP' ? (
+                          <div className="cp-etapa-pos-op-bloco">
+                            <select
+                              className="cp-select cp-etapa-execucao"
+                              value={etapa.modoExecucao}
+                              onChange={(event) => alterarModoExecucao(indice, event.target.value)}
+                            >
+                              <option value="MANUAL">Arremate manual</option>
+                              <option value="LIBERACAO_AUTOMATICA">Liberação automática</option>
+                            </select>
+                            {etapa.modoExecucao === 'LIBERACAO_AUTOMATICA' && (
+                              <small className="cp-etapa-execucao__ajuda">
+                                <i className="fas fa-bolt" aria-hidden="true"></i> Libera embalagem ao encerrar OP
+                              </small>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="cp-etapa-execucao__op-badge">
+                            <i className="fas fa-industry" aria-hidden="true"></i>
+                            <span>Trabalho da OP</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* LINHA 2: EXECUTORES (FEITA POR) */}
+                    <div className="cp-etapa-card__linha-executores">
+                      <div className="cp-etapa-executores-titulo">
+                        <i className="fas fa-users" aria-hidden="true"></i>
+                        <span>Feita por:</span>
+                      </div>
+                      <div className={`cp-etapa-executores-chips${etapa.modoExecucao === 'LIBERACAO_AUTOMATICA' ? ' cp-etapa-executores--desabilitados' : ''}`}>
+                        {TIPOS_EXECUTORES.map((tipo) => {
+                          const ativo = etapa.feitoPor.includes(tipo.value);
+                          const iconClass = tipo.value === 'costureira' ? 'fa-vest' : tipo.value === 'tiktik' ? 'fa-tags' : 'fa-scissors';
+                          return (
+                            <label key={tipo.value} className={`cp-executor-chip cp-executor-chip--${tipo.value} ${ativo ? 'is-checked' : ''}`}>
+                              <input
+                                type="checkbox"
+                                className="cp-executor-checkbox-hidden"
+                                checked={ativo}
+                                onChange={() => alternarExecutor(indice, tipo.value)}
+                                disabled={etapa.modoExecucao === 'LIBERACAO_AUTOMATICA'}
+                              />
+                              <span className="cp-executor-chip-content">
+                                <i className={`fas ${iconClass}`} aria-hidden="true"></i>
+                                <span>{tipo.label}</span>
+                                {ativo && <i className="fas fa-check cp-chip-check-icon" aria-hidden="true"></i>}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                      {etapa.modoExecucao === 'LIBERACAO_AUTOMATICA' && (
+                        <span className="cp-etapa-executor-sistema-badge">
+                          <i className="fas fa-robot" aria-hidden="true"></i> Automático (Sistema)
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* AÇÕES (EXCLUIR) */}
+                  <div className="cp-etapa-card__acoes">
+                    <button
+                      type="button"
+                      className="cp-remove-btn"
+                      onClick={() => removerEtapa(indice)}
+                      title={`Remover etapa ${indice + 1}`}
+                      aria-label={`Remover etapa ${indice + 1}`}
+                    >
+                      <i className="fas fa-trash-alt" aria-hidden="true"></i>
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* BARRA DE AÇÕES PARA ADICIONAR ETAPAS */}
+          <div className="cp-etapas-editor__acoes-adicionar">
+            <button
+              type="button"
+              className="gs-btn gs-btn-primario gs-btn-com-icone cp-btn-add-op"
+              onClick={() => adicionarEtapa()}
+            >
+              <i className="fas fa-plus" aria-hidden="true"></i>
+              <span>Adicionar Processo da OP</span>
+            </button>
+            <button
+              type="button"
+              className="gs-btn gs-btn-secundario gs-btn-com-icone cp-btn-add-pos"
+              onClick={() => adicionarEtapa({
+                fase: 'POS_OP',
+                processoCodigoPreferido: 'arrematar',
+                maquina: 'Não Usa',
+                executores: ['costureira', 'tiktik'],
+              })}
+            >
+              <i className="fas fa-scissors" aria-hidden="true"></i>
+              <span>Adicionar Arremate Pós-OP</span>
+            </button>
+          </div>
+        </>
       </UIBloqueio>
     </div>
   );

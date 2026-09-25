@@ -6,6 +6,18 @@ Versionamento segue [SemVer](https://semver.org/lang/pt-BR/): `MAJOR.MINOR.PATCH
 
 ---
 
+## [1.48.0] — 2026-09-25
+
+### Adicionado
+- Redesign completo da aba **Embalar unidades** em grid de 2 colunas com controle ergonômico de quantidade (stepper central, botões +5, Tudo e Limpar) e barra de progresso minimalista.
+- Pré-visualização do **Impacto no Estoque** em tempo real no modal de embalagem, calculando saldo atual, entrada e saldo previsto com status visual dinâmico.
+- Campo de observação compactado para uma única linha horizontal no modal de embalagem, eliminando rolagem interna.
+- Redesign da aba **Montar e embalar kit** com seletor em chips horizontais para kits de destino e grid visual de variações com thumbnail, SKU e saldo físico.
+- Grid compacta de 2 colunas de mini-cards para os componentes necessários do kit, com proporção da receita, saldo em estoque e alertas coloridos para gargalos de montagem.
+- Novo compositor da **Grade de Kits** no cadastro de produtos, com seleção em 2 níveis e dropdown visual com fotos, buscas e sem rolagem horizontal.
+
+---
+
 ## [1.47.1] — 2026-09-24
 
 ### Corrigido

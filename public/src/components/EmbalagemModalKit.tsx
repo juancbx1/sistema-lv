@@ -120,26 +120,6 @@ function normalizarReferenciaEstoque(value: string | null | undefined): string {
   return String(value || '').trim().toLowerCase();
 }
 
-function getStatusEstoque(
-  inteligencia: EstoqueKitInteligencia,
-): { label: string; classe: string } {
-  if (inteligencia.meta === null) {
-    return {
-      label: 'Meta não configurada',
-      classe: 'ep-modal-kit-estoque-neutro',
-    };
-  }
-
-  if ((inteligencia.falta || 0) > 0) {
-    return {
-      label: 'Abaixo da meta',
-      classe: 'ep-modal-kit-estoque-atencao',
-    };
-  }
-
-  return { label: 'Meta atingida', classe: 'ep-modal-kit-estoque-ok' };
-}
-
 export default function EmbalagemModalKit({
   item,
   produtos,
@@ -296,10 +276,10 @@ export default function EmbalagemModalKit({
     );
   }, [disponibilidades]);
 
-  const quantidadeSugerida =
-    inteligenciaSelecionada?.falta === null || inteligenciaSelecionada === null
-      ? 0
-      : Math.min(inteligenciaSelecionada.falta, maxKitsMontaveis);
+  const saldoAtualKit = inteligenciaSelecionada?.atual ?? 0;
+  const qtdEmbalarKit = Number(quantidade) || 0;
+  const saldoPrevistoKit = saldoAtualKit + qtdEmbalarKit;
+  const metaIdeal = inteligenciaSelecionada?.meta ?? null;
 
   useEffect(() => {
     setQuantidade(
@@ -637,247 +617,252 @@ export default function EmbalagemModalKit({
         </div>
       </div>
 
-      <fieldset className="ep-modal-kit-fieldset">
-        <legend>Escolha o kit de destino</legend>
-        <div className="ep-modal-kit-opcoes">
+      <div className="ep-kit-seletor-container">
+        <div className="ep-kit-seletor-topo">
+          <span className="ep-kit-seletor-label">
+            <i className="fas fa-boxes-packing" aria-hidden="true" /> Kit de Destino
+          </span>
+          <span className="ep-kit-seletor-contagem">
+            {kits.length} {kits.length === 1 ? 'kit compatível' : 'kits compatíveis'}
+          </span>
+        </div>
+
+        {/* Linha horizontal com chips dos kits */}
+        <div className="ep-kit-chips-linha" role="tablist" aria-label="Selecione o kit de destino">
           {kits.map((kit) => {
             const ativo = String(kit.produto.id) === kitId;
             return (
-              <div
-                className={`ep-modal-kit-opcao${ativo ? ' ativo' : ''}`}
+              <button
+                className={`ep-kit-chip-btn${ativo ? ' ativo' : ''}`}
                 key={kit.produto.id}
+                type="button"
+                onClick={(event) => selecionarKit(kit, event)}
+                aria-pressed={ativo}
               >
-                <button
-                  className="ep-modal-kit-opcao-cabecalho"
-                  type="button"
-                  onClick={(event) => selecionarKit(kit, event)}
-                  aria-expanded={ativo}
-                >
-                  <img
-                    src={getImagemVariacao(kit.produto, getGradeKey(kit.variacoes[0]))}
-                    alt=""
-                  />
-                  <span>
-                    <strong>{getNomeProduto(kit.produto)}</strong>
-                    <small>{getVariacoesLabel(kit.variacoes.length)}</small>
-                  </span>
-                  <i className={`fas fa-chevron-${ativo ? 'up' : 'down'}`} aria-hidden="true" />
-                </button>
-
-                {ativo ? (
-                  <div
-                    className="ep-modal-kit-variacoes"
-                    role="group"
-                    aria-label="Variações disponíveis do kit"
-                  >
-                    <span className="ep-modal-kit-variacoes-titulo">
-                      Escolha a variação do kit
-                    </span>
-                    <div className="ep-modal-kit-variacoes-grid">
-                      {kit.variacoes.map((grade) => {
-                        const gradeAtiva = getGradeKey(grade) === variacaoKit;
-                        const inteligencia = getInteligenciaEstoque(kit, grade);
-                        return (
-                          <button
-                            className={`ep-modal-kit-variacao${gradeAtiva ? ' ativa' : ''}`}
-                            key={getGradeKey(grade)}
-                            type="button"
-                            onClick={(event) => {
-                              preservarScrollModal(event.currentTarget);
-                              setVariacaoKit(getGradeKey(grade));
-                            }}
-                            disabled={enviando}
-                          >
-                            <img
-                              src={getImagemVariacao(kit.produto, getGradeKey(grade))}
-                              alt=""
-                            />
-                            <span>
-                              <strong>{grade.variacao || 'Padrão'}</strong>
-                              <small>
-                                SKU {getSkuVariacao(kit.produto, getGradeKey(grade), grade.sku)}
-                              </small>
-                              <small className="ep-modal-kit-variacao-estoque">
-                                <i className="fas fa-boxes-stacked" aria-hidden="true" />
-                                {inteligencia.atual} em estoque
-                                {inteligencia.meta !== null
-                                  ? ` / ${inteligencia.meta} ideal`
-                                  : ' · meta não definida'}
-                              </small>
-                            </span>
-                            {gradeAtiva ? (
-                              <i
-                                className="fas fa-circle-check"
-                                aria-label="Variação selecionada"
-                              />
-                            ) : null}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
+                <img
+                  src={getImagemVariacao(kit.produto, getGradeKey(kit.variacoes[0]))}
+                  alt=""
+                />
+                <div className="ep-kit-chip-info">
+                  <strong>{getNomeProduto(kit.produto)}</strong>
+                  <small>{getVariacoesLabel(kit.variacoes.length)}</small>
+                </div>
+                {ativo ? <i className="fas fa-check" aria-hidden="true" /> : null}
+              </button>
             );
           })}
         </div>
-      </fieldset>
 
-      {inteligenciaSelecionada ? (
-        <section
-          className="ep-modal-kit-estoque"
-          aria-label="Inteligência de estoque da variação selecionada"
-        >
-          <div className="ep-modal-kit-estoque-cabecalho">
-            <div>
-              <span className="ep-modal-kit-estoque-kicker">
-                Estoque da variação selecionada
-              </span>
-              <strong>{gradeSelecionada?.variacao || 'Padrão'}</strong>
-              <small>SKU {inteligenciaSelecionada.sku}</small>
+        {/* Variações do kit selecionado */}
+        {kitSelecionado && kitSelecionado.variacoes.length > 0 ? (
+          <div className="ep-kit-variacoes-bloco">
+            <div className="ep-kit-variacoes-subtitulo">
+              <span>Escolha a variação do kit:</span>
             </div>
-            <span
-              className={`ep-modal-kit-estoque-status ${getStatusEstoque(inteligenciaSelecionada).classe}`}
-            >
-              {getStatusEstoque(inteligenciaSelecionada).label}
-            </span>
+            <div className="ep-kit-variacoes-grid">
+              {kitSelecionado.variacoes.map((grade) => {
+                const gradeAtiva = getGradeKey(grade) === variacaoKit;
+                const inteligencia = getInteligenciaEstoque(kitSelecionado, grade);
+                return (
+                  <button
+                    className={`ep-kit-var-card${gradeAtiva ? ' ativo' : ''}`}
+                    key={getGradeKey(grade)}
+                    type="button"
+                    onClick={(event) => {
+                      preservarScrollModal(event.currentTarget);
+                      setVariacaoKit(getGradeKey(grade));
+                    }}
+                    disabled={enviando}
+                    aria-pressed={gradeAtiva}
+                  >
+                    <img
+                      src={getImagemVariacao(kitSelecionado.produto, getGradeKey(grade))}
+                      alt=""
+                    />
+                    <div className="ep-kit-var-conteudo">
+                      <strong>{grade.variacao || 'Padrão'}</strong>
+                      <small className="ep-kit-var-sku">
+                        SKU {getSkuVariacao(kitSelecionado.produto, getGradeKey(grade), grade.sku)}
+                      </small>
+                      <div className="ep-kit-var-estoque">
+                        <i className="fas fa-boxes-stacked" aria-hidden="true" />
+                        <span>{inteligencia.atual} un. em estoque</span>
+                      </div>
+                    </div>
+                    {gradeAtiva ? (
+                      <i className="fas fa-circle-check ep-kit-var-check" aria-hidden="true" />
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-
-          <div className="ep-modal-kit-estoque-metricas">
-            <span>
-              <small>Estoque atual</small>
-              <strong>{inteligenciaSelecionada.atual}</strong>
-            </span>
-            <span>
-              <small>Meta ideal</small>
-              <strong>
-                {inteligenciaSelecionada.meta === null
-                  ? '—'
-                  : inteligenciaSelecionada.meta}
-              </strong>
-            </span>
-            <span>
-              <small>Falta para meta</small>
-              <strong>
-                {inteligenciaSelecionada.falta === null
-                  ? '—'
-                  : inteligenciaSelecionada.falta}
-              </strong>
-            </span>
-            <span>
-              <small>Montável agora</small>
-              <strong>{maxKitsMontaveis}</strong>
-            </span>
-          </div>
-
-          {inteligenciaSelecionada.percentual !== null ? (
-            <div className="ep-modal-kit-estoque-progresso" aria-hidden="true">
-              <span
-                style={{ width: `${inteligenciaSelecionada.percentual}%` }}
-              />
-            </div>
-          ) : (
-            <p className="ep-modal-kit-estoque-sem-meta">
-              Configure uma meta ideal para receber uma sugestão automática de reposição.
-            </p>
-          )}
-
-          {quantidadeSugerida > 0 ? (
-            <div className="ep-modal-kit-estoque-recomendacao">
-              <span>
-                <i className="fas fa-lightbulb" aria-hidden="true" />
-                Sugestão: montar {quantidadeSugerida} kit{quantidadeSugerida === 1 ? '' : 's'}
-              </span>
-              <button
-                className="gs-btn gs-btn-secundario"
-                type="button"
-                onClick={() => setQuantidade(quantidadeSugerida)}
-                disabled={enviando || carregandoComponentes}
-              >
-                Usar sugestão
-              </button>
-            </div>
-          ) : null}
-        </section>
-      ) : null}
+        ) : null}
+      </div>
 
       {carregandoComponentes ? (
         <UICarregando variante="bloco" />
       ) : (
         <>
-          <div className="ep-modal-kit-composicao">
-            <div className="ep-modal-kit-composicao-cabecalho">
-              <strong>Componentes necessários</strong>
-              <span>Saldo atual por variação</span>
+          <div className="ep-kit-componentes-bloco">
+            <div className="ep-kit-componentes-topo">
+              <div className="ep-kit-comp-titulo">
+                <i className="fas fa-layer-group" aria-hidden="true" />
+                <strong>Componentes Necessários</strong>
+              </div>
+              <span className="ep-kit-comp-subtitulo">
+                {disponibilidades.length} {disponibilidades.length === 1 ? 'item na receita' : 'itens na receita'} deste kit
+              </span>
             </div>
-            <div className="ep-modal-kit-tabela-wrap">
-              <table className="ep-modal-kit-tabela">
-                <thead>
-                  <tr>
-                    <th>Componente</th>
-                    <th>Por kit</th>
-                    <th>Saldo</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {disponibilidades.map((componente, index) => {
-                    const status = getStatusComponente(
-                      componente.saldo,
-                      componente.quantidadeNecessaria,
-                    );
-                    return (
-                      <tr key={`${componente.produtoId}-${componente.variante}-${index}`}>
-                        <td className="ep-modal-kit-componente-celula">
-                          <img
-                            src={getImagemVariacao(componente.produto, componente.variante)}
-                            alt=""
-                          />
-                          <span>
-                            <strong>{componente.nome}</strong>
-                            <small>{componente.variante === '-' ? 'Padrão' : componente.variante}</small>
-                          </span>
-                        </td>
-                        <td>{componente.quantidadeNecessaria}</td>
-                        <td>{componente.saldo}</td>
-                        <td>
-                          <span className={`ep-modal-kit-status ${status.classe}`}>
-                            {status.label}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+
+            <div className="ep-kit-componentes-grid">
+              {disponibilidades.map((componente, index) => {
+                const status = getStatusComponente(
+                  componente.saldo,
+                  componente.quantidadeNecessaria,
+                );
+                const isFalta = status.classe === 'ep-modal-kit-status-falta';
+                const isAtencao = status.classe === 'ep-modal-kit-status-atencao';
+
+                return (
+                  <div
+                    key={`${componente.produtoId}-${componente.variante}-${index}`}
+                    className={`ep-kit-comp-card${isFalta ? ' ep-kit-comp-card--falta' : isAtencao ? ' ep-kit-comp-card--atencao' : ''}`}
+                  >
+                    <img
+                      src={getImagemVariacao(componente.produto, componente.variante)}
+                      alt=""
+                      className="ep-kit-comp-foto"
+                    />
+                    <div className="ep-kit-comp-info">
+                      <div className="ep-kit-comp-nomes">
+                        <strong className="ep-kit-comp-nome-produto">{componente.nome}</strong>
+                        <span className="ep-kit-comp-variante">
+                          {componente.variante === '-' ? 'Padrão' : componente.variante}
+                        </span>
+                      </div>
+                      <div className="ep-kit-comp-dados">
+                        <span className="ep-kit-comp-badge-por-kit">
+                          {componente.quantidadeNecessaria} un./kit
+                        </span>
+                        <span className="ep-kit-comp-saldo">
+                          Saldo: <strong>{componente.saldo}</strong>
+                        </span>
+                      </div>
+                    </div>
+                    <div className="ep-kit-comp-status-wrap">
+                      <span className={`ep-modal-kit-status ${status.classe}`}>
+                        {status.label}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
-          {maxKitsMontaveis > 0 ? (
+          {maxKitsMontaveis <= 0 && (
+            <p className="ep-modal-kit-alerta">
+              <i className="fas fa-triangle-exclamation" aria-hidden="true" />
+              Componentes insuficientes em estoque para montar este kit.
+            </p>
+          )}
+
+          <div className="ep-modal-grid-embalagem">
+            {/* Coluna 1: Quantidade a embalar */}
             <EmbalagemControleQuantidade
               value={quantidade}
               max={maxKitsMontaveis}
               onChange={setQuantidade}
-              disabled={enviando}
+              disabled={enviando || maxKitsMontaveis <= 0}
               id="ep-quantidade-kits"
+              badgeTexto={`${maxKitsMontaveis} ${maxKitsMontaveis === 1 ? 'kit montável' : 'kits montáveis'}`}
             />
-          ) : (
-            <p className="ep-modal-kit-alerta">
-              <i className="fas fa-triangle-exclamation" aria-hidden="true" />
-              Componentes insuficientes para montar este kit.
-            </p>
-          )}
 
-          <label className="ep-modal-kit-observacao">
-            Observação <span>(opcional)</span>
-            <textarea
+            {/* Coluna 2: Impacto no Estoque do Kit */}
+            <div className="ep-card-impacto-estoque">
+              <div className="ep-impacto-estoque-topo">
+                <div className="ep-impacto-titulo">
+                  <i className="fas fa-boxes-stacked" aria-hidden="true" />
+                  <span>Impacto no Estoque</span>
+                </div>
+                {metaIdeal !== null && metaIdeal > 0 ? (
+                  <span
+                    className={`ep-impacto-badge ${
+                      saldoPrevistoKit >= metaIdeal
+                        ? 'ep-impacto-badge--seguro'
+                        : saldoPrevistoKit >= metaIdeal * 0.5
+                        ? 'ep-impacto-badge--moderado'
+                        : 'ep-impacto-badge--baixo'
+                    }`}
+                  >
+                    {saldoPrevistoKit >= metaIdeal
+                      ? 'Estoque Seguro'
+                      : saldoPrevistoKit >= metaIdeal * 0.5
+                      ? 'Em Reposição'
+                      : 'Estoque Baixo'}
+                  </span>
+                ) : (
+                  <span className="ep-impacto-badge ep-impacto-badge--seguro">
+                    Entrada no Estoque
+                  </span>
+                )}
+              </div>
+
+              <div className="ep-impacto-fluxo">
+                <div className="ep-impacto-item">
+                  <span className="ep-impacto-label">Saldo Atual</span>
+                  <strong className="ep-impacto-valor">{saldoAtualKit} un.</strong>
+                </div>
+
+                <div className="ep-impacto-seta" aria-hidden="true">
+                  <i className="fas fa-arrow-right" />
+                </div>
+
+                <div className="ep-impacto-item">
+                  <span className="ep-impacto-label">Entrada</span>
+                  <strong className="ep-impacto-valor ep-impacto-valor--entrada">
+                    +{qtdEmbalarKit} un.
+                  </strong>
+                </div>
+
+                <div className="ep-impacto-seta" aria-hidden="true">
+                  <i className="fas fa-arrow-right" />
+                </div>
+
+                <div className="ep-impacto-item ep-impacto-item--destaque">
+                  <span className="ep-impacto-label">Saldo Final</span>
+                  <strong className="ep-impacto-valor ep-impacto-valor--final">
+                    {saldoPrevistoKit} un.
+                  </strong>
+                </div>
+              </div>
+
+              <div className="ep-impacto-meta-info">
+                <small>
+                  {metaIdeal !== null && metaIdeal > 0
+                    ? `Meta ideal cadastrada: ${metaIdeal} un.`
+                    : 'Entrada física registrada no estoque do kit.'}
+                </small>
+              </div>
+            </div>
+          </div>
+
+          <div className="ep-modal-observacao-linha">
+            <label htmlFor="ep-observacao-kit-input">
+              Observação <span>(opcional)</span>
+            </label>
+            <input
+              id="ep-observacao-kit-input"
+              type="text"
+              className="ep-observacao-input"
+              placeholder="Observação da montagem do kit..."
               value={observacao}
               onChange={(event) => setObservacao(event.target.value)}
-              rows={3}
               maxLength={500}
               disabled={enviando}
             />
-          </label>
+          </div>
 
           {erro ? (
             <p className="ep-modal-erro" role="alert">

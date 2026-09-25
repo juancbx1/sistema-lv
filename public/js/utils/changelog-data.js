@@ -21,6 +21,20 @@
 export const changelog = [
 
     {
+        versao: '1.48.0',
+        data: '25/09/2026',
+        admin: [
+            'Redesign da aba Embalar unidades em grid de 2 colunas com controle ergonômico de quantidade (stepper central, botões +5, Tudo e Limpar) e barra de progresso minimalista',
+            'Nova pré-visualização do Impacto no Estoque em tempo real na embalagem, calculando saldo atual, entrada e saldo previsto com status automático de estoque',
+            'Campo de observação da embalagem reduzido para uma única linha horizontal, eliminando rolagem interna no modal',
+            'Redesign da aba Montar e embalar kit com seletor em chips horizontais para kits de destino e grid visual de variações com foto, SKU e saldo físico',
+            'Componentes necessários do kit agora são exibidos em grid compacta de 2 colunas com mini-cards, proporção da receita, saldo em estoque e alertas coloridos para itens em falta',
+            'Novo compositor da Grade de Kits no cadastro de produtos, com seleção em 2 níveis e dropdown visual com fotos, buscas e sem rolagem horizontal',
+        ],
+        dashboard: [],
+    },
+
+    {
         versao: '1.47.1',
         data: '24/09/2026',
         admin: [

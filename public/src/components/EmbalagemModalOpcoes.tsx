@@ -74,6 +74,34 @@ export default function EmbalagemModalOpcoes({
     [cnpjEmpresa, item],
   );
 
+  const saldoAtual = useMemo(() => {
+    const refBuscada = String(item.sku || '').trim().toLowerCase();
+    if (refBuscada) {
+      const porRef = saldoEstoque.find(
+        (s) => String(s.produto_ref_id || '').trim().toLowerCase() === refBuscada,
+      );
+      if (porRef) return Math.max(0, Number(porRef.saldo_atual || 0));
+    }
+    const porNome = saldoEstoque.find(
+      (s) =>
+        String(s.produto_id) === String(item.produtoId) &&
+        String(s.variante_nome || '').trim().toLowerCase() ===
+          String(item.variante || '').trim().toLowerCase(),
+    );
+    if (porNome) return Math.max(0, Number(porNome.saldo_atual || 0));
+    return 0;
+  }, [saldoEstoque, item]);
+
+  const qtdEmbalar = Number(quantidade) || 0;
+  const saldoPrevisto = saldoAtual + qtdEmbalar;
+
+  const nivelEstoque = useMemo(() => {
+    const refBuscada = String(item.sku || '').trim().toLowerCase();
+    return niveisEstoque.find(
+      (n) => String(n.produto_ref_id || '').trim().toLowerCase() === refBuscada,
+    );
+  }, [niveisEstoque, item.sku]);
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
@@ -389,23 +417,99 @@ export default function EmbalagemModalOpcoes({
             <UICarregando variante="bloco" />
           ) : (
                 <>
-                  <EmbalagemControleQuantidade
-                    value={quantidade}
-                    max={totalDosLotes}
-                    onChange={setQuantidade}
-                    disabled={enviando}
-                    autoFocus
-                  />
-                  <label>
-                    Observação <span>(opcional)</span>
-                    <textarea
+                  <div className="ep-modal-grid-embalagem">
+                    {/* Coluna 1: Quantidade a embalar */}
+                    <EmbalagemControleQuantidade
+                      value={quantidade}
+                      max={totalDosLotes}
+                      onChange={setQuantidade}
+                      disabled={enviando}
+                      autoFocus
+                    />
+
+                    {/* Coluna 2: Pré-visualização do Impacto no Estoque */}
+                    <div className="ep-card-impacto-estoque">
+                      <div className="ep-impacto-estoque-topo">
+                        <div className="ep-impacto-titulo">
+                          <i className="fas fa-boxes-stacked" aria-hidden="true" />
+                          <span>Impacto no Estoque</span>
+                        </div>
+                        {nivelEstoque && Number(nivelEstoque.nivel_estoque_ideal || 0) > 0 ? (
+                          <span
+                            className={`ep-impacto-badge ${
+                              saldoPrevisto >= Number(nivelEstoque.nivel_estoque_ideal || 0)
+                                ? 'ep-impacto-badge--seguro'
+                                : saldoPrevisto > Number(nivelEstoque.nivel_estoque_baixo || 0)
+                                ? 'ep-impacto-badge--moderado'
+                                : 'ep-impacto-badge--baixo'
+                            }`}
+                          >
+                            {saldoPrevisto >= Number(nivelEstoque.nivel_estoque_ideal || 0)
+                              ? 'Estoque Seguro'
+                              : saldoPrevisto > Number(nivelEstoque.nivel_estoque_baixo || 0)
+                              ? 'Em Reposição'
+                              : 'Estoque Baixo'}
+                          </span>
+                        ) : (
+                          <span className="ep-impacto-badge ep-impacto-badge--seguro">
+                            Entrada no Estoque
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="ep-impacto-fluxo">
+                        <div className="ep-impacto-item">
+                          <span className="ep-impacto-label">Saldo Atual</span>
+                          <strong className="ep-impacto-valor">{saldoAtual} un.</strong>
+                        </div>
+
+                        <div className="ep-impacto-seta" aria-hidden="true">
+                          <i className="fas fa-arrow-right" />
+                        </div>
+
+                        <div className="ep-impacto-item">
+                          <span className="ep-impacto-label">Entrada</span>
+                          <strong className="ep-impacto-valor ep-impacto-valor--entrada">
+                            +{qtdEmbalar} un.
+                          </strong>
+                        </div>
+
+                        <div className="ep-impacto-seta" aria-hidden="true">
+                          <i className="fas fa-arrow-right" />
+                        </div>
+
+                        <div className="ep-impacto-item ep-impacto-item--destaque">
+                          <span className="ep-impacto-label">Saldo Final</span>
+                          <strong className="ep-impacto-valor ep-impacto-valor--final">
+                            {saldoPrevisto} un.
+                          </strong>
+                        </div>
+                      </div>
+
+                      <div className="ep-impacto-meta-info">
+                        <small>
+                          {nivelEstoque && Number(nivelEstoque.nivel_estoque_ideal || 0) > 0
+                            ? `Meta ideal cadastrada: ${nivelEstoque.nivel_estoque_ideal} un.`
+                            : `Entrada física registrada no estoque.`}
+                        </small>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="ep-modal-observacao-linha">
+                    <label htmlFor="ep-observacao-input">
+                      Observação <span>(opcional)</span>
+                    </label>
+                    <input
+                      id="ep-observacao-input"
+                      type="text"
+                      className="ep-observacao-input"
+                      placeholder="Observação do lote ou pacote..."
                       value={observacao}
                       onChange={(event) => setObservacao(event.target.value)}
-                      rows={3}
                       maxLength={500}
                       disabled={enviando}
                     />
-                  </label>
+                  </div>
                   {erroOperacao ? (
                     <p className="ep-modal-erro" role="alert">
                       <i className="fas fa-circle-exclamation" aria-hidden="true" />

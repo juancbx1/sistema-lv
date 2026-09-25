@@ -3,232 +3,489 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cadastrar Produto</title>
+    <title>Catálogo de Produtos</title>
     <link rel="stylesheet" href="/css/global-style.css">
     <script src="/js/utils/empresa-carregamento-bootstrap.js"></script>
-    <link rel="stylesheet" href="/css/cadastrar-produto.css">
     <link rel="stylesheet" href="/css/menu-lateral.css">
+    <link rel="stylesheet" href="/css/cadastrar-produto.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 </head>
 <body>
-    <div id="lv-initial-page-loader" class="ui-cg ui-cg--pagina" role="status" aria-live="polite" aria-label="Carregando" style="--ui-cg-empresa-cor:#2563eb;--ui-cg-empresa-contraste:#ffffff;"><div class="ui-cg-spinner ui-cg-spinner--lg"><span class="ui-cg-nucleo-halo" aria-hidden="true"></span><span class="ui-cg-orbita ui-cg-orbita--interna" aria-hidden="true"><i class="ui-cg-no ui-cg-no--a"></i><i class="ui-cg-no ui-cg-no--b"></i></span><span class="ui-cg-orbita ui-cg-orbita--externa" aria-hidden="true"><i class="ui-cg-no ui-cg-no--c"></i></span><span class="ui-cg-nucleo-marca" aria-hidden="true">LV</span></div><span class="ui-cg-etapas" aria-hidden="true"><i></i><i></i><i></i></span><span class="ui-cg-texto">Organizando seu ambiente...</span></div>
+    <div id="lv-initial-page-loader" class="ui-cg ui-cg--pagina" role="status" aria-live="polite" aria-label="Carregando" style="--ui-cg-empresa-cor:#2563eb;--ui-cg-empresa-contraste:#ffffff;">
+        <div class="ui-cg-spinner ui-cg-spinner--lg">
+            <span class="ui-cg-nucleo-halo" aria-hidden="true"></span>
+            <span class="ui-cg-orbita ui-cg-orbita--interna" aria-hidden="true">
+                <i class="ui-cg-no ui-cg-no--a"></i>
+                <i class="ui-cg-no ui-cg-no--b"></i>
+            </span>
+            <span class="ui-cg-orbita ui-cg-orbita--externa" aria-hidden="true">
+                <i class="ui-cg-no ui-cg-no--c"></i>
+            </span>
+            <span class="ui-cg-nucleo-marca" aria-hidden="true">LV</span>
+        </div>
+        <span class="ui-cg-etapas" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="ui-cg-texto">Organizando seu ambiente...</span>
+    </div>
+
+    <!-- Botão Hambúrguer (Mobile) -->
     <div class="hamburger-menu">
         <i class="fas fa-bars"></i>
         <i class="fas fa-times"></i>
     </div>
+
     <div id="mensagemPermissao" class="alert alert-error" style="display: none;"></div>
-    <div class="cp-main-wrapper">
-        <!-- VIEW DA LISTA DE PRODUTOS -->
-        <section id="productListView" aria-label="Lista de produtos">
-            <div class="cp-card">
-                <div class="cp-card-header">
-                    <h2>Produtos Cadastrados</h2>
-                    <input type="text" id="searchProduct" class="cp-input" placeholder="Buscar por nome..." aria-label="Buscar produtos">
+
+    <!-- CONTAINER PADRÃO DO SISTEMA -->
+    <main id="root" class="gs-card cp-main-wrapper">
+        
+        <!-- ============================================================== -->
+        <!-- VIEW DA LISTA DE PRODUTOS                                      -->
+        <!-- ============================================================== -->
+        <section id="productListView" class="cp-view-secao" aria-label="Lista de produtos">
+            <!-- CABEÇALHO PADRÃO DA PÁGINA -->
+            <div class="gs-cabecalho-pagina">
+                <div class="gs-cabecalho-titulos">
+                    <h1>Catálogo de Produtos</h1>
+                    <span class="gs-cabecalho-subtitulo">Gerencie produtos simples, variações, kits e fichas técnicas de confecção</span>
                 </div>
-                <div class="cp-type-filter" id="typeFilter" role="tablist">
-                    <button class="cp-type-btn active" data-type="todos" role="tab" aria-selected="true">Todos</button>
-                    <button class="cp-type-btn" data-type="simples" role="tab" aria-selected="false">Simples</button>
-                    <button class="cp-type-btn" data-type="variacoes" role="tab" aria-selected="false">Variações</button>
-                    <button class="cp-type-btn" data-type="kits" role="tab" aria-selected="false">Kits</button>
+                <div class="gs-botoes-cabecalho">
+                    <button id="btnAdicionarNovoProduto" class="gs-btn gs-btn-primario gs-btn-com-icone" data-permissao="gerenciar-produtos">
+                        <i class="fas fa-plus"></i>
+                        <span>Adicionar Novo Produto</span>
+                    </button>
                 </div>
-                <button id="btnAdicionarNovoProduto" class="cp-btn cp-btn-primary" data-permissao="gerenciar-produtos">
-                    <i class="fas fa-plus"></i> Adicionar Novo Produto
-                </button>
             </div>
-            <table class="cp-table" aria-label="Tabela de produtos">
-                <thead>
-                    <tr>
-                        <th scope="col"></th>
-                        <th scope="col">Produto</th>
-                        <th scope="col">Código (SKU)</th>
-                        <th scope="col">Unidade</th>
-                        <th scope="col">Estoque</th>
-                        <th scope="col">Tipo</th>
-                    </tr>
-                </thead>
-                <tbody id="productTableBody"></tbody>
-            </table>
+
+            <!-- PAINEL DE CONTROLES: BUSCA E FILTROS -->
+            <div class="cp-painel-controles">
+                <div class="cp-busca-wrapper">
+                    <i class="fas fa-search cp-busca-icone" aria-hidden="true"></i>
+                    <input type="text" id="searchProduct" class="cp-busca-input" placeholder="Buscar por nome do produto..." aria-label="Buscar produtos">
+                </div>
+
+                <div class="cp-type-filter" id="typeFilter" role="tablist" aria-label="Filtro de tipos de produto">
+                    <button class="cp-type-btn active" data-type="todos" role="tab" aria-selected="true">
+                        <i class="fas fa-layer-group" aria-hidden="true"></i>
+                        <span>Todos</span>
+                    </button>
+                    <button class="cp-type-btn" data-type="simples" role="tab" aria-selected="false">
+                        <i class="fas fa-cube" aria-hidden="true"></i>
+                        <span>Simples</span>
+                    </button>
+                    <button class="cp-type-btn" data-type="variacoes" role="tab" aria-selected="false">
+                        <i class="fas fa-cubes" aria-hidden="true"></i>
+                        <span>Variações</span>
+                    </button>
+                    <button class="cp-type-btn" data-type="kits" role="tab" aria-selected="false">
+                        <i class="fas fa-boxes-stacked" aria-hidden="true"></i>
+                        <span>Kits</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- CATÁLOGO DE PRODUTOS (RENDERIZADO COMO GRID DE CARDS VIA CSS) -->
+            <div class="cp-catalogo-grid-container">
+                <table class="cp-table cp-produtos-grid-table" aria-label="Catálogo de produtos">
+                    <thead>
+                        <tr>
+                            <th scope="col"></th>
+                            <th scope="col">Produto</th>
+                            <th scope="col">Código (SKU)</th>
+                            <th scope="col">Unidade</th>
+                            <th scope="col">Estoque</th>
+                            <th scope="col">Tipo</th>
+                        </tr>
+                    </thead>
+                    <tbody id="productTableBody"></tbody>
+                </table>
+            </div>
         </section>
 
-        
-        <section class="cp-form" id="productFormView" style="display: none;" aria-label="Formulário de edição de produto">
-        <!-- Overlay de Carregamento -->
-        <div id="formLoadingOverlay" class="cp-form-loading-overlay hidden">
-            <div class="ui-cg ui-cg--bloco" role="status" aria-live="polite" aria-label="Carregando produto" style="--ui-cg-empresa-cor:#2563eb;--ui-cg-empresa-contraste:#ffffff;"><div class="ui-cg-spinner ui-cg-spinner--md"><span class="ui-cg-nucleo-halo" aria-hidden="true"></span><span class="ui-cg-orbita ui-cg-orbita--interna" aria-hidden="true"><i class="ui-cg-no ui-cg-no--a"></i><i class="ui-cg-no ui-cg-no--b"></i></span><span class="ui-cg-orbita ui-cg-orbita--externa" aria-hidden="true"><i class="ui-cg-no ui-cg-no--c"></i></span><span class="ui-cg-nucleo-marca" aria-hidden="true">LV</span></div><span class="ui-cg-texto">Carregando produto...</span></div>
-        </div>
-        
-        <a href="#" id="btnVoltarDoForm" class="cp-btn cp-btn-back" aria-label="Voltar à lista">
-            <i class="fas fa-arrow-left"></i> Voltar
-        </a>
-        <h2 id="editProductName"></h2>
-
-        <!-- CONTAINER DOS BOTÕES DAS ABAS -->
-        <div class="cp-tab-filter" id="tabFilter" role="tablist">
-            <button class="cp-tab-btn active" type="button" data-tab="dados-gerais" role="tab" aria-selected="true">Dados Gerais</button>
-            <button class="cp-tab-btn" type="button" data-tab="ficha-tecnica" role="tab" aria-selected="false">Ficha Técnica</button>
-            <button class="cp-tab-btn" type="button" data-tab="producao" role="tab" aria-selected="false">Produção</button>
-            <!-- A aba 'Variações' será adicionada aqui pelo JS -->
-        </div>
-        
-        <!-- CONTAINER DOS CONTEÚDOS DAS ABAS -->
-        <div class="cp-tabs-content">
-
-            <!-- Aba: Dados Gerais -->
-            <div class="cp-tab-content active" id="dados-gerais" role="tabpanel">
-                <form id="productForm">
-                    <div class="cp-form-group">
-                        <label for="inputProductName">Nome do Produto:</label>
-                        <input type="text" id="inputProductName" class="cp-input" required aria-required="true">
+        <!-- ============================================================== -->
+        <!-- VIEW DE EDIÇÃO / FORMULÁRIO DO PRODUTO                         -->
+        <!-- ============================================================== -->
+        <section class="cp-form cp-view-secao" id="productFormView" style="display: none;" aria-label="Formulário de produto">
+            <!-- Overlay de Carregamento -->
+            <div id="formLoadingOverlay" class="cp-form-loading-overlay hidden">
+                <div class="ui-cg ui-cg--bloco" role="status" aria-live="polite" aria-label="Carregando produto" style="--ui-cg-empresa-cor:#2563eb;--ui-cg-empresa-contraste:#ffffff;">
+                    <div class="ui-cg-spinner ui-cg-spinner--md">
+                        <span class="ui-cg-nucleo-halo" aria-hidden="true"></span>
+                        <span class="ui-cg-orbita ui-cg-orbita--interna" aria-hidden="true">
+                            <i class="ui-cg-no ui-cg-no--a"></i>
+                            <i class="ui-cg-no ui-cg-no--b"></i>
+                        </span>
+                        <span class="ui-cg-orbita ui-cg-orbita--externa" aria-hidden="true">
+                            <i class="ui-cg-no ui-cg-no--c"></i>
+                        </span>
+                        <span class="ui-cg-nucleo-marca" aria-hidden="true">LV</span>
                     </div>
-                    <div class="cp-form-group">
-                        <label for="sku">Código (SKU Principal):</label>
-                        <input type="text" id="sku" class="cp-input">
-                    </div>
-                    <div class="cp-form-group">
-                        <label>Tipo:</label>
-                        <div>
-                            <label><input type="checkbox" name="tipo" value="simples"> Simples</label>
-                            <label><input type="checkbox" name="tipo" value="variacoes"> Variações</label>
-                            <label><input type="checkbox" name="tipo" value="kits"> Kits</label>
-                        </div>
-                    </div>
-                    <div class="cp-form-group">
-                        <label for="gtin">GTIN/EAN:</label>
-                        <input type="text" id="gtin" class="cp-input">
-                    </div>
-                    <div class="cp-form-group">
-                        <label for="unidade">Unidade:</label>
-                        <select id="unidade" class="cp-select" required aria-required="true">
-                            <option value="pç">Peça (pç)</option>
-                            <option value="m">Metro (m)</option>
-                            <option value="kg">Quilograma (kg)</option>
-                        </select>
-                    </div>
-                    <div class="cp-form-group">
-                        <label for="estoque">Estoque:</label>
-                        <input type="number" id="estoque" class="cp-input" disabled aria-disabled="true">
-                    </div>
-                    <button type="submit" class="cp-btn cp-btn-submit" data-permissao="gerenciar-produtos"><i class="fas fa-save"></i> Salvar Produto</button>
-                </form>
+                    <span class="ui-cg-texto">Carregando dados do produto...</span>
+                </div>
             </div>
 
-            <!-- Aba: Ficha Técnica -->
-            <div class="cp-tab-content" id="ficha-tecnica" role="tabpanel">
-                <div class="cp-form-group">
-                    <label>Imagem Principal</label>
-                    <div class="cp-imagem-wrapper">
-                        <input type="file" id="imagemProduto" accept="image/*" class="hidden" data-permissao="gerenciar-produtos">
-                        <label for="imagemProduto" class="cp-imagem-placeholder">
-                            <img id="previewImagem" alt="Pré-visualização da imagem">
-                            <div class="overlay">
-                                <i class="fas fa-camera"></i>
-                                <span>Clique para enviar<br>ou trocar imagem</span>
+            <!-- CABEÇALHO DO FORMULÁRIO -->
+            <div class="gs-cabecalho-pagina cp-form-cabecalho">
+                <div class="gs-cabecalho-titulos">
+                    <div class="cp-header-actions-row">
+                        <a href="#" id="btnVoltarDoForm" class="gs-btn gs-btn-secundario gs-btn-com-icone" aria-label="Voltar ao catálogo">
+                            <i class="fas fa-arrow-left"></i>
+                            <span>Voltar ao Catálogo</span>
+                        </a>
+                    </div>
+                    <h1 id="editProductName">Cadastrar Produto</h1>
+                </div>
+            </div>
+
+            <!-- CONTAINER DOS BOTÕES DAS ABAS (PADRÃO gs-tab-nav) -->
+            <div class="cp-tab-filter gs-tab-nav" id="tabFilter" role="tablist" aria-label="Abas de configuração do produto">
+                <button class="cp-tab-btn gs-tab-btn active" type="button" data-tab="dados-gerais" role="tab" aria-selected="true">
+                    <i class="fas fa-info-circle" aria-hidden="true"></i>
+                    <span class="gs-tab-label">Dados Gerais</span>
+                </button>
+                <button class="cp-tab-btn gs-tab-btn" type="button" data-tab="ficha-tecnica" role="tab" aria-selected="false">
+                    <i class="fas fa-image" aria-hidden="true"></i>
+                    <span class="gs-tab-label">Ficha Técnica</span>
+                </button>
+                <button class="cp-tab-btn gs-tab-btn" type="button" data-tab="producao" role="tab" aria-selected="false">
+                    <i class="fas fa-industry" aria-hidden="true"></i>
+                    <span class="gs-tab-label">Produção</span>
+                </button>
+                <!-- A aba 'Variações' é injetada dinamicamente pelo JS -->
+            </div>
+
+            <!-- CONTAINER DOS CONTEÚDOS DAS ABAS -->
+            <div class="cp-tabs-content gs-conteudo-pagina">
+
+                <!-- ABA: DADOS GERAIS -->
+                <div class="cp-tab-content active" id="dados-gerais" role="tabpanel">
+                    <div class="gs-card cp-secao-card">
+                        <div class="cp-card-titulo-bloco">
+                            <div class="cp-card-icone-header"><i class="fas fa-pen-to-square"></i></div>
+                            <div>
+                                <h3>Informações Básicas</h3>
+                                <p>Defina o nome, código SKU, identificador de barras e unidade deste produto.</p>
                             </div>
-                        </label>
-                        <div class="cp-imagem-actions">
-                            <button type="button" id="removeImagem" class="cp-btn-icon-danger" data-permissao="gerenciar-produtos" title="Remover Imagem">
-                                <i class="fas fa-trash"></i>
+                        </div>
+
+                        <form id="productForm">
+                            <div class="cp-form-grid">
+                                <div class="cp-form-group cp-col-span-full">
+                                    <label for="inputProductName" class="cp-form-label">Nome do Produto <span class="cp-obrigatorio">*</span></label>
+                                    <input type="text" id="inputProductName" class="cp-input" required aria-required="true" placeholder="Ex: Fronha de Cetim Antifrizz">
+                                </div>
+
+                                <div class="cp-form-group">
+                                    <label for="sku" class="cp-form-label">Código (SKU Principal)</label>
+                                    <input type="text" id="sku" class="cp-input" placeholder="Ex: FR-01000">
+                                </div>
+
+                                <div class="cp-form-group">
+                                    <label for="gtin" class="cp-form-label">GTIN / EAN Principal</label>
+                                    <input type="text" id="gtin" class="cp-input" placeholder="Ex: 7792022602975">
+                                </div>
+
+                                <div class="cp-form-group">
+                                    <label for="unidade" class="cp-form-label">Unidade de Medida <span class="cp-obrigatorio">*</span></label>
+                                    <select id="unidade" class="cp-select" required aria-required="true">
+                                        <option value="pç">Peça (pç)</option>
+                                        <option value="m">Metro (m)</option>
+                                        <option value="kg">Quilograma (kg)</option>
+                                    </select>
+                                </div>
+
+                                <div class="cp-form-group">
+                                    <label for="estoque" class="cp-form-label">Estoque Atual</label>
+                                    <input type="number" id="estoque" class="cp-input cp-input-readonly" disabled aria-disabled="true" placeholder="0">
+                                </div>
+
+                                <div class="cp-form-group cp-col-span-full">
+                                    <label class="cp-form-label">Classificação do Produto</label>
+                                    <div class="cp-tipos-selector">
+                                        <label class="cp-tipo-checkbox-card">
+                                            <input type="checkbox" name="tipo" value="simples">
+                                            <div class="cp-tipo-checkbox-conteudo">
+                                                <i class="fas fa-cube"></i>
+                                                <div>
+                                                    <strong>Simples</strong>
+                                                    <span>Produto único sem variações de cor ou tamanho</span>
+                                                </div>
+                                            </div>
+                                        </label>
+
+                                        <label class="cp-tipo-checkbox-card">
+                                            <input type="checkbox" name="tipo" value="variacoes">
+                                            <div class="cp-tipo-checkbox-conteudo">
+                                                <i class="fas fa-cubes"></i>
+                                                <div>
+                                                    <strong>Variações</strong>
+                                                    <span>Possui grade de atributos como cores, tamanhos e modelos</span>
+                                                </div>
+                                            </div>
+                                        </label>
+
+                                        <label class="cp-tipo-checkbox-card">
+                                            <input type="checkbox" name="tipo" value="kits">
+                                            <div class="cp-tipo-checkbox-conteudo">
+                                                <i class="fas fa-boxes-stacked"></i>
+                                                <div>
+                                                    <strong>Kits / Pacotes</strong>
+                                                    <span>Conjunto composto por múltiplos produtos ou unidades</span>
+                                                </div>
+                                            </div>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="cp-form-footer">
+                                <button type="submit" class="gs-btn gs-btn-sucesso gs-btn-com-icone" data-permissao="gerenciar-produtos">
+                                    <i class="fas fa-save"></i>
+                                    <span>Salvar Produto</span>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- ABA: FICHA TÉCNICA -->
+                <div class="cp-tab-content" id="ficha-tecnica" role="tabpanel">
+                    <div class="gs-card cp-secao-card">
+                        <div class="cp-card-titulo-bloco">
+                            <div class="cp-card-icone-header"><i class="fas fa-camera"></i></div>
+                            <div>
+                                <h3>Imagem Principal do Produto</h3>
+                                <p>Foto em alta resolução para identificação visual nas ordens de produção e etiquetas.</p>
+                            </div>
+                        </div>
+
+                        <div class="cp-imagem-container">
+                            <div class="cp-imagem-wrapper">
+                                <input type="file" id="imagemProduto" accept="image/*" class="hidden" data-permissao="gerenciar-produtos">
+                                <label for="imagemProduto" class="cp-imagem-placeholder" title="Clique para enviar ou trocar a imagem">
+                                    <img id="previewImagem" alt="Pré-visualização da imagem">
+                                    <div class="overlay">
+                                        <i class="fas fa-cloud-arrow-up"></i>
+                                        <span>Clique para enviar<br>ou arrastar imagem</span>
+                                    </div>
+                                </label>
+                                <div class="cp-imagem-actions">
+                                    <button type="button" id="removeImagem" class="gs-btn gs-btn-perigo gs-btn-com-icone" data-permissao="gerenciar-produtos" title="Remover Imagem">
+                                        <i class="fas fa-trash"></i>
+                                        <span>Remover Imagem</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ABA: PRODUÇÃO -->
+                <div class="cp-tab-content" id="producao" role="tabpanel">
+                    <div class="gs-card cp-secao-card">
+                        <div class="cp-card-titulo-bloco">
+                            <div class="cp-card-icone-header"><i class="fas fa-scissors"></i></div>
+                            <div>
+                                <h3>Etapas e Processos de Fabricação</h3>
+                                <p>Configure a sequência produtiva, fases (OP / Pós-OP), responsáveis e valores de produção.</p>
+                            </div>
+                        </div>
+
+                        <div id="etapasProducaoReact" class="cp-etapas-react-container"></div>
+
+                        <div class="cp-form-footer" style="margin-top: 24px;">
+                            <button id="btnSalvarProducao" class="gs-btn gs-btn-sucesso gs-btn-com-icone" data-permissao="gerenciar-produtos">
+                                <i class="fas fa-save"></i>
+                                <span>Salvar Etapas de Produção</span>
                             </button>
                         </div>
                     </div>
                 </div>
-            </div>
 
-            <!-- Aba: Produção -->
-            <div class="cp-tab-content" id="producao" role="tabpanel">
-                <div id="etapasProducaoReact"></div>
-                <div style="text-align: right; margin-top: 20px;">
-                    <button id="btnSalvarProducao" class="cp-btn cp-btn-success" data-permissao="gerenciar-produtos">
-                        <i class="fas fa-save"></i> Salvar Etapas de Produção
-                    </button>
-                </div>
-            </div>
+                <!-- ABA: VARIAÇÕES -->
+                <div class="cp-tab-content" id="variacoes" role="tabpanel">
+                    <!-- DEFINIÇÃO DOS ATRIBUTOS -->
+                    <div class="gs-card cp-secao-card">
+                        <div class="cp-card-titulo-bloco">
+                            <div class="cp-card-icone-header"><i class="fas fa-tags"></i></div>
+                            <div>
+                                <h3>Definir Atributos e Variações</h3>
+                                <p>Crie atributos como "Cor" ou "Tamanho" e digite os valores pressionando Enter.</p>
+                            </div>
+                        </div>
 
-            <!-- Aba: Variações (AGORA DENTRO DO CONTAINER PRINCIPAL) -->
-            <div class="cp-tab-content" id="variacoes" role="tabpanel">
-                <div class="cp-form-group">
-                    <h3>Definir Variações</h3>
-                    <div id="variationsComponentContainer" class="cp-variations-container">
-                        <!-- As linhas de variação serão injetadas aqui pelo JS -->
+                        <div id="variationsComponentContainer" class="cp-variations-container">
+                            <!-- Injetado dinamicamente via JS -->
+                        </div>
+
+                        <div class="cp-variacoes-acoes">
+                            <button type="button" class="gs-btn gs-btn-secundario gs-btn-com-icone" id="btnAddVariacao" data-permissao="gerenciar-produtos">
+                                <i class="fas fa-plus"></i>
+                                <span>Adicionar Outro Atributo</span>
+                            </button>
+                        </div>
                     </div>
-                    <button type="button" class="cp-btn cp-btn-add" id="btnAddVariacao" data-permissao="gerenciar-produtos" style="margin-top: 1rem;">
-                        <i class="fas fa-plus"></i> Adicionar Outra Variação
-                    </button>
-                </div>
-                <div class="cp-form-group" id="gradeVariacoes">
-                    <h3>Grade de Variações</h3>
-                    <p>Atribua SKU, GTIN/EAN, peças no pacote e imagem para cada combinação. Exclua as combinações que não existem.</p>
-                    <table class="cp-table" aria-label="Grade de variações">
-                        <thead id="gradeHeader"></thead>
-                        <tbody id="gradeBody"></tbody>
-                    </table>
-                    <button id="btnSalvarGrade" class="cp-btn cp-btn-success" data-permissao="gerenciar-produtos" style="margin-top: 1rem;">
-                        <i class="fas fa-check"></i> Salvar Grade e Variações
-                    </button>
-                </div>
-            </div>
 
-        </div> <!-- FIM do cp-tabs-content -->
+                    <!-- GRADE DE COMBINAÇÕES (CARD GRID) -->
+                    <div class="gs-card cp-secao-card" id="gradeVariacoes">
+                        <div class="cp-card-titulo-bloco">
+                            <div class="cp-card-icone-header"><i class="fas fa-table-cells"></i></div>
+                            <div>
+                                <h3>Grade de Combinações</h3>
+                                <p>Atribua SKU, GTIN/EAN, quantidade no pacote e foto para cada combinação gerada.</p>
+                            </div>
+                        </div>
 
+                        <div class="cp-grade-cards-wrapper">
+                            <table class="cp-table cp-grade-table" aria-label="Grade de variações">
+                                <thead id="gradeHeader"></thead>
+                                <tbody id="gradeBody"></tbody>
+                            </table>
+                        </div>
 
-        <!-- ================================================================ -->
-        <!--  POPUPS E MODAIS (Permanecem no final, fora do fluxo das abas)   -->
-        <!-- ================================================================ -->
-
-        <!-- POPUP DE CONFIGURAÇÃO DE KIT -->
-        <div id="configurarVariacaoView" class="cp-popup" role="dialog" aria-labelledby="configurarVariacaoTitle">
-            <div class="cp-popup-content">
-                <button type="button" class="cp-popup-close-btn" onclick="fecharPopupConfigurarVariacao()">X</button>
-                <h3 id="configurarVariacaoTitle"></h3>
-                <div class="cp-form-group">
-                    <label for="produtoKitSelect">Produto Componente:</label>
-                    <select id="produtoKitSelect" class="cp-select" onchange="loadVariacoesKit()"></select>
-                </div>
-                <div class="cp-form-group">
-                    <label for="variacaoKitSelect">Variação do Componente:</label>
-                    <div style="display: flex; gap: 10px;">
-                        <select id="variacaoKitSelect" class="cp-select" style="flex-grow: 1;"></select>
-                        <button id="addVariacaoKitBtn" type="button" class="cp-btn cp-btn-primary" data-permissao="gerenciar-produtos">Add</button>
+                        <div class="cp-form-footer" style="margin-top: 24px;">
+                            <button id="btnSalvarGrade" class="gs-btn gs-btn-sucesso gs-btn-com-icone" data-permissao="gerenciar-produtos">
+                                <i class="fas fa-check"></i>
+                                <span>Salvar Grade e Variações</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
-                <div class="cp-form-group">
-                    <label>Composição Atual:</label>
-                    <div id="composicaoKitContainer"></div>
-                </div>
-                <div class="cp-popup-buttons">
-                    <button type="button" class="cp-btn cp-btn-secondary" onclick="fecharPopupConfigurarVariacao()">Cancelar</button>
-                    <button id="saveKitConfigBtn" type="button" class="cp-btn cp-btn-primary" data-permissao="gerenciar-produtos">Salvar Composição</button>
-                </div>
-            </div>
-        </div>
 
-        <!-- MODAL DE SELEÇÃO DE IMAGEM PARA A GRADE -->
-        <div id="modalSelecionarImagem" class="cp-popup" role="dialog" aria-labelledby="modalSelecionarImagemTitle">
-            <div class="cp-popup-content" style="max-width: 600px;">
-                <h3 id="modalSelecionarImagemTitle">Selecionar Imagem para a Variação</h3>
-                <div class="cp-form-grupo">
-                    <label>Fazer um novo upload:</label>
-                    <button id="btnTriggerUpload" type="button" class="cp-btn cp-btn-primary" data-permissao="gerenciar-produtos">
-                        <i class="fas fa-upload"></i> Escolher Arquivo do Computador
-                    </button>
-                    <input type="file" id="gradeImageInput" accept="image/*" class="hidden" data-permissao="gerenciar-produtos">
-                </div>
-                <hr style="border: 0; height: 1px; background: #eee; margin: 20px 0;">
-                <div class="cp-form-grupo">
-                    <label>Ou usar uma imagem existente deste produto:</label>
-                    <div id="galeriaImagensExistentes" class="cp-galeria-imagens">
-                        <div class="cp-galeria-vazia-msg" style="display: none;"></div>
+            </div> <!-- FIM do cp-tabs-content -->
+
+            <!-- ============================================================== -->
+            <!-- POPUPS E MODAIS                                                -->
+            <!-- ============================================================== -->
+
+            <!-- POPUP DE CONFIGURAÇÃO DE KIT (SELETOR VISUAL - SEM SELECTS) -->
+            <div id="configurarVariacaoView" class="cp-popup" role="dialog" aria-labelledby="configurarVariacaoTitle" aria-modal="true">
+                <div class="cp-popup-content gs-card cp-modal-kit-config">
+                    <div class="cp-popup-header">
+                        <div class="cp-popup-header-info">
+                            <i class="fas fa-boxes-packing cp-popup-header-icon" aria-hidden="true"></i>
+                            <div>
+                                <h3 id="configurarVariacaoTitle">Composição do Kit</h3>
+                                <p class="cp-popup-header-sub">Adicione as variações e defina as quantidades que compõem este kit</p>
+                            </div>
+                        </div>
+                        <button type="button" class="cp-popup-close-btn" onclick="fecharPopupConfigurarVariacao()" aria-label="Fechar modal">
+                            <i class="fas fa-times" aria-hidden="true"></i>
+                        </button>
+                    </div>
+
+                    <div class="cp-popup-body cp-popup-body-kit">
+                        <!-- 1. SELETOR VISUAL DE COMPONENTES DISPONÍVEIS -->
+                        <div class="cp-kit-seletor-secao">
+                            <div class="cp-kit-seletor-header">
+                                <label class="cp-form-label mb-0" for="cpKitBuscaInput">
+                                    <i class="fas fa-plus-circle"></i>
+                                    <span>Adicionar Componentes</span>
+                                </label>
+                                <span class="cp-kit-dica-clique">Busque ou filtre por produto para adicionar</span>
+                            </div>
+
+                            <!-- Barra de Controles: Seletor Visual de Produto + Campo de Busca -->
+                            <div class="cp-kit-controles-bar">
+                                <!-- Seletor Visual de Produto (Dropdown customizado com fotos, SEM select nativo) -->
+                                <div class="cp-kit-filtro-prod-wrapper">
+                                    <button type="button" id="btnDropdownFiltroProd" class="cp-kit-filtro-prod-btn" aria-haspopup="true" aria-expanded="false" title="Filtrar por produto">
+                                        <div id="filtroProdLabel" class="cp-kit-filtro-prod-label">
+                                            <i class="fas fa-layer-group"></i>
+                                            <span>Todos os Produtos</span>
+                                        </div>
+                                        <i class="fas fa-chevron-down cp-kit-chevron" aria-hidden="true"></i>
+                                    </button>
+                                    
+                                    <div id="dropdownFiltroProdMenu" class="cp-kit-prod-dropdown-menu" style="display: none;">
+                                        <div class="cp-kit-prod-dropdown-busca">
+                                            <i class="fas fa-search" aria-hidden="true"></i>
+                                            <input type="text" id="inputBuscaProdDropdown" placeholder="Filtrar produtos..." class="cp-input" autocomplete="off">
+                                        </div>
+                                        <div id="listaProdsDropdown" class="cp-kit-prod-dropdown-lista"></div>
+                                    </div>
+                                </div>
+
+                                <!-- Campo de Busca por Variação / Cor / SKU -->
+                                <div class="cp-kit-busca-box">
+                                    <i class="fas fa-search cp-kit-busca-ico" aria-hidden="true"></i>
+                                    <input type="text" id="cpKitBuscaInput" class="cp-input" placeholder="Buscar por cor, variação ou SKU (ex: Preto, Marsala...)" autocomplete="off">
+                                    <button type="button" id="cpKitBuscaLimpar" class="cp-kit-busca-limpar" style="display: none;" title="Limpar busca">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Resultados da busca sob demanda (máximo 12 itens no DOM) -->
+                            <div id="cpKitCatalogoContainer" class="cp-kit-catalogo-scroll"></div>
+                        </div>
+
+                        <!-- 2. COMPOSIÇÃO ATUAL DO KIT -->
+                        <div class="cp-kit-composicao-secao">
+                            <div class="cp-kit-secao-bar">
+                                <label class="cp-form-label mb-0">
+                                    <i class="fas fa-layer-group"></i>
+                                    <span>Composição Atual desta Combinação</span>
+                                </label>
+                                <div id="cpKitResumoPecas" class="cp-kit-resumo-pecas">
+                                    <!-- Badge com total de peças -->
+                                </div>
+                            </div>
+
+                            <div id="composicaoKitContainer" class="cp-composicao-lista-moderna"></div>
+                        </div>
+                    </div>
+
+                    <div class="cp-popup-footer">
+                        <button type="button" class="gs-btn gs-btn-secundario" onclick="fecharPopupConfigurarVariacao()">Cancelar</button>
+                        <button id="saveKitConfigBtn" type="button" class="gs-btn gs-btn-primario gs-btn-com-icone" data-permissao="gerenciar-produtos">
+                            <i class="fas fa-check"></i>
+                            <span>Salvar Composição</span>
+                        </button>
                     </div>
                 </div>
-                <div class="cp-popup-buttons" style="margin-top: 30px;">
-                    <button type="button" class="cp-btn cp-btn-secondary" id="btnFecharModalSelecaoImagem">Cancelar</button>
+            </div>
+
+            <!-- MODAL DE SELEÇÃO DE IMAGEM PARA A GRADE -->
+            <div id="modalSelecionarImagem" class="cp-popup" role="dialog" aria-labelledby="modalSelecionarImagemTitle" aria-modal="true">
+                <div class="cp-popup-content gs-card cp-modal-imagem">
+                    <div class="cp-popup-header">
+                        <div class="cp-popup-header-info">
+                            <i class="fas fa-image cp-popup-header-icon" aria-hidden="true"></i>
+                            <h3 id="modalSelecionarImagemTitle">Selecionar Imagem da Variação</h3>
+                        </div>
+                        <button type="button" class="cp-popup-close-btn" id="btnFecharModalSelecaoImagem" aria-label="Fechar modal">
+                            <i class="fas fa-times" aria-hidden="true"></i>
+                        </button>
+                    </div>
+
+                    <div class="cp-popup-body">
+                        <div class="cp-upload-card-box">
+                            <span class="cp-upload-card-titulo">Fazer novo upload do dispositivo:</span>
+                            <button id="btnTriggerUpload" type="button" class="gs-btn gs-btn-primario gs-btn-com-icone" data-permissao="gerenciar-produtos">
+                                <i class="fas fa-upload"></i>
+                                <span>Escolher Arquivo do Computador</span>
+                            </button>
+                            <input type="file" id="gradeImageInput" accept="image/*" class="hidden" data-permissao="gerenciar-produtos">
+                        </div>
+
+                        <div class="cp-divisor-modal">
+                            <span>OU ESCOLHA UMA IMAGEM JÁ UTILIZADA NESTE PRODUTO</span>
+                        </div>
+
+                        <div class="cp-galeria-secao">
+                            <div id="galeriaImagensExistentes" class="cp-galeria-imagens">
+                                <div class="cp-galeria-vazia-msg" style="display: none;"></div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
-        </div>
 
-    </section>
+        </section>
 
-    </div>
+    </main>
+
+    <!-- SCRIPTS -->
     <script src="/js/admin-cadastrar-produto.js" type="module" defer></script>
     <script src="/src/main-cadastrar-produto.jsx" type="module"></script>
     <script src="/src/main-menu-lateral.tsx" type="module"></script>
